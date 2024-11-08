@@ -3,20 +3,19 @@ import logging
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Union
-
+import os
 import safetensors.torch
 import torch
-from mistral_common.tokens.tokenizers.sentencepiece import (
-    InstructTokenizerBase,
-    SentencePieceTokenizer,
-)
+from embed_llm.data.tokenize import Tokenizer
 from torch.distributed import barrier
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 
-from model.transformer import LoRALinear
+from embed_llm.models.mistral.lora import LoRALinear
 
-from .distributed import get_rank, get_world_size
-from .utils import TrainState
+from embed_llm.models.llama.model import Transformer as LlamaTransformer
+
+from embed_llm.training.distributed import get_rank, get_world_size
+from embed_llm.training.utils import TrainState
 
 logger = logging.getLogger("checkpointing")
 
@@ -31,7 +30,7 @@ class Checkpointer:
 
     def __init__(
         self,
-        model: FullyShardedDataParallel,
+        model: Union[FullyShardedDataParallel, LlamaTransformer],
         state: TrainState,
         run_dir: Union[Path, str],
         optimizer: Optional[torch.optim.Optimizer] = None,
@@ -54,12 +53,12 @@ class Checkpointer:
 
     @staticmethod
     def consolidated_path(
-        ckpt_dir: Path, use_safetensors: bool, save_only_lora: Optional[bool] = False
+        ckpt_path: str, use_safetensors: bool, save_only_lora: Optional[bool] = False
     ) -> Path:
         suffix = "safetensors" if use_safetensors else "00.pth"
         prefix = "lora" if save_only_lora else "consolidated"
 
-        return ckpt_dir / f"{prefix}.{suffix}"
+        return os.path.join(ckpt_path,f"{prefix}.{suffix}")
 
     @staticmethod
     def _tmp(ckpt_dir: Path) -> Path:
@@ -187,28 +186,28 @@ class Checkpointer:
         states = dict(sorted(states.items()))
         return states
 
-    @staticmethod
-    def save_tokenizer(instruct_tokenizer: InstructTokenizerBase, tmp_dst: Path):
-        if isinstance(instruct_tokenizer.tokenizer, SentencePieceTokenizer):
-            serialized_spm = (
-                instruct_tokenizer.tokenizer._model.serialized_model_proto()
-            )  # type: ignore
+    # @staticmethod
+    # def save_tokenizer(instruct_tokenizer: InstructTokenizerBase, tmp_dst: Path):
+    #     if isinstance(instruct_tokenizer.tokenizer, SentencePieceTokenizer):
+    #         serialized_spm = (
+    #             instruct_tokenizer.tokenizer._model.serialized_model_proto()
+    #         )  # type: ignore
 
-            tokenizer_path = tmp_dst / "tokenizer.model.v3"
+    #         tokenizer_path = tmp_dst / "tokenizer.model.v3"
 
-            with open(tokenizer_path, "wb") as f:
-                f.write(serialized_spm)
-        else:
-            path = instruct_tokenizer.tokenizer._path
-            assert path is not None
-            shutil.copy(path, tmp_dst / "tekken.json")
+    #         with open(tokenizer_path, "wb") as f:
+    #             f.write(serialized_spm)
+    #     else:
+    #         path = instruct_tokenizer.tokenizer._path
+    #         assert path is not None
+    #         shutil.copy(path, tmp_dst / "tekken.json")
 
     @torch.no_grad()
     def save_checkpoint(
         self,
         save_only_lora: bool,
         dtype: torch.dtype = torch.float16,
-        instruct_tokenizer: Optional[InstructTokenizerBase] = None,
+        tokenizer: Optional[Tokenizer] = None,
     ):
         tmp_dst = self._tmp(self.dst_dir)
         main_logger_info(
@@ -236,8 +235,8 @@ class Checkpointer:
             self.write_params_info(tmp_dst)
 
             # save tokenizer
-            if instruct_tokenizer is not None:
-                self.save_tokenizer(instruct_tokenizer, tmp_dst)
+            # if tokenizer is not None:
+            #     self.save_tokenizer(instruct_tokenizer, tmp_dst)
 
             assert not self.dst_dir.exists(), f"should not happen! {self.dst_dir}"
             tmp_dst.rename(self.dst_dir)

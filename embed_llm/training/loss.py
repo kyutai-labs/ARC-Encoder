@@ -14,3 +14,4 @@ def compute_loss_with_mask(
     mb_loss = torch.sum(mb_loss * target_mask) / torch.sum(target_mask)
 
     return mb_loss
+

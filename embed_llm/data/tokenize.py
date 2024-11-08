@@ -19,16 +19,15 @@ Mask = List[bool]
 class TokenSample:
     tokens: Sequence
     masks: Mask
+    
+
 
 def encode(
     data: Dict[str, Any],
     tokenizer: Optional[Tokenizer] = None,
-) -> Union[TokenSample, str]:
+) -> Union[TokenSample]:
     sample = get_sample(data)
-    if tokenizer is None:
-        return sample
-    else:
-        return tokenize(sample=sample, tokenizer=tokenizer)
+    return tokenize(sample=sample, tokenizer=tokenizer)
 
 
 def get_sample(data: Dict[str, Any]) -> str:

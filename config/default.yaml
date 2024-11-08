@@ -1,0 +1,51 @@
+
+# Models
+model_id_or_path : null
+model_name: null
+embed_model_name: null
+
+# Training
+
+
+# Data
+data_4_tokens:
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/datasets/...:1
+  eval_data: 
+  shuffle: False
+
+data_4_embeds:
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/datasets/...:1
+  eval_data: 
+  shuffle: False
+
+# optim
+seq_len: 512
+batch_size: 32
+max_steps: 100000
+optim:
+  lr: 6.e-5
+  weight_decay: 0.1
+  pct_start: 0.05
+
+# # other
+
+# seed: 0
+# log_freq: 50
+# eval_freq: 50
+# no_eval: False
+# ckpt_freq: 200
+# eval_text_ppl: True
+# eval_ppl_dataset: /lustre/scwpod02/client/kyutai-interns/hippop/datasets/wiki_text_valid.jsonl
+
+# save_adapters: True  # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model
+
+# run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/mistral_finetuned_ckpts/NQ_test_noid_wikitext # Fill
+
+
+# Monitoring
+wandb: 
+  project:  # your wandb project name
+  run_name:  # your wandb run name
+  key: # your wandb api key
+  offline: False
+    

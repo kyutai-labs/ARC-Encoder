@@ -5,7 +5,7 @@ from mistral_common.tokens.tokenizers.sentencepiece import InstructTokenizerBase
 
 from embed_llm.data.args import DataArgs
 from embed_llm.data.dataset import build_token_dataset, build_text_dataset
-
+from embed_llm.data.tokenize import Tokenizer
 
 @dataclasses.dataclass
 class Batchtoken:
@@ -86,7 +86,7 @@ class BatchListtoken:
 
 
 def build_token_data_loader(
-    instruct_tokenizer: InstructTokenizerBase,
+    tokenizer: Tokenizer,
     args: DataArgs,
     batch_size: int,
     seq_len: int,
@@ -100,7 +100,7 @@ def build_token_data_loader(
 
     dataset = build_token_dataset(
         pretrain_data=train_data,
-        instruct_tokenizer=instruct_tokenizer,
+        tokenizer = tokenizer,
         seq_len=seq_len,
         seed=seed,
         rank=rank,
@@ -123,6 +123,7 @@ def build_token_data_loader(
             
 def build_text_data_loader(
     args: DataArgs,
+    seq_len: int,
     batch_size: int,
     seed: Optional[int],
     rank: int,
@@ -134,6 +135,7 @@ def build_text_data_loader(
 
     dataset = build_text_dataset(
         pretrain_data=train_data,
+        seq_len=seq_len,
         batch_size=batch_size,
         seed=seed,
         rank=rank,

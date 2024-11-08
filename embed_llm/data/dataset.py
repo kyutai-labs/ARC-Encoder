@@ -12,6 +12,7 @@ from embed_llm.training.distributed import get_rank
 from embed_llm.data.tokenize import (
     Mask,
     TokenSample,
+    Sequence,
     encode,
     Tokenizer
 )
@@ -19,9 +20,12 @@ from embed_llm.data.tokenize import (
 logger = logging.getLogger("dataset")
 
 
-_LOADED_DATASETS: Dict[Path, Union[List[TokenSample],List[str]]] = {}
+_LOADED_DATASETS: Dict[Path, Union[List[TokenSample],List[TextSample]]] = {}
 
-
+@dataclass()
+class TextSample:
+    tokens: Sequence
+    texts: List[str]
 
 def main_logger_info(message: str) -> None:
     if dist.is_initialized() and get_rank() == 0:
@@ -40,7 +44,7 @@ def load_file(path: Path, world_size: int, rank: int) -> List[str]:
 
 def maybe_load_local_dataset(
     path: Path, rank: int, world_size: int, tokenizer : Optional[Tokenizer] = None
-) -> Union[List[TokenSample], List[str]]:
+) -> List[TokenSample]:
     global _LOADED_DATASETS
 
     if path in _LOADED_DATASETS:
@@ -50,11 +54,11 @@ def maybe_load_local_dataset(
     lines: List[str] = load_file(path, rank=rank, world_size=world_size)
 
 
-    data_list: Union[List[TokenSample],List[str]] = []
+    data_list: List[TokenSample] = []
     for line in lines:
         data = json.loads(line)
 
-        data_sample: Union[TokenSample,str] = encode(
+        data_sample: Union[TokenSample] = encode(
             data,
             tokenizer = tokenizer,
         )
@@ -233,28 +237,27 @@ def sequence_token_iterator(
 
 
 def sequence_text_iterator(
-    ds_it: Iterator[str],
+    ds_it: Iterator[TokenSample],
+    tokenizer: Tokenizer,
+    seq_len: int,
     batch_size: int,
-) -> Iterator[str]:
+) -> Iterator[List[TextSample]]:
     """
     Creates a batch of text samples of size `batch_size` from the dataset iterator.
     """
-    passage_buffer: List[str] = []
-    n_missing = batch_size
+    textsample_buffer: List[TextSample] = []
     for sample in ds_it:
-        assert 0 <= len(passage_buffer) < batch_size, len(passage_buffer)
-        assert n_missing == batch_size- len(
-            passage_buffer
-        ), f"n_missing: {n_missing} | seq_len - len(passage_buffer) {batch_size - len(passage_buffer)}"
+        assert 0 <= len(textsample_buffer) < batch_size, len(textsample_buffer)
+        tokens = sample.tokens
+        cur_pos = 0
+        while cur_pos < len(tokens):
+            size = len(tokens[cur_pos : cur_pos + seq_len])
+            textsample_buffer.append(TextSample(tokens[cur_pos : cur_pos + seq_len],tokenizer.decode(tokens[cur_pos : cur_pos + seq_len])))
+            cur_pos += size
+            if len(textsample_buffer) == batch_size:
+                yield textsample_buffer
+                textsample_buffer = []
 
-        
-        passage_buffer.append(sample)
-        n_missing -= 1
-        if n_missing == 0:
-            assert len(passage_buffer) == batch_size
-            yield passage_buffer
-            passage_buffer = []
-            n_missing = batch_size
             
 def build_token_dataset(
     pretrain_data: str,
@@ -302,19 +305,23 @@ def build_token_dataset(
 
     return combined_iterator
 
-def  build_text_dataset(pretrain_data: str,
+def  build_text_dataset(
+    pretrain_data: str,
+    tokenizer: Tokenizer,
     batch_size: int,
+    seq_len: int,
     seed: Optional[int],
     rank: int,
     world_size: int,
     is_eval: bool,
     shuffle: bool = False,
-) -> Iterator[List[str]]:
+) -> Iterator[List[TextSample]]:
     sources, probabilities = parse_data_sources(pretrain_data)
 
     dataset_iterators = [
         get_dataset_iterator(
             source,
+            tokenizer = tokenizer,
             rank=rank,
             world_size=world_size,
             is_finite=is_eval,
@@ -327,7 +334,9 @@ def  build_text_dataset(pretrain_data: str,
     sequence_iterators = [
         sequence_text_iterator(
             ds_it=it,
+            seq_len=seq_len,
             batch_size = batch_size,
+            tokenizer = tokenizer,
         )
         for it in dataset_iterators
     ]
@@ -341,7 +350,6 @@ def  build_text_dataset(pretrain_data: str,
         combined_iterator = interleave_iterators(
             sequence_iterators, probabilities=probabilities, rng=rng
         )
-
     return combined_iterator
 
 def get_rng(seed: int, rank: int) -> np.random.RandomState:
@@ -356,8 +364,8 @@ def get_dataset_iterator(
     is_finite: bool,
     seed: Optional[int],
     shuffle_at_epoch: bool,
-    tokenizer: Optional[Tokenizer] = None,
-) -> Union[Iterator[TokenSample], Iterator[str]]:
+    tokenizer: Tokenizer,
+) -> Iterator[TokenSample]:
     jsonl_files = source.jsonl_files
     rng: Optional[np.random.RandomState] = (
         get_rng(seed, rank) if seed is not None else None

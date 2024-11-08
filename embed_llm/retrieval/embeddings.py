@@ -42,27 +42,34 @@ def get_embedder(model_name: str):
         raise ValueError(f"Unknown model name {model_name}")
 
 
-def encode_text(text: list[str], model_name: str, model: Union[GritLM, AutoModel] = None, bs: int = 64, query_embedding: bool = True, tokenizer: Optional[AutoTokenizer] = None):
+def encode_text(text: list[str], model_name: str, model: Union[GritLM, AutoModel] = None, query_embedding: bool = True, tokenizer: Optional[AutoTokenizer] = None, device: str = 'cpu'):
 
     if model_name == "GritLM":
         results = []
-        for i in tqdm(range(0, len(text), bs)):
-            embedding = model.encode(text[i:i+bs], instruction="<|embed|>\n")
+        embedding = model.encode(text, instruction="<|embed|>\n")
+        if device == 'cpu':
             results.append(embedding.cpu().numpy())
-        return np.concatenate(results, axis=0)
+            return np.concatenate(results, axis=0)
+        else:
+            results.append(embedding)
+            return torch.cat(results, dim=0)
 
     elif model_name == "Contriever":
         tokenizer = AutoTokenizer.from_pretrained(
             'facebook/contriever') if tokenizer is None else tokenizer
         results = []
-        for i in tqdm(range(0, len(text), bs)):
-            inputs = tokenizer(text[i:i+bs], padding=True,
-                               truncation=True, return_tensors='pt')
-            embedding = model(**inputs)
+        inputs = tokenizer(text, padding=True,
+                            truncation=True, return_tensors='pt')
+        embedding = model(**inputs)
+        if device == 'cpu':
             embedding = mean_pooling(
                 embedding[0].cpu(), inputs['attention_mask'])
             results.append(embedding.cpu().numpy())
-        return np.concatenate(results, axis=0)
+            return np.concatenate(results, axis=0)
+        else:
+            embedding = mean_pooling(embedding[0], inputs['attention_mask'])
+            results.append(embedding)
+            return torch.cat(results, dim=0)
 
     elif model_name == "NVEmbed":
 
@@ -75,11 +82,14 @@ def encode_text(text: list[str], model_name: str, model: Union[GritLM, AutoModel
             instruction = ""
 
         results = []
-        for i in tqdm(range(0, len(text), bs)):
-            embedding = model.encode(text[i:i+bs], instruction=instruction)
-            results.append(F.normalize(embedding, p=2, dim=1).cpu().numpy())
 
-        return np.concatenate(results, axis=0)
+        embedding = model.encode(text, instruction=instruction)
+        if device == 'cpu':
+            results.append(F.normalize(embedding, p=2, dim=1).cpu().numpy())
+            return np.concatenate(results, axis=0)
+        else:
+            results.append(F.normalize(embedding, p=2, dim=1))
+            return torch.cat(results, dim=0)
 
     else:
         raise ValueError(f"Unknown model name {model_name}")
@@ -87,7 +97,6 @@ def encode_text(text: list[str], model_name: str, model: Union[GritLM, AutoModel
 
 # TODO: Create a dataset format with each row is a dictionary with key 'text' and value a list of passages, each passage must be useful
 # Maybe modify truncation
-
 def generate_embeddings(model_name: str, output_path: str, bs: int, dataset, n_gpu: int = 1, partition: int = 0, checkpoint: int = 1000):
     model = get_embedder(model_name)
     os.makedirs(os.path.join(output_path, model_name), exist_ok=True)
@@ -115,7 +124,7 @@ def generate_embeddings(model_name: str, output_path: str, bs: int, dataset, n_g
     for ind, i in tqdm(enumerate(range(0, len(used_texts), bs))):
         passages = used_texts[i:i+bs]
         embeddings = encode_text(
-            passages, model_name=model_name, model=model, bs=bs)
+            passages, model_name=model_name, model=model)
 
         text_passages.extend(passages)
         embeddings_array.append(embeddings)

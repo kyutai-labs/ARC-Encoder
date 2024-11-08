@@ -4,16 +4,30 @@ import os
 import pprint
 from contextlib import ExitStack
 from pathlib import Path
-from typing import TYPE_CHECKING
-
+from typing import Union
 import fire
 import torch.cuda
 import torch.distributed as dist
 from torch.optim import AdamW, lr_scheduler
+import numpy as np
+import random
+from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+from embed_llm.models.gemma.tokenizer import Tokenizer as GemmaTokenizer
 
+from embed_llm.models.wrapped_models import load_model as load_mistral_model
+from embed_llm.models.wrapped_models import load_args as load_mistral_args
+
+from embed_llm.models.llama.generation import Llama
+
+from embed_llm.models.gemma import config as gemma_config
+from embed_llm.models.gemma import model as gemma_model
+
+from embed_llm.models.utils_models import set_default_tensor_type
+from embed_llm.retrieval.embeddings import get_embedder, encode_text
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.data.data_loader import build_token_data_loader, build_text_data_loader
+from embed_llm.data.tokenize import Tokenizer
 from embed_llm.training.distributed import (
     BACKEND,
     avg_aggregate,
@@ -43,10 +57,10 @@ from embed_llm.monitoring.metrics_logger import (
 )
 from embed_llm.monitoring.utils import set_logger
 
-from finetune.wrapped_model import load_model, load_args
 
-if TYPE_CHECKING:
-    from mistral_common.tokens.tokenizers.sentencepiece import InstructTokenizerBase
+# Define depending on the model
+# from finetune.wrapped_model import load_model, load_args
+
 
 logger = logging.getLogger("train")
 
@@ -58,6 +72,7 @@ def main_logger_info(message: str) -> None:
 
 def train(config: str):
     args: TrainArgs = TrainArgs.load(config, drop_extra_fields=False)
+    
     print(f"args: {args}")
     set_logger(logging.INFO)
 
@@ -109,7 +124,6 @@ def _train(
         tag="train",
         is_master=get_rank() == 0,
         wandb_args=args.wandb,
-        mlflow_args=args.mlflow,
         config=dataclasses.asdict(args),
     )
     exit_stack.enter_context(logged_closing(metrics_logger, "metrics_logger"))
@@ -119,7 +133,6 @@ def _train(
         tag="eval",
         is_master=get_rank() == 0,
         wandb_args=args.wandb,
-        mlflow_args=args.mlflow,
         config=dataclasses.asdict(args),
     )
     exit_stack.enter_context(logged_closing(eval_logger, "eval_logger"))
@@ -131,58 +144,112 @@ def _train(
         raise ValueError(
             "Invalid folder path. Please set `args.initial_model` to a valid folder path."
         )
+        
+    # Seed random.
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed) 
 
-    # 6. Load function calling instruct tokenizer
-    vocab_size = load_args(model_folder, args.lora).vocab_size
-    is_tekken = vocab_size > 32768
+    """ Load embedder model """
+    embedding_model = get_embedder(args.embed_model_name)
+    embedding_model.config.max_length = embedding_model.config.max_length if args.max_seq_len is None else args.max_seq_len
+    
+    
+    
+    """ Load LLM and tokenizers """
+    
+    if 'Mistral' in args.model_name:
+        param_dtype = torch.bfloat16
+        optim_dtype = torch.float32
 
-    instruct_tokenizer: InstructTokenizerBase = MistralTokenizer.v3(
-        is_tekken=is_tekken
-    ).instruct_tokenizer  # type: ignore
+        assert args.lora is not None, "`args.lora` should be set to a valid value."
+        model = load_mistral_model(
+            folder=model_folder,
+            lora = args.lora,
+            checkpoint = args.checkpoint,
+            param_dtype=param_dtype,
+        )
+        
+        vocab_size = load_mistral_args(model_folder, args.lora).vocab_size
+        is_tekken = vocab_size > 32768
+        tokenizer: Tokenizer = MistralTokenizer.v3(
+            is_tekken=is_tekken
+        ).instruct_tokenizer.tokenizer  # type: ignore
+        print("Model loading done")
+        
+    elif 'Llama' in args.model_name:
+        generator = Llama.build(
+        ckpt_dir=args.model_id_or_path,
+        tokenizer_path=args.batch_size,
+        max_seq_len=args.seq_len,
+        max_batch_size=args.batch_size)
+        
+        model = generator.model
+        tokenizer = generator.tokenizer
+        print("Model loading done")
+        
+    elif 'Gemma' in args.model_name:
+        assert args.variant and args.quant, "Please specify the model variant and quantization mode."
+        tokenizer: Tokenizer = GemmaTokenizer(args.tokenizer_path)
+        # Construct the model config.
+        model_config = gemma_config.get_model_config(args.variant)
+        model_config.dtype = "float32" if args.device == "cpu" else "float16"
+        model_config.quant = args.quant
 
-    # 7. Load data loaders
-    data_loader = build_data_loader(
-        instruct_tokenizer=instruct_tokenizer,
-        args=args.data,
-        seq_len=args.seq_len,
-        batch_size=args.batch_size,
-        seed=args.seed,
-        rank=get_rank(),  # DDP rank
-        world_size=get_world_size(),  # DDP world_size
-        is_eval=False,
-    )
 
-    if not args.no_eval:
-        assert (
-            args.data.eval_instruct_data != ""
-        ), "Either set `no_eval` to True or provide evaluation samples under `data.eval_instruct_data`"
-
-        eval_data_loader = build_data_loader(
-            instruct_tokenizer=instruct_tokenizer,
-            args=args.data,
+        # Create the model and load the weights.
+        device = torch.device(args.device)
+        with set_default_tensor_type(model_config.get_dtype()):
+            model = gemma_model.GemmaForCausalLM(model_config)
+            model.load_weights(args.ckpt)
+            model = model.to(device).eval()
+        print("Model loading done")
+        
+    """ Load  Dataloader"""
+    
+    if args.data_4_tokens is not None:   
+           
+        token_data_loader = build_token_data_loader(
+            tokenizer=tokenizer,
+            args=args.data_4_tokens,
             seq_len=args.seq_len,
             batch_size=args.batch_size,
-            seed=None,
+            seed=args.seed,
             rank=get_rank(),  # DDP rank
             world_size=get_world_size(),  # DDP world_size
-            is_eval=True,
+            is_eval=False,
         )
-        # pre-load all eval tokens
-        eval_batches = list(eval_data_loader)
+    
+    if args.data_4_embeds is not None:
 
-    # 8. Load model
-    # Define mixed precision
-    param_dtype = torch.bfloat16
-    optim_dtype = torch.float32
+        text_data_loader = build_text_data_loader(
+            tokenizer = tokenizer,
+            args=args.data_4_embeds,
+            seq_len=args.seq_len,
+            batch_size=args.batch_size,
+            seed=args.seed,
+            rank=get_rank(),  # DDP rank
+            world_size=get_world_size(),  # DDP world_size
+            is_eval=False,
+        )
 
-    assert args.lora is not None, "`args.lora` should be set to a valid value."
+    # if not args.no_eval:
+    #     assert (
+    #         args.data.eval_instruct_data != ""
+    #     ), "Either set `no_eval` to True or provide evaluation samples under `data.eval_instruct_data`"
 
-    model = load_model(
-        folder=model_folder,
-        lora=args.lora,
-        checkpoint=args.checkpoint,
-        param_dtype=param_dtype,
-    )
+    #     eval_data_loader = build_data_loader(
+    #         instruct_tokenizer=instruct_tokenizer,
+    #         args=args.data,
+    #         seq_len=args.seq_len,
+    #         batch_size=args.batch_size,
+    #         seed=None,
+    #         rank=get_rank(),  # DDP rank
+    #         world_size=get_world_size(),  # DDP world_size
+    #         is_eval=True,
+    #     )
+    #     # pre-load all eval tokens
+    #     eval_batches = list(eval_data_loader)
 
     # 9. Load optimizer
     optimizer = AdamW(
@@ -210,6 +277,7 @@ def _train(
         optimizer=optimizer,
         num_ckpt_keep=args.num_ckpt_keep,
     )
+
     # 11. Prepare mixed precision
     prepare_mixed_precision(
         model.parameters(), param_dtype=param_dtype, optim_dtype=optim_dtype
@@ -224,33 +292,36 @@ def _train(
         is_last_step = state.step == args.max_steps
 
         optimizer.zero_grad()
-
         loss = torch.tensor([0.0], device="cuda")
         n_batch_tokens: int = 0
 
         for i in range(args.num_microbatches):
-            # batch
-            batch = next(data_loader)
+            
+            """ Training loop for basic reconstruction"""
+            batch = next(text_data_loader)
+            texts, target_tokens = batch.texts, batch.tokens
+            
+            with torch.no_grad():
+                embeddings = encode_text(texts, args.embed_model_name, embedding_model, query_embedding=False, device='cuda').cuda()
+            
 
-            x = torch.from_numpy(batch.x).cuda(non_blocking=True)
-            y = torch.from_numpy(batch.y).cuda(non_blocking=True)
-            y_mask = (
-                torch.from_numpy(batch.y_mask).cuda(non_blocking=True)
-                if batch.y_mask is not None
-                else None
-            )
-
-            # forward / backward
+            """ Feed embeddings to the model"""
             output = model(
                 input_ids=x,
                 seqlens=batch.sizes,
             )
-            mb_loss = compute_loss_with_mask(output, y, y_mask)
+            
+            """ Generate tokens """
+            
+            
+            
+            
+            mb_loss = compute_loss_with_mask(output, target_tokens)
 
             mb_loss.backward()
 
             loss += mb_loss.detach()
-            n_batch_tokens += x.numel()
+            n_batch_tokens += target_tokens.numel()
 
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward
@@ -283,18 +354,18 @@ def _train(
         loss_item = loss.item()
         avg_loss = avg_aggregate(loss_item)
 
-        if not args.no_eval and (
-            (args.eval_freq > 0 and state.step % args.eval_freq == 0) or is_last_step
-        ):
-            # write perplexity to state
-            evaluate(model, eval_batches, state)
+        # if not args.no_eval and (
+        #     (args.eval_freq > 0 and state.step % args.eval_freq == 0) or is_last_step
+        # ):
+        #     # write perplexity to state
+        #     evaluate(model, eval_batches, state)
 
-            eval_logs = get_eval_logs(
-                state.step, avg_loss, state.this_eval_perplexity, state.this_eval_loss
-            )
+        #     eval_logs = get_eval_logs(
+        #         state.step, avg_loss, state.this_eval_perplexity, state.this_eval_loss
+        #     )
 
-            main_logger_info(eval_log_msg(eval_logs))
-            eval_logger.log(eval_logs, step=state.step)
+        #     main_logger_info(eval_log_msg(eval_logs))
+        #     eval_logger.log(eval_logs, step=state.step)
 
         # Timing
         state.end_step(n_batch_tokens)
@@ -317,7 +388,6 @@ def _train(
             checkpointer.save_checkpoint(
                 save_only_lora=args.save_adapters,
                 dtype=param_dtype,
-                instruct_tokenizer=instruct_tokenizer,
             )
 
     main_logger_info("done!")

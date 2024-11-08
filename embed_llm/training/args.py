@@ -2,13 +2,13 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from simple_parsing.helpers import Serializable
 
-from model.args import LoraArgs
+from embed_llm.models.mistral.args import LoraArgs
 
-from .data.args import DataArgs
+from embed_llm.data.args import DataArgs
 
 
 @dataclass
@@ -35,30 +35,15 @@ class WandbArgs(Serializable):
             if len(self.project) == 0:
                 raise ValueError("`wandb.project` must not be an empty string.")
 
-@dataclass
-class MLFlowArgs(Serializable):
-    tracking_uri: Optional[str] = None
-    experiment_name: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        if self.tracking_uri is not None:
-            try:
-                import mlflow  # noqa: F401
-            except ImportError:
-                raise ImportError("`mlflow` not installed. Either make sure `mlflow` is installed or set `mlflow.tracking_uri` to None.")
-
-            if self.experiment_name is None:
-                raise ValueError("If `mlflow.tracking_uri` is set, `mlflow.experiment_name` must be set as well.")
-
 
 
 @dataclass
 class TrainArgs(Serializable):
-    data: DataArgs
-
+    data_4_tokens: Optional[DataArgs] = field(default_factory=DataArgs)
+    data_4_embeds: Optional[DataArgs] = field(default_factory=DataArgs)
     # if specified, instruct_tokenizer and model will be loaded
     model_id_or_path: str  # Path to the directory containing the initial model or model id: "mistral-small"
-
+    model_name: str
     run_dir: str  # Path to the directory where everything will be saved. It needs to be empty.
     # Name of the wandb run, if None it will be set to the name of the run_dir.
 
@@ -88,12 +73,15 @@ class TrainArgs(Serializable):
 
     world_size: Optional[int] = field(init=False, default=None)
 
+    variant: Optional[str] =  None #'7b', "2b", "2b-v2", "7b", "9b", "27b"
+    quant: Optional[bool] = None # False
+    
     # logging
     wandb: WandbArgs = field(default_factory=WandbArgs)
-    mlflow: MLFlowArgs = field(default_factory=MLFlowArgs)
 
     # LoRA
     lora: Optional[LoraArgs] = field(default_factory=LoraArgs)
+    
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None
@@ -114,3 +102,4 @@ class TrainArgs(Serializable):
             logging.warning(
                 "You have disabled `save_adapters` and are thus merging the trained LoRA checkpoint into the base model upon checkpointing. This might lead to OOM errors - make sure you have enough CPU and GPU memory."
             )
+

@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import Optional, List
 
 from simple_parsing.helpers import Serializable
 
@@ -51,6 +51,8 @@ class TransformerArgs(Serializable):
 
         # hack for now so that vLLM is supported correctly
         self.sliding_window = self.sliding_window if self.sliding_window is not None else self._sliding_window
+
+
 
 
 # @dataclass
