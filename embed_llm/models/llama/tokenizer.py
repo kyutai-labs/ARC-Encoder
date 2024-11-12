@@ -141,7 +141,7 @@ class Tokenizer:
             substr
             for i in range(0, len(s), TIKTOKEN_MAX_ENCODE_CHARS)
             for substr in self._split_whitespaces_or_nonwhitespaces(
-                s[i : i + TIKTOKEN_MAX_ENCODE_CHARS], MAX_NO_WHITESPACES_CHARS
+                s[i: i + TIKTOKEN_MAX_ENCODE_CHARS], MAX_NO_WHITESPACES_CHARS
             )
         )
         t: List[int] = []
@@ -197,5 +197,3 @@ class Tokenizer:
                     slice_start = i
                     current_slice_len = 1
         yield s[slice_start:]
-
-

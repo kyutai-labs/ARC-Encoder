@@ -39,7 +39,8 @@ setuptools.setup(
         # "License :: OSI Approved :: Apache Software License",
         # "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
-    packages=setuptools.find_packages(), # exclude=("benchmarks", "docs", "examples", "tests")),
+    # exclude=("benchmarks", "docs", "examples", "tests")),
+    packages=setuptools.find_packages(),
     python_requires=">=3.10",
     install_requires=get_requirements(),
 )

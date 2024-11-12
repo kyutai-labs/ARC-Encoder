@@ -59,7 +59,7 @@ def encode_text(text: list[str], model_name: str, model: Union[GritLM, AutoModel
             'facebook/contriever') if tokenizer is None else tokenizer
         results = []
         inputs = tokenizer(text, padding=True,
-                            truncation=True, return_tensors='pt')
+                           truncation=True, return_tensors='pt')
         embedding = model(**inputs)
         if device == 'cpu':
             embedding = mean_pooling(

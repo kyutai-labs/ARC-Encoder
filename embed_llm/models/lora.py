@@ -10,6 +10,7 @@ from simple_parsing.helpers import Serializable
 from embed_llm.models.args import LoraArgs
 from embed_llm.models.lora import LoRALinear
 
+
 @dataclass
 class LoraArgs(Serializable):
     rank: int
@@ -55,14 +56,15 @@ class LoRALinear(nn.Module):
             self.rank,
             bias=self.bias,
         )
-        
+
         self.lora_B = nn.Linear(
             self.rank,
             self.out_features,
             bias=self.bias,
         )
 
-        self.linear = nn.Linear(self.in_features, self.out_features, bias=self.bias)
+        self.linear = nn.Linear(
+            self.in_features, self.out_features, bias=self.bias)
 
         # make sure no LoRA weights are marked as "missing" in load_state_dict
         def ignore_missing_keys(m: nn.Module, incompatible_keys: NamedTuple) -> None:
@@ -75,7 +77,8 @@ class LoRALinear(nn.Module):
         result: torch.Tensor = self.linear(x) + lora * self.scaling
         return result
 
-    def _load_from_state_dict(self, state_dict: Dict[str, Any], prefix: str, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+    # type: ignore[no-untyped-def]
+    def _load_from_state_dict(self, state_dict: Dict[str, Any], prefix: str, *args, **kwargs) -> None:
         key_name = prefix + "weight"
 
         # full checkpoint
@@ -96,7 +99,8 @@ class LoRALoaderMixin:
         """Loads LoRA checkpoint"""
 
         lora_path = Path(lora_path)
-        assert lora_path.is_file(), f"{lora_path} does not exist or is not a file"
+        assert lora_path.is_file(
+        ), f"{lora_path} does not exist or is not a file"
 
         state_dict = safetensors.torch.load_file(lora_path)
 
@@ -109,11 +113,14 @@ class LoRALoaderMixin:
             len(lora_dtypes) == 1
         ), f"LoRA weights have multiple different dtypes {lora_dtypes}. All weights need to have the same dtype"
         lora_dtype = lora_dtypes.pop()
-        assert lora_dtype == self.dtype, f"LoRA weights dtype differs from model's dtype {lora_dtype} != {self.dtype}"  # type: ignore[attr-defined]
+        # type: ignore[attr-defined]
+        assert lora_dtype == self.dtype, f"LoRA weights dtype differs from model's dtype {lora_dtype} != {self.dtype}"
         assert all("lora" in key for key in lora_state_dict.keys())
 
         # move tensors to device
-        lora_state_dict = {k: v.to(self.device) for k, v in lora_state_dict.items()}  # type: ignore[attr-defined]
+        # type: ignore[attr-defined]
+        lora_state_dict = {k: v.to(self.device)
+                           for k, v in lora_state_dict.items()}
 
         state_dict = self.state_dict()  # type: ignore[attr-defined]
 
@@ -121,11 +128,13 @@ class LoRALoaderMixin:
             logging.info("Loading and merging LoRA weights...")
 
             # replace every nn.Linear with a LoRALinear with 'meta' device except the output layer
-            named_modules = dict(self.named_modules())  # type: ignore[attr-defined]
+            # type: ignore[attr-defined]
+            named_modules = dict(self.named_modules())
             for name, module in named_modules.items():
                 if isinstance(module, nn.Linear) and name != "output":
                     layer_id = name.split(".")[1]
-                    if layer_id not in self.layers:  # type: ignore[attr-defined]
+                    # type: ignore[attr-defined]
+                    if layer_id not in self.layers:
                         logging.debug(
                             "Skipping parameter %s at pipeline rank %d",
                             name,
@@ -134,7 +143,8 @@ class LoRALoaderMixin:
                     elif (name + ".lora_B.weight") in lora_state_dict:
                         weight = (
                             module.weight
-                            + (lora_state_dict[name + ".lora_B.weight"] @ lora_state_dict[name + ".lora_A.weight"])
+                            + (lora_state_dict[name + ".lora_B.weight"]
+                               @ lora_state_dict[name + ".lora_A.weight"])
                             * scaling
                         )
 
@@ -154,8 +164,9 @@ class LoRALoaderMixin:
                         self.pipeline_rank,  # type: ignore[attr-defined]
                     )
 
-        self.load_state_dict(state_dict, strict=True)  # type: ignore[attr-defined]
-        
+        # type: ignore[attr-defined]
+        self.load_state_dict(state_dict, strict=True)
+
 
 def maybe_lora(
     lora_args: Optional[LoraArgs],

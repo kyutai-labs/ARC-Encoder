@@ -212,9 +212,11 @@ class GemmaMLP(nn.Module):
         lora: Optional[LoraArgs] = None,
     ):
         super().__init__()
-        self.gate_proj = Linear(hidden_size, intermediate_size, quant, lora = lora)
-        self.up_proj = Linear(hidden_size, intermediate_size, quant, lora = lora)
-        self.down_proj = Linear(intermediate_size, hidden_size, quant, lora = lora)
+        self.gate_proj = Linear(
+            hidden_size, intermediate_size, quant, lora=lora)
+        self.up_proj = Linear(hidden_size, intermediate_size, quant, lora=lora)
+        self.down_proj = Linear(
+            intermediate_size, hidden_size, quant, lora=lora)
 
     def forward(self, x):
         gate = self.gate_proj(x)
@@ -261,11 +263,11 @@ class GemmaAttention(nn.Module):
         self.qkv_proj = Linear(
             self.hidden_size,
             (self.num_heads + 2 * self.num_kv_heads) * self.head_dim,
-            quant=quant, lora = lora)
+            quant=quant, lora=lora)
         self.o_proj = Linear(
             self.num_heads * self.head_dim,
             self.hidden_size,
-            quant=quant, lora = lora)
+            quant=quant, lora=lora)
 
         self.attn_type = attn_type
         self.sliding_window_size = sliding_window_size
@@ -302,13 +304,13 @@ class GemmaAttention(nn.Module):
             k_cache, v_cache = kv_cache
             k_cache.index_copy_(1, kv_write_indices, xk)
             v_cache.index_copy_(1, kv_write_indices, xv)
-            key = k_cache 
+            key = k_cache
             value = v_cache
             kv_cache = (k_cache, v_cache)
         else:
             key = xk
             value = xv
-            
+
         if self.num_kv_heads != self.num_heads:
             # [batch_size, max_seq_len, n_local_heads, head_dim]
             key = torch.repeat_interleave(key, self.num_queries_per_kv, dim=2)
@@ -367,13 +369,13 @@ class GemmaDecoderLayer(nn.Module):
             head_dim=config.head_dim,
             quant=config.quant,
             attn_type=AttentionType.GLOBAL,
-            lora = config.lora
+            lora=config.lora
         )
         self.mlp = GemmaMLP(
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,
             quant=config.quant,
-            lora = config.lora
+            lora=config.lora
         )
         self.input_layernorm = RMSNorm(config.hidden_size,
                                        eps=config.rms_norm_eps)
@@ -426,13 +428,13 @@ class Gemma2DecoderLayer(nn.Module):
             quant=config.quant,
             attn_type=attn_type,
             sliding_window_size=config.sliding_window_size,
-            lora = config.lora
+            lora=config.lora
         )
         self.mlp = GemmaMLP(
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,
             quant=config.quant,
-            lora = config.lora
+            lora=config.lora
         )
         self.input_layernorm = RMSNorm(config.hidden_size,
                                        eps=config.rms_norm_eps)
@@ -501,7 +503,8 @@ class GemmaModel(nn.Module):
                 )
                 self.layers.append(Gemma2DecoderLayer(config, attn_type))
             else:
-                raise ValueError(f'Unknown architecture: {config.architecture}')
+                raise ValueError(
+                    f'Unknown architecture: {config.architecture}')
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
@@ -518,12 +521,12 @@ class GemmaModel(nn.Module):
             hidden_states = layer(
                 hidden_states=hidden_states,
                 freqs_cis=freqs_cis,
-                kv_write_indices= None if kv_write_indices is None else kv_write_indices,
-                kv_cache= None if kv_caches is None else kv_caches[i],
+                kv_write_indices=None if kv_write_indices is None else kv_write_indices,
+                kv_cache=None if kv_caches is None else kv_caches[i],
                 mask=mask,
             )
         if norm_wo_embedding:
-            hidden_states = self.norm(hidden_states[:,1:,:])
+            hidden_states = self.norm(hidden_states[:, 1:, :])
         else:
             hidden_states = self.norm(hidden_states)
         return hidden_states
@@ -571,22 +574,23 @@ class GemmaForCausalLM(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if is_training:
             input_positions = torch.arange(0, input_token_ids.size(1),
-                                          device=input_token_ids.device)
+                                           device=input_token_ids.device)
         else:
             raise ValueError('Must provide input_positions during inference.')
-        
+
         freqs_cis = self.freqs_cis.index_select(0, input_positions)
         kv_write_indices = input_positions
 
         # [batch_size, input_len, hidden_size]
         hidden_states = self.embedder(input_token_ids)
         if embeddings is not None:
-            hidden_states =  torch.cat((embeddings,hidden_states),dim=1)
-            
+            hidden_states = torch.cat((embeddings, hidden_states), dim=1)
+
         # Gemma normalizes the embedding by sqrt(hidden_size).
         # Gemma2 downcasts the below to float16, causing sqrt(3072)=55.4256 to become 55.5
         # See https://github.com/huggingface/transformers/pull/29402
-        normalizer = torch.tensor(self.config.hidden_size**0.5, dtype=hidden_states.dtype)
+        normalizer = torch.tensor(
+            self.config.hidden_size**0.5, dtype=hidden_states.dtype)
         hidden_states = hidden_states * normalizer
         if not is_training:
             hidden_states = self.model(
@@ -614,17 +618,16 @@ class GemmaForCausalLM(nn.Module):
                 hidden_states=hidden_states,
                 freqs_cis=freqs_cis,
                 kv_write_indices=None,
-                kv_caches = None,
+                kv_caches=None,
                 mask=mask,
                 norm_wo_embedding=self.norm_wo_embedding,
             )
             embedder_weight = self.embedder.weight
             # hidden_states (bs, seq_len, hidden_size); embedder_weight (vocab_size, hidden_size)
             if embeddings is not None and not self.norm_wo_embedding:
-                hidden_states = hidden_states[:,1:,:]      
+                hidden_states = hidden_states[:, 1:, :]
             logits = torch.matmul(hidden_states, embedder_weight.t())
             return logits
-                
 
     def generate(
         self,
@@ -694,7 +697,7 @@ class GemmaForCausalLM(nn.Module):
             next_token_ids, _ = self(
                 input_token_ids=input_token_ids_tensor,
                 input_positions=input_positions_tensor,
-                embeddings = embeddings,
+                embeddings=embeddings,
                 kv_write_indices=None,
                 kv_caches=kv_caches,
                 mask=curr_mask_tensor,
@@ -733,9 +736,8 @@ class GemmaForCausalLM(nn.Module):
 
         # If a string was provided as input, return a string as output.
         return results[0] if is_str_prompt else results
-    
 
-    def load_weights(self, model_path: str):            
+    def load_weights(self, model_path: str):
         if os.path.isfile(model_path):
             self.load_state_dict(
                 torch.load(
@@ -744,15 +746,15 @@ class GemmaForCausalLM(nn.Module):
                 strict=False,
             )
         else:
-            index_path = os.path.join(model_path, 'pytorch_model.bin.index.json')
+            index_path = os.path.join(
+                model_path, 'pytorch_model.bin.index.json')
             with open(index_path, "r", encoding="utf-8") as f:
                 index = json.load(f)
             shard_files = list(set(index["weight_map"].values()))
             for shard_file in shard_files:
                 shard_path = os.path.join(model_path, shard_file)
-                state_dict = torch.load(shard_path, map_location="cpu", weights_only=True)
+                state_dict = torch.load(
+                    shard_path, map_location="cpu", weights_only=True)
                 self.load_state_dict(state_dict, strict=False)
                 del state_dict  # Save memory.
                 gc.collect()
-                
-        

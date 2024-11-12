@@ -20,9 +20,7 @@ from embed_llm.data.tokenize import (
 logger = logging.getLogger("dataset")
 
 
-    
 _LOADED_DATASETS: Dict[Path, List[TokenSample]] = {}
-
 
 
 def main_logger_info(message: str) -> None:
@@ -41,7 +39,7 @@ def load_file(path: Path, world_size: int, rank: int) -> List[str]:
 
 
 def maybe_load_local_dataset(
-    path: Path, rank: int, world_size: int, tokenizer : Optional[Tokenizer] = None
+    path: Path, rank: int, world_size: int, tokenizer: Optional[Tokenizer] = None
 ) -> List[TokenSample]:
     global _LOADED_DATASETS
 
@@ -51,14 +49,13 @@ def maybe_load_local_dataset(
     main_logger_info(f"Loading {path} ...")
     lines: List[str] = load_file(path, rank=rank, world_size=world_size)
 
-
     data_list: List[TokenSample] = []
     for line in lines:
         data = json.loads(line)
 
         data_sample: Union[TokenSample] = encode(
             data,
-            tokenizer = tokenizer,
+            tokenizer=tokenizer,
         )
         data_list.append(data_sample)
 
@@ -190,25 +187,27 @@ def sequence_iterator(
         cur_pos = 0
 
         while cur_pos < len(x):
-            size = len(x[cur_pos : cur_pos + n_missing])
+            size = len(x[cur_pos: cur_pos + n_missing])
 
-            curr_mask = mask[cur_pos : cur_pos + n_missing]
+            curr_mask = mask[cur_pos: cur_pos + n_missing]
             if not any(curr_mask):
                 cur_pos += size
                 # we have a sequence with a mask filled with False
                 continue
 
-            x_buffer.extend(x[cur_pos : cur_pos + n_missing])
-            y_buffer.extend(y[cur_pos : cur_pos + n_missing])
+            x_buffer.extend(x[cur_pos: cur_pos + n_missing])
+            y_buffer.extend(y[cur_pos: cur_pos + n_missing])
             mask_buffer.extend(curr_mask)
             n_missing -= size
-            text_buffer.append(tokenizer.decode(x[cur_pos]+y[cur_pos : cur_pos + n_missing]))
+            text_buffer.append(tokenizer.decode(
+                x[cur_pos]+y[cur_pos: cur_pos + n_missing]))
             sizes.append(size)
 
             cur_pos += size
 
             if n_missing == 0:
-                assert len(mask_buffer) == len(x_buffer) == seq_len == len(y_buffer)
+                assert len(mask_buffer) == len(
+                    x_buffer) == seq_len == len(y_buffer)
                 assert sum(sizes) == seq_len
                 assert len(text_buffer) == len(sizes)
                 # we don't want to yield sequences with a mask filled with False
@@ -244,8 +243,6 @@ def sequence_iterator(
             )
 
 
-
-            
 def build_dataset(
     pretrain_data: str,
     tokenizer: Tokenizer,
@@ -261,7 +258,7 @@ def build_dataset(
     dataset_iterators = [
         get_dataset_iterator(
             source,
-            tokenizer = tokenizer,
+            tokenizer=tokenizer,
             rank=rank,
             world_size=world_size,
             is_finite=is_eval,
@@ -276,7 +273,7 @@ def build_dataset(
             ds_it=it,
             seq_len=seq_len,
             is_finite=is_eval,
-            tokenizer = tokenizer,
+            tokenizer=tokenizer,
         )
         for it in dataset_iterators
     ]
@@ -298,6 +295,7 @@ def get_rng(seed: int, rank: int) -> np.random.RandomState:
     random_seed = np.array((seed, rank))
     rng = np.random.RandomState(seed=random_seed)
     return rng
+
 
 def get_dataset_iterator(
     source: Union[DataDir, DataFile],
@@ -353,13 +351,12 @@ def preload_and_yield(
     rank: int,
     world_size: int,
     rng: np.random.RandomState,
-    tokenizer: Optional[Tokenizer]=None,
+    tokenizer: Optional[Tokenizer] = None,
 ) -> Union[Iterator[TokenSample], Iterator[str]]:
     # only instruct data has to be chunked
     # load dataset if not already loaded. Make sure to only load 1/world_size dataset
     data_list = maybe_load_local_dataset(
         jsonl_file, rank=rank, world_size=world_size, tokenizer=tokenizer)
-
 
     main_logger_info(f"Shuffling {jsonl_file} ...")
     rng.shuffle(tokens_list)  # type: ignore
@@ -367,11 +364,12 @@ def preload_and_yield(
     for data_sample in data_list:
         yield data_sample
 
+
 def lazy_load_and_yield(
     jsonl_file: Path,
     rank: int,
     world_size: int,
-    tokenizer: Optional[Tokenizer]=None,
+    tokenizer: Optional[Tokenizer] = None,
 ):
     with jsonl_file.open() as file_handle:
         for idx, line in enumerate(file_handle):
@@ -383,6 +381,7 @@ def lazy_load_and_yield(
                 data,
                 tokenizer=tokenizer,
             )
+
 
 def interleave_iterators(iterators: List[Iterator], probabilities, rng):
     while True:

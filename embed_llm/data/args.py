@@ -6,7 +6,6 @@ from simple_parsing.helpers import Serializable
 logger = logging.getLogger("data")
 
 
-
 @dataclass()
 class DataArgs(Serializable):
     # The data arguments `data` and `instruct_data` are a string in the format

@@ -30,21 +30,26 @@ class WandbArgs(Serializable):
             try:
                 import wandb  # noqa: F401
             except ImportError:
-                raise ImportError("`wandb` not installed. Either make sure `wandb` is installed or set `wandb:project` to None.")
+                raise ImportError(
+                    "`wandb` not installed. Either make sure `wandb` is installed or set `wandb:project` to None.")
 
             if len(self.project) == 0:
-                raise ValueError("`wandb.project` must not be an empty string.")
+                raise ValueError(
+                    "`wandb.project` must not be an empty string.")
+
 
 @dataclass
 class TrainArgs(Serializable):
     data: Optional[DataArgs] = field(default_factory=DataArgs)
     # if specified, instruct_tokenizer and model will be loaded
-    model_id_or_path: str  # Path to the directory containing the initial model or model id: "mistral-small"
+    # Path to the directory containing the initial model or model id: "mistral-small"
+    model_id_or_path: str
     model_name: str
-    run_dir: str  # Path to the directory where everything will be saved. It needs to be empty.
+    # Path to the directory where everything will be saved. It needs to be empty.
+    run_dir: str
     # Name of the wandb run, if None it will be set to the name of the run_dir.
     exp_name: Optional[str] = None
-    
+
     optim: OptimArgs = field(default_factory=OptimArgs)
     seed: int = 0
     # Number of steps to accumulate gradients before doing an optimizer step.
@@ -71,9 +76,9 @@ class TrainArgs(Serializable):
 
     world_size: Optional[int] = field(init=False, default=None)
 
-    variant: Optional[str] =  None #'7b', "2b", "2b-v2", "7b", "9b", "27b"
-    quant: Optional[bool] = False # False
-    
+    variant: Optional[str] = None  # '7b', "2b", "2b-v2", "7b", "9b", "27b"
+    quant: Optional[bool] = False  # False
+
     # logging
     wandb: WandbArgs = field(default_factory=WandbArgs)
 
@@ -98,9 +103,8 @@ class TrainArgs(Serializable):
 
         if 'gemma' in self.model_name:
             assert self.variant is not None
-            
+
         if not self.save_adapters:
             logging.warning(
                 "You have disabled `save_adapters` and are thus merging the trained LoRA checkpoint into the base model upon checkpointing. This might lead to OOM errors - make sure you have enough CPU and GPU memory."
             )
-

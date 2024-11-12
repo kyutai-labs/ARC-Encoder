@@ -7,6 +7,7 @@ from embed_llm.data.args import DataArgs
 from embed_llm.data.dataset import build_dataset
 from embed_llm.data.tokenize import Tokenizer
 
+
 @dataclasses.dataclass
 class Batch:
     x: np.ndarray
@@ -27,7 +28,8 @@ class Batch:
         assert len(self.texts) == len(self.sizes)
 
         if self.y_mask is not None:
-            assert self.y_mask.size == self.y.size, (self.y_mask.shape, self.y.shape)
+            assert self.y_mask.size == self.y.size, (
+                self.y_mask.shape, self.y.shape)
             assert self.y_mask.dtype == bool
             assert sum(self.sizes) == self.y_mask.size
             assert not self.y_mask.all()
@@ -40,8 +42,6 @@ class Batch:
             # create all 0's mask for pad samples
             self.y_mask = np.zeros_like(self.x)
             self.texts = [""] * len(self.sizes)
-
-
 
 
 @dataclasses.dataclass
@@ -87,11 +87,10 @@ class BatchList:
         texts = sum(self.texts, [])  # noqa
 
         y_mask_flatten = self.flatten_to_numpy(self.y_mask, dtype=bool)
-        y_mask_np: Optional[np.ndarray] = None if y_mask_flatten.all() else y_mask_flatten
+        y_mask_np: Optional[np.ndarray] = None if y_mask_flatten.all(
+        ) else y_mask_flatten
 
         return Batch(x_np, y_np, texts, sizes, y_mask_np)
-    
-
 
 
 def build_data_loader(
@@ -105,11 +104,11 @@ def build_data_loader(
     is_eval: bool,
 ) -> Iterator[Batch]:
     train_data = args.train_data if not is_eval else ""
-    eval_data = args.eval_data if is_eval else "" 
+    eval_data = args.eval_data if is_eval else ""
 
     dataset = build_dataset(
         pretrain_data=train_data,
-        tokenizer = tokenizer,
+        tokenizer=tokenizer,
         seq_len=seq_len,
         seed=seed,
         rank=rank,
@@ -122,7 +121,8 @@ def build_data_loader(
     for sample in dataset:
         assert all(s >= 0 for s in sample.sizes)
 
-        batch_list.add(sample.x, sample.y, sample.texts, sample.sizes, sample.mask)
+        batch_list.add(sample.x, sample.y, sample.texts,
+                       sample.sizes, sample.mask)
 
         if len(batch_list) == batch_size:
             batch: Batch = batch_list.create_batch()

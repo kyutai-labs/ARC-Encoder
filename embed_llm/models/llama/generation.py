@@ -26,8 +26,6 @@ class CompletionPrediction(TypedDict, total=False):
     logprobs: List[float]  # not required
 
 
-
-
 class Llama:
     @staticmethod
     def build(
@@ -62,9 +60,11 @@ class Llama:
             and loads the pre-trained model and tokenizer.
         """
         assert 1 <= max_seq_len <= 8192, f"max_seq_len must be between 1 and 8192, got {max_seq_len}."
-        assert os.path.isdir(ckpt_dir), f"Checkpoint directory '{ckpt_dir}' does not exist."
-        assert os.path.isfile(tokenizer_path), f"Tokenizer file '{tokenizer_path}' does not exist."
-        
+        assert os.path.isdir(
+            ckpt_dir), f"Checkpoint directory '{ckpt_dir}' does not exist."
+        assert os.path.isfile(
+            tokenizer_path), f"Tokenizer file '{tokenizer_path}' does not exist."
+
         if not torch.distributed.is_initialized():
             torch.distributed.init_process_group("nccl")
         if not model_parallel_is_initialized():
@@ -155,9 +155,11 @@ class Llama:
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_len)
 
         pad_id = self.tokenizer.pad_id
-        tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device="cuda")
+        tokens = torch.full((bsz, total_len), pad_id,
+                            dtype=torch.long, device="cuda")
         for k, t in enumerate(prompt_tokens):
-            tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda")
+            tokens[k, : len(t)] = torch.tensor(
+                t, dtype=torch.long, device="cuda")
         if logprobs:
             token_logprobs = torch.zeros_like(tokens, dtype=torch.float)
 
@@ -165,7 +167,8 @@ class Llama:
         eos_reached = torch.tensor([False] * bsz, device="cuda")
         input_text_mask = tokens != pad_id
         if min_prompt_len == total_len:
-            logits = self.model.forward(tokens, embeddings, prev_pos, training = False)
+            logits = self.model.forward(
+                tokens, embeddings, prev_pos, training=False)
             token_logprobs = -F.cross_entropy(
                 input=logits.transpose(1, 2),
                 target=tokens,
@@ -176,7 +179,8 @@ class Llama:
         stop_tokens = torch.tensor(list(self.tokenizer.stop_tokens))
 
         for cur_pos in range(min_prompt_len, total_len):
-            logits = self.model.forward(tokens[:, prev_pos:cur_pos], embeddings, prev_pos, training = False)
+            logits = self.model.forward(
+                tokens[:, prev_pos:cur_pos], embeddings, prev_pos, training=False)
             if temperature > 0:
                 probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
                 next_token = sample_top_p(probs, top_p)
@@ -190,9 +194,9 @@ class Llama:
             )
             tokens[:, cur_pos] = next_token
             if logprobs:
-                token_logprobs[:, prev_pos + 1 : cur_pos + 1] = -F.cross_entropy(
+                token_logprobs[:, prev_pos + 1: cur_pos + 1] = -F.cross_entropy(
                     input=logits.transpose(1, 2),
-                    target=tokens[:, prev_pos + 1 : cur_pos + 1],
+                    target=tokens[:, prev_pos + 1: cur_pos + 1],
                     reduction="none",
                     ignore_index=pad_id,
                 )
@@ -209,10 +213,11 @@ class Llama:
         for i, toks in enumerate(tokens.tolist()):
             # cut to max gen len
             start = 0 if echo else len(prompt_tokens[i])
-            toks = toks[start : len(prompt_tokens[i]) + max_gen_len]
+            toks = toks[start: len(prompt_tokens[i]) + max_gen_len]
             probs = None
             if logprobs:
-                probs = token_logprobs[i][start : len(prompt_tokens[i]) + max_gen_len]
+                probs = token_logprobs[i][start: len(
+                    prompt_tokens[i]) + max_gen_len]
             # cut to after eos tok if any
             for stop_token in self.tokenizer.stop_tokens:
                 try:
@@ -258,16 +263,17 @@ class Llama:
         """
         if max_gen_len is None:
             max_gen_len = self.model.params.max_seq_len - 1
-        prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in prompts]
+        prompt_tokens = [self.tokenizer.encode(
+            x, bos=True, eos=False) for x in prompts]
         generation_tokens, generation_logprobs = self.generate(
             prompt_tokens=prompt_tokens,
-            embeddings = embeddings,
+            embeddings=embeddings,
             max_gen_len=max_gen_len,
             temperature=temperature,
             top_p=top_p,
             logprobs=logprobs,
             echo=echo,
-            norm_wo_embeds = norm_wo_embeds,
+            norm_wo_embeds=norm_wo_embeds,
         )
         if logprobs:
             return [
@@ -280,7 +286,7 @@ class Llama:
             ]
         return [{"generation": self.tokenizer.decode(t)} for t in generation_tokens]
 
-    
+
 def sample_top_p(probs, p):
     """
     Perform top-p (nucleus) sampling on a probability distribution.

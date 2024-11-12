@@ -34,19 +34,19 @@ from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 
 # Gemma specifics
 from embed_llm.models.gemma.tokenizer import Tokenizer as GemmaTokenizer
-from embed_llm.models.args import get_model_config
-from embed_llm.models.gemma.model import GemmaDecoderLayer, Gemma2DecoderLayer, GemmaModel, GemmaForCausalLM
+from embed_llm.models.gemma.model import GemmaDecoderLayer, Gemma2DecoderLayer, GemmaForCausalLM
 
 # Llama specifics
-from embed_llm.models.llama.tokenizer import  Tokenizer as LlamaTokenizer
+from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
 from embed_llm.models.llama.model import TransformerBlock as LlamaTransformerBlock
 from embed_llm.models.llama.model import Transformer as LlamaTransformer
 
 
-
 ModelsArgs = Union[MistralModelArgs, LlamaModelArgs, GemmaConfig]
-Tokenizer = Union[MistralTokenizer.instruct_tokenizer.tokenizer, LlamaTokenizer, GemmaTokenizer]
-TransformerBlock = Union[MistralTransformerBlock, LlamaTransformerBlock, Gemma2DecoderLayer, GemmaDecoderLayer]
+Tokenizer = Union[MistralTokenizer.instruct_tokenizer.tokenizer,
+                  LlamaTokenizer, GemmaTokenizer]
+TransformerBlock = Union[MistralTransformerBlock,
+                         LlamaTransformerBlock, Gemma2DecoderLayer, GemmaDecoderLayer]
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +55,13 @@ def main_logger_info(message: str) -> None:
     if get_rank() == 0:
         logger.info(message)
 
+
 @contextlib.contextmanager
 def set_default_tensor_type(dtype: torch.dtype):
     """Sets the default torch dtype to the given dtype."""
     torch.set_default_dtype(dtype)
     yield
     torch.set_default_dtype(torch.float)
-    
 
 
 def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
@@ -89,7 +89,7 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     fsdp_lora_policy = functools.partial(
         torch_wrap.lambda_auto_wrap_policy, lambda_fn=fsdp_lora_policy_fn
     )
-    
+
     policies = [fsdp_lora_policy, transformer_block_wrap_policy]
 
     return functools.partial(torch_wrap._or_policy, policies=policies)
@@ -127,22 +127,26 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                 elif m_name.split(".")[-1] == "lora_B":
                     torch.nn.init.zeros_(param)
                 else:
-                    raise ValueError("Only Lora layers should be randomly initialized.")
+                    raise ValueError(
+                        "Only Lora layers should be randomly initialized.")
 
 # Peut normalement loader les args des 3 modèles
-def load_args(folder: Path, lora: LoraArgs, model_name: str, 
+
+
+def load_args(folder: Path, lora: LoraArgs, model_name: str,
               norm_wo_embeds: Optional[bool] = False,
               max_seq_len: Optional[int] = None,
-              max_batch_size: Optional[int] = None, 
-              variant: Optional[str]=None) -> ModelsArgs:
+              max_batch_size: Optional[int] = None,
+              variant: Optional[str] = None) -> ModelsArgs:
 
-    assert (folder / "params.json").exists(), f"params.json not found in {folder}"
-    
+    assert (
+        folder / "params.json").exists(), f"params.json not found in {folder}"
+
     if 'mistral' in model_name.lower():
-        
+
         with open(folder / "params.json", "r") as f:
             args = json.loads(f.read())
-        
+
         model_args = MistralModelArgs(
             lora=lora,
             dim=args["dim"],
@@ -161,7 +165,7 @@ def load_args(folder: Path, lora: LoraArgs, model_name: str,
 
         if args.get("moe") is not None:
             model_args.moe = MoeArgs(**args["moe"])
-            
+
         if model_args.vocab_size == 32000:
             raise ValueError(
                 f"Fine-tuning is not supported for older model versions with vocab_size 32000. Make sure to extend your model to vocab_size=32768 using `python -m utils.extend_model_vocab --original_model_ckpt {folder} --extended_model_ckpt {folder}_extended`."
@@ -172,17 +176,17 @@ def load_args(folder: Path, lora: LoraArgs, model_name: str,
         ), "Make sure to use a model with a vocab size of at least 32768"
 
     elif 'llama' in model_name.lower():
-        
+
         with open(folder / "params.json", "r") as f:
             args = json.loads(f.read())
-        
+
         model_args = LlamaModelArgs(
             max_seq_len=max_seq_len,
             max_batch_size=max_batch_size,
             norm_wo_embeds=norm_wo_embeds,
             **args,
         )
-        
+
     elif 'gemma' in model_name.lower():
 
         with open(folder / "params.json", "r") as f:
@@ -191,33 +195,32 @@ def load_args(folder: Path, lora: LoraArgs, model_name: str,
         assert variant is not None, "Variant must be provided for Gemma model."
         model_args.quant = False
         model_args.norm_wo_embeds = norm_wo_embeds
-        
+
     return model_args
 
 
 def load_training_model(
-    args: TrainArgs,
-    folder: Path, 
-    lora: LoraArgs,
-    model_name: str,
-    embedding_model: Any,
-    checkpoint: Optional[bool] = False,
-    param_dtype: Optional[torch.dtype] = torch.bfloat16,
-    max_seq_len: Optional[int] = 512,
-    max_batch_size: Optional[int] = 32,
-    variant: Optional[str]=None) -> Tuple[Tokenizer,FullyShardedDataParallel,int]:
-    
-    model_args = load_args(folder, lora, model_name = model_name, 
-                           max_seq_len = max_seq_len, 
-                           max_batch_size = max_batch_size, variant=variant,
+        args: TrainArgs,
+        folder: Path,
+        lora: LoraArgs,
+        model_name: str,
+        embedding_model: Any,
+        checkpoint: Optional[bool] = False,
+        param_dtype: Optional[torch.dtype] = torch.bfloat16,
+        max_seq_len: Optional[int] = 512,
+        max_batch_size: Optional[int] = 32,
+        variant: Optional[str] = None) -> Tuple[Tokenizer, FullyShardedDataParallel, int]:
+
+    model_args = load_args(folder, lora, model_name=model_name,
+                           max_seq_len=max_seq_len,
+                           max_batch_size=max_batch_size, variant=variant,
                            norm_wo_embeds=args.norm_wo_embeds)
-    
 
     if 'mistral' in model_name.lower():
         tokenizer = load_mistraltokenizer(folder).instruct_tokenizer.tokenizer
         with torch.device("meta"):
             model = MistralTransformer(args=model_args, checkpoint=checkpoint)
-        
+
         embed_dim = model.args.dim
         if get_rank() == 0:
             state_dict = load_state_dict(folder, dtype=param_dtype)
@@ -225,16 +228,16 @@ def load_training_model(
             logger.info("Loaded model on cpu!")
 
     elif 'llama' in model_name.lower():
-        tokenizer = LlamaTokenizer(model_path = str(folder / "tokenizer.model"))
+        tokenizer = LlamaTokenizer(model_path=str(folder / "tokenizer.model"))
         with torch.device("meta"):
             model = LlamaTransformer(args=model_args)
         embed_dim = model.params.dim
-        
+
         if get_rank() == 0:
             state_dict = load_state_dict(folder, dtype=param_dtype)
             model.load_state_dict(state_dict, assign=True)  # type: ignore
             logger.info("Loaded model on cpu!")
-            
+
     elif 'gemma' in model_name.lower():
         embed_dim = model.config.hidden_size
         model_args.tokenizer = str(folder / 'tokenizer.model')
@@ -245,8 +248,8 @@ def load_training_model(
                 model.load_weights(ckpt_path)
                 tokenizer = model.tokenizer
     else:
-        raise ValueError(f"Model name {model_name} not recognized.")  
-    
+        raise ValueError(f"Model name {model_name} not recognized.")
+
     if get_rank() == 0:
         if lora.enable:
             logger.info("Initializing lora layers ...")
@@ -272,24 +275,43 @@ def load_training_model(
             p.is_meta for p in model.parameters()
         ), "All parameters should be on meta"
 
-
     torch.distributed.barrier()
+
+    mlp_project_args = MLPProjectArgs(
+        input_dim=embed_dim,
+        output_dim=args.embedder.dim,
+        hidden_dim=args.projector.hidden_dim,
+        n_layers=args.projector.n_layers,
+        act=args.projector.activation,
+    )
+    augmented_model = EmbedAugModel(
+        model_name=model_name,
+        embedder_dim=args.embedder.dim,
+        mlp_project_args=mlp_project_args,
+        llm=wrapped_model,
+        embed_model_name=args.embedder.name,
+        embedding_model=embedding_model,
+        norm_wo_embeds=args.projector.norm_wo_embeds,
+        pad_token_id=tokenizer.pad_token_id,
+        max_seq_len=max_seq_len)
 
     # only finetune LoRA parameters and freeze before wrapping
     if lora.enable:
-        for name, param in model.named_parameters():
+        for name, param in augmented_model.named_parameters():
             if "lora" in name or 'mlp_project' in name:
                 param.requires_grad = True
             else:
                 param.requires_grad = False
+    else:
+        for name, param in augmented_model.named_parameters():
+            param.requires_grad = True
 
     auto_wrap_policy = get_fsdp_policy(model_args.lora.enable)
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
-    
 
     wrapped_model = FullyShardedDataParallel(
-        model,
+        augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         auto_wrap_policy=auto_wrap_policy,
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
@@ -298,36 +320,21 @@ def load_training_model(
         sync_module_states=True,
         param_init_fn=param_init_fn,
     )
-    
-    mlp_project_args = MLPProjectArgs(
-        input_dim=embed_dim,
-        output_dim=args.embedder.dim,
-        hidden_dim=args.projector.hidden_dim,
-        n_layers=args.projector.n_layers,
-        act=args.projector.activation,  
-    )
-    augmented_model = EmbedAugModel(
-        model_name=model_name,
-        embedder_dim=args.embedder.dim,
-        mlp_project_args = mlp_project_args,
-        llm=wrapped_model, 
-        embed_model_name=args.embedder.name,
-        embedding_model=embedding_model,
-        norm_wo_embeds=args.projector.norm_wo_embeds,
-        pad_token_id=tokenizer.pad_token_id,
-        max_seq_len=max_seq_len)
-    
+
     main_logger_info("Model sharded!")
     log_train_params(augmented_model)
 
-    return tokenizer, augmented_model, embed_dim
-   
+    return tokenizer, wrapped_model
+
+
 @torch.no_grad()
 def load_state_dict(path: Path, dtype: torch.dtype):
     assert path.is_dir(), path
 
-    this_safetensors_path = Checkpointer.consolidated_path(path, use_safetensors=True)
-    this_torch_path = Checkpointer.consolidated_path(path, use_safetensors=False)
+    this_safetensors_path = Checkpointer.consolidated_path(
+        path, use_safetensors=True)
+    this_torch_path = Checkpointer.consolidated_path(
+        path, use_safetensors=False)
 
     assert (
         this_safetensors_path.exists() or this_torch_path.exists()

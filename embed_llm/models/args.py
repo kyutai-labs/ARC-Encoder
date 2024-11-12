@@ -17,6 +17,7 @@ class MLPProjectArgs(Serializable):
     in_dim: Optional[int] = None
     out_dim: Optional[int] = None
 
+
 @dataclass
 class MistralModelArgs(Serializable):
     dim: int
@@ -47,6 +48,7 @@ class MistralModelArgs(Serializable):
 
         # hack for now so that vLLM is supported correctly
         self.sliding_window = self.sliding_window if self.sliding_window is not None else self._sliding_window
+
 
 @dataclass
 class LlamaModelArgs:
@@ -85,7 +87,6 @@ class AttentionType(enum.Enum):
 class Architecture(enum.Enum):
     GEMMA_1 = 1
     GEMMA_2 = 2
-
 
 
 @dataclass
@@ -139,9 +140,8 @@ class GemmaConfig:
         return _STR_DTYPE_TO_TORCH_DTYPE.get(self.dtype, None)
 
 
-
 def get_config_for_7b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
-    return GemmaConfig(lora = lora)
+    return GemmaConfig(lora=lora)
 
 
 def get_config_for_2b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
@@ -151,7 +151,7 @@ def get_config_for_2b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
         num_key_value_heads=1,
         hidden_size=2048,
         intermediate_size=16384,
-        lora = lora
+        lora=lora
     )
 
 
@@ -170,7 +170,7 @@ def get_config_for_2b_v2(lora: Optional[LoraArgs] = None) -> GemmaConfig:
         head_dim=256,
         attn_types=[AttentionType.LOCAL_SLIDING, AttentionType.GLOBAL] * 13,
         sliding_window_size=4096,
-        lora = lora
+        lora=lora
     )
 
 
@@ -189,7 +189,7 @@ def get_config_for_9b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
         head_dim=256,
         attn_types=[AttentionType.LOCAL_SLIDING, AttentionType.GLOBAL] * 21,
         sliding_window_size=4096,
-        lora = lora
+        lora=lora
     )
 
 
@@ -209,7 +209,7 @@ def get_config_for_27b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
         attn_types=[AttentionType.LOCAL_SLIDING, AttentionType.GLOBAL] * 23,
         sliding_window_size=4096,
         query_pre_attn_scalar=144,  # hidden_size / num_attention_heads
-        lora = lora
+        lora=lora
     )
 
 
@@ -226,7 +226,5 @@ def get_model_config(variant: str) -> GemmaConfig:
         return get_config_for_27b()
     else:
         raise ValueError(
-                f'Invalid variant {variant}. Supported variants are "2b"'
-                 'and "7b" and "9b" and "27b".')
-
-
+            f'Invalid variant {variant}. Supported variants are "2b"'
+            'and "7b" and "9b" and "27b".')

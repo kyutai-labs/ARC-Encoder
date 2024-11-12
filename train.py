@@ -62,7 +62,7 @@ def main_logger_info(message: str) -> None:
 
 def train(config: str):
     args: TrainArgs = TrainArgs.load(config, drop_extra_fields=False)
-    
+
     print(f"args: {args}")
     set_logger(logging.INFO)
 
@@ -91,7 +91,8 @@ def _train(
 
     # 2. Init run dir
     main_logger_info(f"Run dir: {args.run_dir}")
-    run_dir = Path(args.run_dir) / args.exp_name if args.exp_name else Path(args.run_dir)
+    run_dir = Path(args.run_dir) / \
+        args.exp_name if args.exp_name else Path(args.run_dir)
 
     if is_torchrun():
         if run_dir.exists():
@@ -134,39 +135,39 @@ def _train(
         raise ValueError(
             "Invalid folder path. Please set `args.initial_model` to a valid folder path."
         )
-        
+
     # Seed random.
     random.seed(args.seed)
     np.random.seed(args.seed)
-    torch.manual_seed(args.seed) 
+    torch.manual_seed(args.seed)
 
     """ Load embedder model """
-    
+
     embedding_model = get_embedder(args.embedder.name)
     embedding_model.config.max_length = embedding_model.config.max_length if args.seq_len is None else args.seq_len
-    
+
     """ Load LLM and tokenizers """
-    
+
     param_dtype = torch.bfloat16
     optim_dtype = torch.float32
 
     assert args.lora is not None, "`args.lora` should be set to a valid value."
-    tokenizer, model, embed_dim = load_training_model(
-        args = args,
+    tokenizer, model = load_training_model(
+        args=args,
         folder=model_folder,
-        lora = args.lora,
-        model_name = args.model_name,
+        lora=args.lora,
+        model_name=args.model_name,
         embedding_model=embedding_model,
-        checkpoint = args.checkpoint if hasattr(args, 'checkpoint') else False,
-        param_dtype = param_dtype,
-        max_seq_len = args.seq_len,
-        max_batch_size = args.batch_size,
-        variant = args.variant if hasattr(args, 'variant') else None, 
+        checkpoint=args.checkpoint if hasattr(args, 'checkpoint') else False,
+        param_dtype=param_dtype,
+        max_seq_len=args.seq_len,
+        max_batch_size=args.batch_size,
+        variant=args.variant if hasattr(args, 'variant') else None,
     )
     print("Model loading done")
-        
+
     """ Load  Dataloader"""
-    
+
     train_data_loader = build_data_loader(
         tokenizer=tokenizer,
         args=args.data,
@@ -238,10 +239,10 @@ def _train(
 
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
-            
+
             """ Training loop for basic reconstruction"""
             output, y, y_mask = model(batch)
-            
+
             mb_loss = compute_loss_with_mask(output, y, y_mask)
 
             mb_loss.backward()
@@ -281,10 +282,11 @@ def _train(
         avg_loss = avg_aggregate(loss_item)
 
         if not args.no_eval and (
-            (args.eval_freq > 0 and state.step % args.eval_freq == 0) or is_last_step
+            (args.eval_freq > 0 and state.step %
+             args.eval_freq == 0) or is_last_step
         ):
             # write perplexity to state
-            evaluate(model, batches = eval_batches, state = state)
+            evaluate(model, batches=eval_batches, state=state)
 
             eval_logs = get_eval_logs(
                 state.step, avg_loss, state.this_eval_perplexity, state.this_eval_loss
@@ -305,11 +307,13 @@ def _train(
                 torch.cuda.memory_allocated(),
                 args,
             )
-            main_logger_info(train_log_msg(state, logs=train_logs, loss=avg_loss))
+            main_logger_info(train_log_msg(
+                state, logs=train_logs, loss=avg_loss))
             metrics_logger.log(train_logs, step=state.step)
 
         if not args.no_ckpt and (
-            (args.ckpt_freq > 0 and state.step % args.ckpt_freq == 0) or is_last_step
+            (args.ckpt_freq > 0 and state.step %
+             args.ckpt_freq == 0) or is_last_step
         ):
             checkpointer.save_checkpoint(
                 save_only_lora=args.save_adapters,

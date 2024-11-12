@@ -2,22 +2,19 @@ from torch import nn
 from embed_llm.models.args import MLPProjectArgs
 
 
-
-
-
 class MLP_project(nn.Module):
     def __init__(self, args: MLPProjectArgs):
         super().__init__()
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(args.in_dim, args.hidden_dim))
-        
+        self.args = args
         if args.n_layers == 1:
             assert args.hidden_dim == args.out_dim, "If n_layers is 1, hidden_dim must be equal to out_dim"
         else:
             for _ in range(args.n_layers - 2):
                 self.layers.append(nn.Linear(args.hidden_dim, args.hidden_dim))
             self.layers.append(nn.Linear(args.hidden_dim, args.out_dim))
-        
+
         if args.act == 'relu':
             self.act = nn.ReLU()
         elif args.act == 'gelu':

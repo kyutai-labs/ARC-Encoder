@@ -15,11 +15,11 @@ logger = logging.getLogger("tokenize")
 Sequence = List[int]
 Mask = List[bool]
 
+
 @dataclass()
 class TokenSample:
     tokens: Sequence
     masks: Mask
-    
 
 
 def encode(
@@ -47,6 +47,7 @@ def get_sample(data: Dict[str, Any]) -> str:
     assert isinstance(sample, str), sample
 
     return sample
+
 
 def tokenize(sample: str, tokenizer: Tokenizer) -> TokenSample:
     tokens = tokenizer.encode(sample, bos=True, eos=True)

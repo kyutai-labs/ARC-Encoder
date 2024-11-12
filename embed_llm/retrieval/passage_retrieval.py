@@ -1,6 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # All rights reserved.
-# 
+#
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -25,16 +25,20 @@ def index_encoded_data(index, embedding_files, indexing_batch_size):
         logger.info(f'Loading file {file_path}')
         with open(file_path, 'rb') as fin:
             ids, embeddings = pickle.load(fin)
-            
-        allembeddings = np.vstack((allembeddings, embeddings)) if allembeddings.size else embeddings
+
+        allembeddings = np.vstack(
+            (allembeddings, embeddings)) if allembeddings.size else embeddings
         allids.extend(ids)
         while allembeddings.shape[0] > indexing_batch_size:
-            allembeddings, allids = add_embeddings(index, allembeddings, allids, indexing_batch_size)
+            allembeddings, allids = add_embeddings(
+                index, allembeddings, allids, indexing_batch_size)
 
     while allembeddings.shape[0] > 0:
-        allembeddings, allids = add_embeddings(index, allembeddings, allids, indexing_batch_size)
-        
+        allembeddings, allids = add_embeddings(
+            index, allembeddings, allids, indexing_batch_size)
+
     logger.info('Data indexing completed.')
+
 
 def add_embeddings(index, embeddings, ids, indexing_batch_size):
     end_idx = min(indexing_batch_size, embeddings.shape[0])
@@ -46,9 +50,10 @@ def add_embeddings(index, embeddings, ids, indexing_batch_size):
     return embeddings, ids
 
 # TODO
+
+
 def load_passages(path):
     pass
-
 
 
 # TODO
@@ -69,8 +74,7 @@ def add_passages(data, passages, top_passages_and_scores):
     #                 'text': docs[c][0],
     #                 'score': scores[c],
     #             } for c in range(ctxs_num)
-    #         ] 
-
+    #         ]
 
 
 if __name__ == '__main__':
@@ -83,11 +87,11 @@ if __name__ == '__main__':
     indexing_batch_size = 1024
     path_passages = 'data/kilt/kilt_knowledgesource.json'
     output_path = 'data/kilt/kilt_qa_retrieval_results.json'
-    data = {} # TODO see what type required
+    data = {}  # TODO see what type required
     embedding_bs = 32
     model_name = "NVEmbed"
     model = embeddings.get_embedder(model_name)
-    
+
     index = index.Indexer(embed_dim, n_subquantizers, n_bits)
 
     # index all passages
@@ -95,7 +99,7 @@ if __name__ == '__main__':
     input_paths = sorted(input_paths)
     embeddings_dir = Path(input_paths[0]).parent
     index_path = embeddings_dir / 'index.faiss'
-    
+
     if save_or_load_index and index_path.exists():
         index.deserialize_from(embeddings_dir)
     else:
@@ -107,21 +111,22 @@ if __name__ == '__main__':
             index.serialize(embeddings_dir)
 
     # A modifier TODO
-    questions = data['query'] # TODO
-    questions_embedding = embeddings.encode_text(questions, model_name = model_name, model = model, bs = embedding_bs)
+    questions = data['query']  # TODO
+    questions_embedding = embeddings.encode_text(
+        questions, model_name=model_name, model=model, bs=embedding_bs)
 
     # get top k results
     start_time_retrieval = time.time()
-    top_ids_and_scores = index.search_knn(questions_embedding, n_retrieved_doc) 
+    top_ids_and_scores = index.search_knn(questions_embedding, n_retrieved_doc)
     logger.info(f'Search time: {time.time()-start_time_retrieval:.1f} s.')
 
     passages = load_passages(path_passages)
     # Reformat as we want TODO
     # TODO voir format data etc
-    passages = {x[0]:(x[1], x[2]) for x in passages}
+    passages = {x[0]: (x[1], x[2]) for x in passages}
 
     add_passages(data, passages, top_ids_and_scores)
-    
+
     # TODO see what we want to do with the result
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

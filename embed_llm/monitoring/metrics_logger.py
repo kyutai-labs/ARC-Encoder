@@ -57,7 +57,8 @@ def get_eval_logs(
 def train_log_msg(
     state: TrainState, logs: Dict[str, Union[float, int]], loss: float
 ) -> str:
-    metrics: Dict[str, Union[float, int, datetime]] = dict(logs)  # shallow copy
+    metrics: Dict[str, Union[float, int, datetime]] = dict(
+        logs)  # shallow copy
     metrics.pop("eta_in_seconds")
 
     metrics["eta"] = datetime.now() + timedelta(seconds=state.eta)
@@ -149,8 +150,6 @@ class MetricsLogger:
 
             self.wandb_log = wandb.log
 
-    
-
     def log(self, metrics: Dict[str, Union[float, int]], step: int):
         if not self.is_master:
             return
@@ -164,7 +163,6 @@ class MetricsLogger:
             self.summary_writer.add_scalar(
                 tag=f"{self.tag}.{key}", scalar_value=value, global_step=step
             )
-
 
         if self.is_wandb:
             # grouping in wandb is done with /
@@ -199,7 +197,6 @@ class MetricsLogger:
 
             # to be sure we are not hanging while finishing
             wandb.finish()
-
 
     def __del__(self):
         if self.summary_writer is not None:
