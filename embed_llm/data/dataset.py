@@ -20,12 +20,10 @@ from embed_llm.data.tokenize import (
 logger = logging.getLogger("dataset")
 
 
-_LOADED_DATASETS: Dict[Path, Union[List[TokenSample],List[TextSample]]] = {}
+    
+_LOADED_DATASETS: Dict[Path, List[TokenSample]] = {}
 
-@dataclass()
-class TextSample:
-    tokens: Sequence
-    texts: List[str]
+
 
 def main_logger_info(message: str) -> None:
     if dist.is_initialized() and get_rank() == 0:
@@ -149,30 +147,34 @@ def parse_data_sources(
 
 
 @dataclasses.dataclass()
-class SequenceMaskAndSizes:
+class SequenceTextMaskAndSizes:
     """
     Concatenation of samples to reach a given size
     """
 
     x: List[int]
     y: List[int]
+    texts: List[str]
     mask: Mask
     sizes: List[int]
 
     def __post_init__(self):
         assert sum(self.sizes) == len(self.x) == len(self.y) == len(self.mask)
+        assert len(self.texts) == len(self.sizes)
 
 
-def sequence_token_iterator(
+def sequence_iterator(
     ds_it: Iterator[TokenSample],
     seq_len: int,
+    tokenizer: Tokenizer,
     is_finite: bool,
-) -> Iterator[SequenceMaskAndSizes]:
+) -> Iterator[SequenceTextMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
     """
     x_buffer: List[int] = []
     y_buffer: List[int] = []
+    text_buffer: List[str] = []
     mask_buffer: Mask = []
 
     sizes: List[int] = []
@@ -200,6 +202,7 @@ def sequence_token_iterator(
             y_buffer.extend(y[cur_pos : cur_pos + n_missing])
             mask_buffer.extend(curr_mask)
             n_missing -= size
+            text_buffer.append(tokenizer.decode(x[cur_pos]+y[cur_pos : cur_pos + n_missing]))
             sizes.append(size)
 
             cur_pos += size
@@ -207,16 +210,19 @@ def sequence_token_iterator(
             if n_missing == 0:
                 assert len(mask_buffer) == len(x_buffer) == seq_len == len(y_buffer)
                 assert sum(sizes) == seq_len
+                assert len(text_buffer) == len(sizes)
                 # we don't want to yield sequences with a mask filled with False
                 if any(mask_buffer):
-                    yield SequenceMaskAndSizes(
+                    yield SequenceTextMaskAndSizes(
                         x=x_buffer,
                         y=y_buffer,
+                        text=text_buffer,
                         mask=mask_buffer,
                         sizes=sizes,
                     )
                 x_buffer, y_buffer = [], []
                 mask_buffer = []
+                text_buffer = []
                 sizes = []
                 n_missing = seq_len
 
@@ -227,39 +233,20 @@ def sequence_token_iterator(
             x_buffer.extend(n_missing * [0])
             y_buffer.extend(n_missing * [0])
             sizes.append(n_missing)
+            text_buffer.append('')
 
-            yield SequenceMaskAndSizes(
+            yield SequenceTextMaskAndSizes(
                 x=x_buffer,
                 y=y_buffer,
+                text=text_buffer,
                 mask=mask_buffer,
                 sizes=sizes,
             )
 
 
-def sequence_text_iterator(
-    ds_it: Iterator[TokenSample],
-    tokenizer: Tokenizer,
-    seq_len: int,
-    batch_size: int,
-) -> Iterator[List[TextSample]]:
-    """
-    Creates a batch of text samples of size `batch_size` from the dataset iterator.
-    """
-    textsample_buffer: List[TextSample] = []
-    for sample in ds_it:
-        assert 0 <= len(textsample_buffer) < batch_size, len(textsample_buffer)
-        tokens = sample.tokens
-        cur_pos = 0
-        while cur_pos < len(tokens):
-            size = len(tokens[cur_pos : cur_pos + seq_len])
-            textsample_buffer.append(TextSample(tokens[cur_pos : cur_pos + seq_len],tokenizer.decode(tokens[cur_pos : cur_pos + seq_len])))
-            cur_pos += size
-            if len(textsample_buffer) == batch_size:
-                yield textsample_buffer
-                textsample_buffer = []
 
             
-def build_token_dataset(
+def build_dataset(
     pretrain_data: str,
     tokenizer: Tokenizer,
     seq_len: int,
@@ -268,7 +255,7 @@ def build_token_dataset(
     world_size: int,
     is_eval: bool,
     shuffle: bool = False,
-) -> Iterator[SequenceMaskAndSizes]:
+) -> Iterator[SequenceTextMaskAndSizes]:
     sources, probabilities = parse_data_sources(pretrain_data)
 
     dataset_iterators = [
@@ -285,10 +272,11 @@ def build_token_dataset(
     ]
 
     sequence_iterators = [
-        sequence_token_iterator(
+        sequence_iterator(
             ds_it=it,
             seq_len=seq_len,
             is_finite=is_eval,
+            tokenizer = tokenizer,
         )
         for it in dataset_iterators
     ]
@@ -305,52 +293,6 @@ def build_token_dataset(
 
     return combined_iterator
 
-def  build_text_dataset(
-    pretrain_data: str,
-    tokenizer: Tokenizer,
-    batch_size: int,
-    seq_len: int,
-    seed: Optional[int],
-    rank: int,
-    world_size: int,
-    is_eval: bool,
-    shuffle: bool = False,
-) -> Iterator[List[TextSample]]:
-    sources, probabilities = parse_data_sources(pretrain_data)
-
-    dataset_iterators = [
-        get_dataset_iterator(
-            source,
-            tokenizer = tokenizer,
-            rank=rank,
-            world_size=world_size,
-            is_finite=is_eval,
-            seed=seed,
-            shuffle_at_epoch=not is_eval and shuffle,
-        )
-        for source in sources
-    ]
-
-    sequence_iterators = [
-        sequence_text_iterator(
-            ds_it=it,
-            seq_len=seq_len,
-            batch_size = batch_size,
-            tokenizer = tokenizer,
-        )
-        for it in dataset_iterators
-    ]
-
-    if is_eval:
-        combined_iterator = itertools.chain.from_iterable(sequence_iterators)
-    else:
-        # make sure random_seed is different per rank and original seed
-        random_seed = np.array((seed, rank))
-        rng = np.random.RandomState(seed=random_seed)
-        combined_iterator = interleave_iterators(
-            sequence_iterators, probabilities=probabilities, rng=rng
-        )
-    return combined_iterator
 
 def get_rng(seed: int, rank: int) -> np.random.RandomState:
     random_seed = np.array((seed, rank))

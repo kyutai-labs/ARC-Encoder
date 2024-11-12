@@ -3,41 +3,10 @@ from typing import List, Optional, Tuple
 import numpy as np
 import torch
 
-from cache import BufferCache
-# mamba import Mamba
-from transformer import Transformer
+from embed_llm.models.mistral.cache import BufferCache
+from embed_llm.models.mistral.transformer import Transformer
 
 
-# @torch.inference_mode()
-# def generate_mamba(
-#     encoded_prompts: List[List[int]],
-#     model: Mamba,
-#     *,
-#     max_tokens: int,
-#     temperature: float,
-#     chunk_size: Optional[int] = None,
-#     eos_id: Optional[int] = None,
-# ) -> Tuple[List[List[int]], List[List[float]]]:
-#     input_ids = torch.tensor(encoded_prompts, device=model.device)
-#     output = model.model.generate(
-#         input_ids=input_ids,
-#         max_length=input_ids.shape[-1] + max_tokens,
-#         cg=True,
-#         return_dict_in_generate=True,
-#         output_scores=True,
-#         enable_timing=False,
-#         eos_token_id=eos_id,
-#         temperature=temperature,
-#         top_p=0.8,
-#     )
-#     generated_tokens = output.sequences[:, input_ids.shape[-1] :].tolist()
-
-#     _logprobs: List[List[float]] = [[] for _ in range(len(generated_tokens))]
-#     for seq_idx, batch_score in enumerate(output.scores):
-#         for batch_idx, score in enumerate(batch_score.tolist()):
-#             _logprobs[batch_idx].append(score[generated_tokens[batch_idx][seq_idx]])
-
-#     return generated_tokens, _logprobs
 
 
 @torch.inference_mode()
@@ -48,8 +17,10 @@ def generate(
     *,
     max_tokens: int,
     temperature: float,
+    embeddings: torch.Tensor = None,
     chunk_size: Optional[int] = None,
     eos_id: Optional[int] = None,
+    norm_wo_embeds: bool = False
 ) -> Tuple[List[List[int]], List[List[float]]]:
     # images_torch: List[List[torch.Tensor]] = []
     # if images:
@@ -92,10 +63,12 @@ def generate(
     for s in range(0, max_prompt_len, chunk_size):
         prompt_chunks = [p[s : s + chunk_size] for p in encoded_prompts]
         assert all(len(p) > 0 for p in prompt_chunks)
-        prelogits = model.forward(
+        prelogits = model.generate(
             torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
             # images=flattened_images,
             seqlens=[len(p) for p in prompt_chunks],
+            embeddings=embeddings,
+            norm_wo_embeds=norm_wo_embeds,
             cache=cache,
         )
         logits = torch.log_softmax(prelogits, dim=-1)
@@ -136,7 +109,8 @@ def generate(
             logprobs[i].append(last_token_logits[i, next_token[i]].item())
 
         generated_tensors.append(next_token[:, None])
-        last_token_prelogits = model.forward(next_token, seqlens=[1] * B, cache=cache)
+        last_token_prelogits = model.generate(next_token, seqlens=[1] * B, embeddings = embeddings, cache=cache,
+                                              norm_wo_embeds = norm_wo_embeds)
         assert last_token_prelogits.shape == (B, V)
 
     generated_tokens: List[List[int]]

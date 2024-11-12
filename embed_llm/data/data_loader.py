@@ -4,13 +4,14 @@ import numpy as np
 from mistral_common.tokens.tokenizers.sentencepiece import InstructTokenizerBase
 
 from embed_llm.data.args import DataArgs
-from embed_llm.data.dataset import build_token_dataset, build_text_dataset
+from embed_llm.data.dataset import build_dataset
 from embed_llm.data.tokenize import Tokenizer
 
 @dataclasses.dataclass
-class Batchtoken:
+class Batch:
     x: np.ndarray
     y: np.ndarray
+    texts: List[str]
     sizes: List[int]
     y_mask: Optional[np.ndarray] = None
     is_pad_only: bool = False
@@ -21,7 +22,9 @@ class Batchtoken:
         assert self.x.dtype == np.int64
         assert self.y.dtype == np.int64
         assert isinstance(self.sizes, list)
+        assert isinstance(self.texts, list)
         assert sum(self.sizes) == self.x.size == self.y.size
+        assert len(self.texts) == len(self.sizes)
 
         if self.y_mask is not None:
             assert self.y_mask.size == self.y.size, (self.y_mask.shape, self.y.shape)
@@ -36,35 +39,40 @@ class Batchtoken:
             assert self.y_mask is None
             # create all 0's mask for pad samples
             self.y_mask = np.zeros_like(self.x)
+            self.texts = [""] * len(self.sizes)
 
 
 
 
 @dataclasses.dataclass
-class BatchListtoken:
+class BatchList:
     x: List[List[int]] = dataclasses.field(default_factory=list)
     y: List[List[int]] = dataclasses.field(default_factory=list)
+    texts: List[List[str]] = dataclasses.field(default_factory=list)
     sizes: List[List[int]] = dataclasses.field(default_factory=list)
     y_mask: List[List[bool]] = dataclasses.field(default_factory=list)
 
     def __post_init__(self):
         assert self.x == [], "`BatchList` has to be empty at init."
         assert self.y == [], "`BatchList` has to be empty at init."
+        assert self.texts == [], "`BatchList` has to be empty at init."
         assert self.sizes == [], "`BatchList` has to be empty at init."
         assert self.y_mask == [], "`BatchList` has to be empty at init."
 
     def __len__(self) -> int:
         return len(self.x)
 
-    def add(self, x: List[int], y: List[int], sizes: List[int], y_mask: List[bool]):
+    def add(self, x: List[int], y: List[int], texts: List[str], sizes: List[int], y_mask: List[bool]):
         self.x.append(x)
         self.y.append(y)
+        self.texts.append(texts)
         self.sizes.append(sizes)
         self.y_mask.append(y_mask)
 
     def empty(self):
         self.x = []
         self.y = []
+        self.texts = []
         self.sizes = []
         self.y_mask = []
 
@@ -72,20 +80,21 @@ class BatchListtoken:
     def flatten_to_numpy(list_of_lists: List[List[Any]], dtype: type) -> np.ndarray:
         return np.array([el for sublist in list_of_lists for el in sublist], dtype=dtype)
 
-    def create_batch(self) -> Batchtoken:
+    def create_batch(self) -> Batch:
         x_np: np.ndarray = self.flatten_to_numpy(self.x, dtype=np.int64)
         y_np: np.ndarray = self.flatten_to_numpy(self.y, dtype=np.int64)
         sizes = sum(self.sizes, [])  # noqa
+        texts = sum(self.texts, [])  # noqa
 
         y_mask_flatten = self.flatten_to_numpy(self.y_mask, dtype=bool)
         y_mask_np: Optional[np.ndarray] = None if y_mask_flatten.all() else y_mask_flatten
 
-        return Batchtoken(x_np, y_np, sizes, y_mask_np)
+        return Batch(x_np, y_np, texts, sizes, y_mask_np)
     
 
 
 
-def build_token_data_loader(
+def build_data_loader(
     tokenizer: Tokenizer,
     args: DataArgs,
     batch_size: int,
@@ -94,11 +103,11 @@ def build_token_data_loader(
     rank: int,
     world_size: int,
     is_eval: bool,
-) -> Iterator[Batchtoken]:
+) -> Iterator[Batch]:
     train_data = args.train_data if not is_eval else ""
-    # eval_data = args.eval_data if is_eval else "" TODO
+    eval_data = args.eval_data if is_eval else "" 
 
-    dataset = build_token_dataset(
+    dataset = build_dataset(
         pretrain_data=train_data,
         tokenizer = tokenizer,
         seq_len=seq_len,
@@ -109,41 +118,14 @@ def build_token_data_loader(
         shuffle=args.shuffle,
     )
 
-    batch_list = BatchListtoken()
+    batch_list = BatchList()
     for sample in dataset:
         assert all(s >= 0 for s in sample.sizes)
 
-        batch_list.add(sample.x, sample.y, sample.sizes, sample.mask)
+        batch_list.add(sample.x, sample.y, sample.texts, sample.sizes, sample.mask)
 
         if len(batch_list) == batch_size:
-            batch: Batchtoken = batch_list.create_batch()
+            batch: Batch = batch_list.create_batch()
             yield batch
 
             batch_list.empty()
-            
-def build_text_data_loader(
-    args: DataArgs,
-    seq_len: int,
-    batch_size: int,
-    seed: Optional[int],
-    rank: int,
-    world_size: int,
-    is_eval: bool,
-) -> Iterator[Batchtoken]:
-    train_data = args.train_data if not is_eval else ""
-    # eval_data = args.eval_data if is_eval else "" TODO
-
-    dataset = build_text_dataset(
-        pretrain_data=train_data,
-        seq_len=seq_len,
-        batch_size=batch_size,
-        seed=seed,
-        rank=rank,
-        world_size=world_size,
-        is_eval=is_eval,
-        shuffle=args.shuffle,
-    )
-
-    for batch_sample in dataset:
-        assert len(batch_sample) == batch_size
-        yield batch_sample

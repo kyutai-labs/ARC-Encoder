@@ -11,23 +11,13 @@ import torch.distributed as dist
 from torch.optim import AdamW, lr_scheduler
 import numpy as np
 import random
-from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-from embed_llm.models.gemma.tokenizer import Tokenizer as GemmaTokenizer
 
-from embed_llm.models.wrapped_models import load_model as load_mistral_model
-from embed_llm.models.wrapped_models import load_args as load_mistral_args
+from embed_llm.models.wrapped_models_training import load_training_model
 
-from embed_llm.models.llama.generation import Llama
-
-from embed_llm.models.gemma import config as gemma_config
-from embed_llm.models.gemma import model as gemma_model
-
-from embed_llm.models.utils_models import set_default_tensor_type
-from embed_llm.retrieval.embeddings import get_embedder, encode_text
+from embed_llm.retrieval.embeddings import get_embedder
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.checkpointing import Checkpointer
-from embed_llm.data.data_loader import build_token_data_loader, build_text_data_loader
-from embed_llm.data.tokenize import Tokenizer
+from embed_llm.data.data_loader import build_data_loader
 from embed_llm.training.distributed import (
     BACKEND,
     avg_aggregate,
@@ -101,7 +91,7 @@ def _train(
 
     # 2. Init run dir
     main_logger_info(f"Run dir: {args.run_dir}")
-    run_dir = Path(args.run_dir)
+    run_dir = Path(args.run_dir) / args.exp_name if args.exp_name else Path(args.run_dir)
 
     if is_torchrun():
         if run_dir.exists():
@@ -151,105 +141,56 @@ def _train(
     torch.manual_seed(args.seed) 
 
     """ Load embedder model """
-    embedding_model = get_embedder(args.embed_model_name)
-    embedding_model.config.max_length = embedding_model.config.max_length if args.max_seq_len is None else args.max_seq_len
     
-    
+    embedding_model = get_embedder(args.embedder.name)
+    embedding_model.config.max_length = embedding_model.config.max_length if args.seq_len is None else args.seq_len
     
     """ Load LLM and tokenizers """
     
-    if 'Mistral' in args.model_name:
-        param_dtype = torch.bfloat16
-        optim_dtype = torch.float32
+    param_dtype = torch.bfloat16
+    optim_dtype = torch.float32
 
-        assert args.lora is not None, "`args.lora` should be set to a valid value."
-        model = load_mistral_model(
-            folder=model_folder,
-            lora = args.lora,
-            checkpoint = args.checkpoint,
-            param_dtype=param_dtype,
-        )
-        
-        vocab_size = load_mistral_args(model_folder, args.lora).vocab_size
-        is_tekken = vocab_size > 32768
-        tokenizer: Tokenizer = MistralTokenizer.v3(
-            is_tekken=is_tekken
-        ).instruct_tokenizer.tokenizer  # type: ignore
-        print("Model loading done")
-        
-    elif 'Llama' in args.model_name:
-        generator = Llama.build(
-        ckpt_dir=args.model_id_or_path,
-        tokenizer_path=args.batch_size,
-        max_seq_len=args.seq_len,
-        max_batch_size=args.batch_size)
-        
-        model = generator.model
-        tokenizer = generator.tokenizer
-        print("Model loading done")
-        
-    elif 'Gemma' in args.model_name:
-        assert args.variant and args.quant, "Please specify the model variant and quantization mode."
-        tokenizer: Tokenizer = GemmaTokenizer(args.tokenizer_path)
-        # Construct the model config.
-        model_config = gemma_config.get_model_config(args.variant)
-        model_config.dtype = "float32" if args.device == "cpu" else "float16"
-        model_config.quant = args.quant
-
-
-        # Create the model and load the weights.
-        device = torch.device(args.device)
-        with set_default_tensor_type(model_config.get_dtype()):
-            model = gemma_model.GemmaForCausalLM(model_config)
-            model.load_weights(args.ckpt)
-            model = model.to(device).eval()
-        print("Model loading done")
+    assert args.lora is not None, "`args.lora` should be set to a valid value."
+    tokenizer, model, embed_dim = load_training_model(
+        args = args,
+        folder=model_folder,
+        lora = args.lora,
+        model_name = args.model_name,
+        embedding_model=embedding_model,
+        checkpoint = args.checkpoint if hasattr(args, 'checkpoint') else False,
+        param_dtype = param_dtype,
+        max_seq_len = args.seq_len,
+        max_batch_size = args.batch_size,
+        variant = args.variant if hasattr(args, 'variant') else None, 
+    )
+    print("Model loading done")
         
     """ Load  Dataloader"""
     
-    if args.data_4_tokens is not None:   
-           
-        token_data_loader = build_token_data_loader(
+    train_data_loader = build_data_loader(
+        tokenizer=tokenizer,
+        args=args.data,
+        seq_len=args.seq_len,
+        batch_size=args.batch_size,
+        seed=args.seed,
+        rank=get_rank(),  # DDP rank
+        world_size=get_world_size(),  # DDP world_size
+        is_eval=False,
+    )
+
+    if not args.no_eval:
+        eval_data_loader = build_data_loader(
             tokenizer=tokenizer,
-            args=args.data_4_tokens,
+            args=args.data,
             seq_len=args.seq_len,
             batch_size=args.batch_size,
-            seed=args.seed,
+            seed=None,
             rank=get_rank(),  # DDP rank
             world_size=get_world_size(),  # DDP world_size
-            is_eval=False,
+            is_eval=True,
         )
-    
-    if args.data_4_embeds is not None:
-
-        text_data_loader = build_text_data_loader(
-            tokenizer = tokenizer,
-            args=args.data_4_embeds,
-            seq_len=args.seq_len,
-            batch_size=args.batch_size,
-            seed=args.seed,
-            rank=get_rank(),  # DDP rank
-            world_size=get_world_size(),  # DDP world_size
-            is_eval=False,
-        )
-
-    # if not args.no_eval:
-    #     assert (
-    #         args.data.eval_instruct_data != ""
-    #     ), "Either set `no_eval` to True or provide evaluation samples under `data.eval_instruct_data`"
-
-    #     eval_data_loader = build_data_loader(
-    #         instruct_tokenizer=instruct_tokenizer,
-    #         args=args.data,
-    #         seq_len=args.seq_len,
-    #         batch_size=args.batch_size,
-    #         seed=None,
-    #         rank=get_rank(),  # DDP rank
-    #         world_size=get_world_size(),  # DDP world_size
-    #         is_eval=True,
-    #     )
-    #     # pre-load all eval tokens
-    #     eval_batches = list(eval_data_loader)
+        # pre-load all eval batches
+        eval_batches = list(eval_data_loader)
 
     # 9. Load optimizer
     optimizer = AdamW(
@@ -296,32 +237,17 @@ def _train(
         n_batch_tokens: int = 0
 
         for i in range(args.num_microbatches):
+            batch = next(train_data_loader)
             
             """ Training loop for basic reconstruction"""
-            batch = next(text_data_loader)
-            texts, target_tokens = batch.texts, batch.tokens
+            output, y, y_mask = model(batch)
             
-            with torch.no_grad():
-                embeddings = encode_text(texts, args.embed_model_name, embedding_model, query_embedding=False, device='cuda').cuda()
-            
-
-            """ Feed embeddings to the model"""
-            output = model(
-                input_ids=x,
-                seqlens=batch.sizes,
-            )
-            
-            """ Generate tokens """
-            
-            
-            
-            
-            mb_loss = compute_loss_with_mask(output, target_tokens)
+            mb_loss = compute_loss_with_mask(output, y, y_mask)
 
             mb_loss.backward()
 
             loss += mb_loss.detach()
-            n_batch_tokens += target_tokens.numel()
+            n_batch_tokens += y.numel()
 
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward
@@ -354,18 +280,18 @@ def _train(
         loss_item = loss.item()
         avg_loss = avg_aggregate(loss_item)
 
-        # if not args.no_eval and (
-        #     (args.eval_freq > 0 and state.step % args.eval_freq == 0) or is_last_step
-        # ):
-        #     # write perplexity to state
-        #     evaluate(model, eval_batches, state)
+        if not args.no_eval and (
+            (args.eval_freq > 0 and state.step % args.eval_freq == 0) or is_last_step
+        ):
+            # write perplexity to state
+            evaluate(model, batches = eval_batches, state = state)
 
-        #     eval_logs = get_eval_logs(
-        #         state.step, avg_loss, state.this_eval_perplexity, state.this_eval_loss
-        #     )
+            eval_logs = get_eval_logs(
+                state.step, avg_loss, state.this_eval_perplexity, state.this_eval_loss
+            )
 
-        #     main_logger_info(eval_log_msg(eval_logs))
-        #     eval_logger.log(eval_logs, step=state.step)
+            main_logger_info(eval_log_msg(eval_logs))
+            eval_logger.log(eval_logs, step=state.step)
 
         # Timing
         state.end_step(n_batch_tokens)

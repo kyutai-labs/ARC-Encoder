@@ -26,10 +26,6 @@ class CompletionPrediction(TypedDict, total=False):
     logprobs: List[float]  # not required
 
 
-class ChatPrediction(TypedDict, total=False):
-    generation: Message
-    tokens: List[str]  # not required
-    logprobs: List[float]  # not required
 
 
 class Llama:
@@ -40,6 +36,7 @@ class Llama:
         max_seq_len: int,
         max_batch_size: int,
         model_parallel_size: Optional[int] = None,
+        norm_wo_embeds: bool = False,
         seed: int = 1,
     ) -> "Llama":
         """
@@ -98,6 +95,7 @@ class Llama:
         model_args: ModelArgs = ModelArgs(
             max_seq_len=max_seq_len,
             max_batch_size=max_batch_size,
+            norm_wo_embeds=norm_wo_embeds,
             **params,
         )
         tokenizer = Tokenizer(model_path=tokenizer_path)
@@ -121,6 +119,7 @@ class Llama:
     def generate(
         self,
         prompt_tokens: List[List[int]],
+        embeddings: torch.Tensor,
         max_gen_len: int,
         temperature: float = 0.6,
         top_p: float = 0.9,
@@ -166,7 +165,7 @@ class Llama:
         eos_reached = torch.tensor([False] * bsz, device="cuda")
         input_text_mask = tokens != pad_id
         if min_prompt_len == total_len:
-            logits = self.model.forward(tokens, prev_pos)
+            logits = self.model.forward(tokens, embeddings, prev_pos, training = False)
             token_logprobs = -F.cross_entropy(
                 input=logits.transpose(1, 2),
                 target=tokens,
@@ -177,7 +176,7 @@ class Llama:
         stop_tokens = torch.tensor(list(self.tokenizer.stop_tokens))
 
         for cur_pos in range(min_prompt_len, total_len):
-            logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
+            logits = self.model.forward(tokens[:, prev_pos:cur_pos], embeddings, prev_pos, training = False)
             if temperature > 0:
                 probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
                 next_token = sample_top_p(probs, top_p)
@@ -229,11 +228,13 @@ class Llama:
     def text_completion(
         self,
         prompts: List[str],
+        embeddings: torch.Tensor,
         temperature: float = 0.6,
         top_p: float = 0.9,
         max_gen_len: Optional[int] = None,
         logprobs: bool = False,
         echo: bool = False,
+        norm_wo_embeds: bool = False,
     ) -> List[CompletionPrediction]:
         """
         Perform text completion for a list of prompts using the language generation model.
@@ -260,11 +261,13 @@ class Llama:
         prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in prompts]
         generation_tokens, generation_logprobs = self.generate(
             prompt_tokens=prompt_tokens,
+            embeddings = embeddings,
             max_gen_len=max_gen_len,
             temperature=temperature,
             top_p=top_p,
             logprobs=logprobs,
             echo=echo,
+            norm_wo_embeds = norm_wo_embeds,
         )
         if logprobs:
             return [
@@ -277,69 +280,7 @@ class Llama:
             ]
         return [{"generation": self.tokenizer.decode(t)} for t in generation_tokens]
 
-    def chat_completion(
-        self,
-        dialogs: List[Dialog],
-        temperature: float = 0.6,
-        top_p: float = 0.9,
-        max_gen_len: Optional[int] = None,
-        logprobs: bool = False,
-    ) -> List[ChatPrediction]:
-        """
-        Generate assistant responses for a list of conversational dialogs using the language generation model.
-
-        Args:
-            dialogs (List[Dialog]): List of conversational dialogs, where each dialog is a list of messages.
-            temperature (float, optional): Temperature value for controlling randomness in sampling. Defaults to 0.6.
-            top_p (float, optional): Top-p probability threshold for nucleus sampling. Defaults to 0.9.
-            max_gen_len (Optional[int], optional): Maximum length of the generated response sequence.
-                If not provided, it's set to the model's maximum sequence length minus 1.
-            logprobs (bool, optional): Flag indicating whether to compute token log probabilities. Defaults to False.
-
-        Returns:
-            List[ChatPrediction]: List of chat predictions, each containing the assistant's generated response.
-
-        Note:
-            This method generates assistant responses for the provided conversational dialogs.
-            It employs nucleus sampling to introduce controlled randomness in text generation.
-            If logprobs is True, token log probabilities are computed for each generated token.
-        """
-        if max_gen_len is None:
-            max_gen_len = self.model.params.max_seq_len - 1
-
-        prompt_tokens = [
-            self.formatter.encode_dialog_prompt(dialog) for dialog in dialogs
-        ]
-        generation_tokens, generation_logprobs = self.generate(
-            prompt_tokens=prompt_tokens,
-            max_gen_len=max_gen_len,
-            temperature=temperature,
-            top_p=top_p,
-            logprobs=logprobs,
-        )
-        if logprobs:
-            return [
-                {
-                    "generation": {
-                        "role": "assistant",
-                        "content": self.tokenizer.decode(t),
-                    },
-                    "tokens": [self.tokenizer.decode([x]) for x in t],
-                    "logprobs": logprobs_i,
-                }
-                for t, logprobs_i in zip(generation_tokens, generation_logprobs)
-            ]
-        return [
-            {
-                "generation": {
-                    "role": "assistant",
-                    "content": self.tokenizer.decode(t),
-                },
-            }
-            for t in generation_tokens
-        ]
-
-
+    
 def sample_top_p(probs, p):
     """
     Perform top-p (nucleus) sampling on a probability distribution.

@@ -1,31 +1,22 @@
-from functools import partial
-from typing import Optional, Tuple, Type, Union
+from typing import Optional, Tuple
 
 import torch
 from torch import nn
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 
-from args import LoraArgs
-from cache import CacheView
-from lora import LoRALinear
-from moe import MoeArgs, MoeLayer
-from rope import apply_rotary_emb
+from embed_llm.models.lora import maybe_lora
+from embed_llm.training.args import LoraArgs
+
+from embed_llm.models.mistral.cache import CacheView
+from embed_llm.models.mistral.moe import MoeArgs, MoeLayer
+from embed_llm.models.mistral.rope import apply_rotary_emb
 
 
 def repeat_kv(keys: torch.Tensor, values: torch.Tensor, repeats: int, dim: int) -> Tuple[torch.Tensor, torch.Tensor]:
     keys = torch.repeat_interleave(keys, repeats=repeats, dim=dim)
     values = torch.repeat_interleave(values, repeats=repeats, dim=dim)
     return keys, values
-
-
-def maybe_lora(
-    lora_args: Optional[LoraArgs],
-) -> Union[Type[nn.Linear], partial[LoRALinear]]:
-    if lora_args is None:
-        return nn.Linear
-    else:
-        return partial(LoRALinear, rank=lora_args.rank, scaling=lora_args.scaling)
 
 
 class Attention(nn.Module):
@@ -162,7 +153,7 @@ class TransformerBlock(nn.Module):
         cache: Optional[CacheView] = None,
         mask: Optional[BlockDiagonalMask] = None,
     ) -> torch.Tensor:
-        r = self.attention.forward(self.attention_norm(x), freqs_cis, cache)
+        r = self.attention.forward(self.attention_norm(x), freqs_cis, cache = cache, mask = mask)
         h = x + r
         r = self.feed_forward.forward(self.ffn_norm(h))
         out = h + r

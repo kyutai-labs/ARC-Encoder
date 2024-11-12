@@ -2,7 +2,7 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Tuple
 import os
 import safetensors.torch
 import torch
@@ -10,9 +10,7 @@ from embed_llm.data.tokenize import Tokenizer
 from torch.distributed import barrier
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 
-from embed_llm.models.mistral.lora import LoRALinear
-
-from embed_llm.models.llama.model import Transformer as LlamaTransformer
+from embed_llm.models.lora import LoRALinear
 
 from embed_llm.training.distributed import get_rank, get_world_size
 from embed_llm.training.utils import TrainState
@@ -30,13 +28,15 @@ class Checkpointer:
 
     def __init__(
         self,
-        model: Union[FullyShardedDataParallel, LlamaTransformer],
+        model: FullyShardedDataParallel,
         state: TrainState,
         run_dir: Union[Path, str],
         optimizer: Optional[torch.optim.Optimizer] = None,
         num_ckpt_keep: Optional[int] = None,
     ):
-        self.model = model
+        self.llm = model.llm
+        self.mlp_project = model.mlp_project
+        self.llm_name = model.model_name
         self.optimizer = optimizer
         self.state = state
         self.run_dir = Path(run_dir)
@@ -45,11 +45,11 @@ class Checkpointer:
 
     @property
     def ckpt_dir(self) -> Path:
-        return self.run_dir / "checkpoints"
+        return self.run_dir /  "checkpoints"
 
     @property
-    def dst_dir(self) -> Path:
-        return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / "consolidated"
+    def dst_dir(self) -> Tuple[Path, Path]:
+        return (self.ckpt_dir / f"checkpoint_{self.state.step:06d}" /  self.llm_name / "consolidated", self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / 'MLP_projector')
 
     @staticmethod
     def consolidated_path(
@@ -65,10 +65,9 @@ class Checkpointer:
         return ckpt_dir.with_name(f"tmp.{ckpt_dir.name}")
 
     def write_params_info(self, tmp_dst: Path):
-        params_path = tmp_dst / "params.json"
+        params_path = tmp_dst / "llm" / "params.json"
         with open(params_path, "w") as f:
-            model_args = self.model.args.to_dict()
-
+            model_args = self.llm.args.to_dict()
             f.write(json.dumps(model_args, indent=4))
 
     def delete_old_ckpts(self) -> List[Path]:
@@ -108,11 +107,11 @@ class Checkpointer:
     ) -> Dict[str, torch.Tensor]:
         if save_only_lora:
             assert (
-                self.model.args.lora.enable
+                self.llm.args.lora.enable
             ), "Cannot save LoRA checkpoint as LoRA training is not enabled."
 
         # remove all potential hooks
-        for module in self.model.modules():
+        for module in self.llm.modules():
             if isinstance(module, LoRALinear) and hasattr(module, "_merge_lora_handle"):
                 module._merge_lora_handle.remove()  # type: ignore
 
@@ -128,7 +127,7 @@ class Checkpointer:
                 weight = m.merge_weight()  # type: ignore
                 destination[prefix + "weight"] = weight
 
-            for module in self.model.modules():
+            for module in self.llm.modules():
                 if isinstance(module, LoRALinear):
                     module._merge_lora_handle = module._register_state_dict_hook(
                         merge_lora
@@ -151,8 +150,12 @@ class Checkpointer:
                 return is_fsdp and all_params_have_grads and is_leaf_node
 
             # extract all modules with only trainable weights
-            modules = {
-                k: m for k, m in self.model.named_modules() if is_trainable_fsdp(m)
+            llm_modules = {
+                k: m for k, m in self.llm.named_modules() if is_trainable_fsdp(m)
+            }
+            
+            mlp_project_modules = {
+                k: m for k, m in self.mlp_project.named_modules() if is_trainable_fsdp(m)
             }
 
             states = {}

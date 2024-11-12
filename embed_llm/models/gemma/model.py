@@ -20,14 +20,15 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from typing import Any, List, Optional, Sequence, Tuple, Union
-
-from gemma import config as gemma_config
 from gemma import tokenizer
+
+from embed_llm.models.args import GemmaConfig, get_model_config, AttentionType, Architecture, LoraArgs
+from embed_llm.models.lora import maybe_lora
 
 
 class Sampler(nn.Module):
 
-    def __init__(self, vocab_size: int, config: gemma_config.GemmaConfig):
+    def __init__(self, vocab_size: int, config: GemmaConfig):
         super().__init__()
         self.vocab_size = vocab_size
         self.config = config
@@ -111,29 +112,42 @@ def apply_rotary_emb(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
     return x_out
 
 
+# Original version with quantization
+# class Linear(nn.Module):
+
+#     def __init__(self, in_features: int, out_features: int, quant: bool, lora: Optional[LoraArgs] = None):
+#         super().__init__()
+#         if quant:
+#             self.weight = nn.Parameter(
+#                 torch.empty((out_features, in_features), dtype=torch.int8),
+#                 requires_grad=False,
+#             )
+#             self.weight_scaler = nn.Parameter(torch.Tensor(out_features))
+#         else:
+#             self.weight = nn.Parameter(
+#                 torch.empty((out_features, in_features)),
+#                 requires_grad=False,
+#             )
+#         self.quant = quant
+
+#     def forward(self, x):
+#         weight = self.weight
+#         if self.quant:
+#             weight = weight * self.weight_scaler.unsqueeze(-1)
+#         output = F.linear(x, weight)
+#         return output
+
 class Linear(nn.Module):
 
-    def __init__(self, in_features: int, out_features: int, quant: bool):
+    def __init__(self, in_features: int, out_features: int, lora: Optional[LoraArgs] = None, quant: bool = False):
         super().__init__()
-        if quant:
-            self.weight = nn.Parameter(
-                torch.empty((out_features, in_features), dtype=torch.int8),
-                requires_grad=False,
-            )
-            self.weight_scaler = nn.Parameter(torch.Tensor(out_features))
-        else:
-            self.weight = nn.Parameter(
-                torch.empty((out_features, in_features)),
-                requires_grad=False,
-            )
-        self.quant = quant
+        assert quant == False, "Quantization is not supported for Lora linear layer"
+
+        MaybeLora = maybe_lora(lora)
+        self.linear = MaybeLora(in_features, out_features, bias=False)
 
     def forward(self, x):
-        weight = self.weight
-        if self.quant:
-            weight = weight * self.weight_scaler.unsqueeze(-1)
-        output = F.linear(x, weight)
-        return output
+        return self.linear(x)
 
 
 class Embedding(nn.Module):
@@ -195,11 +209,12 @@ class GemmaMLP(nn.Module):
         hidden_size: int,
         intermediate_size: int,
         quant: bool,
+        lora: Optional[LoraArgs] = None,
     ):
         super().__init__()
-        self.gate_proj = Linear(hidden_size, intermediate_size, quant)
-        self.up_proj = Linear(hidden_size, intermediate_size, quant)
-        self.down_proj = Linear(intermediate_size, hidden_size, quant)
+        self.gate_proj = Linear(hidden_size, intermediate_size, quant, lora = lora)
+        self.up_proj = Linear(hidden_size, intermediate_size, quant, lora = lora)
+        self.down_proj = Linear(intermediate_size, hidden_size, quant, lora = lora)
 
     def forward(self, x):
         gate = self.gate_proj(x)
@@ -221,8 +236,9 @@ class GemmaAttention(nn.Module):
         query_pre_attn_scalar: Optional[int],
         head_dim: int,
         quant: bool,
-        attn_type: gemma_config.AttentionType,
+        attn_type: AttentionType,
         sliding_window_size: Optional[int] = None,
+        lora: Optional[LoraArgs] = None,
     ):
         super().__init__()
 
@@ -242,15 +258,14 @@ class GemmaAttention(nn.Module):
             self.scaling = query_pre_attn_scalar**-0.5
         else:
             self.scaling = self.head_dim**-0.5
-
         self.qkv_proj = Linear(
             self.hidden_size,
             (self.num_heads + 2 * self.num_kv_heads) * self.head_dim,
-            quant=quant)
+            quant=quant, lora = lora)
         self.o_proj = Linear(
             self.num_heads * self.head_dim,
             self.hidden_size,
-            quant=quant)
+            quant=quant, lora = lora)
 
         self.attn_type = attn_type
         self.sliding_window_size = sliding_window_size
@@ -260,8 +275,8 @@ class GemmaAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         freqs_cis: torch.Tensor,
-        kv_write_indices: torch.Tensor,
-        kv_cache: Tuple[torch.Tensor, torch.Tensor],
+        kv_write_indices: Optional[torch.Tensor],
+        kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]],
         mask: torch.Tensor,
     ) -> torch.Tensor:
         hidden_states_shape = hidden_states.shape
@@ -283,12 +298,17 @@ class GemmaAttention(nn.Module):
 
         # Write new kv cache.
         # [batch_size, input_len, n_local_kv_heads, head_dim]
-        k_cache, v_cache = kv_cache
-        k_cache.index_copy_(1, kv_write_indices, xk)
-        v_cache.index_copy_(1, kv_write_indices, xv)
-
-        key = k_cache
-        value = v_cache
+        if kv_cache is not None:
+            k_cache, v_cache = kv_cache
+            k_cache.index_copy_(1, kv_write_indices, xk)
+            v_cache.index_copy_(1, kv_write_indices, xv)
+            key = k_cache 
+            value = v_cache
+            kv_cache = (k_cache, v_cache)
+        else:
+            key = xk
+            value = xv
+            
         if self.num_kv_heads != self.num_heads:
             # [batch_size, max_seq_len, n_local_heads, head_dim]
             key = torch.repeat_interleave(key, self.num_queries_per_kv, dim=2)
@@ -306,7 +326,7 @@ class GemmaAttention(nn.Module):
         q.mul_(self.scaling)
         scores = torch.matmul(q, k.transpose(2, 3))
         if (
-            self.attn_type == gemma_config.AttentionType.LOCAL_SLIDING
+            self.attn_type == AttentionType.LOCAL_SLIDING
             and self.sliding_window_size is not None
         ):
             all_ones = torch.ones_like(mask)
@@ -335,7 +355,7 @@ class GemmaDecoderLayer(nn.Module):
 
     def __init__(
         self,
-        config: gemma_config.GemmaConfig,
+        config: GemmaConfig,
     ):
         super().__init__()
         self.self_attn = GemmaAttention(
@@ -346,12 +366,14 @@ class GemmaDecoderLayer(nn.Module):
             query_pre_attn_scalar=config.query_pre_attn_scalar,
             head_dim=config.head_dim,
             quant=config.quant,
-            attn_type=gemma_config.AttentionType.GLOBAL,
+            attn_type=AttentionType.GLOBAL,
+            lora = config.lora
         )
         self.mlp = GemmaMLP(
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,
             quant=config.quant,
+            lora = config.lora
         )
         self.input_layernorm = RMSNorm(config.hidden_size,
                                        eps=config.rms_norm_eps)
@@ -363,7 +385,7 @@ class GemmaDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         freqs_cis: torch.Tensor,
         kv_write_indices: torch.Tensor,
-        kv_cache: Tuple[torch.Tensor, torch.Tensor],
+        kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]],
         mask: torch.Tensor,
     ) -> torch.Tensor:
         # Self Attention
@@ -390,8 +412,8 @@ class GemmaDecoderLayer(nn.Module):
 class Gemma2DecoderLayer(nn.Module):
     def __init__(
         self,
-        config: gemma_config.GemmaConfig,
-        attn_type: gemma_config.AttentionType,
+        config: GemmaConfig,
+        attn_type: AttentionType,
     ):
         super().__init__()
         self.self_attn = GemmaAttention(
@@ -404,11 +426,13 @@ class Gemma2DecoderLayer(nn.Module):
             quant=config.quant,
             attn_type=attn_type,
             sliding_window_size=config.sliding_window_size,
+            lora = config.lora
         )
         self.mlp = GemmaMLP(
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,
             quant=config.quant,
+            lora = config.lora
         )
         self.input_layernorm = RMSNorm(config.hidden_size,
                                        eps=config.rms_norm_eps)
@@ -430,7 +454,7 @@ class Gemma2DecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         freqs_cis: torch.Tensor,
         kv_write_indices: torch.Tensor,
-        kv_cache: Tuple[torch.Tensor, torch.Tensor],
+        kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]],
         mask: torch.Tensor,
     ) -> torch.Tensor:
         # Self Attention
@@ -460,20 +484,20 @@ class Gemma2DecoderLayer(nn.Module):
 
 class GemmaModel(nn.Module):
 
-    def __init__(self, config: gemma_config.GemmaConfig):
+    def __init__(self, config: GemmaConfig):
         super().__init__()
         self.config = config
         self.vocab_size = config.vocab_size
 
         self.layers = nn.ModuleList()
         for i in range(config.num_hidden_layers):
-            if config.architecture == gemma_config.Architecture.GEMMA_1:
+            if config.architecture == Architecture.GEMMA_1:
                 self.layers.append(GemmaDecoderLayer(config))
-            elif config.architecture == gemma_config.Architecture.GEMMA_2:
+            elif config.architecture == Architecture.GEMMA_2:
                 attn_type = (
                     config.attn_types[i]
                     if config.attn_types is not None
-                    else gemma_config.AttentionType.GLOBAL
+                    else AttentionType.GLOBAL
                 )
                 self.layers.append(Gemma2DecoderLayer(config, attn_type))
             else:
@@ -484,20 +508,24 @@ class GemmaModel(nn.Module):
         self,
         hidden_states: torch.Tensor,
         freqs_cis: torch.Tensor,
-        kv_write_indices: torch.Tensor,
-        kv_caches: List[Tuple[torch.Tensor, torch.Tensor]],
+        kv_write_indices: Optional[torch.Tensor],
+        kv_caches: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
         mask: torch.Tensor,
+        norm_wo_embedding: bool = False,
     ) -> torch.Tensor:
         for i in range(len(self.layers)):
             layer = self.layers[i]
             hidden_states = layer(
                 hidden_states=hidden_states,
                 freqs_cis=freqs_cis,
-                kv_write_indices=kv_write_indices,
-                kv_cache=kv_caches[i],
+                kv_write_indices= None if kv_write_indices is None else kv_write_indices,
+                kv_cache= None if kv_caches is None else kv_caches[i],
                 mask=mask,
             )
-        hidden_states = self.norm(hidden_states)
+        if norm_wo_embedding:
+            hidden_states = self.norm(hidden_states[:,1:,:])
+        else:
+            hidden_states = self.norm(hidden_states)
         return hidden_states
 
 
@@ -505,7 +533,7 @@ class GemmaForCausalLM(nn.Module):
 
     def __init__(
         self,
-        config: gemma_config.GemmaConfig,
+        config: GemmaConfig,
     ):
         super().__init__()
         self.config = config
@@ -514,7 +542,7 @@ class GemmaForCausalLM(nn.Module):
         max_seq_len = config.max_position_embeddings
         head_dim = config.head_dim
         vocab_size = config.vocab_size
-
+        self.norm_wo_embedding = config.norm_wo_embeds
         self.tokenizer = tokenizer.Tokenizer(config.tokenizer)
         self.embedder = Embedding(vocab_size, config.hidden_size, config.quant)
         self.model = GemmaModel(config)
@@ -527,51 +555,76 @@ class GemmaForCausalLM(nn.Module):
                                          theta=rope_theta)
         self.register_buffer('freqs_cis', freqs_cis)
 
-    @torch.no_grad()
     def forward(
         self,
         input_token_ids: torch.Tensor,
-        input_positions: torch.Tensor,
-        kv_write_indices: torch.Tensor,
-        kv_caches: List[Tuple[torch.Tensor, torch.Tensor]],
         mask: torch.Tensor,
-        output_positions: torch.Tensor,
-        temperatures: Union[torch.Tensor, None],
-        top_ps: torch.Tensor,
-        top_ks: torch.Tensor,
+        embeddings: Optional[torch.Tensor] = None,
+        input_positions: Optional[torch.Tensor] = None,
+        kv_caches: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None,
+        output_positions: Optional[torch.Tensor] = None,
+        temperatures: Union[torch.Tensor, None] = None,
+        top_ps: Optional[torch.Tensor] = None,
+        top_ks: Optional[torch.Tensor] = None,
+        is_training: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if is_training:
+            input_positions = torch.arange(0, input_token_ids.size(1),
+                                          device=input_token_ids.device)
+        else:
+            raise ValueError('Must provide input_positions during inference.')
+        
         freqs_cis = self.freqs_cis.index_select(0, input_positions)
         kv_write_indices = input_positions
 
         # [batch_size, input_len, hidden_size]
         hidden_states = self.embedder(input_token_ids)
+        if embeddings is not None:
+            hidden_states =  torch.cat((embeddings,hidden_states),dim=1)
+            
         # Gemma normalizes the embedding by sqrt(hidden_size).
         # Gemma2 downcasts the below to float16, causing sqrt(3072)=55.4256 to become 55.5
         # See https://github.com/huggingface/transformers/pull/29402
         normalizer = torch.tensor(self.config.hidden_size**0.5, dtype=hidden_states.dtype)
         hidden_states = hidden_states * normalizer
-
-        hidden_states = self.model(
-            hidden_states=hidden_states,
-            freqs_cis=freqs_cis,
-            kv_write_indices=kv_write_indices,
-            kv_caches=kv_caches,
-            mask=mask,
-        )
-        embedder_weight = self.embedder.weight
-        if self.config.quant:
-            embedder_weight = (
-                embedder_weight * self.embedder.weight_scaler.unsqueeze(-1))
-        next_tokens, logits = self.sampler(
-            embedding=embedder_weight,
-            hidden_states=hidden_states,
-            output_positions=output_positions,
-            temperatures=temperatures,
-            top_ps=top_ps,
-            top_ks=top_ks,
-        )
-        return next_tokens, logits
+        if not is_training:
+            hidden_states = self.model(
+                hidden_states=hidden_states,
+                freqs_cis=freqs_cis,
+                kv_write_indices=kv_write_indices,
+                kv_caches=kv_caches,
+                mask=mask,
+            )
+            embedder_weight = self.embedder.weight
+            if self.config.quant:
+                embedder_weight = (
+                    embedder_weight * self.embedder.weight_scaler.unsqueeze(-1))
+            next_tokens, logits = self.sampler(
+                embedding=embedder_weight,
+                hidden_states=hidden_states,
+                output_positions=output_positions,
+                temperatures=temperatures,
+                top_ps=top_ps,
+                top_ks=top_ks,
+            )
+            return next_tokens, logits
+        else:
+            hidden_states = self.model(
+                hidden_states=hidden_states,
+                freqs_cis=freqs_cis,
+                kv_write_indices=None,
+                kv_caches = None,
+                mask=mask,
+                norm_wo_embedding=self.norm_wo_embedding,
+            )
+            embedder_weight = self.embedder.weight
+            # hidden_states (bs, seq_len, hidden_size); embedder_weight (vocab_size, hidden_size)
+            if embeddings is not None and not self.norm_wo_embedding:
+                hidden_states = hidden_states[:,1:,:]      
+            logits = torch.matmul(hidden_states, embedder_weight.t())
+            return logits
+                
 
     def generate(
         self,
@@ -581,6 +634,8 @@ class GemmaForCausalLM(nn.Module):
         temperature: Union[float, None] = 0.95,
         top_p: float = 1.0,
         top_k: int = 100,
+        embeddings: Optional[torch.Tensor] = None,
+        norm_wo_embeds: bool = False,
     ) -> Union[str, Sequence[str]]:
         """Generates responses for given prompts using Gemma model."""
         # If a single prompt is provided, treat it as a batch of 1.
@@ -639,6 +694,7 @@ class GemmaForCausalLM(nn.Module):
             next_token_ids, _ = self(
                 input_token_ids=input_token_ids_tensor,
                 input_positions=input_positions_tensor,
+                embeddings = embeddings,
                 kv_write_indices=None,
                 kv_caches=kv_caches,
                 mask=curr_mask_tensor,
@@ -677,8 +733,9 @@ class GemmaForCausalLM(nn.Module):
 
         # If a string was provided as input, return a string as output.
         return results[0] if is_str_prompt else results
+    
 
-    def load_weights(self, model_path: str):
+    def load_weights(self, model_path: str):            
         if os.path.isfile(model_path):
             self.load_state_dict(
                 torch.load(
@@ -697,3 +754,5 @@ class GemmaForCausalLM(nn.Module):
                 self.load_state_dict(state_dict, strict=False)
                 del state_dict  # Save memory.
                 gc.collect()
+                
+        

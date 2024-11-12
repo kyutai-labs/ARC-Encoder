@@ -1,16 +1,13 @@
 import logging
 from typing import List
-
 import numpy as np
 import torch.cuda
 import torch.distributed as dist
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
-
-from .data.data_loader import Batch
-from .distributed import get_rank, get_world_size
-from .loss import compute_loss_with_mask
-from .utils import TrainState
-
+from embed_llm.data.data_loader import Batch
+from embed_llm.training.distributed import get_rank, get_world_size
+from embed_llm.training.loss import compute_loss_with_mask
+from embed_llm.training.utils import TrainState
 logger = logging.getLogger("eval")
 
 
@@ -36,9 +33,10 @@ def evaluate(
     for _ in range(max_num_samples - int(num_samples.item())):
         pad_x = np.zeros_like(batches[-1].x)
         pad_y = np.zeros_like(batches[-1].y)
+        pad_texts = batches[-1].texts.copy()
         pad_sizes = batches[-1].sizes.copy()
 
-        pad_batch = Batch(pad_x, pad_y, pad_sizes, is_pad_only=True)
+        pad_batch = Batch(pad_x, pad_y, pad_texts, pad_sizes, is_pad_only=True)
         batches.append(pad_batch)
 
     # eval mode!
@@ -47,21 +45,11 @@ def evaluate(
     eval_loss = torch.tensor(0.0).cuda()
     main_logger_info("Start eval...")
     for batch in batches:
-        x = torch.from_numpy(batch.x).cuda()
-        y = torch.from_numpy(batch.y).cuda()
-        y_mask = (
-            torch.from_numpy(batch.y_mask).cuda() if batch.y_mask is not None else None
-        )
-
         with torch.no_grad():
-            output = model(
-                input_ids=x,
-                seqlens=batch.sizes,
-            )
-
+            output, y, y_mask = model(batch)
+            
             if not batch.is_pad_only:
                 eval_loss += compute_loss_with_mask(output, y, y_mask)
-
             assert batch.is_pad_only or y.abs().sum() != 0, "Pad sample is used to compute loss."
 
     # sum loss

@@ -1,13 +1,14 @@
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, NamedTuple, Union
-
+from typing import Any, Dict, NamedTuple, Union, Optional, Type
+from functools import partial
 import safetensors.torch
 import torch
 import torch.nn as nn
 from simple_parsing.helpers import Serializable
-
+from embed_llm.models.args import LoraArgs
+from embed_llm.models.lora import LoRALinear
 
 @dataclass
 class LoraArgs(Serializable):
@@ -54,6 +55,7 @@ class LoRALinear(nn.Module):
             self.rank,
             bias=self.bias,
         )
+        
         self.lora_B = nn.Linear(
             self.rank,
             self.out_features,
@@ -153,3 +155,12 @@ class LoRALoaderMixin:
                     )
 
         self.load_state_dict(state_dict, strict=True)  # type: ignore[attr-defined]
+        
+
+def maybe_lora(
+    lora_args: Optional[LoraArgs],
+) -> Union[Type[nn.Linear], partial[LoRALinear]]:
+    if lora_args is None:
+        return nn.Linear
+    else:
+        return partial(LoRALinear, rank=lora_args.rank, scaling=lora_args.scaling)
