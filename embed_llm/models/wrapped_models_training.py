@@ -34,7 +34,8 @@ from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 
 # Gemma specifics
 from embed_llm.models.gemma.tokenizer import Tokenizer as GemmaTokenizer
-from embed_llm.models.gemma.model import GemmaDecoderLayer, Gemma2DecoderLayer, GemmaForCausalLM
+from embed_llm.models.gemma.model import GemmaDecoderLayer, Gemma2DecoderLayer, GemmaForCausalLM, set_default_tensor_type
+
 
 # Llama specifics
 from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
@@ -54,14 +55,6 @@ logger = logging.getLogger(__name__)
 def main_logger_info(message: str) -> None:
     if get_rank() == 0:
         logger.info(message)
-
-
-@contextlib.contextmanager
-def set_default_tensor_type(dtype: torch.dtype):
-    """Sets the default torch dtype to the given dtype."""
-    torch.set_default_dtype(dtype)
-    yield
-    torch.set_default_dtype(torch.float)
 
 
 def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:

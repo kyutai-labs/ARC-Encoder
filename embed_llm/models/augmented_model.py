@@ -8,7 +8,7 @@ import json
 from embed_llm.models.embedding_modules import MLP_project
 from embed_llm.retrieval.embeddings import encode_text
 from embed_llm.data.data_loader import Batch
-from embed_llm.models.args import MLPProjectArgs
+from embed_llm.models.args import MLPProjectArgs, get_model_config
 
 # Mistral specifics
 from embed_llm.models.mistral.transformer import Transformer as MistralTransformer
@@ -16,7 +16,7 @@ from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistraltok
 from embed_llm.models.mistral.generate import generate as mistral_generate
 
 # Gemma specifics
-from embed_llm.models.gemma.model import GemmaForCausalLM
+from embed_llm.models.gemma.model import GemmaForCausalLM, set_default_tensor_type
 
 # Llama specifics
 from embed_llm.models.llama.model import Transformer as LlamaTransformer
@@ -160,17 +160,32 @@ class EmbedAugModel(nn.Module):
             embed_model_name: str,
             embedding_model: Any,
             norm_wo_embeds: bool = False,
-            variant: Optional[str] = None):
+            variant: Optional[str] = None,
+            lora_path: Optional[str] = None):
 
         if 'mistral' in model_name.lower():
             model = MistralTransformer.from_folder(
                 Path(llm_path), max_batch_size, max_seq_len, device, variant)
+            
+            # load LoRA
+            if lora_path is not None:
+                model.load_lora(Path(lora_path))
+                
             model.eval()
             tokenizer = load_mistraltokenizer(
                 Path(llm_path)).instruct_tokenizer.tokenizer
         elif 'gemma' in model_name.lower():
-            # Implement a loading function for Gemma according to the format for checkpointing
-            raise NotImplementedError('Model not yet implemented')
+            assert variant is not None, 'Variant must be specified for Gemma'
+            gemma_config = get_model_config(variant)
+    
+            gemma_config.dtype = "float32" if args.device == "cpu" else "float16"
+
+            # Create the model and load the weights.
+            device = torch.device(args.device)
+            with set_default_tensor_type(gemma_config.get_dtype()):
+                model = GemmaForCausalLM(gemma_config)
+                model.load_weights(model_path = llm_path, lora_path = lora_path)
+        
         elif 'llama' in model_name.lower():
             llm = Llama.build(
                 ckpt_dir=llm_path,
@@ -179,6 +194,11 @@ class EmbedAugModel(nn.Module):
                 tokenizer_path=str(Path(llm_path) / 'tokenizer.model')
             )
             model = llm.model
+            
+            # load LoRA
+            if lora_path is not None:
+                model.load_lora(Path(lora_path))
+            
             model.eval()
             tokenizer = llm.tokenizer
         else:

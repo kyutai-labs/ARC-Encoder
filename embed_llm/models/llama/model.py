@@ -9,14 +9,12 @@ import fairscale.nn.model_parallel.initialize as fs_init
 import torch
 import torch.nn.functional as F
 from fairscale.nn.model_parallel.layers import (
-    ColumnParallelLinear,
-    RowParallelLinear,
     VocabParallelEmbedding,
 )
 from torch import nn
 from embed_llm.models.args import LlamaModelArgs as ModelArgs
 
-from embed_llm.models.lora import maybe_lora
+from embed_llm.models.lora import maybe_lora, LoRALoaderMixin
 from embed_llm.training.args import LoraArgs
 
 
@@ -242,7 +240,7 @@ class TransformerBlock(nn.Module):
         return out
 
 
-class Transformer(nn.Module):
+class Transformer(nn.Module,  LoRALoaderMixin):
     def __init__(self, params: ModelArgs):
         super().__init__()
         self.params = params

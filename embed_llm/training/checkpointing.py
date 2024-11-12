@@ -6,7 +6,6 @@ from typing import Dict, List, Optional, Union, Tuple
 import os
 import safetensors.torch
 import torch
-from embed_llm.data.tokenize import Tokenizer
 from torch.distributed import barrier
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 

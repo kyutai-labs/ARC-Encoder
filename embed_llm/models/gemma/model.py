@@ -21,9 +21,10 @@ from torch import nn
 import torch.nn.functional as F
 from typing import Any, List, Optional, Sequence, Tuple, Union
 from gemma import tokenizer
-
+from pathlib import Path
+import contextlib
 from embed_llm.models.args import GemmaConfig, get_model_config, AttentionType, Architecture, LoraArgs
-from embed_llm.models.lora import maybe_lora
+from embed_llm.models.lora import maybe_lora, LoRALoaderMixin
 
 
 class Sampler(nn.Module):
@@ -484,7 +485,7 @@ class Gemma2DecoderLayer(nn.Module):
         return hidden_states
 
 
-class GemmaModel(nn.Module):
+class GemmaModel(nn.Module,  LoRALoaderMixin):
 
     def __init__(self, config: GemmaConfig):
         super().__init__()
@@ -737,7 +738,7 @@ class GemmaForCausalLM(nn.Module):
         # If a string was provided as input, return a string as output.
         return results[0] if is_str_prompt else results
 
-    def load_weights(self, model_path: str):
+    def load_weights(self, model_path: str, lora_path: Optional[str] = None):
         if os.path.isfile(model_path):
             self.load_state_dict(
                 torch.load(
@@ -758,3 +759,14 @@ class GemmaForCausalLM(nn.Module):
                 self.load_state_dict(state_dict, strict=False)
                 del state_dict  # Save memory.
                 gc.collect()
+
+        if lora_path is not None:
+            self.model.load_lora(Path(lora_path))
+            
+@contextlib.contextmanager
+def set_default_tensor_type(dtype: torch.dtype):
+    """Sets the default torch dtype to the given dtype."""
+    torch.set_default_dtype(dtype)
+    yield
+    torch.set_default_dtype(torch.float)
+

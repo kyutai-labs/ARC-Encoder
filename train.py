@@ -136,11 +136,6 @@ def _train(
             "Invalid folder path. Please set `args.initial_model` to a valid folder path."
         )
 
-    # Seed random.
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-
     """ Load embedder model """
 
     embedding_model = get_embedder(args.embedder.name)

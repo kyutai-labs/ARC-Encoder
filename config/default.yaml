@@ -5,11 +5,12 @@ model_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: Mistral_concat
 norm_wo_embeds: False
+
 # Projector 
 projector:
   hidden_dim: 768
-  n_layers: 12
-  activation: gelu
+  n_layers: 3
+  activation: id
   
 
 # Embedder
@@ -47,8 +48,8 @@ save_adapters: False # save only trained LoRA adapters. Set to `False` to merge 
 
 # Monitoring
 wandb: 
-  project:  # your wandb project name
-  run_name:  # your wandb run name
-  key: # your wandb api key
-  offline: False
+  project: embed_llm  # your wandb project name
+  run_name: Mistral_concat  # your wandb run name
+  key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706 # your wandb api key
+  offline: True
     
