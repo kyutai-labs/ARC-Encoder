@@ -1,0 +1,11 @@
+__pycache__
+embed_llm/__pycache__
+embed_llm/models/__pycache__
+embed_llm/models/llama/__pycache__
+embed_llm/models/gemma/__pycache__
+embed_llm/models/mistral/__pycache__
+embed_llm/data/__pycache__
+embed_llm/monitoring/__pycache__
+embed_llm/retrieval/__pycache__
+embed_llm/training/__pycache__
+
