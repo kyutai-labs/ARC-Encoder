@@ -1,16 +1,9 @@
 from gritlm import GritLM
-import datasets as hf_ds
 from transformers import AutoTokenizer, AutoModel
-import faiss
-import argparse
 import os
-# from colbert import Indexer, Searcher
-# from colbert.infra import Run, RunConfig, ColBERTConfig
 from typing import Optional, Union
-from sentence_transformers import SentenceTransformer
 import torch.nn.functional as F
 import torch
-import pandas as pd
 from tqdm.auto import tqdm
 import json
 import numpy as np

@@ -6,7 +6,6 @@
 
 
 # From https://github.com/facebookresearch/FiD/blob/main/passage_retrieval.py
-import os
 import logging
 import pickle
 from typing import List, Tuple

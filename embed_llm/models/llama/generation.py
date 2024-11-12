@@ -17,7 +17,7 @@ from fairscale.nn.model_parallel.initialize import (
 )
 
 from embed_llm.models.llama.model import ModelArgs, Transformer
-from embed_llm.models.llama.tokenizer import ChatFormat, Dialog, Message, Tokenizer
+from embed_llm.models.llama.tokenizer import Tokenizer
 
 
 class CompletionPrediction(TypedDict, total=False):
@@ -113,7 +113,6 @@ class Llama:
     def __init__(self, model: Transformer, tokenizer: Tokenizer):
         self.model = model
         self.tokenizer = tokenizer
-        self.formatter = ChatFormat(tokenizer)
 
     @torch.inference_mode()
     def generate(

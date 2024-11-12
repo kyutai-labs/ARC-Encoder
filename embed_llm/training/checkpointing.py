@@ -52,12 +52,13 @@ class Checkpointer:
 
     @staticmethod
     def consolidated_path(
-        ckpt_path: str, use_safetensors: bool, save_only_lora: Optional[bool] = False
+        ckpt_dir: Path, use_safetensors: bool, save_only_lora: Optional[bool] = False
     ) -> Path:
         suffix = "safetensors" if use_safetensors else "00.pth"
         prefix = "lora" if save_only_lora else "consolidated"
 
-        return os.path.join(ckpt_path, f"{prefix}.{suffix}")
+        return ckpt_dir / f"{prefix}.{suffix}"
+
 
     @staticmethod
     def _tmp(ckpt_dir: Path) -> Path:
@@ -252,8 +253,7 @@ class Checkpointer:
         tmp_llm_dst = self._tmp(llm_dst)
         tmp_mlp_project_dst = self._tmp(mlp_project_dst)
         main_logger_info(
-            f"Dumping checkpoint in {llm_dst} and {mlp_project_dst} using tmp name:
-            {tmp_llm_dst.name} and {tmp_mlp_project_dst.name}"
+            f"Dumping checkpoint in {llm_dst} and {mlp_project_dst} using tmp name: {tmp_llm_dst.name} and {tmp_mlp_project_dst.name}"
         )
 
         assert not self.dst_dir.exists(), f"dst exists {self.dst_dir}"

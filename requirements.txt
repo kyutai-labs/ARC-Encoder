@@ -14,3 +14,7 @@ triton==2.2
 xformers==0.0.24
 tiktoken==0.4.0
 blobfile
+gritlm
+faiss-gpu
+transformers
+einops

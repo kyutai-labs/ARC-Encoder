@@ -5,12 +5,16 @@ model_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: Mistral_concat
 norm_wo_embeds: False
+lora:
+  rank: 64
+  scaling : 2.0
+  enable: True
 
 # Projector 
 projector:
   hidden_dim: 768
   n_layers: 3
-  activation: id
+  act: id
   
 
 # Embedder

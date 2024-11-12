@@ -7,19 +7,18 @@ import safetensors.torch
 import torch
 import torch.nn as nn
 from simple_parsing.helpers import Serializable
-from embed_llm.models.args import LoraArgs
-from embed_llm.models.lora import LoRALinear
 
 
 @dataclass
 class LoraArgs(Serializable):
+    enable: bool
     rank: int
     scaling: float
 
     def __post_init__(self) -> None:
-        assert self.rank > 0
-        assert self.scaling > 0.0
-
+        if self.enable:
+            assert self.rank > 0
+            assert self.scaling > 0.0
 
 class LoRALinear(nn.Module):
     """

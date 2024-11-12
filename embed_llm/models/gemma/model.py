@@ -20,9 +20,9 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from typing import Any, List, Optional, Sequence, Tuple, Union
-from gemma import tokenizer
 from pathlib import Path
 import contextlib
+from embed_llm.models.gemma import tokenizer
 from embed_llm.models.args import GemmaConfig, get_model_config, AttentionType, Architecture, LoraArgs
 from embed_llm.models.lora import maybe_lora, LoRALoaderMixin
 

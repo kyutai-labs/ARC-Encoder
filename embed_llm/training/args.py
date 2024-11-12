@@ -6,8 +6,7 @@ from typing import Optional, Union
 
 from simple_parsing.helpers import Serializable
 
-from embed_llm.models.args import LoraArgs
-
+from embed_llm.models.args import LoraArgs, MLPProjectArgs
 from embed_llm.data.args import DataArgs
 
 
@@ -37,10 +36,15 @@ class WandbArgs(Serializable):
                 raise ValueError(
                     "`wandb.project` must not be an empty string.")
 
-
+@dataclass 
+class Embedder(Serializable):
+    dim: int = 4096
+    name: str = 'NVEmbed'
+    
+    
 @dataclass
 class TrainArgs(Serializable):
-    data: Optional[DataArgs] = field(default_factory=DataArgs)
+ 
     # if specified, instruct_tokenizer and model will be loaded
     # Path to the directory containing the initial model or model id: "mistral-small"
     model_id_or_path: str
@@ -48,8 +52,9 @@ class TrainArgs(Serializable):
     # Path to the directory where everything will be saved. It needs to be empty.
     run_dir: str
     # Name of the wandb run, if None it will be set to the name of the run_dir.
+    data: DataArgs
+    
     exp_name: Optional[str] = None
-
     optim: OptimArgs = field(default_factory=OptimArgs)
     seed: int = 0
     # Number of steps to accumulate gradients before doing an optimizer step.
@@ -84,6 +89,13 @@ class TrainArgs(Serializable):
 
     # LoRA
     lora: Optional[LoraArgs] = field(default_factory=LoraArgs)
+    
+    # mlp projector
+    projector: Optional[MLPProjectArgs] = field(default_factory=MLPProjectArgs)
+    
+    # Embedder
+    embedder: Embedder = field(default_factory=Embedder)
+    
     norm_wo_embeds: Optional[bool] = False
 
     def __post_init__(self) -> None:

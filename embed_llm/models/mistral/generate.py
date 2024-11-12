@@ -1,8 +1,5 @@
-from typing import List, Optional, Tuple
-
-import numpy as np
 import torch
-
+from typing import List, Optional, Tuple
 from embed_llm.models.mistral.cache import BufferCache
 from embed_llm.models.mistral.transformer import Transformer
 

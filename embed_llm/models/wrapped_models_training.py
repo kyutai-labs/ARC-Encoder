@@ -13,17 +13,17 @@ import torch.distributed.fsdp.wrap as torch_wrap
 from torch.distributed.fsdp import BackwardPrefetch
 from torch.distributed.fsdp.api import ShardingStrategy
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
-
+from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.models.args import MistralModelArgs, LlamaModelArgs, GemmaConfig, MLPProjectArgs
 
 from embed_llm.models.args import LoraArgs
-from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.training.distributed import (
     get_rank,
     get_world_size,
 )
 from embed_llm.models.augmented_model import EmbedAugModel
 from embed_llm.training.args import TrainArgs
+from embed_llm.models.embedding_modules import MLP_project
 
 # Mistral specifics
 from embed_llm.models.mistral.moe import MoeArgs
@@ -44,7 +44,7 @@ from embed_llm.models.llama.model import Transformer as LlamaTransformer
 
 
 ModelsArgs = Union[MistralModelArgs, LlamaModelArgs, GemmaConfig]
-Tokenizer = Union[MistralTokenizer.instruct_tokenizer.tokenizer,
+Tokenizer = Union[MistralTokenizer,
                   LlamaTokenizer, GemmaTokenizer]
 TransformerBlock = Union[MistralTransformerBlock,
                          LlamaTransformerBlock, Gemma2DecoderLayer, GemmaDecoderLayer]
@@ -75,15 +75,23 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
         return transformer_block_wrap_policy
 
     def fsdp_lora_policy_fn(module):
-        return all(p.requires_grad for p in module.parameters())
+        return all(p.requires_grad for p in module.parameters() if 'mlp_project' not in module)
+    
 
     # For LoRA training, trainable and non-trainable parameters need to be put into
     # different FSDP groups
     fsdp_lora_policy = functools.partial(
         torch_wrap.lambda_auto_wrap_policy, lambda_fn=fsdp_lora_policy_fn
     )
+    
+    def fsdp_mlp_proj_policy_fn(module):
+        return all(p.requires_grad for p in module.parameters() if 'mlp_project' in module)
 
-    policies = [fsdp_lora_policy, transformer_block_wrap_policy]
+    fsdp_mlp_proj_policy = functools.partial(
+        torch_wrap.lambda_auto_wrap_policy, lambda_fn=fsdp_mlp_proj_policy_fn
+    )
+    
+    policies = [fsdp_lora_policy, transformer_block_wrap_policy, fsdp_mlp_proj_policy]
 
     return functools.partial(torch_wrap._or_policy, policies=policies)
 
@@ -196,6 +204,7 @@ def load_training_model(
         args: TrainArgs,
         folder: Path,
         lora: LoraArgs,
+        mlp_projector_args: MLPProjectArgs,
         model_name: str,
         embedding_model: Any,
         checkpoint: Optional[bool] = False,
@@ -270,22 +279,17 @@ def load_training_model(
 
     torch.distributed.barrier()
 
-    mlp_project_args = MLPProjectArgs(
-        input_dim=embed_dim,
-        output_dim=args.embedder.dim,
-        hidden_dim=args.projector.hidden_dim,
-        n_layers=args.projector.n_layers,
-        act=args.projector.activation,
-    )
+    mlp_projector_args.in_dim = args.embedder.dim
+    mlp_projector_args.out_dim = embed_dim
+    
     augmented_model = EmbedAugModel(
         model_name=model_name,
-        embedder_dim=args.embedder.dim,
-        mlp_project_args=mlp_project_args,
-        llm=wrapped_model,
+        mlp_project_args=mlp_projector_args,
+        llm=model,
         embed_model_name=args.embedder.name,
         embedding_model=embedding_model,
-        norm_wo_embeds=args.projector.norm_wo_embeds,
-        pad_token_id=tokenizer.pad_token_id,
+        norm_wo_embeds=args.norm_wo_embeds,
+        pad_token_id=tokenizer.pad_id,
         max_seq_len=max_seq_len)
 
     # only finetune LoRA parameters and freeze before wrapping
@@ -303,6 +307,12 @@ def load_training_model(
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
+    for submodule in augmented_model.modules():
+        try:
+            all(p.requires_grad for p in submodule.parameters() if not isinstance(submodule,MLP_project))
+        except:
+            print(submodule)
+        
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,

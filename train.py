@@ -96,9 +96,11 @@ def _train(
 
     if is_torchrun():
         if run_dir.exists():
-            raise RuntimeError(
-                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
-            )
+            # raise RuntimeError(
+            #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
+            # )
+            print('Run dir already exists. OVERWRITTING...')
+            
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -152,6 +154,7 @@ def _train(
         folder=model_folder,
         lora=args.lora,
         model_name=args.model_name,
+        mlp_projector_args=args.projector,
         embedding_model=embedding_model,
         checkpoint=args.checkpoint if hasattr(args, 'checkpoint') else False,
         param_dtype=param_dtype,

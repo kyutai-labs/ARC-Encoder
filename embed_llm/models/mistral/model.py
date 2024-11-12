@@ -1,11 +1,10 @@
+import torch
+import torch.nn as nn
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Optional, Union
 
-import torch
-import torch.nn as nn
-
-from mistral_inference.cache import BufferCache
+from embed_llm.models.mistral.cache import BufferCache
 
 
 class ModelBase(nn.Module, ABC):

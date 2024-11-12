@@ -1,10 +1,11 @@
+import torch
+from torch import nn
+import torch.nn.functional as F
+
 import dataclasses
 from typing import List
-
-import torch
-import torch.nn.functional as F
 from simple_parsing.helpers import Serializable
-from torch import nn
+
 
 
 @dataclasses.dataclass
