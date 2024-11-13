@@ -21,7 +21,7 @@ from embed_llm.training.distributed import (
     get_rank,
     get_world_size,
 )
-from embed_llm.models.augmented_model import EmbedAugModel
+from embed_llm.models.augmented_model import EmbedAugModel, EmbedAugPipeline
 from embed_llm.training.args import TrainArgs
 from embed_llm.models.embedding_modules import MLP_project
 
@@ -75,7 +75,7 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
         return transformer_block_wrap_policy
 
     def fsdp_lora_policy_fn(module):
-        return all(p.requires_grad for p in module.parameters() if 'mlp_project' not in module)
+        return all(p.requires_grad for p in module.parameters() if not isinstance(module, MLP_project))
     
 
     # For LoRA training, trainable and non-trainable parameters need to be put into
@@ -85,7 +85,7 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     )
     
     def fsdp_mlp_proj_policy_fn(module):
-        return all(p.requires_grad for p in module.parameters() if 'mlp_project' in module)
+        return all(p.requires_grad for p in module.parameters() if  isinstance(module, MLP_project))
 
     fsdp_mlp_proj_policy = functools.partial(
         torch_wrap.lambda_auto_wrap_policy, lambda_fn=fsdp_mlp_proj_policy_fn
@@ -282,39 +282,34 @@ def load_training_model(
     mlp_projector_args.in_dim = args.embedder.dim
     mlp_projector_args.out_dim = embed_dim
     
-    augmented_model = EmbedAugModel(
+    augmented_pipeline = EmbedAugPipeline(
         model_name=model_name,
         mlp_project_args=mlp_projector_args,
         llm=model,
+        tokenizer = tokenizer,
         embed_model_name=args.embedder.name,
         embedding_model=embedding_model,
-        norm_wo_embeds=args.norm_wo_embeds,
         pad_token_id=tokenizer.pad_id,
         max_seq_len=max_seq_len)
 
     # only finetune LoRA parameters and freeze before wrapping
     if lora.enable:
-        for name, param in augmented_model.named_parameters():
+        for name, param in augmented_pipeline.model.named_parameters():
             if "lora" in name or 'mlp_project' in name:
                 param.requires_grad = True
             else:
                 param.requires_grad = False
     else:
-        for name, param in augmented_model.named_parameters():
+        for name, param in augmented_pipeline.model.named_parameters():
             param.requires_grad = True
 
     auto_wrap_policy = get_fsdp_policy(model_args.lora.enable)
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
-    for submodule in augmented_model.modules():
-        try:
-            all(p.requires_grad for p in submodule.parameters() if not isinstance(submodule,MLP_project))
-        except:
-            print(submodule)
         
     wrapped_model = FullyShardedDataParallel(
-        augmented_model,
+        augmented_pipeline.model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         auto_wrap_policy=auto_wrap_policy,
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
@@ -325,9 +320,9 @@ def load_training_model(
     )
 
     main_logger_info("Model sharded!")
-    log_train_params(augmented_model)
+    log_train_params(wrapped_model)
 
-    return tokenizer, wrapped_model
+    return augmented_pipeline, wrapped_model, 
 
 
 @torch.no_grad()

@@ -149,7 +149,7 @@ def _train(
     optim_dtype = torch.float32
 
     assert args.lora is not None, "`args.lora` should be set to a valid value."
-    tokenizer, model = load_training_model(
+    pipeline, model = load_training_model(
         args=args,
         folder=model_folder,
         lora=args.lora,
@@ -167,7 +167,7 @@ def _train(
     """ Load  Dataloader"""
 
     train_data_loader = build_data_loader(
-        tokenizer=tokenizer,
+        tokenizer=pipeline.tokenizer,
         args=args.data,
         seq_len=args.seq_len,
         batch_size=args.batch_size,
@@ -179,7 +179,7 @@ def _train(
 
     if not args.no_eval:
         eval_data_loader = build_data_loader(
-            tokenizer=tokenizer,
+            tokenizer=pipeline.tokenizer,
             args=args.data,
             seq_len=args.seq_len,
             batch_size=args.batch_size,
@@ -239,8 +239,9 @@ def _train(
             batch = next(train_data_loader)
 
             """ Training loop for basic reconstruction"""
-            output, y, y_mask = model(batch)
-
+            x, y, y_mask, seqlens, embeddings = pipeline.prepare_forward(batch)
+            output = model.forward(x = x, embeddings = embeddings, seqlens = seqlens)
+            
             mb_loss = compute_loss_with_mask(output, y, y_mask)
 
             mb_loss.backward()
