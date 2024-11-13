@@ -91,6 +91,16 @@ class LoRALinear(nn.Module):
                 "lora_B.weight": torch.zeros_like(self.lora_B.weight, device=w_ref.device, dtype=w_ref.dtype),
             }
             self.load_state_dict(state_dict, assign=True, strict=True)
+    
+    def merge_weight(self):
+        with torch.no_grad():
+            down_weight = self.lora_A.weight
+            up_weight = self.lora_B.weight
+
+            weight = up_weight.mm(down_weight) * self.scaling
+
+            weight += self.frozen_W.weight
+        return weight
 
 
 class LoRALoaderMixin:

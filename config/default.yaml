@@ -46,7 +46,7 @@ log_freq: 1
 eval_freq: 4
 no_eval: False
 ckpt_freq: 2
-save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model
+save_adapters: False # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model
 
 
 # Monitoring
