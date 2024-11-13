@@ -1,5 +1,4 @@
 import functools
-import contextlib
 import json
 import logging
 import math
@@ -21,7 +20,7 @@ from embed_llm.training.distributed import (
     get_rank,
     get_world_size,
 )
-from embed_llm.models.augmented_model import EmbedAugModel, EmbedAugPipeline
+from embed_llm.models.augmented_model import EmbedAugPipeline
 from embed_llm.training.args import TrainArgs
 from embed_llm.models.embedding_modules import MLP_project
 
@@ -205,7 +204,7 @@ def load_training_model(
         folder: Path,
         lora: LoraArgs,
         mlp_projector_args: MLPProjectArgs,
-        model_name: str,
+        llm_name: str,
         embedding_model: Any,
         checkpoint: Optional[bool] = False,
         param_dtype: Optional[torch.dtype] = torch.bfloat16,
@@ -213,12 +212,12 @@ def load_training_model(
         max_batch_size: Optional[int] = 32,
         variant: Optional[str] = None) -> Tuple[Tokenizer, FullyShardedDataParallel, int]:
 
-    model_args = load_args(folder, lora, model_name=model_name,
+    model_args = load_args(folder, lora, model_name=llm_name,
                            max_seq_len=max_seq_len,
                            max_batch_size=max_batch_size, variant=variant,
                            norm_wo_embeds=args.norm_wo_embeds)
 
-    if 'mistral' in model_name.lower():
+    if 'mistral' in llm_name.lower():
         tokenizer = load_mistraltokenizer(folder).instruct_tokenizer.tokenizer
         with torch.device("meta"):
             model = MistralTransformer(args=model_args, checkpoint=checkpoint)
@@ -229,7 +228,7 @@ def load_training_model(
             model.load_state_dict(state_dict, assign=True)  # type: ignore
             logger.info("Loaded model on cpu!")
 
-    elif 'llama' in model_name.lower():
+    elif 'llama' in llm_name.lower():
         tokenizer = LlamaTokenizer(model_path=str(folder / "tokenizer.model"))
         with torch.device("meta"):
             model = LlamaTransformer(args=model_args)
@@ -240,17 +239,17 @@ def load_training_model(
             model.load_state_dict(state_dict, assign=True)  # type: ignore
             logger.info("Loaded model on cpu!")
 
-    elif 'gemma' in model_name.lower():
+    elif 'gemma' in llm_name.lower():
         embed_dim = model.config.hidden_size
         model_args.tokenizer = str(folder / 'tokenizer.model')
-        with set_default_tensor_type(model_args.get_dtype()):
+        with set_default_tensor_type(param_dtype):
             model = GemmaForCausalLM(model_args)
             ckpt_path = str(folder / f'gemma-{variant}.ckpt')
             if get_rank() == 0:
                 model.load_weights(ckpt_path)
                 tokenizer = model.tokenizer
     else:
-        raise ValueError(f"Model name {model_name} not recognized.")
+        raise ValueError(f"Model name {llm_name} not recognized.")
 
     if get_rank() == 0:
         if lora.enable:
@@ -283,24 +282,26 @@ def load_training_model(
     mlp_projector_args.out_dim = embed_dim
     
     augmented_pipeline = EmbedAugPipeline(
-        model_name=model_name,
+        llm_name=llm_name,
         mlp_project_args=mlp_projector_args,
-        llm=model,
+        param_dtype=param_dtype,
         tokenizer = tokenizer,
         embed_model_name=args.embedder.name,
         embedding_model=embedding_model,
         pad_token_id=tokenizer.pad_id,
         max_seq_len=max_seq_len)
+    
+    augmented_model = augmented_pipeline.get_model(llm = model)
 
     # only finetune LoRA parameters and freeze before wrapping
     if lora.enable:
-        for name, param in augmented_pipeline.model.named_parameters():
+        for name, param in augmented_model.named_parameters():
             if "lora" in name or 'mlp_project' in name:
                 param.requires_grad = True
             else:
                 param.requires_grad = False
     else:
-        for name, param in augmented_pipeline.model.named_parameters():
+        for name, param in augmented_model.named_parameters():
             param.requires_grad = True
 
     auto_wrap_policy = get_fsdp_policy(model_args.lora.enable)
@@ -309,7 +310,7 @@ def load_training_model(
 
         
     wrapped_model = FullyShardedDataParallel(
-        augmented_pipeline.model,
+        augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         auto_wrap_policy=auto_wrap_policy,
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,

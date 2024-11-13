@@ -200,7 +200,7 @@ def sequence_iterator(
             mask_buffer.extend(curr_mask)
             n_missing -= size
             text_buffer.append(tokenizer.decode(
-                x[cur_pos]+y[cur_pos: cur_pos + n_missing]))
+                [x[cur_pos]]+y[cur_pos: cur_pos + n_missing]))
             sizes.append(size)
 
             cur_pos += size
@@ -215,7 +215,7 @@ def sequence_iterator(
                     yield SequenceTextMaskAndSizes(
                         x=x_buffer,
                         y=y_buffer,
-                        text=text_buffer,
+                        texts=text_buffer,
                         mask=mask_buffer,
                         sizes=sizes,
                     )
@@ -237,7 +237,7 @@ def sequence_iterator(
             yield SequenceTextMaskAndSizes(
                 x=x_buffer,
                 y=y_buffer,
-                text=text_buffer,
+                texts=text_buffer,
                 mask=mask_buffer,
                 sizes=sizes,
             )

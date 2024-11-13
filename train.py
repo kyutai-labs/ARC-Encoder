@@ -50,7 +50,8 @@ from embed_llm.monitoring.utils import set_logger
 
 # Define depending on the model
 # from finetune.wrapped_model import load_model, load_args
-
+import warnings
+warnings.filterwarnings("ignore")
 
 logger = logging.getLogger("train")
 
@@ -140,7 +141,7 @@ def _train(
 
     """ Load embedder model """
 
-    embedding_model = get_embedder(args.embedder.name)
+    embedding_model = get_embedder(args.embedder.name, device_map = 'cuda')
     embedding_model.config.max_length = embedding_model.config.max_length if args.seq_len is None else args.seq_len
 
     """ Load LLM and tokenizers """
@@ -153,7 +154,7 @@ def _train(
         args=args,
         folder=model_folder,
         lora=args.lora,
-        model_name=args.model_name,
+        llm_name=args.llm_name,
         mlp_projector_args=args.projector,
         embedding_model=embedding_model,
         checkpoint=args.checkpoint if hasattr(args, 'checkpoint') else False,
@@ -162,7 +163,7 @@ def _train(
         max_batch_size=args.batch_size,
         variant=args.variant if hasattr(args, 'variant') else None,
     )
-    print("Model loading done")
+    main_logger_info("Model loading done")
 
     """ Load  Dataloader"""
 
@@ -188,8 +189,8 @@ def _train(
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
         )
-        # pre-load all eval batches
-        eval_batches = list(eval_data_loader)
+        # pre-load all eval batches, restrain to 100 batches
+        eval_batches = list(eval_data_loader)[:100]
 
     # 9. Load optimizer
     optimizer = AdamW(
@@ -223,6 +224,9 @@ def _train(
         model.parameters(), param_dtype=param_dtype, optim_dtype=optim_dtype
     )
 
+    # 12. Prepare forward function to adapt batch to LLM forward input and calculate embedding
+    prepare_batch_fn = pipeline.prepare_forward
+    
     # 12. train!
     model.train()
     torch.cuda.empty_cache()
@@ -239,10 +243,12 @@ def _train(
             batch = next(train_data_loader)
 
             """ Training loop for basic reconstruction"""
-            x, y, y_mask, seqlens, embeddings = pipeline.prepare_forward(batch)
+            x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
             output = model.forward(x = x, embeddings = embeddings, seqlens = seqlens)
-            
-            mb_loss = compute_loss_with_mask(output, y, y_mask)
+     
+            mb_loss = compute_loss_with_mask(logits = output, 
+                                             target = y, 
+                                             target_mask = y_mask)
 
             mb_loss.backward()
 
@@ -285,7 +291,7 @@ def _train(
              args.eval_freq == 0) or is_last_step
         ):
             # write perplexity to state
-            evaluate(model, batches=eval_batches, state=state)
+            evaluate(model = model, prepare_batch_fn = prepare_batch_fn, batches=eval_batches, state=state)
 
             eval_logs = get_eval_logs(
                 state.step, avg_loss, state.this_eval_perplexity, state.this_eval_loss

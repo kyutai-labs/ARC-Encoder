@@ -1,9 +1,8 @@
-
 # Models
-model_id_or_path : /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-llm_name: Mistral7B
+model_id_or_path : /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.2-3B
+llm_name: Llama3.2-3B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
-exp_name: Mistral_concat
+exp_name: Llama_test
 norm_wo_embeds: False
 lora:
   rank: 64
@@ -31,6 +30,7 @@ data:
 
 
 # Training and Optim
+
 seq_len: 512
 batch_size: 1
 max_steps: 100000
@@ -42,18 +42,17 @@ optim:
 
 # other
 seed: 0
-log_freq: 1
-eval_freq: 4
+log_freq: 50
+eval_freq: 50
 no_eval: False
-ckpt_freq: 2
-save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model
+ckpt_freq: 200
+save_adapters: False # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not implemented for now
 
 
 # Monitoring
 # wandb: 
 #   project: embed_llm  # your wandb project name
-#   run_name: Mistral_concat  # your wandb run name
+#   run_name: Llama_test  # your wandb run name
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706 # your wandb api key
 #   offline: True
     
-

@@ -47,14 +47,14 @@ def pad_and_convert_to_tensor(
 
 
 class EmbedAugModel(nn.Module):
-    def __init__(self,model_name: str, mlp_project_args: MLPProjectArgs, 
-                 llm: Models, max_seq_len: Optional[int] = None):
+    def __init__(self,llm_name: str, mlp_project_args: MLPProjectArgs,  llm: Models,
+                 param_dtype: torch.dtype = torch.bfloat16, max_seq_len: Optional[int] = None):
         super().__init__()
         self.llm = llm
-        self.llm_name = model_name.lower()
+        self.llm_name = llm_name.lower()
         self.max_seq_len = max_seq_len
         if mlp_project_args.n_layers > 0:
-            self.mlp_project = MLP_project(mlp_project_args)
+            self.mlp_project = MLP_project(args = mlp_project_args, dtype = param_dtype)
         else:
             self.mlp_project = None
 
@@ -67,21 +67,23 @@ class EmbedAugModel(nn.Module):
         elif 'llama' in self.llm_name:
             self.forward = self.forward_llama
             
-    def forward_mistral(self, x: torch.Tensor, seqlens: List[int], embeddings: torch.Tensor):
+    def forward_mistral(self, x: torch.Tensor, seqlens: List[int], embeddings: torch.Tensor) -> torch.Tensor:
 
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
 
         return self.llm(input_ids=x, embeddings=embeddings, seqlens=seqlens)
 
-    def forward_llama(self, x: torch.Tensor, embeddings: torch.Tensor, seqlens: Optional[List[int]]= None):
+    def forward_llama(self, x: torch.Tensor, embeddings: torch.Tensor, 
+                      seqlens: Optional[List[int]]= None) -> torch.Tensor:
         
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
             
         return self.llm(tokens=x, embeddings=embeddings, training=True)
 
-    def forward_gemma(self, x: torch.Tensor, embeddings: torch.Tensor, seqlens: Optional[List[int]]= None):
+    def forward_gemma(self, x: torch.Tensor, embeddings: torch.Tensor, 
+                      seqlens: Optional[List[int]]= None) -> torch.Tensor:
         
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
@@ -95,8 +97,8 @@ class EmbedAugModel(nn.Module):
         
 
 class EmbedAugPipeline(nn.Module):
-    def __init__(self, model_name: str, mlp_project_args: MLPProjectArgs, llm: Models,
-                 embed_model_name: str, embedding_model: Any, 
+    def __init__(self, llm_name: str, mlp_project_args: MLPProjectArgs,
+                 embed_model_name: str, embedding_model: Any, param_dtype: torch.dtype = torch.bfloat16,
                  tokenizer: Any = None, pad_token_id: Optional[int] = None, max_seq_len: Optional[int] = None):
         super().__init__()
 
@@ -104,19 +106,33 @@ class EmbedAugPipeline(nn.Module):
         self.embed_model_name = embed_model_name
         self.embedding_model = embedding_model
         self.tokenizer = tokenizer
-        self.model = EmbedAugModel(model_name, mlp_project_args, llm, max_seq_len)
-        self.generate = None
+        self.param_dtype = param_dtype
         self.pad_token_id = pad_token_id
         self.max_seq_len = max_seq_len
-        self.model_name = model_name.lower()
+        self.llm_name = llm_name.lower()
+        self.mlp_project_args = mlp_project_args
+        
+        self.model = None
+        self.generate = None
+
+        
+    def get_model(self, llm: Any) -> nn.Module:
+        return EmbedAugModel(llm_name = self.llm_name, 
+                                   mlp_project_args = self.mlp_project_args, 
+                                   llm = llm,
+                                   max_seq_len = self.max_seq_len,
+                                   param_dtype = self.param_dtype)
+        
+    def store_model(self, model: nn.Module):
+        self.model = model
     
     def prepare_forward(self, batch: Batch):
         
         with torch.no_grad():
             embeddings = encode_text(batch.texts, self.embed_model_name,
-                                     self.embedding_model, query_embedding=False, device='cuda').cuda()
+                                     self.embedding_model, query_embedding=False, device='cuda').type(self.param_dtype)
 
-        if 'mistral' in self.model_name :
+        if 'mistral' in self.llm_name :
             x = torch.from_numpy(batch.x).cuda(non_blocking=True)
             y = torch.from_numpy(batch.y).cuda(non_blocking=True)
             y_mask = (
@@ -126,7 +142,7 @@ class EmbedAugPipeline(nn.Module):
             )
             seqlens = batch.sizes
 
-        elif 'llama' in self.model_name or 'gemma' in self.model_name:
+        elif 'llama' in self.llm_name or 'gemma' in self.llm_name:
             x, y, y_mask = pad_and_convert_to_tensor(
                 x=batch.x,
                 y=batch.y,
@@ -148,7 +164,6 @@ class EmbedAugPipeline(nn.Module):
             max_seq_len: int,
             embed_model_name: str,
             embedding_model: Any,
-            norm_wo_embeds: bool = False,
             variant: Optional[str] = None,
             lora_path: Optional[str] = None):
 
@@ -199,9 +214,10 @@ class EmbedAugPipeline(nn.Module):
             mlp_project_args = MLPProjectArgs(**args)
 
             augmented_pipeline = EmbedAugPipeline(
-                model_name, mlp_project_args, llm, embed_model_name, embedding_model, tokenizer, 
+                model_name, mlp_project_args, embed_model_name, embedding_model, tokenizer, 
                 max_seq_len=max_seq_len, pad_token_id=tokenizer.pad_id)
             
+            augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
             augmented_pipeline.model.mlp_project.load_state_dict(
                 torch.load(Path(mlp_path) / "model.pt"))
 
@@ -249,7 +265,7 @@ class EmbedAugPipeline(nn.Module):
                                  self.embedding_model, query_embedding=False, device='cuda')
         encoded_prompts = [self.tokenizer.encode(
             prompt, bos=True, eos=False) for prompt in prompts]
-        eos_id = self.tokenizer.eos_token_id
+        eos_id = self.tokenizer.eos_id
 
         generated_tokens, logprobs = mistral_generate(
             encoded_prompts=encoded_prompts,

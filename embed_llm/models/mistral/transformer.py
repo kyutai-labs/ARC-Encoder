@@ -52,7 +52,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self._precomputed_freqs_cis: Optional[torch.Tensor] = None
         assert self.vocab_size > 0
         self.training = training
-        self.embeds_pos = []
+        self.pos_to_keep = []
         self.norm_wo_embeds = args.norm_wo_embeds
         if training:
             self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
@@ -148,7 +148,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         if self._precomputed_freqs_cis is None:
             theta = self.args.rope_theta or 1000000.0
             self._precomputed_freqs_cis = precompute_freqs_cis(
-                self.args.head_dim, 128_000, theta=theta, device=device
+                self.args.head_dim, 128_000, theta=theta, device = device
             )
 
         return self._precomputed_freqs_cis
@@ -190,19 +190,22 @@ class Transformer(ModelBase, LoRALoaderMixin):
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(
             seqlens), input_ids.shape[0])
-
         token_embeds = self.tok_embeddings(input_ids)
         (num_toks,) = input_ids.shape
         if embeddings is not None:
             h = torch.zeros((num_toks + len(seqlens), self.args.dim),
                             device=self.device, dtype=self.dtype)
+            new_seqlens = []
             ind = 0
             for i, size in enumerate(seqlens):
                 assert size > 0
                 h[ind, :] = embeddings[i, :]
-                self.embeds_pos.append(ind)
-                h[ind + 1: ind + size, :] = token_embeds[ind: ind + size - 1, :]
+                self.pos_to_keep.append(False)
+                h[ind + 1: ind + size + 1, :] = token_embeds[ind: ind + size, :]
+                self.pos_to_keep.extend([True] * size)
                 ind += size
+                new_seqlens.append(size+1)
+            seqlens = new_seqlens
         else:
             h = token_embeds
 
@@ -216,12 +219,14 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         assert self.norm is not None
         if embeddings is not None and self.norm_wo_embeds:
+          
             normalized_h = self.norm(
-                h[~torch.tensor(self.embeds_pos, dtype=torch.int16)])  # type: ignore
+                h[torch.tensor(self.pos_to_keep, dtype=torch.bool)])  # type: ignore
+            self.pos_to_keep = []
         else:
-            normalized_h = self.norm(h)[~torch.tensor(
-                self.embeds_pos, dtype=torch.int16)]  # type: ignore
-
+            normalized_h = self.norm(h)[torch.tensor(self.pos_to_keep, dtype=torch.bool)]  # type: ignore
+            self.pos_to_keep = []
+            
         return self.output(normalized_h).float()
 
     # Below functions serve for inference
@@ -261,13 +266,17 @@ class Transformer(ModelBase, LoRALoaderMixin):
             if embeddings is not None:
                 h = torch.zeros((num_toks + len(seqlens), self.args.dim),
                                 device=self.device, dtype=self.dtype)
+                new_seqlens = []
                 ind = 0
                 for i, size in enumerate(seqlens):
                     assert size > 0
                     h[ind, :] = embeddings[i, :]
-                    self.embeds_pos.append(ind)
-                    h[ind + 1: ind + size, :] = token_embeds[ind: ind + size - 1, :]
+                    self.pos_to_keep.append(False)
+                    h[ind + 1: ind + size + 1, :] = token_embeds[ind: ind + size, :]
+                    self.pos_to_keep.extend([True] * size)
                     ind += size
+                    new_seqlens.append(size+1)
+                seqlens = new_seqlens
             else:
                 h = token_embeds
         else:
@@ -298,10 +307,13 @@ class Transformer(ModelBase, LoRALoaderMixin):
             assert self.norm is not None
             if embeddings is not None and self.norm_wo_embeds:
                 # type: ignore
-                return self.norm(h[~torch.tensor(self.embeds_pos, dtype=torch.int16)])
+                normalized_h = self.norm(h[torch.tensor(self.pos_to_keep, dtype=torch.bool)])
             else:
                 # type: ignore
-                return self.norm(h)[~torch.tensor(self.embeds_pos, dtype=torch.int16)]
+                normalized_h = self.norm(h)[torch.tensor(self.pos_to_keep, dtype=torch.bool)]
+            self.pos_to_keep = []
+            return normalized_h
+
 
     def generate(
         self,

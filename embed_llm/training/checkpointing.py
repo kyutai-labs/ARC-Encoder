@@ -35,7 +35,7 @@ class Checkpointer:
     ):
         self.llm = model.llm
         self.mlp_project = model.mlp_project
-        self.llm_name = model.model_name
+        self.llm_name = model.llm_name
         self.optimizer = optimizer
         self.state = state
         self.run_dir = Path(run_dir)
@@ -256,7 +256,7 @@ class Checkpointer:
             f"Dumping checkpoint in {llm_dst} and {mlp_project_dst} using tmp name: {tmp_llm_dst.name} and {tmp_mlp_project_dst.name}"
         )
 
-        assert not self.dst_dir.exists(), f"dst exists {self.dst_dir}"
+        assert not self.dst_dir[0].exists() and  not self.dst_dir[1].exists()  , f"dst exists {self.dst_dir}"
         tmp_llm_dst.mkdir(parents=True, exist_ok=True)
         tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
 

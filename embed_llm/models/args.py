@@ -226,5 +226,5 @@ def get_model_config(variant: str) -> GemmaConfig:
         return get_config_for_27b()
     else:
         raise ValueError(
-            f'Invalid variant {variant}. Supported variants are "2b"'
-            'and "7b" and "9b" and "27b".')
+        f'Invalid variant {variant}. Supported variants are "2b"'
+        'and "7b" and "9b" and "27b".')

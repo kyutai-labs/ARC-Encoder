@@ -17,7 +17,7 @@ def mean_pooling(model_output, attention_mask):
     return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
 
-def get_embedder(model_name: str):
+def get_embedder(model_name: str, device_map: str = 'auto'):
     if model_name == "GritLM":
         model = GritLM("GritLM/GritLM-7B",
                        torch_dtype="auto", device_map='auto')
@@ -35,7 +35,8 @@ def get_embedder(model_name: str):
         raise ValueError(f"Unknown model name {model_name}")
 
 
-def encode_text(text: list[str], model_name: str, model: Union[GritLM, AutoModel] = None, query_embedding: bool = True, tokenizer: Optional[AutoTokenizer] = None, device: str = 'cpu'):
+def encode_text(text: list[str], model_name: str, model: Union[GritLM, AutoModel] = None, query_embedding: bool = True, 
+                tokenizer: Optional[AutoTokenizer] = None, device: str = 'cpu'):
 
     if model_name == "GritLM":
         results = []

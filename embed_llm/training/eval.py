@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import List, Any
 import numpy as np
 import torch.cuda
 import torch.distributed as dist
@@ -8,6 +8,7 @@ from embed_llm.data.data_loader import Batch
 from embed_llm.training.distributed import get_rank, get_world_size
 from embed_llm.training.loss import compute_loss_with_mask
 from embed_llm.training.utils import TrainState
+
 logger = logging.getLogger("eval")
 
 
@@ -18,6 +19,7 @@ def main_logger_info(message: str) -> None:
 
 def evaluate(
     model: FullyShardedDataParallel,
+    prepare_batch_fn: Any,
     batches: List[Batch],
     state: TrainState,
 ):
@@ -44,10 +46,11 @@ def evaluate(
     model.eval()
 
     eval_loss = torch.tensor(0.0).cuda()
-    main_logger_info("Start eval...")
+    main_logger_info(f"Start eval for {len(batches)} batches")
     for batch in batches:
         with torch.no_grad():
-            output, y, y_mask = model(batch)
+            x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
+            output = model.forward(x = x, embeddings = embeddings, seqlens = seqlens)
 
             if not batch.is_pad_only:
                 eval_loss += compute_loss_with_mask(output, y, y_mask)

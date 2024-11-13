@@ -48,7 +48,7 @@ class TrainArgs(Serializable):
     # if specified, instruct_tokenizer and model will be loaded
     # Path to the directory containing the initial model or model id: "mistral-small"
     model_id_or_path: str
-    model_name: str
+    llm_name: str
     # Path to the directory where everything will be saved. It needs to be empty.
     run_dir: str
     # Name of the wandb run, if None it will be set to the name of the run_dir.
@@ -113,7 +113,7 @@ class TrainArgs(Serializable):
         if self.model_id_or_path is not None:
             Path(self.model_id_or_path).exists()
 
-        if 'gemma' in self.model_name:
+        if 'gemma' in self.llm_name:
             assert self.variant is not None
 
         if not self.save_adapters:

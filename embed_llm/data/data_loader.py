@@ -103,11 +103,10 @@ def build_data_loader(
     world_size: int,
     is_eval: bool,
 ) -> Iterator[Batch]:
-    train_data = args.train_data if not is_eval else ""
-    eval_data = args.eval_data if is_eval else ""
-
+    data = args.train_data if not is_eval else args.eval_data 
+    
     dataset = build_dataset(
-        pretrain_data=train_data,
+        pretrain_data=data,
         tokenizer=tokenizer,
         seq_len=seq_len,
         seed=seed,
