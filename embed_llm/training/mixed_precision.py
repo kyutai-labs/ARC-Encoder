@@ -13,8 +13,7 @@ def prepare_mixed_precision(
         for p in params:
             if p.requires_grad:
                 # Mixed precision: let's save a fp32 param tensor to each params that require a grad
-                p._mp_param = torch.empty_like(
-                    p, dtype=optim_dtype)  # type: ignore
+                p._mp_param = torch.empty_like(p, dtype=optim_dtype)  # type: ignore
                 p._mp_param.copy_(p.to(optim_dtype))  # type: ignore
 
             p.data = p.data.to(param_dtype)

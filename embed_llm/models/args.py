@@ -47,11 +47,15 @@ class MistralModelArgs(Serializable):
         assert self.sliding_window is None or self._sliding_window is None
 
         # hack for now so that vLLM is supported correctly
-        self.sliding_window = self.sliding_window if self.sliding_window is not None else self._sliding_window
+        self.sliding_window = (
+            self.sliding_window
+            if self.sliding_window is not None
+            else self._sliding_window
+        )
 
 
 @dataclass
-class LlamaModelArgs:
+class LlamaModelArgs(Serializable):
     dim: int = 4096
     n_layers: int = 32
     n_heads: int = 32
@@ -66,17 +70,20 @@ class LlamaModelArgs:
     max_seq_len: int = 2048
     lora: Optional[LoraArgs] = None
     norm_wo_embeds: Optional[bool] = False
+    use_scaled_rope: Optional[bool] = True  # Not implemented in the model
 
 
 """Gemma model config."""
 
 # Keep a mapping from dtype strings to the supported torch dtypes.
-_STR_DTYPE_TO_TORCH_DTYPE = dict({
-    'float16': torch.float16,
-    'float': torch.float32,
-    'float32': torch.float32,
-    'bfloat16': torch.bfloat16,
-})
+_STR_DTYPE_TO_TORCH_DTYPE = dict(
+    {
+        "float16": torch.float16,
+        "float": torch.float32,
+        "float32": torch.float32,
+        "bfloat16": torch.bfloat16,
+    }
+)
 
 
 class AttentionType(enum.Enum):
@@ -90,7 +97,7 @@ class Architecture(enum.Enum):
 
 
 @dataclass
-class GemmaConfig:
+class GemmaConfig(Serializable):
     # The architecture of the model.
     architecture: Architecture = Architecture.GEMMA_1
     # The number of tokens in the vocabulary.
@@ -112,11 +119,11 @@ class GemmaConfig:
     # The epsilon used by the rms normalization layers.
     rms_norm_eps: float = 1e-6
     # The dtype of the weights.
-    dtype: str = 'bfloat16'
+    dtype: str = "bfloat16"
     # Whether a quantized version of the model is used.
     quant: bool = False
     # The path to the model tokenizer.
-    tokenizer: Optional[str] = 'tokenizer/tokenizer.model'
+    tokenizer: Optional[str] = "tokenizer/tokenizer.model"
     # The types of attention used in the layers of the model.
     attn_types: Optional[Sequence[AttentionType]] = None
     # The size of the sliding window used for local attention.
@@ -151,7 +158,7 @@ def get_config_for_2b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
         num_key_value_heads=1,
         hidden_size=2048,
         intermediate_size=16384,
-        lora=lora
+        lora=lora,
     )
 
 
@@ -170,7 +177,7 @@ def get_config_for_2b_v2(lora: Optional[LoraArgs] = None) -> GemmaConfig:
         head_dim=256,
         attn_types=[AttentionType.LOCAL_SLIDING, AttentionType.GLOBAL] * 13,
         sliding_window_size=4096,
-        lora=lora
+        lora=lora,
     )
 
 
@@ -189,7 +196,7 @@ def get_config_for_9b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
         head_dim=256,
         attn_types=[AttentionType.LOCAL_SLIDING, AttentionType.GLOBAL] * 21,
         sliding_window_size=4096,
-        lora=lora
+        lora=lora,
     )
 
 
@@ -209,22 +216,23 @@ def get_config_for_27b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
         attn_types=[AttentionType.LOCAL_SLIDING, AttentionType.GLOBAL] * 23,
         sliding_window_size=4096,
         query_pre_attn_scalar=144,  # hidden_size / num_attention_heads
-        lora=lora
+        lora=lora,
     )
 
 
 def get_model_config(variant: str) -> GemmaConfig:
-    if variant == '7b':
+    if variant == "7b":
         return get_config_for_7b()
-    elif variant == '2b':
+    elif variant == "2b":
         return get_config_for_2b()
-    elif variant == '2b-v2':
+    elif variant == "2b-v2":
         return get_config_for_2b_v2()
-    elif variant == '9b':
+    elif variant == "9b":
         return get_config_for_9b()
-    elif variant == '27b':
+    elif variant == "27b":
         return get_config_for_27b()
     else:
         raise ValueError(
-        f'Invalid variant {variant}. Supported variants are "2b"'
-        'and "7b" and "9b" and "27b".')
+            f'Invalid variant {variant}. Supported variants are "2b"'
+            'and "7b" and "9b" and "27b".'
+        )

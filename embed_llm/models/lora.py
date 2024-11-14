@@ -20,6 +20,7 @@ class LoraArgs(Serializable):
             assert self.rank > 0
             assert self.scaling > 0.0
 
+
 class LoRALinear(nn.Module):
     """
     Implementation of:
@@ -62,22 +63,27 @@ class LoRALinear(nn.Module):
             bias=self.bias,
         )
 
-        self.linear = nn.Linear(
-            self.in_features, self.out_features, bias=self.bias)
+        self.linear = nn.Linear(self.in_features, self.out_features, bias=self.bias)
 
         # make sure no LoRA weights are marked as "missing" in load_state_dict
-        def ignore_missing_keys(m: nn.Module, incompatible_keys: NamedTuple) -> None:
+        def ignore_missing_keys(m: nn.Module, incompatible_keys: NamedTuple):
+            # empty missing keys in place
             incompatible_keys.missing_keys[:] = []  # type: ignore
 
         self.register_load_state_dict_post_hook(ignore_missing_keys)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        lora = self.lora_B(self.lora_A(x))
-        result: torch.Tensor = self.linear(x) + lora * self.scaling
-        return result
+    def merge_weight(self):
+        with torch.no_grad():
+            up_weight = self.lora_B.weight
+            down_weight = self.lora_A.weight
+            weight = up_weight @ down_weight * self.scaling
+            weight += self.linear.weight
+        return weight
 
     # type: ignore[no-untyped-def]
-    def _load_from_state_dict(self, state_dict: Dict[str, Any], prefix: str, *args, **kwargs) -> None:
+    def _load_from_state_dict(
+        self, state_dict: Dict[str, Any], prefix: str, *args, **kwargs
+    ) -> None:
         key_name = prefix + "weight"
 
         # full checkpoint
@@ -87,20 +93,19 @@ class LoRALinear(nn.Module):
             # load frozen weights
             state_dict = {
                 "linear.weight": w_ref,
-                "lora_A.weight": torch.zeros_like(self.lora_A.weight, device=w_ref.device, dtype=w_ref.dtype),
-                "lora_B.weight": torch.zeros_like(self.lora_B.weight, device=w_ref.device, dtype=w_ref.dtype),
+                "lora_A.weight": torch.zeros_like(
+                    self.lora_A.weight, device=w_ref.device, dtype=w_ref.dtype
+                ),
+                "lora_B.weight": torch.zeros_like(
+                    self.lora_B.weight, device=w_ref.device, dtype=w_ref.dtype
+                ),
             }
             self.load_state_dict(state_dict, assign=True, strict=True)
-    
-    def merge_weight(self):
-        with torch.no_grad():
-            down_weight = self.lora_A.weight
-            up_weight = self.lora_B.weight
 
-            weight = up_weight.mm(down_weight) * self.scaling
-
-            weight += self.frozen_W.weight
-        return weight
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        lora = self.lora_B(self.lora_A(x))
+        result: torch.Tensor = self.linear(x) + lora * self.scaling
+        return result
 
 
 class LoRALoaderMixin:
@@ -108,14 +113,15 @@ class LoRALoaderMixin:
         """Loads LoRA checkpoint"""
 
         lora_path = Path(lora_path)
-        assert lora_path.is_file(
-        ), f"{lora_path} does not exist or is not a file"
+        assert lora_path.is_file(), f"{lora_path} does not exist or is not a file"
 
         state_dict = safetensors.torch.load_file(lora_path)
 
         self._load_lora_state_dict(state_dict, scaling=scaling)
 
-    def _load_lora_state_dict(self, lora_state_dict: Dict[str, torch.Tensor], scaling: float = 2.0) -> None:
+    def _load_lora_state_dict(
+        self, lora_state_dict: Dict[str, torch.Tensor], scaling: float = 2.0
+    ) -> None:
         """Loads LoRA state_dict"""
         lora_dtypes = set([p.dtype for p in lora_state_dict.values()])
         assert (
@@ -123,13 +129,14 @@ class LoRALoaderMixin:
         ), f"LoRA weights have multiple different dtypes {lora_dtypes}. All weights need to have the same dtype"
         lora_dtype = lora_dtypes.pop()
         # type: ignore[attr-defined]
-        assert lora_dtype == self.dtype, f"LoRA weights dtype differs from model's dtype {lora_dtype} != {self.dtype}"
+        assert (
+            lora_dtype == self.dtype
+        ), f"LoRA weights dtype differs from model's dtype {lora_dtype} != {self.dtype}"
         assert all("lora" in key for key in lora_state_dict.keys())
 
         # move tensors to device
         # type: ignore[attr-defined]
-        lora_state_dict = {k: v.to(self.device)
-                           for k, v in lora_state_dict.items()}
+        lora_state_dict = {k: v.to(self.device) for k, v in lora_state_dict.items()}
 
         state_dict = self.state_dict()  # type: ignore[attr-defined]
 
@@ -152,8 +159,10 @@ class LoRALoaderMixin:
                     elif (name + ".lora_B.weight") in lora_state_dict:
                         weight = (
                             module.weight
-                            + (lora_state_dict[name + ".lora_B.weight"]
-                               @ lora_state_dict[name + ".lora_A.weight"])
+                            + (
+                                lora_state_dict[name + ".lora_B.weight"]
+                                @ lora_state_dict[name + ".lora_A.weight"]
+                            )
                             * scaling
                         )
 

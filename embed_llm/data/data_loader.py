@@ -28,8 +28,7 @@ class Batch:
         assert len(self.texts) == len(self.sizes)
 
         if self.y_mask is not None:
-            assert self.y_mask.size == self.y.size, (
-                self.y_mask.shape, self.y.shape)
+            assert self.y_mask.size == self.y.size, (self.y_mask.shape, self.y.shape)
             assert self.y_mask.dtype == bool
             assert sum(self.sizes) == self.y_mask.size
             assert not self.y_mask.all()
@@ -62,7 +61,14 @@ class BatchList:
     def __len__(self) -> int:
         return len(self.x)
 
-    def add(self, x: List[int], y: List[int], texts: List[str], sizes: List[int], y_mask: List[bool]):
+    def add(
+        self,
+        x: List[int],
+        y: List[int],
+        texts: List[str],
+        sizes: List[int],
+        y_mask: List[bool],
+    ):
         self.x.append(x)
         self.y.append(y)
         self.texts.append(texts)
@@ -78,7 +84,9 @@ class BatchList:
 
     @staticmethod
     def flatten_to_numpy(list_of_lists: List[List[Any]], dtype: type) -> np.ndarray:
-        return np.array([el for sublist in list_of_lists for el in sublist], dtype=dtype)
+        return np.array(
+            [el for sublist in list_of_lists for el in sublist], dtype=dtype
+        )
 
     def create_batch(self) -> Batch:
         x_np: np.ndarray = self.flatten_to_numpy(self.x, dtype=np.int64)
@@ -87,8 +95,9 @@ class BatchList:
         texts = sum(self.texts, [])  # noqa
 
         y_mask_flatten = self.flatten_to_numpy(self.y_mask, dtype=bool)
-        y_mask_np: Optional[np.ndarray] = None if y_mask_flatten.all(
-        ) else y_mask_flatten
+        y_mask_np: Optional[np.ndarray] = (
+            None if y_mask_flatten.all() else y_mask_flatten
+        )
 
         return Batch(x_np, y_np, texts, sizes, y_mask_np)
 
@@ -103,8 +112,8 @@ def build_data_loader(
     world_size: int,
     is_eval: bool,
 ) -> Iterator[Batch]:
-    data = args.train_data if not is_eval else args.eval_data 
-    
+    data = args.train_data if not is_eval else args.eval_data
+
     dataset = build_dataset(
         pretrain_data=data,
         tokenizer=tokenizer,
@@ -120,8 +129,7 @@ def build_data_loader(
     for sample in dataset:
         assert all(s >= 0 for s in sample.sizes)
 
-        batch_list.add(sample.x, sample.y, sample.texts,
-                       sample.sizes, sample.mask)
+        batch_list.add(sample.x, sample.y, sample.texts, sample.sizes, sample.mask)
 
         if len(batch_list) == batch_size:
             batch: Batch = batch_list.create_batch()

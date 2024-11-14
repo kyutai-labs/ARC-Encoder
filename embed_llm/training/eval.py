@@ -25,8 +25,7 @@ def evaluate(
 ):
     # Create fake samples to make FSDP happy for unbalanced data
     num_samples = torch.tensor([len(batches)], device="cuda", dtype=torch.long)
-    all_num_samples = [torch.zeros_like(num_samples)
-                       for _ in range(get_world_size())]
+    all_num_samples = [torch.zeros_like(num_samples) for _ in range(get_world_size())]
 
     torch.distributed.all_gather(all_num_samples, num_samples)
 
@@ -50,11 +49,22 @@ def evaluate(
     for batch in batches:
         with torch.no_grad():
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
-            output = model.forward(x = x, embeddings = embeddings, seqlens = seqlens)
+            output = model.forward(
+                x=x, embeddings=embeddings, seqlens=seqlens, step=state.step
+            )
+
+            if len(output.size()) > 2:
+                output = output.view(-1, output.size(-1)).float()
+                negative_token = y < 0
+                y[negative_token] = 0
+                y = y.view(-1).long()
+                y_mask = None if y_mask is None else y_mask.view(-1)
 
             if not batch.is_pad_only:
                 eval_loss += compute_loss_with_mask(output, y, y_mask)
-            assert batch.is_pad_only or y.abs().sum() != 0, "Pad sample is used to compute loss."
+            assert (
+                batch.is_pad_only or y.abs().sum() != 0
+            ), "Pad sample is used to compute loss."
 
     # sum loss
     main_logger_info("Eval finished!")

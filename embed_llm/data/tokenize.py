@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List,  Union, Optional
+from typing import Any, Dict, List, Union, Optional
 
 
 from mistral_common.tokens.tokenizers.base import Tokenizer as MistralTokenizer

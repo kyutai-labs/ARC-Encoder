@@ -57,8 +57,7 @@ def get_eval_logs(
 def train_log_msg(
     state: TrainState, logs: Dict[str, Union[float, int]], loss: float
 ) -> str:
-    metrics: Dict[str, Union[float, int, datetime]] = dict(
-        logs)  # shallow copy
+    metrics: Dict[str, Union[float, int, datetime]] = dict(logs)  # shallow copy
     metrics.pop("eta_in_seconds")
 
     metrics["eta"] = datetime.now() + timedelta(seconds=state.eta)

@@ -27,82 +27,129 @@ Models = Union[LlamaTransformer, MistralTransformer, GemmaForCausalLM]
 
 
 def pad_and_convert_to_tensor(
-        x: List[int], y: List[int],
-        sizes: List[int], y_mask: List[bool],
-        seq_len: int, pad_id: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    x: List[int],
+    y: List[int],
+    sizes: List[int],
+    y_mask: Union[List[bool], None],
+    seq_len: int,
+    pad_id: int,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
-    final_x = torch.ones((len(sizes), seq_len), dtype=torch.long).cuda(
-        non_blocking=True) * pad_id
-    final_y = torch.ones((len(sizes), seq_len), dtype=torch.long).cuda(
-        non_blocking=True) * pad_id
-    final_mask = torch.zeros((len(sizes), seq_len),
-                             dtype=torch.bool).cuda(non_blocking=True)
+    final_x = (
+        torch.ones((len(sizes), seq_len), dtype=torch.long).cuda(non_blocking=True)
+        * pad_id
+    )
+    final_y = (
+        torch.ones((len(sizes), seq_len), dtype=torch.long).cuda(non_blocking=True)
+        * pad_id
+    )
+    final_mask = (
+        torch.zeros((len(sizes), seq_len), dtype=torch.bool).cuda(non_blocking=True)
+        if y_mask is not None
+        else None
+    )
     # Pad the input and output sequences
     for i, size in enumerate(sizes):
         final_x[i, :size] = torch.tensor(x[i]).cuda()
         final_y[i, :size] = torch.tensor(y[i]).cuda()
-        final_mask[i, :size] = torch.tensor(y_mask[i]).cuda()
+        if y_mask is not None:
+            final_mask[i, :size] = torch.tensor(y_mask[i]).cuda()
 
     return final_x, final_y, final_mask
 
 
 class EmbedAugModel(nn.Module):
-    def __init__(self,llm_name: str, mlp_project_args: MLPProjectArgs,  llm: Models,
-                 param_dtype: torch.dtype = torch.bfloat16, max_seq_len: Optional[int] = None):
+    def __init__(
+        self,
+        llm_name: str,
+        mlp_project_args: MLPProjectArgs,
+        llm: Models,
+        param_dtype: torch.dtype = torch.bfloat16,
+        max_seq_len: Optional[int] = None,
+    ):
         super().__init__()
         self.llm = llm
         self.llm_name = llm_name.lower()
         self.max_seq_len = max_seq_len
         if mlp_project_args.n_layers > 0:
-            self.mlp_project = MLP_project(args = mlp_project_args, dtype = param_dtype)
+            self.mlp_project = MLP_project(args=mlp_project_args, dtype=param_dtype)
         else:
             self.mlp_project = None
 
-        if 'mistral' in self.llm_name:
+        if "mistral" in self.llm_name:
             self.forward = self.forward_mistral
 
-        elif 'gemma' in self.llm_name:
+        elif "gemma" in self.llm_name:
             self.forward = self.forward_gemma
 
-        elif 'llama' in self.llm_name:
+        elif "llama" in self.llm_name:
             self.forward = self.forward_llama
-            
-    def forward_mistral(self, x: torch.Tensor, seqlens: List[int], embeddings: torch.Tensor) -> torch.Tensor:
+
+    def forward_mistral(
+        self, x: torch.Tensor, seqlens: List[int], embeddings: torch.Tensor, step: int
+    ) -> torch.Tensor:
 
         if self.mlp_project is not None:
+            # if step == 65:
+            # from embed_llm.training.distributed import get_rank
+            # if get_rank() == 0:
+            #     print('Embeddings Before MLP project  min | max | mean',torch.min(embeddings), torch.max(embeddings), torch.mean(embeddings))
             embeddings = self.mlp_project(embeddings)
+            # if step == 65:
+            #     from embed_llm.training.distributed import get_rank
+            #     if get_rank() == 0:
+            #         print('Embeddings After MLP project min | max | mean',torch.min(embeddings), torch.max(embeddings), torch.mean(embeddings))
 
         return self.llm(input_ids=x, embeddings=embeddings, seqlens=seqlens)
 
-    def forward_llama(self, x: torch.Tensor, embeddings: torch.Tensor, 
-                      seqlens: Optional[List[int]]= None) -> torch.Tensor:
-        
-        if self.mlp_project is not None:
-            embeddings = self.mlp_project(embeddings)
-            
-        return self.llm(tokens=x, embeddings=embeddings, training=True)
+    def forward_llama(
+        self,
+        x: torch.Tensor,
+        embeddings: torch.Tensor,
+        seqlens: Optional[List[int]] = None,
+        step: Optional[int] = 0,
+    ) -> torch.Tensor:
 
-    def forward_gemma(self, x: torch.Tensor, embeddings: torch.Tensor, 
-                      seqlens: Optional[List[int]]= None) -> torch.Tensor:
-        
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
-            
-        att_mask = torch.full((self.max_seq_len, self.max_seq_len),
-                              float("-inf")).cuda(non_blocking=True)
+
+        return self.llm(tokens=x, embeddings=embeddings, is_training=True)
+
+    def forward_gemma(
+        self,
+        x: torch.Tensor,
+        embeddings: torch.Tensor,
+        seqlens: Optional[List[int]] = None,
+        step: Optional[int] = 0,
+    ) -> torch.Tensor:
+
+        if self.mlp_project is not None:
+            embeddings = self.mlp_project(embeddings)
+
+        att_mask = torch.full((self.max_seq_len, self.max_seq_len), float("-inf")).cuda(
+            non_blocking=True
+        )
         att_mask = torch.triu(att_mask, diagonal=1)
 
-        return self.llm(input_token_ids=x, embeddings=embeddings, mask=att_mask)
+        return self.llm(
+            input_token_ids=x, embeddings=embeddings, mask=att_mask, is_training=True
+        )
 
-        
 
 class EmbedAugPipeline(nn.Module):
-    def __init__(self, llm_name: str, mlp_project_args: MLPProjectArgs,
-                 embed_model_name: str, embedding_model: Any, param_dtype: torch.dtype = torch.bfloat16,
-                 tokenizer: Any = None, pad_token_id: Optional[int] = None, max_seq_len: Optional[int] = None):
+    def __init__(
+        self,
+        llm_name: str,
+        mlp_project_args: MLPProjectArgs,
+        embed_model_name: str,
+        embedding_model: Any,
+        param_dtype: torch.dtype = torch.bfloat16,
+        tokenizer: Any = None,
+        pad_token_id: Optional[int] = None,
+        max_seq_len: Optional[int] = None,
+    ):
         super().__init__()
 
- 
         self.embed_model_name = embed_model_name
         self.embedding_model = embedding_model
         self.tokenizer = tokenizer
@@ -111,28 +158,34 @@ class EmbedAugPipeline(nn.Module):
         self.max_seq_len = max_seq_len
         self.llm_name = llm_name.lower()
         self.mlp_project_args = mlp_project_args
-        
+
         self.model = None
         self.generate = None
 
-        
     def get_model(self, llm: Any) -> nn.Module:
-        return EmbedAugModel(llm_name = self.llm_name, 
-                                   mlp_project_args = self.mlp_project_args, 
-                                   llm = llm,
-                                   max_seq_len = self.max_seq_len,
-                                   param_dtype = self.param_dtype)
-        
+        return EmbedAugModel(
+            llm_name=self.llm_name,
+            mlp_project_args=self.mlp_project_args,
+            llm=llm,
+            max_seq_len=self.max_seq_len,
+            param_dtype=self.param_dtype,
+        )
+
     def store_model(self, model: nn.Module):
         self.model = model
-    
-    def prepare_forward(self, batch: Batch):
-        
-        with torch.no_grad():
-            embeddings = encode_text(batch.texts, self.embed_model_name,
-                                     self.embedding_model, query_embedding=False, device='cuda').type(self.param_dtype)
 
-        if 'mistral' in self.llm_name :
+    def prepare_forward(self, batch: Batch):
+
+        with torch.no_grad():
+            embeddings = encode_text(
+                batch.texts,
+                self.embed_model_name,
+                self.embedding_model,
+                query_embedding=False,
+                device="cuda",
+            ).type(self.param_dtype)
+
+        if "mistral" in self.llm_name:
             x = torch.from_numpy(batch.x).cuda(non_blocking=True)
             y = torch.from_numpy(batch.y).cuda(non_blocking=True)
             y_mask = (
@@ -140,9 +193,8 @@ class EmbedAugPipeline(nn.Module):
                 if batch.y_mask is not None
                 else None
             )
-            seqlens = batch.sizes
 
-        elif 'llama' in self.llm_name or 'gemma' in self.llm_name:
+        elif "llama" in self.llm_name or "gemma" in self.llm_name:
             x, y, y_mask = pad_and_convert_to_tensor(
                 x=batch.x,
                 y=batch.y,
@@ -151,62 +203,67 @@ class EmbedAugPipeline(nn.Module):
                 seq_len=self.max_seq_len,
                 pad_id=self.pad_token_id,
             )
+
+        seqlens = batch.sizes
         return x, y, y_mask, seqlens, embeddings
-    
+
     # TODO Modifier pour que Llama et Gemma accepte format checpointing
     @staticmethod
     def load_inference_model(
-            llm_path: str,
-            mlp_path: str,
-            device: str,
-            model_name: str,
-            max_batch_size: int,
-            max_seq_len: int,
-            embed_model_name: str,
-            embedding_model: Any,
-            variant: Optional[str] = None,
-            lora_path: Optional[str] = None):
+        llm_path: str,
+        mlp_path: str,
+        device: str,
+        model_name: str,
+        max_batch_size: int,
+        max_seq_len: int,
+        embed_model_name: str,
+        embedding_model: Any,
+        variant: Optional[str] = None,
+        lora_path: Optional[str] = None,
+    ):
 
-        if 'mistral' in model_name.lower():
+        if "mistral" in model_name.lower():
             llm = MistralTransformer.from_folder(
-                Path(llm_path), max_batch_size, max_seq_len, device, variant)
-            
+                Path(llm_path), max_batch_size, max_seq_len, device, variant
+            )
+
             # load LoRA
             if lora_path is not None:
                 llm.load_lora(Path(lora_path))
-                
+
             llm.eval()
             tokenizer = load_mistraltokenizer(
-                Path(llm_path)).instruct_tokenizer.tokenizer
-        elif 'gemma' in model_name.lower():
-            assert variant is not None, 'Variant must be specified for Gemma'
+                Path(llm_path)
+            ).instruct_tokenizer.tokenizer
+        elif "gemma" in model_name.lower():
+            assert variant is not None, "Variant must be specified for Gemma"
             gemma_config = get_model_config(variant)
-    
+
             gemma_config.dtype = "float32" if args.device == "cpu" else "float16"
 
             # Create the model and load the weights.
             device = torch.device(args.device)
             with set_default_tensor_type(gemma_config.get_dtype()):
                 llm = GemmaForCausalLM(gemma_config)
-                llm.load_weights(model_path = llm_path, lora_path = lora_path)
-        
-        elif 'llama' in model_name.lower():
+                llm.load_weights(model_path=llm_path, lora_path=lora_path)
+
+        elif "llama" in model_name.lower():
             llama = Llama.build(
                 ckpt_dir=llm_path,
                 max_batch_size=max_batch_size,
                 max_seq_len=max_seq_len,
-                tokenizer_path=str(Path(llm_path) / 'tokenizer.model')
+                tokenizer_path=str(Path(llm_path) / "tokenizer.model"),
             )
             llm = llama.model
-            
+
             # load LoRA
             if lora_path is not None:
                 llm.load_lora(Path(lora_path))
-            
+
             llm.eval()
             tokenizer = llm.tokenizer
         else:
-            raise NotImplementedError('Model not yet implemented')
+            raise NotImplementedError("Model not yet implemented")
 
         if mlp_path is not None:
             with open(Path(mlp_path) / "params.json", "r") as f:
@@ -214,36 +271,51 @@ class EmbedAugPipeline(nn.Module):
             mlp_project_args = MLPProjectArgs(**args)
 
             augmented_pipeline = EmbedAugPipeline(
-                model_name, mlp_project_args, embed_model_name, embedding_model, tokenizer, 
-                max_seq_len=max_seq_len, pad_token_id=tokenizer.pad_id)
-            
+                model_name,
+                mlp_project_args,
+                embed_model_name,
+                embedding_model,
+                tokenizer,
+                max_seq_len=max_seq_len,
+                pad_token_id=tokenizer.pad_id,
+            )
+
             augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
             augmented_pipeline.model.mlp_project.load_state_dict(
-                torch.load(Path(mlp_path) / "model.pt"))
+                torch.load(Path(mlp_path) / "model.pt")
+            )
 
         augmented_pipeline.model.eval()
-        if 'mistral' in model_name.lower():
+        if "mistral" in model_name.lower():
             augmented_pipeline.generate = augmented_pipeline.generate_mistral
-        elif 'llama' in model_name.lower():
+        elif "llama" in model_name.lower():
             augmented_pipeline.generate = partial(
-                augmented_pipeline.generate_llama, llama_model=Llama(llm, tokenizer))
-        elif 'gemma' in model_name.lower():
+                augmented_pipeline.generate_llama, llama_model=Llama(llm, tokenizer)
+            )
+        elif "gemma" in model_name.lower():
             augmented_pipeline.generate = partial(
-                augmented_pipeline.generate_gemma, device=device)
+                augmented_pipeline.generate_gemma, device=device
+            )
 
         return augmented_pipeline
 
     @torch.inference_mode()
     def generate_gemma(
-            self,
-            prompts: Union[str, Sequence[str]],
-            text_conditioning:  Union[str, Sequence[str]],
-            device: Any,
-            max_tokens: int = 100,
-            temperature: Union[float, None] = 0.95):
+        self,
+        prompts: Union[str, Sequence[str]],
+        text_conditioning: Union[str, Sequence[str]],
+        device: Any,
+        max_tokens: int = 100,
+        temperature: Union[float, None] = 0.95,
+    ):
 
-        embeddings = encode_text(text_conditioning, self.embed_model_name,
-                                 self.embedding_model, query_embedding=False, device='cuda')
+        embeddings = encode_text(
+            text_conditioning,
+            self.embed_model_name,
+            self.embedding_model,
+            query_embedding=False,
+            device="cuda",
+        )
 
         return self.model.llm.generate(
             prompts=prompts,
@@ -251,20 +323,28 @@ class EmbedAugPipeline(nn.Module):
             device=device,
             output_len=max_tokens,
             temperature=temperature,
+            tokenizer=self.tokenizer,
         )
 
     @torch.inference_mode()
-    def generate_mistral(self,
-                         prompts: Union[str, Sequence[str]],
-                         text_conditioning:  Union[str, Sequence[str]],
-                         max_tokens: int = 100,
-                         temperature: float = 0.6,
-                         ):
+    def generate_mistral(
+        self,
+        prompts: Union[str, Sequence[str]],
+        text_conditioning: Union[str, Sequence[str]],
+        max_tokens: int = 100,
+        temperature: float = 0.6,
+    ):
 
-        embeddings = encode_text(text_conditioning, self.embed_model_name,
-                                 self.embedding_model, query_embedding=False, device='cuda')
-        encoded_prompts = [self.tokenizer.encode(
-            prompt, bos=True, eos=False) for prompt in prompts]
+        embeddings = encode_text(
+            text_conditioning,
+            self.embed_model_name,
+            self.embedding_model,
+            query_embedding=False,
+            device="cuda",
+        )
+        encoded_prompts = [
+            self.tokenizer.encode(prompt, bos=True, eos=False) for prompt in prompts
+        ]
         eos_id = self.tokenizer.eos_id
 
         generated_tokens, logprobs = mistral_generate(
@@ -276,20 +356,29 @@ class EmbedAugPipeline(nn.Module):
             chunk_size=None,
             eos_id=eos_id,
         )
-        produced_text = [self.tokenizer.decode(
-            generated_tokens[i]) for i in range(len(generated_tokens))]
+        produced_text = [
+            self.tokenizer.decode(generated_tokens[i])
+            for i in range(len(generated_tokens))
+        ]
         return produced_text
 
     @torch.inference_mode()
-    def generate_llama(self,
-                       llama_model: Llama,
-                       prompts: Union[str, Sequence[str]],
-                       text_conditioning:  Union[str, Sequence[str]],
-                       max_tokens: int,
-                       temperature: float = 0.6):
+    def generate_llama(
+        self,
+        llama_model: Llama,
+        prompts: Union[str, Sequence[str]],
+        text_conditioning: Union[str, Sequence[str]],
+        max_tokens: int,
+        temperature: float = 0.6,
+    ):
 
-        embeddings = encode_text(text_conditioning, self.embed_model_name,
-                                 self.embedding_model, query_embedding=False, device='cuda')
+        embeddings = encode_text(
+            text_conditioning,
+            self.embed_model_name,
+            self.embedding_model,
+            query_embedding=False,
+            device="cuda",
+        )
         prompt_tokens = llama_model.tokenizer.encode_batch(prompts)
         out_tokens = llama_model.generate(
             prompt_tokens=prompt_tokens,

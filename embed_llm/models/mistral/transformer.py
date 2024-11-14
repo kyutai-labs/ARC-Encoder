@@ -19,6 +19,7 @@ from embed_llm.models.mistral.cache import BufferCache, CacheInputMetadata
 from embed_llm.models.mistral.model import ModelBase
 from embed_llm.models.mistral.rope import precompute_freqs_cis
 from embed_llm.models.mistral.transformer_layers import RMSNorm, TransformerBlock
+
 # from vision_encoder import VisionLanguageAdapter, VisionTransformer
 
 
@@ -31,7 +32,8 @@ class SimpleInputMetadata:
     def from_seqlens(seqlens: List[int], device: torch.device) -> "SimpleInputMetadata":
         return SimpleInputMetadata(
             positions=torch.cat([torch.arange(0, seqlen) for seqlen in seqlens]).to(
-                device=device, dtype=torch.long)
+                device=device, dtype=torch.long
+            )
         )
 
 
@@ -88,7 +90,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         else:
             assert pipeline_rank < num_pipeline_ranks, (
-                pipeline_rank, num_pipeline_ranks)
+                pipeline_rank,
+                num_pipeline_ranks,
+            )
             self.pipeline_rank = pipeline_rank
             self.num_pipeline_ranks = num_pipeline_ranks
             self.softmax_fp32 = softmax_fp32
@@ -122,12 +126,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 )
                 for _ in range(args.n_layers)
             ]
-            num_layers_per_rank = math.ceil(
-                self.n_layers / self.num_pipeline_ranks)
+            num_layers_per_rank = math.ceil(self.n_layers / self.num_pipeline_ranks)
             offset = self.pipeline_rank * num_layers_per_rank
             end = min(self.n_layers, offset + num_layers_per_rank)
-            self.layers = nn.ModuleDict(
-                {str(i): layers[i] for i in range(offset, end)})
+            self.layers = nn.ModuleDict({str(i): layers[i] for i in range(offset, end)})
             self.n_local_layers = len(self.layers)
 
     @property
@@ -148,7 +150,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         if self._precomputed_freqs_cis is None:
             theta = self.args.rope_theta or 1000000.0
             self._precomputed_freqs_cis = precompute_freqs_cis(
-                self.args.head_dim, 128_000, theta=theta, device = device
+                self.args.head_dim, 128_000, theta=theta, device=device
             )
 
         return self._precomputed_freqs_cis
@@ -188,23 +190,25 @@ class Transformer(ModelBase, LoRALoaderMixin):
         seqlens: List[int],
         embeddings: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        assert sum(seqlens) == input_ids.shape[0], (sum(
-            seqlens), input_ids.shape[0])
+        assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
         token_embeds = self.tok_embeddings(input_ids)
         (num_toks,) = input_ids.shape
         if embeddings is not None:
-            h = torch.zeros((num_toks + len(seqlens), self.args.dim),
-                            device=self.device, dtype=self.dtype)
+            h = torch.zeros(
+                (num_toks + len(seqlens), self.args.dim),
+                device=self.device,
+                dtype=self.dtype,
+            )
             new_seqlens = []
             ind = 0
             for i, size in enumerate(seqlens):
                 assert size > 0
                 h[ind, :] = embeddings[i, :]
                 self.pos_to_keep.append(False)
-                h[ind + 1: ind + size + 1, :] = token_embeds[ind: ind + size, :]
+                h[ind + 1 : ind + size + 1, :] = token_embeds[ind : ind + size, :]
                 self.pos_to_keep.extend([True] * size)
                 ind += size
-                new_seqlens.append(size+1)
+                new_seqlens.append(size + 1)
             seqlens = new_seqlens
         else:
             h = token_embeds
@@ -219,14 +223,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         assert self.norm is not None
         if embeddings is not None and self.norm_wo_embeds:
-          
+
             normalized_h = self.norm(
-                h[torch.tensor(self.pos_to_keep, dtype=torch.bool)])  # type: ignore
+                h[torch.tensor(self.pos_to_keep, dtype=torch.bool)]
+            )  # type: ignore
             self.pos_to_keep = []
         else:
             normalized_h = self.norm(h)[torch.tensor(self.pos_to_keep, dtype=torch.bool)]  # type: ignore
             self.pos_to_keep = []
-            
+
         return self.output(normalized_h).float()
 
     # Below functions serve for inference
@@ -254,8 +259,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
         if cache is not None:
             input_metadata = cache.get_input_metadata(seqlens)
         else:
-            input_metadata = [SimpleInputMetadata.from_seqlens(
-                seqlens, self.device) for _ in range(len(self.layers))]
+            input_metadata = [
+                SimpleInputMetadata.from_seqlens(seqlens, self.device)
+                for _ in range(len(self.layers))
+            ]
 
         if self.pipeline_rank == 0:
             assert self.tok_embeddings is not None
@@ -264,24 +271,28 @@ class Transformer(ModelBase, LoRALoaderMixin):
             # else:
             token_embeds = self.tok_embeddings(input_ids)
             if embeddings is not None:
-                h = torch.zeros((num_toks + len(seqlens), self.args.dim),
-                                device=self.device, dtype=self.dtype)
+                h = torch.zeros(
+                    (num_toks + len(seqlens), self.args.dim),
+                    device=self.device,
+                    dtype=self.dtype,
+                )
                 new_seqlens = []
                 ind = 0
                 for i, size in enumerate(seqlens):
                     assert size > 0
                     h[ind, :] = embeddings[i, :]
                     self.pos_to_keep.append(False)
-                    h[ind + 1: ind + size + 1, :] = token_embeds[ind: ind + size, :]
+                    h[ind + 1 : ind + size + 1, :] = token_embeds[ind : ind + size, :]
                     self.pos_to_keep.extend([True] * size)
                     ind += size
-                    new_seqlens.append(size+1)
+                    new_seqlens.append(size + 1)
                 seqlens = new_seqlens
             else:
                 h = token_embeds
         else:
-            h = torch.empty(num_toks, self.args.dim,
-                            device=self.device, dtype=self.dtype)
+            h = torch.empty(
+                num_toks, self.args.dim, device=self.device, dtype=self.dtype
+            )
             torch.distributed.recv(h, src=self.pipeline_rank - 1)
 
         # freqs_cis is always the same for every layer
@@ -307,13 +318,16 @@ class Transformer(ModelBase, LoRALoaderMixin):
             assert self.norm is not None
             if embeddings is not None and self.norm_wo_embeds:
                 # type: ignore
-                normalized_h = self.norm(h[torch.tensor(self.pos_to_keep, dtype=torch.bool)])
+                normalized_h = self.norm(
+                    h[torch.tensor(self.pos_to_keep, dtype=torch.bool)]
+                )
             else:
                 # type: ignore
-                normalized_h = self.norm(h)[torch.tensor(self.pos_to_keep, dtype=torch.bool)]
+                normalized_h = self.norm(h)[
+                    torch.tensor(self.pos_to_keep, dtype=torch.bool)
+                ]
             self.pos_to_keep = []
             return normalized_h
-
 
     def generate(
         self,
@@ -324,12 +338,14 @@ class Transformer(ModelBase, LoRALoaderMixin):
         # images: Optional[List[torch.Tensor]] = None,
     ) -> torch.Tensor:
         h = self.generate_partial(
-            input_ids, seqlens, embeddings=embeddings, cache=cache)  # , images=images)
+            input_ids, seqlens, embeddings=embeddings, cache=cache
+        )  # , images=images)
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             # ignore the intermediate activations as we'll get the final output from
             # the last stage
             outs = torch.empty(
-                h.shape[0], self.vocab_size, device=h.device, dtype=h.dtype)
+                h.shape[0], self.vocab_size, device=h.device, dtype=h.dtype
+            )
         else:
             assert self.output is not None
             outs = self.output(h)
@@ -341,7 +357,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
         else:
             return outs
 
-    def load_state_dict_for_inference(self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False) -> None:
+    def load_state_dict_for_inference(
+        self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False
+    ) -> None:
         state_to_load = {}
         skipped = set([])
         for k, v in state_dict.items():
@@ -381,8 +399,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             #     state_to_load[k] = v
             else:
                 raise ValueError(f"Unexpected key {k}")
-        assert set(state_dict.keys()) == skipped.union(
-            set(state_to_load.keys()))
+        assert set(state_dict.keys()) == skipped.union(set(state_to_load.keys()))
         super().load_state_dict(state_to_load, strict=strict, assign=assign)
 
     @staticmethod

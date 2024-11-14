@@ -9,13 +9,7 @@ import numpy as np
 import torch.distributed as dist
 from embed_llm.training.distributed import get_rank
 
-from embed_llm.data.tokenize import (
-    Mask,
-    TokenSample,
-    Sequence,
-    encode,
-    Tokenizer
-)
+from embed_llm.data.tokenize import Mask, TokenSample, Sequence, encode, Tokenizer
 
 logger = logging.getLogger("dataset")
 
@@ -187,27 +181,28 @@ def sequence_iterator(
         cur_pos = 0
 
         while cur_pos < len(x):
-            size = len(x[cur_pos: cur_pos + n_missing])
+            size = len(x[cur_pos : cur_pos + n_missing])
 
-            curr_mask = mask[cur_pos: cur_pos + n_missing]
+            curr_mask = mask[cur_pos : cur_pos + n_missing]
             if not any(curr_mask):
                 cur_pos += size
                 # we have a sequence with a mask filled with False
                 continue
 
-            x_buffer.extend(x[cur_pos: cur_pos + n_missing])
-            y_buffer.extend(y[cur_pos: cur_pos + n_missing])
+            x_buffer.extend(x[cur_pos : cur_pos + n_missing])
+            y_buffer.extend(y[cur_pos : cur_pos + n_missing])
+            text_buffer.append(
+                tokenizer.decode([x[cur_pos]] + y[cur_pos : cur_pos + n_missing])
+            )
             mask_buffer.extend(curr_mask)
             n_missing -= size
-            text_buffer.append(tokenizer.decode(
-                [x[cur_pos]]+y[cur_pos: cur_pos + n_missing]))
+
             sizes.append(size)
 
             cur_pos += size
 
             if n_missing == 0:
-                assert len(mask_buffer) == len(
-                    x_buffer) == seq_len == len(y_buffer)
+                assert len(mask_buffer) == len(x_buffer) == seq_len == len(y_buffer)
                 assert sum(sizes) == seq_len
                 assert len(text_buffer) == len(sizes)
                 # we don't want to yield sequences with a mask filled with False
@@ -232,7 +227,7 @@ def sequence_iterator(
             x_buffer.extend(n_missing * [0])
             y_buffer.extend(n_missing * [0])
             sizes.append(n_missing)
-            text_buffer.append('')
+            text_buffer.append("")
 
             yield SequenceTextMaskAndSizes(
                 x=x_buffer,
@@ -356,7 +351,8 @@ def preload_and_yield(
     # only instruct data has to be chunked
     # load dataset if not already loaded. Make sure to only load 1/world_size dataset
     data_list = maybe_load_local_dataset(
-        jsonl_file, rank=rank, world_size=world_size, tokenizer=tokenizer)
+        jsonl_file, rank=rank, world_size=world_size, tokenizer=tokenizer
+    )
 
     main_logger_info(f"Shuffling {jsonl_file} ...")
     rng.shuffle(tokens_list)  # type: ignore

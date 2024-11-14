@@ -3,7 +3,7 @@ import logging
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Tuple
-import os
+import torch.nn as nn
 import safetensors.torch
 import torch
 from torch.distributed import barrier
@@ -33,8 +33,8 @@ class Checkpointer:
         optimizer: Optional[torch.optim.Optimizer] = None,
         num_ckpt_keep: Optional[int] = None,
     ):
-        self.llm = model.llm
-        self.mlp_project = model.mlp_project
+        self.llm: nn.Module = model.llm
+        self.mlp_project: nn.Module = model.mlp_project
         self.llm_name = model.llm_name
         self.optimizer = optimizer
         self.state = state
@@ -48,7 +48,13 @@ class Checkpointer:
 
     @property
     def dst_dir(self) -> Tuple[Path, Path]:
-        return (self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / self.llm_name / "consolidated", self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / 'MLP_projector')
+        return (
+            self.ckpt_dir
+            / f"checkpoint_{self.state.step:06d}"
+            / self.llm_name
+            / "consolidated",
+            self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / "MLP_projector",
+        )
 
     @staticmethod
     def consolidated_path(
@@ -58,7 +64,6 @@ class Checkpointer:
         prefix = "lora" if save_only_lora else "consolidated"
 
         return ckpt_dir / f"{prefix}.{suffix}"
-
 
     @staticmethod
     def _tmp(ckpt_dir: Path) -> Path:
@@ -82,15 +87,14 @@ class Checkpointer:
         # Sort directories by creation time (oldest to newest)
         all_saved_ckpts.sort(key=lambda x: x.stat().st_ctime, reverse=True)
 
-        ckpts_to_delete = all_saved_ckpts[self.num_ckpt_keep:]
+        ckpts_to_delete = all_saved_ckpts[self.num_ckpt_keep :]
 
         for ckpt_to_delete in ckpts_to_delete:
             try:
                 shutil.rmtree(ckpt_to_delete)
                 main_logger_info(f"Deleted ckpt: {ckpt_to_delete}")
             except OSError as e:
-                main_logger_info(
-                    f"Error deleting directory {ckpt_to_delete}: {e}")
+                main_logger_info(f"Error deleting directory {ckpt_to_delete}: {e}")
 
         return ckpts_to_delete
 
@@ -131,7 +135,7 @@ class Checkpointer:
                 prefix: str,
                 *args,
             ):
-                weight = m.merge_weight()  # type: ignore
+                weight = m.merge_weight()
                 destination[prefix + "weight"] = weight
 
             for module in self.llm.modules():
@@ -152,8 +156,9 @@ class Checkpointer:
                 )
 
                 # need to make sure only lowest fsdp wrap is used
-                is_leaf_node = is_fsdp and len(
-                    list(module.module.children())) == 0  # type: ignore
+                is_leaf_node = (
+                    is_fsdp and len(list(module.module.children())) == 0
+                )  # type: ignore
 
                 return is_fsdp and all_params_have_grads and is_leaf_node
 
@@ -163,7 +168,9 @@ class Checkpointer:
             }
 
             mlp_project_modules = {
-                k: m for k, m in self.mlp_project.named_modules() if is_trainable_fsdp(m)
+                k: m
+                for k, m in self.mlp_project.named_modules()
+                if is_trainable_fsdp(m)
             }
 
             llm_states = {}
@@ -213,15 +220,16 @@ class Checkpointer:
                 self.llm, writeback=True, offload_to_cpu=offload_to_cpu
             ):
                 llm_states = self.get_non_lora_states(self.llm.state_dict())
-                llm_states = {k: v.to(dtype=save_dtype)
-                              for k, v in llm_states.items()}
+                llm_states = {k: v.to(dtype=save_dtype) for k, v in llm_states.items()}
             with self.mlp_project.summon_full_params(
                 self.mlp_project, writeback=True, offload_to_cpu=offload_to_cpu
             ):
                 mlp_project_states.update(
-                    self.get_non_lora_states(self.mlp_project.state_dict()))
+                    self.get_non_lora_states(self.mlp_project.state_dict())
+                )
                 mlp_project_states = {
-                    k: v.to(dtype=save_dtype) for k, v in mlp_project_states.items()}
+                    k: v.to(dtype=save_dtype) for k, v in mlp_project_states.items()
+                }
 
         llm_states = dict(sorted(llm_states.items()))
         mlp_project_states = dict(sorted(mlp_project_states.items()))
@@ -256,7 +264,9 @@ class Checkpointer:
             f"Dumping checkpoint in {llm_dst} and {mlp_project_dst} using tmp name: {tmp_llm_dst.name} and {tmp_mlp_project_dst.name}"
         )
 
-        assert not self.dst_dir[0].exists() and  not self.dst_dir[1].exists()  , f"dst exists {self.dst_dir}"
+        assert (
+            not self.dst_dir[0].exists() and not self.dst_dir[1].exists()
+        ), f"dst exists {self.dst_dir}"
         tmp_llm_dst.mkdir(parents=True, exist_ok=True)
         tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
 
@@ -278,7 +288,9 @@ class Checkpointer:
             safetensors.torch.save_file(
                 mlp_project_states,
                 self.consolidated_path(
-                    tmp_mlp_project_dst, use_safetensors=True, save_only_lora=save_only_lora
+                    tmp_mlp_project_dst,
+                    use_safetensors=True,
+                    save_only_lora=save_only_lora,
                 ),  # always use safetensors for checkpointing
             )
 
@@ -289,7 +301,8 @@ class Checkpointer:
             # if tokenizer is not None:
             #     self.save_tokenizer(instruct_tokenizer, tmp_dst)
 
-            assert not self.dst_dir[0].exists() and not self.dst_dir[1].exists(
+            assert (
+                not self.dst_dir[0].exists() and not self.dst_dir[1].exists()
             ), f"should not happen! {self.dst_dir[0]} | {self.dst_dir[1]}"
             tmp_llm_dst.rename(self.dst_dir[0])
             tmp_mlp_project_dst.rename(self.dst_dir[1])

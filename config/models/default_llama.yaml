@@ -30,23 +30,23 @@ data:
 
 
 # Training and Optim
-
 seq_len: 512
-batch_size: 1
-max_steps: 100000
+batch_size: 2
+max_steps: 10000
 optim:
-  lr: 6.e-5
+  max_lr: 6.e-6
   weight_decay: 0.1
-  pct_start: 0.05
-
+  pct_start: 0.2 # The percentage of the cycle (in number of steps) spent increasing the learning rate. 
+  initial_lr: 1.e-10 # cannot be strictly 0
+  final_lr: 6.e-7
 
 # other
 seed: 0
-log_freq: 50
-eval_freq: 50
+log_freq: 1
+eval_freq: 8
 no_eval: False
-ckpt_freq: 200
-save_adapters: False # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not implemented for now
+ckpt_freq: 10
+save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not implemented for now
 
 
 # Monitoring

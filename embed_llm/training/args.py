@@ -12,9 +12,11 @@ from embed_llm.data.args import DataArgs
 
 @dataclass
 class OptimArgs(Serializable):
-    lr: float = 1e-4
+    max_lr: float = 1e-4
     weight_decay: float = 0.1
     pct_start: float = 0.05
+    initial_lr: float = 0
+    final_lr: float = 1e-5
 
 
 @dataclass
@@ -30,21 +32,22 @@ class WandbArgs(Serializable):
                 import wandb  # noqa: F401
             except ImportError:
                 raise ImportError(
-                    "`wandb` not installed. Either make sure `wandb` is installed or set `wandb:project` to None.")
+                    "`wandb` not installed. Either make sure `wandb` is installed or set `wandb:project` to None."
+                )
 
             if len(self.project) == 0:
-                raise ValueError(
-                    "`wandb.project` must not be an empty string.")
+                raise ValueError("`wandb.project` must not be an empty string.")
 
-@dataclass 
+
+@dataclass
 class Embedder(Serializable):
     dim: int = 4096
-    name: str = 'NVEmbed'
-    
-    
+    name: str = "NVEmbed"
+
+
 @dataclass
 class TrainArgs(Serializable):
- 
+
     # if specified, instruct_tokenizer and model will be loaded
     # Path to the directory containing the initial model or model id: "mistral-small"
     model_id_or_path: str
@@ -53,7 +56,7 @@ class TrainArgs(Serializable):
     run_dir: str
     # Name of the wandb run, if None it will be set to the name of the run_dir.
     data: DataArgs
-    
+
     exp_name: Optional[str] = None
     optim: OptimArgs = field(default_factory=OptimArgs)
     seed: int = 0
@@ -89,13 +92,13 @@ class TrainArgs(Serializable):
 
     # LoRA
     lora: Optional[LoraArgs] = field(default_factory=LoraArgs)
-    
+
     # mlp projector
     projector: Optional[MLPProjectArgs] = field(default_factory=MLPProjectArgs)
-    
+
     # Embedder
     embedder: Embedder = field(default_factory=Embedder)
-    
+
     norm_wo_embeds: Optional[bool] = False
 
     def __post_init__(self) -> None:
@@ -113,7 +116,7 @@ class TrainArgs(Serializable):
         if self.model_id_or_path is not None:
             Path(self.model_id_or_path).exists()
 
-        if 'gemma' in self.llm_name:
+        if "gemma" in self.llm_name:
             assert self.variant is not None
 
         if not self.save_adapters:

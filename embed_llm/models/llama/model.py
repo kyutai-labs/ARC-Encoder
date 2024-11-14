@@ -5,12 +5,8 @@ import math
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-import fairscale.nn.model_parallel.initialize as fs_init
 import torch
 import torch.nn.functional as F
-from fairscale.nn.model_parallel.layers import (
-    VocabParallelEmbedding,
-)
 from torch import nn
 from embed_llm.models.args import LlamaModelArgs as ModelArgs
 
@@ -32,9 +28,12 @@ class RMSNorm(torch.nn.Module):
         return output * self.weight
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)
-                   [: (dim // 2)].float() / dim))
+def precompute_freqs_cis(
+    dim: int, end: int, theta: float = 10000.0, device: Optional[torch.device] = None
+):
+    freqs = 1.0 / (
+        theta ** (torch.arange(0, dim, 2, device=device)[: (dim // 2)].float() / dim)
+    )
     t = torch.arange(end, device=freqs.device, dtype=torch.float32)
     freqs = torch.outer(t, freqs)
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
@@ -45,8 +44,7 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim
     assert 0 <= 1 < ndim
     assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-    shape = [d if i == 1 or i == ndim -
-             1 else 1 for i, d in enumerate(x.shape)]
+    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
     return freqs_cis.view(*shape)
 
 
@@ -79,9 +77,9 @@ class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.n_kv_heads = args.n_heads if args.n_kv_heads is None else args.n_kv_heads
-        model_parallel_size = fs_init.get_model_parallel_world_size()
-        self.n_local_heads = args.n_heads // model_parallel_size
-        self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
+        # model_parallel_size = fs_init.get_model_parallel_world_size()
+        self.n_local_heads = args.n_heads  # // model_parallel_size
+        self.n_local_kv_heads = self.n_kv_heads  # // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
         self.head_dim = args.dim // args.n_heads
 
@@ -106,23 +104,40 @@ class Attention(nn.Module):
             args.dim,
             bias=False,
         )
-
-        self.cache_k = torch.zeros(
-            (
-                args.max_batch_size,
-                args.max_seq_len,
-                self.n_local_kv_heads,
-                self.head_dim,
+        try:
+            self.cache_k = torch.zeros(
+                (
+                    args.max_batch_size,
+                    args.max_seq_len,
+                    self.n_local_kv_heads,
+                    self.head_dim,
+                )
+            ).cuda()
+            self.cache_v = torch.zeros(
+                (
+                    args.max_batch_size,
+                    args.max_seq_len,
+                    self.n_local_kv_heads,
+                    self.head_dim,
+                )
+            ).cuda()
+        except:
+            self.cache_k = torch.zeros(
+                (
+                    args.max_batch_size,
+                    args.max_seq_len,
+                    self.n_local_kv_heads,
+                    self.head_dim,
+                )
             )
-        ).cuda()
-        self.cache_v = torch.zeros(
-            (
-                args.max_batch_size,
-                args.max_seq_len,
-                self.n_local_kv_heads,
-                self.head_dim,
+            self.cache_v = torch.zeros(
+                (
+                    args.max_batch_size,
+                    args.max_seq_len,
+                    self.n_local_kv_heads,
+                    self.head_dim,
+                )
             )
-        ).cuda()
 
     def forward(
         self,
@@ -145,8 +160,8 @@ class Attention(nn.Module):
             self.cache_k = self.cache_k.to(xq)
             self.cache_v = self.cache_v.to(xq)
 
-            self.cache_k[:bsz, start_pos: start_pos + seqlen] = xk
-            self.cache_v[:bsz, start_pos: start_pos + seqlen] = xv
+            self.cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+            self.cache_v[:bsz, start_pos : start_pos + seqlen] = xv
 
             keys = self.cache_k[:bsz, : start_pos + seqlen]
             values = self.cache_v[:bsz, : start_pos + seqlen]
@@ -170,8 +185,7 @@ class Attention(nn.Module):
         values = values.transpose(
             1, 2
         )  # (bs, n_local_heads, cache_len + seqlen, head_dim)
-        scores = torch.matmul(xq, keys.transpose(2, 3)) / \
-            math.sqrt(self.head_dim)
+        scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
         if mask is not None:
             # (bs, n_local_heads, seqlen, cache_len + seqlen)
             scores = scores + mask
@@ -196,8 +210,7 @@ class FeedForward(nn.Module):
         # custom dim factor multiplier
         if ffn_dim_multiplier is not None:
             hidden_dim = int(ffn_dim_multiplier * hidden_dim)
-        hidden_dim = multiple_of * \
-            ((hidden_dim + multiple_of - 1) // multiple_of)
+        hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
 
         MaybeLora = maybe_lora(lora)
         self.w1 = MaybeLora(dim, hidden_dim, bias=False)
@@ -220,7 +233,7 @@ class TransformerBlock(nn.Module):
             hidden_dim=4 * args.dim,
             multiple_of=args.multiple_of,
             ffn_dim_multiplier=args.ffn_dim_multiplier,
-            lora=args.lora
+            lora=args.lora,
         )
         self.layer_id = layer_id
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
@@ -234,53 +247,81 @@ class TransformerBlock(nn.Module):
         mask: Optional[torch.Tensor],
         training: bool = True,
     ):
-        h = x + self.attention(self.attention_norm(x),
-                               start_pos, freqs_cis, mask, training)
+        h = x + self.attention(
+            self.attention_norm(x), start_pos, freqs_cis, mask, training
+        )
         out = h + self.feed_forward(self.ffn_norm(h))
         return out
 
 
-class Transformer(nn.Module,  LoRALoaderMixin):
-    def __init__(self, params: ModelArgs):
+class Transformer(nn.Module, LoRALoaderMixin):
+    def __init__(self, args: ModelArgs):
         super().__init__()
-        self.params = params
-        self.vocab_size = params.vocab_size
-        self.n_layers = params.n_layers
+        self.args = args
+        self.vocab_size = args.vocab_size
+        self.n_layers = args.n_layers
 
-        self.tok_embeddings = VocabParallelEmbedding(
-            params.vocab_size, params.dim, init_method=lambda x: x
-        )
+        self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim, padding_idx=-1)
 
         self.layers = torch.nn.ModuleList()
-        for layer_id in range(params.n_layers):
-            self.layers.append(TransformerBlock(layer_id, params))
+        for layer_id in range(args.n_layers):
+            self.layers.append(TransformerBlock(layer_id, args))
 
-        self.norm = RMSNorm(params.dim, eps=params.norm_eps)
+        self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-        MaybeLora = maybe_lora(params.lora)
-        self.output = MaybeLora(params.dim, params.vocab_size, bias=False)
+        MaybeLora = maybe_lora(args.lora)
+        self.output = MaybeLora(args.dim, args.vocab_size, bias=False)
 
-        self.freqs_cis = precompute_freqs_cis(
-            params.dim // params.n_heads,
-            params.max_seq_len * 2,
-            params.rope_theta,
-        )
-        self.norm_wo_embeds = params.norm_wo_embeds
+        self.norm_wo_embeds = args.norm_wo_embeds
+        self._precomputed_freqs_cis: Optional[torch.Tensor] = None
 
-    def forward(self, tokens: torch.Tensor, embeddings: Optional[torch.Tensor] = None, start_pos: Optional[int] = None, training: bool = True):
+    @property
+    def freqs_cis(self) -> torch.Tensor:
+        # We cache freqs_cis but need to take care that it is on the right device
+        # and has the right dtype (complex64). The fact that the dtype is different
+        # from the module's  dtype means we cannot register it as a buffer
+        # lazy init
+        device = next(iter(self.parameters())).device
+        if self._precomputed_freqs_cis is None:
+            theta = self.args.rope_theta or 1000000.0
+            self._precomputed_freqs_cis = precompute_freqs_cis(
+                self.args.dim // self.args.n_heads,
+                (self.args.max_seq_len + 1) * 2,
+                theta=theta,
+                device=device,
+            )
+        return self._precomputed_freqs_cis
+
+    def forward(
+        self,
+        tokens: torch.Tensor,
+        embeddings: Optional[torch.Tensor] = None,
+        start_pos: Optional[int] = None,
+        is_training: bool = True,
+    ):
+
         _bsz, seqlen = tokens.shape
+
+        # remove negative indices
+        negative_indices = tokens < 0
+        tokens[negative_indices] = 0
+
         h = self.tok_embeddings(tokens)
         if embeddings is not None:
-            h = torch.cat((embeddings, h), dim=1)
-        self.freqs_cis = self.freqs_cis.to(h.device)
-        if training:
+            seqlen += 1
+            h = torch.cat((embeddings.unsqueeze(1), h), dim=1)
+
+        if is_training:
             start_pos = 0
-        freqs_cis = self.freqs_cis[start_pos: start_pos + seqlen]
+
+        freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen].to(device=h.device)
 
         mask = None
         if seqlen > 1:
-            mask = torch.full((seqlen, seqlen), float(
-                "-inf"), device=tokens.device)
+            try:
+                mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
+            except:
+                mask = torch.full((seqlen, seqlen), float("-inf"))
 
             mask = torch.triu(mask, diagonal=1)
 
@@ -288,12 +329,15 @@ class Transformer(nn.Module,  LoRALoaderMixin):
             # only for the new sequence. Thus, the matrix of scores is of size
             # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
             # j > cache_len + i, since row i corresponds to token cache_len + i.
-            mask = torch.hstack(
-                [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
-            ).type_as(h)
+            try:
+                mask = torch.hstack(
+                    [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
+                ).type_as(h)
+            except:
+                mask = torch.hstack([torch.zeros((seqlen, start_pos)), mask]).type_as(h)
 
         for layer in self.layers:
-            h = layer(h, start_pos, freqs_cis, mask, training)
+            h = layer(h, start_pos, freqs_cis, mask, is_training)
 
         if embeddings is not None and self.norm_wo_embeds:
             h = self.norm(h[:, 1:, :])  # type: ignore
