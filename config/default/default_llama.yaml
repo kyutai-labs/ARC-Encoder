@@ -51,9 +51,9 @@ save_adapters: True # save only trained LoRA adapters. Set to `False` to merge L
 
 
 # Monitoring
-# wandb: 
-#   project: embed_llm  # your wandb project name
-#   run_name: Llama_test  # your wandb run name
-#   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706 # your wandb api key
-#   offline: False
+wandb: 
+  project: embed_llm  # your wandb project name
+  run_name: Llama_test  # your wandb run name
+  key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706 # your wandb api key
+  offline: False
     
