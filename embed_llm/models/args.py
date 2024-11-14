@@ -39,9 +39,10 @@ class MistralModelArgs(Serializable):
     _sliding_window: Optional[int] | Optional[List[int]] = None
     model_type: str = "transformer"
     norm_wo_embeds: Optional[bool] = False
+    w_embeds: Optional[bool] = False
 
     # vision_encoder: Optional[VisionEncoderArgs] = None
-
+    """ If adding new args take care giving it to load args """
     def __post_init__(self) -> None:
         assert self.model_type == "transformer", self.model_type
         assert self.sliding_window is None or self._sliding_window is None
@@ -70,8 +71,9 @@ class LlamaModelArgs(Serializable):
     max_seq_len: int = 2048
     lora: Optional[LoraArgs] = None
     norm_wo_embeds: Optional[bool] = False
+    w_embeds: Optional[bool] = False
     use_scaled_rope: Optional[bool] = True  # Not implemented in the model
-
+    """ If adding new args take care giving it to load args """
 
 """Gemma model config."""
 
@@ -141,7 +143,9 @@ class GemmaConfig(Serializable):
     use_post_ffw_norm: bool = False
     lora: Optional[LoraArgs] = None
     norm_wo_embeds: Optional[bool] = False
-
+    w_embeds: Optional[bool] = False
+    """ If adding new args take care giving it to load args """
+    
     def get_dtype(self) -> Optional[torch.dtype]:
         """Gets the torch dtype from the config dtype string."""
         return _STR_DTYPE_TO_TORCH_DTYPE.get(self.dtype, None)

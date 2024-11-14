@@ -66,12 +66,14 @@ class EmbedAugModel(nn.Module):
         llm: Models,
         param_dtype: torch.dtype = torch.bfloat16,
         max_seq_len: Optional[int] = None,
+        w_embeds: bool = True,
     ):
         super().__init__()
         self.llm = llm
         self.llm_name = llm_name.lower()
         self.max_seq_len = max_seq_len
-        if mlp_project_args.n_layers > 0:
+        self.w_embeds = w_embeds
+        if mlp_project_args.n_layers > 0 and w_embeds:
             self.mlp_project = MLP_project(args=mlp_project_args, dtype=param_dtype)
         else:
             self.mlp_project = None
@@ -86,26 +88,22 @@ class EmbedAugModel(nn.Module):
             self.forward = self.forward_llama
 
     def forward_mistral(
-        self, x: torch.Tensor, seqlens: List[int], embeddings: torch.Tensor, step: int
+        self, 
+        x: torch.Tensor, 
+        seqlens: List[int], 
+        embeddings: Optional[torch.Tensor] = None, 
+        step: Optional[int] = 0,
     ) -> torch.Tensor:
 
         if self.mlp_project is not None:
-            # if step == 65:
-            # from embed_llm.training.distributed import get_rank
-            # if get_rank() == 0:
-            #     print('Embeddings Before MLP project  min | max | mean',torch.min(embeddings), torch.max(embeddings), torch.mean(embeddings))
             embeddings = self.mlp_project(embeddings)
-            # if step == 65:
-            #     from embed_llm.training.distributed import get_rank
-            #     if get_rank() == 0:
-            #         print('Embeddings After MLP project min | max | mean',torch.min(embeddings), torch.max(embeddings), torch.mean(embeddings))
-
+ 
         return self.llm(input_ids=x, embeddings=embeddings, seqlens=seqlens)
 
     def forward_llama(
         self,
         x: torch.Tensor,
-        embeddings: torch.Tensor,
+        embeddings: Optional[torch.Tensor] = None,
         seqlens: Optional[List[int]] = None,
         step: Optional[int] = 0,
     ) -> torch.Tensor:
@@ -118,7 +116,7 @@ class EmbedAugModel(nn.Module):
     def forward_gemma(
         self,
         x: torch.Tensor,
-        embeddings: torch.Tensor,
+        embeddings: Optional[torch.Tensor] = None,
         seqlens: Optional[List[int]] = None,
         step: Optional[int] = 0,
     ) -> torch.Tensor:
@@ -126,9 +124,14 @@ class EmbedAugModel(nn.Module):
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
 
-        att_mask = torch.full((self.max_seq_len, self.max_seq_len), float("-inf")).cuda(
-            non_blocking=True
-        )
+        if self.w_embeds and embeddings is not None:
+            att_mask = torch.full((self.max_seq_len + 1, self.max_seq_len + 1), float("-inf")).cuda(
+                non_blocking=True
+            )
+        else:
+            att_mask = torch.full((self.max_seq_len + 1, self.max_seq_len + 1), float("-inf")).cuda(
+                non_blocking=True
+            )
         att_mask = torch.triu(att_mask, diagonal=1)
 
         return self.llm(
@@ -145,6 +148,7 @@ class EmbedAugPipeline(nn.Module):
         embedding_model: Any,
         param_dtype: torch.dtype = torch.bfloat16,
         tokenizer: Any = None,
+        w_embeds: bool = True,
         pad_token_id: Optional[int] = None,
         max_seq_len: Optional[int] = None,
     ):
@@ -158,7 +162,7 @@ class EmbedAugPipeline(nn.Module):
         self.max_seq_len = max_seq_len
         self.llm_name = llm_name.lower()
         self.mlp_project_args = mlp_project_args
-
+        self.w_embeds = w_embeds
         self.model = None
         self.generate = None
 
@@ -169,21 +173,26 @@ class EmbedAugPipeline(nn.Module):
             llm=llm,
             max_seq_len=self.max_seq_len,
             param_dtype=self.param_dtype,
+            w_embeds=self.w_embeds,
         )
 
     def store_model(self, model: nn.Module):
         self.model = model
 
+
     def prepare_forward(self, batch: Batch):
 
-        with torch.no_grad():
-            embeddings = encode_text(
-                batch.texts,
-                self.embed_model_name,
-                self.embedding_model,
-                query_embedding=False,
-                device="cuda",
-            ).type(self.param_dtype)
+        if self.w_embeds:
+            with torch.no_grad():
+                embeddings = encode_text(
+                    batch.texts,
+                    self.embed_model_name,
+                    self.embedding_model,
+                    query_embedding=False,
+                    device="cuda",
+                ).type(self.param_dtype)
+        else:
+            embeddings = None
 
         if "mistral" in self.llm_name:
             x = torch.from_numpy(batch.x).cuda(non_blocking=True)
@@ -220,6 +229,7 @@ class EmbedAugPipeline(nn.Module):
         embedding_model: Any,
         variant: Optional[str] = None,
         lora_path: Optional[str] = None,
+        w_embed: bool = True,
     ):
 
         if "mistral" in model_name.lower():
@@ -278,6 +288,7 @@ class EmbedAugPipeline(nn.Module):
                 tokenizer,
                 max_seq_len=max_seq_len,
                 pad_token_id=tokenizer.pad_id,
+                w_embeds=w_embed,
             )
 
             augmented_pipeline.store_model(augmented_pipeline.get_model(llm))

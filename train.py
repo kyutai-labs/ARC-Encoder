@@ -8,7 +8,7 @@ import fire
 import torch.cuda
 import torch.distributed as dist
 from torch.optim import AdamW, lr_scheduler
-
+from typing import Union
 from embed_llm.models.wrapped_models_training import load_training_model
 
 from embed_llm.retrieval.embeddings import get_embedder
@@ -59,8 +59,14 @@ def main_logger_info(message: str) -> None:
         logger.info(message)
 
 
-def train(config: str):
-    args: TrainArgs = TrainArgs.load(config, drop_extra_fields=False)
+def train(config: Union[str,dict]):
+    if isinstance(config, str):
+        args: TrainArgs = TrainArgs.load(config, drop_extra_fields=False)
+    elif isinstance(config, dict):
+        args: TrainArgs = TrainArgs.from_dict(**config)
+    else:
+        raise ValueError("Config should be a string or a dictionary")
+    
     set_logger(logging.INFO)
 
     with ExitStack() as exit_stack:
@@ -231,7 +237,7 @@ def _train(
     # 12. train!
     model.train()
     torch.cuda.empty_cache()
-
+    break_loop = False
     while state.step < args.max_steps:
         state.start_step()
         is_last_step = state.step == args.max_steps
@@ -256,6 +262,10 @@ def _train(
                 y[negative_token] = 0
                 y = y.view(-1).long()
                 y_mask = None if y_mask is None else y_mask.view(-1)
+            
+            if torch.any(torch.isnan(output)).item():
+                raise ValueError(f"Output contains NaN or Inf values at step {state.step}")
+
 
             mb_loss = compute_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
@@ -295,8 +305,9 @@ def _train(
 
         # Host sync
         loss_item = loss.item()
+    
         avg_loss = avg_aggregate(loss_item)
-
+        
         if not args.no_eval and (
             (args.eval_freq > 0 and state.step % args.eval_freq == 0) or is_last_step
         ):

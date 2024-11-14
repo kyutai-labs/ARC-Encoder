@@ -273,6 +273,7 @@ class Transformer(nn.Module, LoRALoaderMixin):
         self.output = MaybeLora(args.dim, args.vocab_size, bias=False)
 
         self.norm_wo_embeds = args.norm_wo_embeds
+        self.w_embeds = args.w_embeds
         self._precomputed_freqs_cis: Optional[torch.Tensor] = None
 
     @property
@@ -284,12 +285,20 @@ class Transformer(nn.Module, LoRALoaderMixin):
         device = next(iter(self.parameters())).device
         if self._precomputed_freqs_cis is None:
             theta = self.args.rope_theta or 1000000.0
-            self._precomputed_freqs_cis = precompute_freqs_cis(
-                self.args.dim // self.args.n_heads,
-                (self.args.max_seq_len + 1) * 2,
-                theta=theta,
-                device=device,
-            )
+            if self.w_embeds:
+                self._precomputed_freqs_cis = precompute_freqs_cis(
+                    self.args.dim // self.args.n_heads,
+                    (self.args.max_seq_len + 1) * 2,
+                    theta=theta,
+                    device=device,
+                )
+            else:
+                self._precomputed_freqs_cis = precompute_freqs_cis(
+                    self.args.dim // self.args.n_heads,
+                    self.args.max_seq_len  * 2,
+                    theta=theta,
+                    device=device,
+                )
         return self._precomputed_freqs_cis
 
     def forward(
@@ -307,7 +316,7 @@ class Transformer(nn.Module, LoRALoaderMixin):
         tokens[negative_indices] = 0
 
         h = self.tok_embeddings(tokens)
-        if embeddings is not None:
+        if embeddings is not None and self.w_embeds:
             seqlen += 1
             h = torch.cat((embeddings.unsqueeze(1), h), dim=1)
 
@@ -339,10 +348,12 @@ class Transformer(nn.Module, LoRALoaderMixin):
         for layer in self.layers:
             h = layer(h, start_pos, freqs_cis, mask, is_training)
 
-        if embeddings is not None and self.norm_wo_embeds:
+        if embeddings is not None and self.norm_wo_embeds and self.w_embeds:
             h = self.norm(h[:, 1:, :])  # type: ignore
-        else:
+            
+        elif embeddings is not None and self.w_embeds and not self.norm_wo_embeds:
             h = self.norm(h)[:, 1:, :]  # type: ignore
-
+        else:
+            h = self.norm(h)
         output = self.output(h).float()
         return output

@@ -1,10 +1,9 @@
-
 # Models
-model_id_or_path : /lustre/scwpod02/client/kyutai-interns/hippop/models/Gemma7B
-llm_name: Gemma7B
+model_id_or_path : /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.2-3B
+llm_name: Llama3.2-3B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
-exp_name: gemma_concat
-variant: 7b # Supported variants are "2b" and "7b" and "9b" and "27b" and 2b-v2
+exp_name: Llama_test
+w_embeds: True
 norm_wo_embeds: False
 lora:
   rank: 64
@@ -14,14 +13,14 @@ lora:
 # Projector 
 projector:
   hidden_dim: 768
-  n_layers: 3
+  n_layers: 0
   act: id
   
 
 # Embedder
 embedder:
   dim: 4096
-  name: NVEmbed
+  name: 'NVEmbed'
   
 
 # Data
@@ -33,7 +32,7 @@ data:
 
 # Training and Optim
 seq_len: 512
-batch_size: 2
+batch_size: 1
 max_steps: 10000
 optim:
   max_lr: 6.e-6
@@ -42,20 +41,19 @@ optim:
   initial_lr: 1.e-10 # cannot be strictly 0
   final_lr: 6.e-7
 
-
 # other
 seed: 0
-log_freq: 1
-eval_freq: 8
+log_freq: 10
+eval_freq: 300
 no_eval: False
-ckpt_freq: 10
-save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not implemented for now
+ckpt_freq: 300
+save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not working for now 
 
 
 # Monitoring
 # wandb: 
 #   project: embed_llm  # your wandb project name
-#   run_name: gemma_concat  # your wandb run name
+#   run_name: Llama_test  # your wandb run name
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706 # your wandb api key
-#   offline: True
+#   offline: False
     

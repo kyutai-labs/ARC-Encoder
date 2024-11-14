@@ -159,6 +159,7 @@ def load_args(
     lora: LoraArgs,
     model_name: str,
     norm_wo_embeds: Optional[bool] = False,
+    w_embeds: Optional[bool] = False,
     max_seq_len: Optional[int] = None,
     max_batch_size: Optional[int] = None,
     variant: Optional[str] = None,
@@ -182,6 +183,7 @@ def load_args(
             norm_eps=args["norm_eps"],
             vocab_size=args["vocab_size"],
             norm_wo_embeds=norm_wo_embeds,
+            w_embeds=w_embeds,
         )
 
         if args.get("rope_theta") is not None:
@@ -208,6 +210,7 @@ def load_args(
             max_seq_len=max_seq_len,
             max_batch_size=max_batch_size,
             norm_wo_embeds=norm_wo_embeds,
+            w_embeds=w_embeds,
             lora=lora,
             **args,
         )
@@ -216,7 +219,10 @@ def load_args(
         with open(folder / "params.json", "r") as f:
             args = json.loads(f.read())
 
-        model_args = GemmaConfig(lora=lora, norm_wo_embeds=norm_wo_embeds, **args)
+        model_args = GemmaConfig(lora=lora, 
+                                 norm_wo_embeds=norm_wo_embeds, 
+                                 w_embeds=w_embeds,
+                                 **args)
         assert variant is not None, "Variant must be provided for Gemma model."
         model_args.quant = False
         model_args.norm_wo_embeds = norm_wo_embeds
@@ -246,6 +252,7 @@ def load_training_model(
         max_batch_size=max_batch_size,
         variant=variant,
         norm_wo_embeds=args.norm_wo_embeds,
+        w_embeds=args.w_embeds,
     )
 
     if "mistral" in llm_name.lower():
@@ -258,6 +265,8 @@ def load_training_model(
             state_dict = load_state_dict(folder, dtype=param_dtype)
             model.load_state_dict(state_dict, assign=True)  # type: ignore
             logger.info("Loaded model on cpu!")
+        if mlp_projector_args.n_layers == 0:
+            assert args.embedder.dim == model.args.dim, "Embedder dim must match model dim if no MLP projector."
 
     elif "llama" in llm_name.lower():
         tokenizer = LlamaTokenizer(model_path=str(folder / "tokenizer.model"))
@@ -269,6 +278,9 @@ def load_training_model(
             state_dict = load_state_dict(folder, dtype=param_dtype)
             model.load_state_dict(state_dict, assign=True)  # type: ignore
             logger.info("Loaded model on cpu!")
+        if mlp_projector_args.n_layers == 0:
+            assert args.embedder.dim == model.args.dim, "Embedder dim must match model dim if no MLP projector."
+        
 
     elif "gemma" in llm_name.lower():
         embed_dim = model_args.hidden_size
@@ -279,11 +291,15 @@ def load_training_model(
             tokenizer = model.tokenizer
             if get_rank() == 0:
                 state_dict = load_state_dict(folder, dtype=param_dtype, gemma=True)
+                del state_dict['freqs_cis']
                 model.load_state_dict(state_dict, assign=True)  # type: ignore
                 logger.info("Loaded model on cpu!")
+            if mlp_projector_args.n_layers == 0:
+                assert args.embedder.dim == model.args.hidden_size, "Embedder dim must match model dim if no MLP projector."
+        assert args.seq_len < model_args.max_position_embeddings, f"Sequence length too long! Must be less than {model_args.max_position_embeddings - 1}."
+         
     else:
         raise ValueError(f"Model name {llm_name} not recognized.")
-
     if get_rank() == 0:
         if lora.enable:
             logger.info("Initializing lora layers ...")
@@ -323,6 +339,7 @@ def load_training_model(
         embedding_model=embedding_model,
         pad_token_id=tokenizer.pad_id,
         max_seq_len=max_seq_len,
+        w_embeds = args.w_embeds,
     )
 
     augmented_model = augmented_pipeline.get_model(llm=model)

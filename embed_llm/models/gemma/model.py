@@ -92,13 +92,14 @@ class Sampler(nn.Module):
         return next_token_ids, logits
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> torch.Tensor:
+def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0,device: Optional[torch.device] = None) -> torch.Tensor:
     """Precomputes the frequency cis."""
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2, device = device)[: (dim // 2)].float() / dim))
     t = torch.arange(end, device=freqs.device)
     freqs = torch.outer(t, freqs).float()
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
     return freqs_cis
+
 
 
 def apply_rotary_emb(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
@@ -487,7 +488,8 @@ class GemmaModel(nn.Module, LoRALoaderMixin):
             else:
                 raise ValueError(f"Unknown architecture: {config.architecture}")
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-
+        self.n_layers = config.num_hidden_layers
+        
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -497,7 +499,7 @@ class GemmaModel(nn.Module, LoRALoaderMixin):
         mask: torch.Tensor,
         norm_wo_embedding: bool = False,
     ) -> torch.Tensor:
-        for i in range(len(self.layers)):
+        for i in range(self.n_layers):
             layer = self.layers[i]
             hidden_states = layer(
                 hidden_states=hidden_states,
@@ -513,7 +515,7 @@ class GemmaModel(nn.Module, LoRALoaderMixin):
         return hidden_states
 
 
-class GemmaForCausalLM(nn.Module):
+class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
 
     def __init__(
         self,
@@ -522,20 +524,40 @@ class GemmaForCausalLM(nn.Module):
         super().__init__()
         self.args = args
         assert args.hidden_size % args.num_attention_heads == 0
-
-        max_seq_len = args.max_position_embeddings
-        head_dim = args.head_dim
         vocab_size = args.vocab_size
+        self._precomputed_freqs_cis: Optional[torch.Tensor] = None
         self.norm_wo_embedding = args.norm_wo_embeds
         self.tokenizer = tokenizer.Tokenizer(args.tokenizer)
         self.embedder = Embedding(vocab_size, args.hidden_size, args.quant)
         self.model = GemmaModel(args)
         self.sampler = Sampler(vocab_size, args)
-
-        # Pre-compute rotary embedding table.
-        rope_theta = getattr(args, "rope_theta", 10000)
-        freqs_cis = precompute_freqs_cis(head_dim, max_seq_len * 2, theta=rope_theta)
-        self.register_buffer("freqs_cis", freqs_cis)
+        self.rope_theta = getattr(args, 'rope_theta', 10000)
+        self.w_embeds = args.w_embeds
+   
+    @property
+    def freqs_cis(self) -> torch.Tensor:
+        # We cache freqs_cis but need to take care that it is on the right device
+        # and has the right dtype (complex64). The fact that the dtype is different
+        # from the module's  dtype means we cannot register it as a buffer
+        # lazy init
+        device = next(iter(self.parameters())).device
+        if self._precomputed_freqs_cis is None:
+            theta = self.rope_theta 
+            if self.w_embeds:
+                self._precomputed_freqs_cis = precompute_freqs_cis(
+                    self.args.head_dim,
+                    (self.args.max_position_embeddings + 1) * 2,
+                    theta=theta,
+                    device=device,
+                )
+            else:
+                self._precomputed_freqs_cis = precompute_freqs_cis(
+                    self.args.head_dim,
+                    self.args.max_position_embeddings *2 ,
+                    theta=theta,
+                    device=device,
+                )
+        return self._precomputed_freqs_cis
 
     def forward(
         self,
@@ -558,19 +580,20 @@ class GemmaForCausalLM(nn.Module):
         else:
             raise ValueError("Must provide input_positions during inference.")
 
-        freqs_cis = self.freqs_cis.index_select(0, input_positions)
         kv_write_indices = input_positions
 
         # [batch_size, input_len, hidden_size]
         hidden_states = self.embedder(input_token_ids)
         if embeddings is not None:
-            hidden_states = torch.cat((embeddings, hidden_states), dim=1)
+            hidden_states = torch.cat((embeddings.unsqueeze(1), hidden_states), dim=1)
 
         # Gemma normalizes the embedding by sqrt(hidden_size).
         # Gemma2 downcasts the below to float16, causing sqrt(3072)=55.4256 to become 55.5
         # See https://github.com/huggingface/transformers/pull/29402
         normalizer = torch.tensor(self.args.hidden_size**0.5, dtype=hidden_states.dtype)
         hidden_states = hidden_states * normalizer
+        
+        freqs_cis = self.freqs_cis[:input_token_ids.shape[1]+1].to(device=hidden_states.device)
         if not is_training:
             hidden_states = self.model(
                 hidden_states=hidden_states,
@@ -600,13 +623,14 @@ class GemmaForCausalLM(nn.Module):
                 kv_write_indices=None,
                 kv_caches=None,
                 mask=mask,
-                norm_wo_embedding=self.norm_wo_embedding,
+                norm_wo_embedding=self.norm_wo_embedding if (self.w_embeds and embeddings is not None) else False,
             )
             embedder_weight = self.embedder.weight
             # hidden_states (bs, seq_len, hidden_size); embedder_weight (vocab_size, hidden_size)
-            if embeddings is not None and not self.norm_wo_embedding:
+            if embeddings is not None and self.w_embeds and not self.norm_wo_embedding:
                 hidden_states = hidden_states[:, 1:, :]
-            logits = torch.matmul(hidden_states, embedder_weight.t())
+            print('SHAPES', hidden_states.shape, embedder_weight.shape)
+            logits = torch.matmul(hidden_states, torch.transpose(embedder_weight, 0, 1).to(device = hidden_states.device))
             return logits
 
     def generate(
