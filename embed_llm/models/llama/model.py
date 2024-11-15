@@ -4,12 +4,12 @@
 import math
 from dataclasses import dataclass
 from typing import Optional, Tuple
-
+from functools import partial
 import torch
 import torch.nn.functional as F
 from torch import nn
 from embed_llm.models.args import LlamaModelArgs as ModelArgs
-
+import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from embed_llm.models.lora import maybe_lora, LoRALoaderMixin
 from embed_llm.training.args import LoraArgs
 
@@ -82,7 +82,9 @@ class Attention(nn.Module):
         self.n_local_kv_heads = self.n_kv_heads  # // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
         self.head_dim = args.dim // args.n_heads
-
+        self.max_batch_size = args.max_batch_size
+        self.max_seq_len = args.max_seq_len
+        
         MaybeLora = maybe_lora(args.lora)
         self.wq = MaybeLora(
             args.dim,
@@ -104,41 +106,11 @@ class Attention(nn.Module):
             args.dim,
             bias=False,
         )
-        try:
-            self.cache_k = torch.zeros(
-                (
-                    args.max_batch_size,
-                    args.max_seq_len,
-                    self.n_local_kv_heads,
-                    self.head_dim,
-                )
-            ).cuda()
-            self.cache_v = torch.zeros(
-                (
-                    args.max_batch_size,
-                    args.max_seq_len,
-                    self.n_local_kv_heads,
-                    self.head_dim,
-                )
-            ).cuda()
-        except:
-            self.cache_k = torch.zeros(
-                (
-                    args.max_batch_size,
-                    args.max_seq_len,
-                    self.n_local_kv_heads,
-                    self.head_dim,
-                )
-            )
-            self.cache_v = torch.zeros(
-                (
-                    args.max_batch_size,
-                    args.max_seq_len,
-                    self.n_local_kv_heads,
-                    self.head_dim,
-                )
-            )
+        
+        self.cache_k = None
+        self.cache_v = None
 
+   
     def forward(
         self,
         x: torch.Tensor,
@@ -157,6 +129,23 @@ class Attention(nn.Module):
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
         if not training:
+            
+            if self.cache_k is None:
+                self.cache_k = torch.zeros(
+                        self.max_batch_size,
+                        self.max_seq_len,
+                        self.n_local_kv_heads,
+                        self.head_dim,
+                    ).to(xq)
+                
+            if self.cache_v is None:
+                self.cache_v = torch.zeros(
+                        self.max_batch_size,
+                        self.max_seq_len,
+                        self.n_local_kv_heads,
+                        self.head_dim,
+                    ).to(xq)
+ 
             self.cache_k = self.cache_k.to(xq)
             self.cache_v = self.cache_v.to(xq)
 
@@ -255,7 +244,7 @@ class TransformerBlock(nn.Module):
 
 
 class Transformer(nn.Module, LoRALoaderMixin):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, args: ModelArgs, checkpoint: bool = False):
         super().__init__()
         self.args = args
         self.vocab_size = args.vocab_size
@@ -265,7 +254,16 @@ class Transformer(nn.Module, LoRALoaderMixin):
 
         self.layers = torch.nn.ModuleList()
         for layer_id in range(args.n_layers):
-            self.layers.append(TransformerBlock(layer_id, args))
+            block: TransformerBlock = TransformerBlock(layer_id, args)
+            if checkpoint:
+                # activate gradient checkpointing as, see: https://pytorch.org/docs/stable/checkpoint.html
+                non_reentrant_wrapper = partial(
+                    torch_ckpt.checkpoint_wrapper,
+                    checkpoint_impl=torch_ckpt.CheckpointImpl.NO_REENTRANT,
+                )
+                block = non_reentrant_wrapper(block)
+
+            self.layers.append(block)
 
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
@@ -311,9 +309,6 @@ class Transformer(nn.Module, LoRALoaderMixin):
 
         _bsz, seqlen = tokens.shape
 
-        # remove negative indices
-        negative_indices = tokens < 0
-        tokens[negative_indices] = 0
 
         h = self.tok_embeddings(tokens)
         if embeddings is not None and self.w_embeds:
@@ -327,10 +322,11 @@ class Transformer(nn.Module, LoRALoaderMixin):
 
         mask = None
         if seqlen > 1:
-            try:
-                mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
-            except:
-                mask = torch.full((seqlen, seqlen), float("-inf"))
+            # try:
+            mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
+            # except:
+            #     print('Mask error')
+            #     mask = torch.full((seqlen, seqlen), float("-inf"))
 
             mask = torch.triu(mask, diagonal=1)
 
@@ -338,12 +334,12 @@ class Transformer(nn.Module, LoRALoaderMixin):
             # only for the new sequence. Thus, the matrix of scores is of size
             # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
             # j > cache_len + i, since row i corresponds to token cache_len + i.
-            try:
-                mask = torch.hstack(
-                    [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
-                ).type_as(h)
-            except:
-                mask = torch.hstack([torch.zeros((seqlen, start_pos)), mask]).type_as(h)
+            # try:
+            mask = torch.hstack(
+                [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
+            ).type_as(h)
+            # except:
+            #     mask = torch.hstack([torch.zeros((seqlen, start_pos)), mask]).type_as(h)
 
         for layer in self.layers:
             h = layer(h, start_pos, freqs_cis, mask, is_training)

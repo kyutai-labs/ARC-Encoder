@@ -14,16 +14,15 @@ lora:
 
 # Projector 
 projector:
-  hidden_dim: 768
+  hidden_dim: 4096
   n_layers: 3
-  act: id
+  act: relu
   
 
 # Embedder
 embedder:
   dim: 4096
-  name: NVEmbed
-  
+  name: 'NVEmbed'
 
 # Data
 data:
@@ -34,29 +33,30 @@ data:
 
 # Training and Optim
 seq_len: 512
-batch_size: 2
+batch_size: 8
 max_steps: 10000
 optim:
-  max_lr: 6.e-6
+  max_lr: 5.e-6
   weight_decay: 0.1
   pct_start: 0.2 # The percentage of the cycle (in number of steps) spent increasing the learning rate. 
-  initial_lr: 1.e-10 # cannot be strictly 0
-  final_lr: 6.e-7
+  initial_lr: 1.e-20 # cannot be strictly 0
+  final_lr: 1.e-10
 
 
 # other
 seed: 0
 log_freq: 1
-eval_freq: 8
+eval_freq: 5
 no_eval: False
-ckpt_freq: 10
-save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not implemented for now
+ckpt_freq: 5
+save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not working for now 
+
 
 
 # Monitoring
-wandb: 
-  project: embed_llm  # your wandb project name
-  run_name: gemma_concat  # your wandb run name
-  key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706 # your wandb api key
-  offline: False
+# wandb: 
+#   project: embed_llm  # your wandb project name
+#   run_name: gemma_concat  # your wandb run name
+#   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706 # your wandb api key
+#   offline: False
     

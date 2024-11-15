@@ -50,10 +50,10 @@ def pad_and_convert_to_tensor(
     )
     # Pad the input and output sequences
     for i, size in enumerate(sizes):
-        final_x[i, :size] = torch.tensor(x[i]).cuda()
-        final_y[i, :size] = torch.tensor(y[i]).cuda()
+        final_x[i, :size] = torch.tensor(x[i]).cuda(non_blocking=True)
+        final_y[i, :size] = torch.tensor(y[i]).cuda(non_blocking=True)
         if y_mask is not None:
-            final_mask[i, :size] = torch.tensor(y_mask[i]).cuda()
+            final_mask[i, :size] = torch.tensor(y_mask[i]).cuda(non_blocking=True)
 
     return final_x, final_y, final_mask
 
@@ -98,7 +98,7 @@ class EmbedAugModel(nn.Module):
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
  
-        return self.llm(input_ids=x, embeddings=embeddings, seqlens=seqlens)
+        return self.llm.forward(input_ids=x, embeddings=embeddings, seqlens=seqlens)
 
     def forward_llama(
         self,
@@ -111,7 +111,7 @@ class EmbedAugModel(nn.Module):
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
 
-        return self.llm(tokens=x, embeddings=embeddings, is_training=True)
+        return self.llm.forward(tokens=x, embeddings=embeddings, is_training=True)
 
     def forward_gemma(
         self,
@@ -134,7 +134,7 @@ class EmbedAugModel(nn.Module):
             )
         att_mask = torch.triu(att_mask, diagonal=1)
 
-        return self.llm(
+        return self.llm.forward(
             input_token_ids=x, embeddings=embeddings, mask=att_mask, is_training=True
         )
 

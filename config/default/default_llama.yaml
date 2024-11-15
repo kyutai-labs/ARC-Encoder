@@ -12,16 +12,15 @@ lora:
 
 # Projector 
 projector:
-  hidden_dim: 768
-  n_layers: 0
-  act: id
+  hidden_dim: 4096
+  n_layers: 3
+  act: relu
   
 
 # Embedder
 embedder:
   dim: 4096
   name: 'NVEmbed'
-  
 
 # Data
 data:
@@ -32,21 +31,22 @@ data:
 
 # Training and Optim
 seq_len: 512
-batch_size: 1
+batch_size: 8
 max_steps: 10000
 optim:
-  max_lr: 6.e-6
+  max_lr: 5.e-6
   weight_decay: 0.1
   pct_start: 0.2 # The percentage of the cycle (in number of steps) spent increasing the learning rate. 
-  initial_lr: 1.e-10 # cannot be strictly 0
-  final_lr: 6.e-7
+  initial_lr: 1.e-20 # cannot be strictly 0
+  final_lr: 1.e-10
+
 
 # other
 seed: 0
-log_freq: 10
-eval_freq: 300
+log_freq: 100
+eval_freq: 500
 no_eval: False
-ckpt_freq: 300
+ckpt_freq: 500
 save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not working for now 
 
 

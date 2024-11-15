@@ -87,13 +87,13 @@ class Tokenizer:
         # BOS / EOS token IDs
         self.bos_id: int = self.special_tokens["<|begin_of_text|>"]
         self.eos_id: int = self.special_tokens["<|end_of_text|>"]
-        self.pad_id: int = -1
+        self.pad_id: int = self.special_tokens["<|reserved_special_token_0|>"] # Was -1 but create a bug with the embedder
         self.stop_tokens = {
             self.special_tokens["<|end_of_text|>"],
             self.special_tokens["<|eot_id|>"],
         }
         logger.info(
-            f"#words: {self.n_words} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}"
+            f"#words: {self.n_words} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}, PAD ID: {self.pad_id}"
         )
 
     def encode(

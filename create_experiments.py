@@ -12,11 +12,12 @@ def main(args):
         with open('/home/hippolytepilchen/code/embed_llm/config/default/default_gemma.yaml') as file:
             config = yaml.safe_load(file)
     elif args.llm_name == 'Llama3.2-3B':
-        with open('/home/hippolytepilchen/code/embed_llm/config/default/default_mistral.yaml') as file:
+        with open('/home/hippolytepilchen/code/embed_llm/config/default/default_llama.yaml') as file:
             config = yaml.safe_load(file)
     else:
         raise ValueError(f'{args.llm_name} not supported yet !')
     
+    config['llm_name'] = args.llm_name
     config['w_embeds'] = args.w_embeds
     config['norm_wo_embeds'] = args.norm_wo_embeds
     config['projector']['hidden_dim'] = args.proj_hidden_dim
@@ -37,6 +38,9 @@ def main(args):
     config['eval_freq'] = args.eval_freq
     config['ckpt_freq'] = args.ckpt_freq
     
+    # To perform gradient accumulation
+    config['num_microbatches'] = args.grad_acum_steps
+    
     name = args.llm_name + str(args.w_embeds) + str(args.norm_wo_embeds)  \
         + str(args.proj_hidden_dim) + str(args.proj_n_layers) + args.proj_act + str(args.batch_size) \
             + str(args.max_steps) + str(args.seq_len) + str(args.max_lr) + str(args.pct_start) \
@@ -53,24 +57,45 @@ def arg_parser():
     parser.add_argument('--llm_name', type=str, default='Mistral7B', choices = ['Gemma7B', 'Llama3.2-3B', 'Mistral7B'])
     parser.add_argument('--w_embeds', action='store_true', help='Whether to use word embeddings as preconditioning')
     parser.add_argument('--norm_wo_embeds', action='store_true', help='Whether to normalize without word embeddings if using w_embeds')
-    parser.add_argument('--proj_hidden_dim', type=int, default=4096, help='Hidden dimension of the projection MLP')
+    parser.add_argument('--proj_hidden_dim', type=int, default=1024, help='Hidden dimension of the projection MLP')
     parser.add_argument('--proj_n_layers', type=int, default=3, help='Number of layers of the projection MLP')
     parser.add_argument('--proj_act', type=str, default='id', help='Activation function of the projection MLP', choices = ['id', 'gelu', 'relu'])
-    parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
+    parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
     parser.add_argument('--max_lr', type=float, default=5e-6, help='Maximum learning rate')
     parser.add_argument('--max_steps', type=int, default=10000, help='Maximum number of steps')
     parser.add_argument('--pct_start', type=float, default=0.2, help='Percentage of steps used for the warm-up')
     parser.add_argument('--initial_lr', type=float, default=1e-20, help='Initial learning rate')
     parser.add_argument('--final_lr', type=float, default=1e-10, help='Final learning rate')
     parser.add_argument('--log_freq', type=int, default=100, help='Logging frequency')
-    parser.add_argument('--eval_freq', type=int, default=1000, help='Evaluation frequency')
+    parser.add_argument('--eval_freq', type=int, default=500, help='Evaluation frequency')
     parser.add_argument('--ckpt_freq', type=int, default=500, help='Checkpoint frequency')
     parser.add_argument('--prefix', type=str, default='default', help='Prefix for the experiment')
     parser.add_argument('--seq_len', type=int, default=512, help='Sequence length')
+    parser.add_argument('--grad_acum_steps', type=int, default=1, help='Number of gradient accumulation steps')
     return parser.parse_args()
     
 if __name__ == '__main__':
-    args = arg_parser()
-    main(args)
+    # args = arg_parser()
+    # main(args)
+   
+    import os 
+    import yaml
+    for filename in os.listdir("config/experiments"):
+        if filename.endswith(".yaml"):
+            with open("config/experiments/"+filename) as file:
+                config = yaml.safe_load(file)
+                
+            if config['llm_name'] == 'Mistral7B':
+        
+                # config['projector']['hidden_dim'] = 4096
+                config['batch_size'] = 32
+            #     config['projector']['n_layers'] = 3
+            
+            # config['log_freq'] = 5
+            # config['eval_freq'] = 10
+    
+            with open("config/experiments/"+filename, 'w') as file:
+                yaml.dump(config, file)
+    
     
     

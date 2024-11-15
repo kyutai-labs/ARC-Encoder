@@ -18,7 +18,7 @@ from embed_llm.models.args import (
     GemmaConfig,
     MLPProjectArgs,
 )
-
+from embed_llm.training.mixed_precision import fp32_policy, bfSixteen, bfSixteen_mixed, fpSixteen
 from embed_llm.models.args import LoraArgs
 from embed_llm.training.distributed import (
     get_rank,
@@ -55,12 +55,7 @@ from embed_llm.models.llama.model import Transformer as LlamaTransformer
 
 ModelsArgs = Union[MistralModelArgs, LlamaModelArgs, GemmaConfig]
 Tokenizer = Union[MistralTokenizer, LlamaTokenizer, GemmaTokenizer]
-TransformerBlock = Union[
-    MistralTransformerBlock,
-    LlamaTransformerBlock,
-    Gemma2DecoderLayer,
-    GemmaDecoderLayer,
-]
+
 
 logger = logging.getLogger(__name__)
 
@@ -81,37 +76,39 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     # Each transformer block becomes a FSDP group, each being sharded separately
     transformer_block_wrap_policy = functools.partial(
         torch_wrap.transformer_auto_wrap_policy,
-        transformer_layer_cls=(TransformerBlock,),
-    )
+        transformer_layer_cls=set([MistralTransformerBlock, LlamaTransformerBlock, Gemma2DecoderLayer, GemmaDecoderLayer,]),)
 
     if not is_lora:
         return transformer_block_wrap_policy
 
-    def fsdp_lora_policy_fn(module):
-        return all(
-            p.requires_grad
-            for p in module.parameters()
-            if not isinstance(module, MLP_project)
-        )
+    def lambda_policy_fn(module):
+        if (
+            len(list(module.named_children())) == 0
+            and getattr(module, "weight", None) is not None
+            and module.weight.requires_grad
+        ):
+            return True
+        return False
+
 
     # For LoRA training, trainable and non-trainable parameters need to be put into
     # different FSDP groups
     fsdp_lora_policy = functools.partial(
-        torch_wrap.lambda_auto_wrap_policy, lambda_fn=fsdp_lora_policy_fn
+        torch_wrap.lambda_auto_wrap_policy, lambda_fn=lambda_policy_fn
     )
 
-    def fsdp_mlp_proj_policy_fn(module):
-        return all(
-            p.requires_grad
-            for p in module.parameters()
-            if isinstance(module, MLP_project)
-        )
+    # def fsdp_mlp_proj_policy_fn(module):
+    #     return all(
+    #         p.requires_grad
+    #         for p in module.parameters()
+    #         if isinstance(module, MLP_project)
+    #     )
 
-    fsdp_mlp_proj_policy = functools.partial(
-        torch_wrap.lambda_auto_wrap_policy, lambda_fn=fsdp_mlp_proj_policy_fn
-    )
+    # fsdp_mlp_proj_policy = functools.partial(
+    #     torch_wrap.lambda_auto_wrap_policy, lambda_fn=fsdp_mlp_proj_policy_fn
+    # )
 
-    policies = [fsdp_lora_policy, transformer_block_wrap_policy, fsdp_mlp_proj_policy]
+    policies = [fsdp_lora_policy, transformer_block_wrap_policy] #, fsdp_mlp_proj_policy]
 
     return functools.partial(torch_wrap._or_policy, policies=policies)
 
@@ -271,14 +268,14 @@ def load_training_model(
     elif "llama" in llm_name.lower():
         tokenizer = LlamaTokenizer(model_path=str(folder / "tokenizer.model"))
         with torch.device("meta"):
-            model = LlamaTransformer(args=model_args)
+            model = LlamaTransformer(args=model_args, checkpoint=checkpoint)
         embed_dim = model.args.dim
 
         if get_rank() == 0:
             state_dict = load_state_dict(folder, dtype=param_dtype)
             model.load_state_dict(state_dict, assign=True)  # type: ignore
             logger.info("Loaded model on cpu!")
-        if mlp_projector_args.n_layers == 0:
+        if mlp_projector_args.n_layers == 0 and args.w_embeds:
             assert args.embedder.dim == model.args.dim, "Embedder dim must match model dim if no MLP projector."
         
 
@@ -361,13 +358,14 @@ def load_training_model(
 
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
-        sharding_strategy=ShardingStrategy.FULL_SHARD,
+        sharding_strategy=ShardingStrategy.FULL_SHARD, # Gradients, activations, and parameters are sharded
         auto_wrap_policy=auto_wrap_policy,
-        backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
+        backward_prefetch=BackwardPrefetch.BACKWARD_PRE, # Default param
+        mixed_precision= bfSixteen_mixed if args.mixed_precision else bfSixteen,
         limit_all_gathers=True,
         device_id=torch.cuda.current_device(),
-        sync_module_states=True,
-        param_init_fn=param_init_fn,
+        sync_module_states=True, # saves cpu memory by loading pretrained model on rank0 only, not working with False
+        param_init_fn=param_init_fn, # Condition on the fact that sync_module_states is True otherwise None
     )
 
     main_logger_info("Model sharded!")

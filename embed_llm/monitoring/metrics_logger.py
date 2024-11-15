@@ -18,6 +18,7 @@ GB = 1024**3
 def get_train_logs(
     state: TrainState,
     loss: float,
+    avg_grad_norm: float,
     lr: float,
     peak_allocated_mem: float,
     allocated_mem: float,
@@ -27,6 +28,7 @@ def get_train_logs(
         "lr": lr,
         "step": state.step,
         "loss": loss,
+        "avg_grad_norm": avg_grad_norm,
         "percent_done": 100 * state.step / train_args.max_steps,
         "peak_allocated_mem": peak_allocated_mem / GB,
         "allocated_mem": allocated_mem / GB,
@@ -69,6 +71,7 @@ def train_log_msg(
         ("step", "06", None),
         ("percent_done", "03.1f", "done (%)"),
         ("loss", ".3f", None),
+        ("avg_grad_norm", ".2e", "avg_grad_norm"),
         ("lr", ".1e", None),
         ("peak_allocated_mem", ".1f", "peak_alloc_mem (GB)"),
         ("allocated_mem", ".1f", "alloc_mem (GB)"),

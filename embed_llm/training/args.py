@@ -101,6 +101,8 @@ class TrainArgs(Serializable):
 
     norm_wo_embeds: Optional[bool] = False
     w_embeds: bool = True
+    mixed_precision: bool = True
+    
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None
         self.world_size = int(os.environ.get("WORLD_SIZE", -1))

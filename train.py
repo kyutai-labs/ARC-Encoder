@@ -25,11 +25,11 @@ from embed_llm.training.distributed import (
 )
 from embed_llm.training.eval import evaluate
 from embed_llm.training.loss import compute_loss_with_mask
-from embed_llm.training.mixed_precision import (
-    downcast_mixed_precision,
-    prepare_mixed_precision,
-    upcast_mixed_precision,
-)
+# from embed_llm.training.mixed_precision import (
+#     downcast_mixed_precision,
+#     prepare_mixed_precision,
+#     upcast_mixed_precision,
+# )
 from embed_llm.training.utils import (
     TrainState,
     logged_closing,
@@ -46,9 +46,10 @@ from embed_llm.monitoring.utils import set_logger
 
 
 # Define depending on the model
-# from finetune.wrapped_model import load_model, load_args
+
 import warnings
 
+GB = 1024**3
 warnings.filterwarnings("ignore")
 
 logger = logging.getLogger("train")
@@ -151,7 +152,6 @@ def _train(
     """ Load LLM and tokenizers """
 
     param_dtype = torch.bfloat16
-    optim_dtype = torch.float32
 
     assert args.lora is not None, "`args.lora` should be set to a valid value."
     pipeline, model = load_training_model(
@@ -168,7 +168,7 @@ def _train(
         variant=args.variant if hasattr(args, "variant") else None,
     )
     main_logger_info("Model loading done")
-
+    
     """ Load  Dataloader"""
 
     train_data_loader = build_data_loader(
@@ -193,8 +193,8 @@ def _train(
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
         )
-        # pre-load all eval batches, restrain to 100 batches
-        eval_batches = list(eval_data_loader)[:100]
+        # pre-load all eval batches, restrain to 10 batches
+        eval_batches = list(eval_data_loader)[:10]
 
     # 9. Load optimizer
     optimizer = AdamW(
@@ -226,10 +226,10 @@ def _train(
         num_ckpt_keep=args.num_ckpt_keep,
     )
 
-    # 11. Prepare mixed precision
-    prepare_mixed_precision(
-        model.parameters(), param_dtype=param_dtype, optim_dtype=optim_dtype
-    )
+    # # 11. Prepare mixed precision
+    # prepare_mixed_precision(
+    #     model.parameters(), param_dtype=param_dtype, optim_dtype=optim_dtype
+    # )
 
     # 12. Prepare forward function to adapt batch to LLM forward input and calculate embedding
     prepare_batch_fn = pipeline.prepare_forward
@@ -237,7 +237,6 @@ def _train(
     # 12. train!
     model.train()
     torch.cuda.empty_cache()
-    break_loop = False
     while state.step < args.max_steps:
         state.start_step()
         is_last_step = state.step == args.max_steps
@@ -245,33 +244,40 @@ def _train(
         optimizer.zero_grad()
         loss = torch.tensor([0.0], device="cuda")
         n_batch_tokens: int = 0
-
+        
+        # Number of steps to accumulate gradients before doing an optimizer step.
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
+            
 
             """ Training loop for basic reconstruction"""
+            
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
-
+            
             output = model.forward(
                 x=x, embeddings=embeddings, seqlens=seqlens, step=state.step
             )
-
+            
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()
-                negative_token = y < 0
-                y[negative_token] = 0
                 y = y.view(-1).long()
                 y_mask = None if y_mask is None else y_mask.view(-1)
-            
+                assert output.size(0) == y.size(0), (f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}")
+        
             if torch.any(torch.isnan(output)).item():
                 raise ValueError(f"Output contains NaN or Inf values at step {state.step}")
-
-
+            
             mb_loss = compute_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
 
             mb_loss.backward()
+            
+            # Print the gradients for the mlp_project and llm parameters
+            print("llm gradients:")        
+            for p in model.llm.parameters():
+                if p.requires_grad:
+                    print(p.grad)
 
             loss += mb_loss.detach()
             n_batch_tokens += x.numel()
@@ -288,17 +294,29 @@ def _train(
                     assert p.grad is not None
                     p.grad.div_(args.num_microbatches)
 
-        # upcast params for optimizer update
-        upcast_mixed_precision(model.parameters(), optim_dtype=optim_dtype)
+        # # upcast params for optimizer update
+        # upcast_mixed_precision(model.parameters(), optim_dtype=optim_dtype)
+        
+        grad_norm = torch.tensor([0.0], device="cuda")
+        pos_grad_count = 0
+        required_grad_count = 0
+        for p in model.parameters():
+            if p.requires_grad:
+                required_grad_count += 1
+                if torch.norm(p.grad) > 0:
+                    pos_grad_count += 1
+                assert p.grad is not None
+                grad_norm += torch.norm(p.grad).item() ** 2
+        print('Ratio of non zero grad:',  pos_grad_count/required_grad_count)
 
         # clip grad norm
         model.clip_grad_norm_(max_norm=args.max_norm)
-
+            
         # optimizer step
         optimizer.step()
 
-        # downcast params for forward & backward
-        downcast_mixed_precision(model.parameters(), param_dtype=param_dtype)
+        # # downcast params for forward & backward
+        # downcast_mixed_precision(model.parameters(), param_dtype=param_dtype)
 
         last_lr = scheduler.get_last_lr()[0]
         scheduler.step()
@@ -329,10 +347,11 @@ def _train(
         # Timing
         state.end_step(n_batch_tokens)
 
-        if state.step % args.log_freq == 0:
+        if state.step % args.log_freq == 0 or state.step == 1 or is_last_step:
             train_logs = get_train_logs(
                 state,
                 avg_loss,
+                avg_aggregate(torch.mean(grad_norm).item()),
                 last_lr,
                 torch.cuda.max_memory_allocated(),
                 torch.cuda.memory_allocated(),
@@ -353,5 +372,5 @@ def _train(
 
 
 if __name__ == "__main__":
-    """See README.md for usage."""
+    # """See README.md for usage."""
     fire.Fire(train)

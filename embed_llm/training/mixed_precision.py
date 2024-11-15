@@ -2,6 +2,9 @@ from typing import Iterable
 
 import torch
 
+from torch.distributed.fsdp import (
+    MixedPrecision,
+)
 
 def prepare_mixed_precision(
     params: Iterable[torch.nn.Parameter],
@@ -45,3 +48,34 @@ def downcast_mixed_precision(
                 # set _temp again to the data tensor
                 p.data = p._temp  # type: ignore
                 p.grad = p.grad.to(param_dtype)
+
+
+# requires grad scaler in main loop
+fpSixteen = MixedPrecision(
+    param_dtype=torch.float16,
+    # Gradient communication precision.
+    reduce_dtype=torch.float16,
+    # Buffer precision.
+    buffer_dtype=torch.float16,
+)
+
+bfSixteen = MixedPrecision(
+    param_dtype=torch.bfloat16,
+    # Gradient communication precision.
+    reduce_dtype=torch.bfloat16,
+    # Buffer precision.
+    buffer_dtype=torch.bfloat16,
+    cast_forward_inputs=True,
+)
+
+bfSixteen_mixed = MixedPrecision(
+    param_dtype=torch.float32,
+    reduce_dtype=torch.bfloat16,
+    buffer_dtype=torch.bfloat16,
+)
+
+fp32_policy = MixedPrecision(
+    param_dtype=torch.float32,
+    reduce_dtype=torch.float32,
+    buffer_dtype=torch.float32,
+)

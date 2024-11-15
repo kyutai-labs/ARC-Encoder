@@ -76,10 +76,11 @@ class Checkpointer:
             f.write(json.dumps(model_args, indent=4))
 
     def write_mlp_project_params_info(self, tmp_dst: Path):
-        params_path = tmp_dst / "params.json"
-        with open(params_path, "w") as f:
-            model_args = self.mlp_project.args.to_dict()
-            f.write(json.dumps(model_args, indent=4))
+        if self.mlp_project is not None:
+            params_path = tmp_dst / "params.json"
+            with open(params_path, "w") as f:
+                model_args = self.mlp_project.args.to_dict()
+                f.write(json.dumps(model_args, indent=4))
 
     def delete_old_ckpts(self) -> List[Path]:
         all_saved_ckpts = [d for d in self.ckpt_dir.iterdir() if d.is_dir()]
@@ -167,11 +168,14 @@ class Checkpointer:
                 k: m for k, m in self.llm.named_modules() if is_trainable_fsdp(m)
             }
 
-            mlp_project_modules = {
-                k: m
-                for k, m in self.mlp_project.named_modules()
-                if is_trainable_fsdp(m)
-            }
+            if self.mlp_project is None:
+                mlp_project_modules = {}
+            else:
+                mlp_project_modules = {
+                    k: m
+                    for k, m in self.mlp_project.named_modules()
+                    if is_trainable_fsdp(m)
+                }
 
             llm_states = {}
             for key, module in llm_modules.items():
@@ -213,7 +217,7 @@ class Checkpointer:
                 self.llm, FullyShardedDataParallel
             ), "`self.llm` should be an instance of `FullyShardedDataParallel`"
             assert isinstance(
-                self.mlp_project, FullyShardedDataParallel
+                self.mlp_project, Union[FullyShardedDataParallel, None]
             ), "`self.mlp_project` should be an instance of `FullyShardedDataParallel`"
 
             with self.llm.summon_full_params(
@@ -221,15 +225,16 @@ class Checkpointer:
             ):
                 llm_states = self.get_non_lora_states(self.llm.state_dict())
                 llm_states = {k: v.to(dtype=save_dtype) for k, v in llm_states.items()}
-            with self.mlp_project.summon_full_params(
-                self.mlp_project, writeback=True, offload_to_cpu=offload_to_cpu
-            ):
-                mlp_project_states.update(
-                    self.get_non_lora_states(self.mlp_project.state_dict())
-                )
-                mlp_project_states = {
-                    k: v.to(dtype=save_dtype) for k, v in mlp_project_states.items()
-                }
+            if self.mlp_project is not None:
+                with self.mlp_project.summon_full_params(
+                    self.mlp_project, writeback=True, offload_to_cpu=offload_to_cpu
+                ):
+                    mlp_project_states.update(
+                        self.get_non_lora_states(self.mlp_project.state_dict())
+                    )
+                    mlp_project_states = {
+                        k: v.to(dtype=save_dtype) for k, v in mlp_project_states.items()
+                    }
 
         llm_states = dict(sorted(llm_states.items()))
         mlp_project_states = dict(sorted(mlp_project_states.items()))

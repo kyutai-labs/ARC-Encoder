@@ -13,7 +13,7 @@ import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask
 
 from embed_llm.models.args import MistralModelArgs
-from embed_llm.models.lora import LoRALoaderMixin
+from embed_llm.models.lora import LoRALoaderMixin, maybe_lora
 
 from embed_llm.models.mistral.cache import BufferCache, CacheInputMetadata
 from embed_llm.models.mistral.model import ModelBase
@@ -81,13 +81,14 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
                 self.layers.append(block)
 
-                self.norm = RMSNorm(args.dim, eps=args.norm_eps)
+            self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-                self.output = torch.nn.Linear(
-                    args.dim,
-                    args.vocab_size,
-                    bias=False,
-                )
+            MaybeLora = maybe_lora(args.lora)
+            self.output = MaybeLora(
+                args.dim,
+                args.vocab_size,
+                bias=False,
+            )
 
         else:
             assert pipeline_rank < num_pipeline_ranks, (

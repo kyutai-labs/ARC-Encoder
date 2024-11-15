@@ -30,7 +30,7 @@ def get_embedder(model_name: str, device_map: str = "auto"):
         return model
     elif model_name == "NVEmbed":
         model = AutoModel.from_pretrained(
-            "nvidia/NV-Embed-v2", trust_remote_code=True, device_map="auto"
+            "nvidia/NV-Embed-v2", trust_remote_code=True, device_map="auto", torch_dtype="bfloat16"
         )
         return model
     else:

@@ -55,8 +55,6 @@ def evaluate(
 
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()
-                negative_token = y < 0
-                y[negative_token] = 0
                 y = y.view(-1).long()
                 y_mask = None if y_mask is None else y_mask.view(-1)
 

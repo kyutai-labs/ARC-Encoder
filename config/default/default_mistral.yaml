@@ -4,7 +4,7 @@ model_id_or_path : /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: Mistral_concat
-w_embeds: False
+w_embeds: True
 norm_wo_embeds: False
 lora:
   rank: 64
@@ -13,9 +13,9 @@ lora:
 
 # Projector 
 projector:
-  hidden_dim: 768
+  hidden_dim: 4096
   n_layers: 3
-  act: id
+  act: relu
   
 
 # Embedder
@@ -36,19 +36,19 @@ seq_len: 512
 batch_size: 8
 max_steps: 10000
 optim:
-  max_lr: 1.e-5
+  max_lr: 5.e-6
   weight_decay: 0.1
   pct_start: 0.2 # The percentage of the cycle (in number of steps) spent increasing the learning rate. 
-  initial_lr: 1.e-7 # cannot be strictly 0
-  final_lr: 6.e-7
+  initial_lr: 1.e-20 # cannot be strictly 0
+  final_lr: 1.e-10
 
 
 # other
 seed: 0
-log_freq: 10
-eval_freq: 300
+log_freq: 100
+eval_freq: 500
 no_eval: False
-ckpt_freq: 300
+ckpt_freq: 500
 save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not working for now 
 
 #  weight = up_weight @ down_weight * self.scaling
