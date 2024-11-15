@@ -168,7 +168,7 @@ def _train(
         variant=args.variant if hasattr(args, "variant") else None,
     )
     main_logger_info("Model loading done")
-    
+
     """ Load  Dataloader"""
 
     train_data_loader = build_data_loader(
@@ -195,7 +195,6 @@ def _train(
         )
         # pre-load all eval batches, restrain to 10 batches
         eval_batches = list(eval_data_loader)[:10]
-
     # 9. Load optimizer
     optimizer = AdamW(
         model.parameters(),
@@ -236,6 +235,7 @@ def _train(
 
     # 12. train!
     model.train()
+    model.llm.train()
     torch.cuda.empty_cache()
     while state.step < args.max_steps:
         state.start_step()
@@ -249,11 +249,9 @@ def _train(
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
             
-
             """ Training loop for basic reconstruction"""
             
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
-            
             output = model.forward(
                 x=x, embeddings=embeddings, seqlens=seqlens, step=state.step
             )
@@ -274,10 +272,10 @@ def _train(
             mb_loss.backward()
             
             # Print the gradients for the mlp_project and llm parameters
-            print("llm gradients:")        
-            for p in model.llm.parameters():
-                if p.requires_grad:
-                    print(p.grad)
+            # print("llm gradients:")        
+            # for p in model.llm.parameters():
+            #     if p.requires_grad:
+            #         print(p.grad**2)
 
             loss += mb_loss.detach()
             n_batch_tokens += x.numel()
@@ -297,24 +295,25 @@ def _train(
         # # upcast params for optimizer update
         # upcast_mixed_precision(model.parameters(), optim_dtype=optim_dtype)
         
-        grad_norm = torch.tensor([0.0], device="cuda")
-        pos_grad_count = 0
-        required_grad_count = 0
-        for p in model.parameters():
-            if p.requires_grad:
-                required_grad_count += 1
-                if torch.norm(p.grad) > 0:
-                    pos_grad_count += 1
-                assert p.grad is not None
-                grad_norm += torch.norm(p.grad).item() ** 2
-        print('Ratio of non zero grad:',  pos_grad_count/required_grad_count)
+
 
         # clip grad norm
         model.clip_grad_norm_(max_norm=args.max_norm)
             
         # optimizer step
         optimizer.step()
-
+        
+        # grad_norm = torch.tensor([0.0], device="cuda")
+        # pos_grad_count = 0
+        # required_grad_count = 0
+        # for p in model.parameters():
+        #     if p.requires_grad:
+        #         required_grad_count += 1
+        #         if torch.sum(p.grad**2) > 0:
+        #             pos_grad_count += 1
+        #         assert p.grad is not None
+        #         grad_norm += torch.norm(p.grad).item() ** 2
+        # print('Ratio of non zero grad:',  pos_grad_count/required_grad_count)
         # # downcast params for forward & backward
         # downcast_mixed_precision(model.parameters(), param_dtype=param_dtype)
 

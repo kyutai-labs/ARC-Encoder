@@ -72,13 +72,13 @@ class LoRALinear(nn.Module):
 
         self.register_load_state_dict_post_hook(ignore_missing_keys)
 
-    def merge_weight(self):
-        with torch.no_grad():
-            up_weight = self.lora_B.weight
-            down_weight = self.lora_A.weight
-            weight = up_weight @ down_weight * self.scaling
-            weight += self.linear.weight
-        return weight
+    # def merge_weight(self):
+    #     with torch.no_grad():
+    #         up_weight = self.lora_B.weight
+    #         down_weight = self.lora_A.weight
+    #         weight = up_weight @ down_weight * self.scaling
+    #         weight += self.linear.weight
+    #     return weight
 
     # type: ignore[no-untyped-def]
     def _load_from_state_dict(
@@ -93,14 +93,18 @@ class LoRALinear(nn.Module):
             # load frozen weights
             state_dict = {
                 "linear.weight": w_ref,
-                "lora_A.weight": torch.zeros_like(
-                    self.lora_A.weight, device=w_ref.device, dtype=w_ref.dtype
-                ),
-                "lora_B.weight": torch.zeros_like(
-                    self.lora_B.weight, device=w_ref.device, dtype=w_ref.dtype
-                ),
             }
             self.load_state_dict(state_dict, assign=True, strict=True)
+        
+        if prefix + "lora_A.weight" in state_dict:
+            lora_a = state_dict[prefix + "lora_A.weight"]
+            lora_b = state_dict[prefix + "lora_B.weight"]
+            state_dict = {
+                "lora_A.weight": lora_a,
+                "lora_B.weight": lora_b,
+            }
+            self.load_state_dict(state_dict, assign=True, strict=True)
+     
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         lora = self.lora_B(self.lora_A(x))

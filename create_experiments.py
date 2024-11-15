@@ -76,26 +76,26 @@ def arg_parser():
     
 if __name__ == '__main__':
     # args = arg_parser()
-    # main(args)
+    main(args)
    
-    import os 
-    import yaml
-    for filename in os.listdir("config/experiments"):
-        if filename.endswith(".yaml"):
-            with open("config/experiments/"+filename) as file:
-                config = yaml.safe_load(file)
+    # import os 
+    # import yaml
+    # for filename in os.listdir("config/experiments"):
+    #     if filename.endswith(".yaml"):
+    #         with open("config/experiments/"+filename) as file:
+    #             config = yaml.safe_load(file)
                 
-            if config['llm_name'] == 'Mistral7B':
+    #         if config['llm_name'] == 'Llama3.2-3B':
         
-                # config['projector']['hidden_dim'] = 4096
-                config['batch_size'] = 32
-            #     config['projector']['n_layers'] = 3
+    #             # config['projector']['hidden_dim'] = 4096
+    #             config['batch_size'] = 8
+    #         #     config['projector']['n_layers'] = 3
             
-            # config['log_freq'] = 5
-            # config['eval_freq'] = 10
+    #         # config['log_freq'] = 5
+    #         # config['eval_freq'] = 10
     
-            with open("config/experiments/"+filename, 'w') as file:
-                yaml.dump(config, file)
+    #         with open("config/experiments/"+filename, 'w') as file:
+    #             yaml.dump(config, file)
     
     
     

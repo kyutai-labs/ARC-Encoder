@@ -250,7 +250,7 @@ class Transformer(nn.Module, LoRALoaderMixin):
         self.vocab_size = args.vocab_size
         self.n_layers = args.n_layers
 
-        self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim, padding_idx=-1)
+        self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
 
         self.layers = torch.nn.ModuleList()
         for layer_id in range(args.n_layers):
@@ -309,7 +309,6 @@ class Transformer(nn.Module, LoRALoaderMixin):
 
         _bsz, seqlen = tokens.shape
 
-
         h = self.tok_embeddings(tokens)
         if embeddings is not None and self.w_embeds:
             seqlen += 1
@@ -322,11 +321,9 @@ class Transformer(nn.Module, LoRALoaderMixin):
 
         mask = None
         if seqlen > 1:
-            # try:
+   
             mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
-            # except:
-            #     print('Mask error')
-            #     mask = torch.full((seqlen, seqlen), float("-inf"))
+
 
             mask = torch.triu(mask, diagonal=1)
 
@@ -335,9 +332,10 @@ class Transformer(nn.Module, LoRALoaderMixin):
             # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
             # j > cache_len + i, since row i corresponds to token cache_len + i.
             # try:
-            mask = torch.hstack(
-                [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
-            ).type_as(h)
+            if not is_training:
+                mask = torch.hstack(
+                    [torch.zeros((seqlen, start_pos), device=tokens.device), mask] 
+                ).type_as(h)
             # except:
             #     mask = torch.hstack([torch.zeros((seqlen, start_pos)), mask]).type_as(h)
 

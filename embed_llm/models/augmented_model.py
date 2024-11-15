@@ -49,12 +49,13 @@ def pad_and_convert_to_tensor(
         else None
     )
     # Pad the input and output sequences
+    ind = 0
     for i, size in enumerate(sizes):
-        final_x[i, :size] = torch.tensor(x[i]).cuda(non_blocking=True)
-        final_y[i, :size] = torch.tensor(y[i]).cuda(non_blocking=True)
+        final_x[i, :size] = torch.tensor(x[ind:ind+size]).cuda(non_blocking=True)
+        final_y[i, :size] = torch.tensor(y[ind:ind+size]).cuda(non_blocking=True)
         if y_mask is not None:
-            final_mask[i, :size] = torch.tensor(y_mask[i]).cuda(non_blocking=True)
-
+            final_mask[i, :size] = torch.tensor(y_mask[ind:ind+size]).cuda(non_blocking=True)
+        ind += size
     return final_x, final_y, final_mask
 
 
@@ -69,7 +70,7 @@ class EmbedAugModel(nn.Module):
         w_embeds: bool = True,
     ):
         super().__init__()
-        self.llm = llm
+        self.add_module("llm", llm)
         self.llm_name = llm_name.lower()
         self.max_seq_len = max_seq_len
         self.w_embeds = w_embeds
@@ -110,7 +111,6 @@ class EmbedAugModel(nn.Module):
 
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
-
         return self.llm.forward(tokens=x, embeddings=embeddings, is_training=True)
 
     def forward_gemma(

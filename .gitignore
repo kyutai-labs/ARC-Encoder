@@ -9,4 +9,4 @@ embed_llm/monitoring/__pycache__
 embed_llm/retrieval/__pycache__
 embed_llm/training/__pycache__
 config/experiments
-
+embed_llm.egg-info
