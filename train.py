@@ -225,7 +225,6 @@ def _train(
     prepare_batch_fn = pipeline.prepare_forward
     model.train()
     torch.cuda.empty_cache()
-    
     train_ppl = torch.tensor([0.0], device="cuda")
     while state.step < args.max_steps:
         state.start_step()
@@ -238,7 +237,7 @@ def _train(
         # Number of steps to accumulate gradients before doing an optimizer step.
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
-            
+                
             """ Training loop for basic reconstruction"""
     
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
@@ -256,9 +255,9 @@ def _train(
 
             mb_loss.backward()
         
-            loss += mb_loss.detach()
+            loss += mb_loss.item()
             n_batch_tokens += x.numel()
-            train_ppl += 2**(mb_loss.detach())
+            train_ppl += 2**(mb_loss.item())
 
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward
@@ -296,7 +295,7 @@ def _train(
         # Host sync
         loss_item = loss.item()
         avg_loss = avg_aggregate(loss_item)
-        train_ppl = avg_aggregate(train_ppl.item())
+        train_ppl = avg_aggregate(train_ppl)
         
         if not args.no_eval and (
             (args.eval_freq > 0 and state.step % args.eval_freq == 0) or is_last_step

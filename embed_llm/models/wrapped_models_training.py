@@ -282,7 +282,7 @@ def load_training_model(
         model_args.tokenizer = str(folder / "tokenizer.model")
         with set_default_tensor_type(param_dtype):
             with torch.device("meta"):
-                model = GemmaForCausalLM(model_args)
+                model = GemmaForCausalLM(model_args, checkpoint=checkpoint)
             tokenizer = model.tokenizer
             if get_rank() == 0:
                 state_dict = load_state_dict(folder, dtype=param_dtype, gemma=True)

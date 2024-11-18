@@ -48,7 +48,8 @@ def encode_text(
 
     if model_name == "GritLM":
         results = []
-        embedding = model.encode(text, instruction="<|embed|>\n")
+        with torch.no_grad():
+            embedding = model.encode(text)
         if device == "cpu":
             results.append(embedding.cpu().numpy())
             return np.concatenate(results, axis=0)
@@ -64,7 +65,8 @@ def encode_text(
         )
         results = []
         inputs = tokenizer(text, padding=True, truncation=True, return_tensors="pt")
-        embedding = model(**inputs)
+        with torch.no_grad():
+            embedding = model(**inputs)
         if device == "cpu":
             embedding = mean_pooling(embedding[0].cpu(), inputs["attention_mask"])
             results.append(embedding.cpu().numpy())
@@ -85,8 +87,8 @@ def encode_text(
             instruction = ""
 
         results = []
-
-        embedding = model.encode(text, instruction=instruction)
+        with torch.no_grad():
+            embedding = model.encode(text, instruction=instruction)
         if device == "cpu":
             results.append(F.normalize(embedding, p=2, dim=1).cpu().numpy())
             return np.concatenate(results, axis=0)

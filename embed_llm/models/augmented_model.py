@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from pathlib import Path
 from typing import Union, List, Tuple, Any, Optional, Sequence
 from functools import partial
@@ -81,10 +82,7 @@ class EmbedAugModel(nn.Module):
         self.llm_name = llm_name.lower()
         self.max_seq_len = max_seq_len
         self.w_embeds = w_embeds
-        if mlp_project_args.n_layers > 0 and w_embeds:
-            self.mlp_project = MLP_project(args=mlp_project_args, dtype=param_dtype)
-        else:
-            self.mlp_project = None
+  
 
         if "mistral" in self.llm_name:
             self.forward = self.forward_mistral
@@ -94,6 +92,13 @@ class EmbedAugModel(nn.Module):
 
         elif "llama" in self.llm_name:
             self.forward = self.forward_llama
+            
+        if mlp_project_args.n_layers > 0 and w_embeds:
+            self.mlp_project = MLP_project(args=mlp_project_args, dtype=param_dtype)
+        else:
+            self.mlp_project = None
+     
+
 
     def forward_mistral(
         self, 
@@ -195,7 +200,7 @@ class EmbedAugPipeline(nn.Module):
                     self.embedding_model,
                     query_embedding=False,
                     device="cuda",
-                ).type(self.param_dtype)
+                ).type(self.param_dtype).detach()
         else:
             embeddings = None
 

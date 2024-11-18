@@ -33,7 +33,7 @@ data:
 
 # Training and Optim
 seq_len: 512
-batch_size: 8
+batch_size: 4
 max_steps: 10000
 optim:
   max_lr: 5.e-6

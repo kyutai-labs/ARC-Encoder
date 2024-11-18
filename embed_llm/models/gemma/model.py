@@ -22,6 +22,8 @@ import torch.nn.functional as F
 from typing import Any, List, Optional, Sequence, Tuple, Union
 from pathlib import Path
 import contextlib
+from functools import partial
+import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from embed_llm.models.gemma import tokenizer
 from embed_llm.models.args import (
     GemmaConfig,
@@ -469,7 +471,7 @@ class Gemma2DecoderLayer(nn.Module):
 
 class GemmaModel(nn.Module, LoRALoaderMixin):
 
-    def __init__(self, config: GemmaConfig):
+    def __init__(self, config: GemmaConfig, checkpoint: Optional[bool] = False):
         super().__init__()
         self.config = config
         self.vocab_size = config.vocab_size
@@ -477,16 +479,27 @@ class GemmaModel(nn.Module, LoRALoaderMixin):
         self.layers = nn.ModuleList()
         for i in range(config.num_hidden_layers):
             if config.architecture == Architecture.GEMMA_1:
-                self.layers.append(GemmaDecoderLayer(config))
+                block: GemmaDecoderLayer = GemmaDecoderLayer(config)
             elif config.architecture == Architecture.GEMMA_2:
                 attn_type = (
                     config.attn_types[i]
                     if config.attn_types is not None
                     else AttentionType.GLOBAL
                 )
-                self.layers.append(Gemma2DecoderLayer(config, attn_type))
+                block: Gemma2DecoderLayer = Gemma2DecoderLayer(config, attn_type)
             else:
                 raise ValueError(f"Unknown architecture: {config.architecture}")
+            
+            if checkpoint:
+             # activate gradient checkpointing as, see: https://pytorch.org/docs/stable/checkpoint.html
+                non_reentrant_wrapper = partial(
+                    torch_ckpt.checkpoint_wrapper,
+                    checkpoint_impl=torch_ckpt.CheckpointImpl.NO_REENTRANT,
+                )
+                block = non_reentrant_wrapper(block)
+
+            self.layers.append(block)
+
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.n_layers = config.num_hidden_layers
         
@@ -520,6 +533,7 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
     def __init__(
         self,
         args: GemmaConfig,
+        checkpoint: Optional[bool] = False,
     ):
         super().__init__()
         self.args = args
@@ -529,10 +543,11 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         self.norm_wo_embedding = args.norm_wo_embeds
         self.tokenizer = tokenizer.Tokenizer(args.tokenizer)
         self.embedder = Embedding(vocab_size, args.hidden_size, args.quant)
-        self.model = GemmaModel(args)
+        self.model = GemmaModel(args, checkpoint=checkpoint)
         self.sampler = Sampler(vocab_size, args)
         self.rope_theta = getattr(args, 'rope_theta', 10000)
         self.w_embeds = args.w_embeds
+    
    
     @property
     def freqs_cis(self) -> torch.Tensor:
@@ -629,7 +644,6 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
             # hidden_states (bs, seq_len, hidden_size); embedder_weight (vocab_size, hidden_size)
             if embeddings is not None and self.w_embeds and not self.norm_wo_embedding:
                 hidden_states = hidden_states[:, 1:, :]
-            print('SHAPES', hidden_states.shape, embedder_weight.shape)
             logits = torch.matmul(hidden_states, torch.transpose(embedder_weight, 0, 1).to(device = hidden_states.device))
             return logits
 
