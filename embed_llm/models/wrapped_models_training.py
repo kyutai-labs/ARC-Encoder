@@ -148,8 +148,6 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                     raise ValueError("Only Lora layers should be randomly initialized.")
 
 
-# Peut normalement loader les args des 3 modèles
-
 
 def load_args(
     folder: Path,
@@ -298,6 +296,7 @@ def load_training_model(
     else:
         raise ValueError(f"Model name {llm_name} not recognized.")
     if get_rank() == 0:
+
         if lora.enable:
             logger.info("Initializing lora layers ...")
             # initialize LoRA layers
@@ -306,6 +305,7 @@ def load_training_model(
         assert not any(
             p.is_meta for p in model.parameters()
         ), "All parameters should be initialized by now"
+        
         assert all(
             p.dtype == param_dtype for p in model.parameters()
         ), f"All parameters should be on {param_dtype}"
@@ -361,7 +361,7 @@ def load_training_model(
         sharding_strategy=ShardingStrategy.FULL_SHARD, # Gradients, activations, and parameters are sharded
         auto_wrap_policy=auto_wrap_policy,
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE, # Default param
-        mixed_precision= bfSixteen_mixed if args.mixed_precision else bfSixteen,
+        mixed_precision=  fp32_policy, # bfSixteen_mixed if args.mixed_precision else bfSixteen,
         limit_all_gathers=True,
         device_id=torch.cuda.current_device(),
         sync_module_states=True, # saves cpu memory by loading pretrained model on rank0 only, not working with False

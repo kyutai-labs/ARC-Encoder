@@ -193,7 +193,7 @@ class LoRALoaderMixin:
 def maybe_lora(
     lora_args: Optional[LoraArgs],
 ) -> Union[Type[nn.Linear], partial[LoRALinear]]:
-    if lora_args is None:
+    if lora_args is None or not lora_args.enable:
         return nn.Linear
     else:
         return partial(LoRALinear, rank=lora_args.rank, scaling=lora_args.scaling)

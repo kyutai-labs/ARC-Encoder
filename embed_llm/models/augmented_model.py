@@ -25,6 +25,13 @@ from embed_llm.models.llama.generation import Llama
 
 Models = Union[LlamaTransformer, MistralTransformer, GemmaForCausalLM]
 
+# Check for infinite or NaN values in your input
+def check_data(tensor):
+    if torch.isnan(tensor).any() or torch.isinf(tensor).any():
+        print("Found NaN or Inf in input data")
+        return True
+    return False
+
 
 def pad_and_convert_to_tensor(
     x: List[int],
@@ -93,12 +100,12 @@ class EmbedAugModel(nn.Module):
         x: torch.Tensor, 
         seqlens: List[int], 
         embeddings: Optional[torch.Tensor] = None, 
-        step: Optional[int] = 0,
     ) -> torch.Tensor:
 
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
- 
+            # check_data(embeddings)
+            
         return self.llm.forward(input_ids=x, embeddings=embeddings, seqlens=seqlens)
 
     def forward_llama(
@@ -106,7 +113,6 @@ class EmbedAugModel(nn.Module):
         x: torch.Tensor,
         embeddings: Optional[torch.Tensor] = None,
         seqlens: Optional[List[int]] = None,
-        step: Optional[int] = 0,
     ) -> torch.Tensor:
 
         if self.mlp_project is not None:
@@ -118,7 +124,6 @@ class EmbedAugModel(nn.Module):
         x: torch.Tensor,
         embeddings: Optional[torch.Tensor] = None,
         seqlens: Optional[List[int]] = None,
-        step: Optional[int] = 0,
     ) -> torch.Tensor:
 
         if self.mlp_project is not None:

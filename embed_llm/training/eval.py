@@ -49,9 +49,7 @@ def evaluate(
     for batch in batches:
         with torch.no_grad():
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
-            output = model.forward(
-                x=x, embeddings=embeddings, seqlens=seqlens, step=state.step
-            )
+            output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
 
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()

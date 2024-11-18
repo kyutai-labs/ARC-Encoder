@@ -19,7 +19,14 @@ from embed_llm.models.mistral.cache import BufferCache, CacheInputMetadata
 from embed_llm.models.mistral.model import ModelBase
 from embed_llm.models.mistral.rope import precompute_freqs_cis
 from embed_llm.models.mistral.transformer_layers import RMSNorm, TransformerBlock
-
+from embed_llm.training.distributed import (
+    BACKEND,
+    avg_aggregate,
+    get_rank,
+    get_world_size,
+    is_torchrun,
+    set_device,
+)
 # from vision_encoder import VisionLanguageAdapter, VisionTransformer
 
 
@@ -193,8 +200,14 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embeddings: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
+        assert len(seqlens) == len(embeddings) if embeddings is not None else True, (
+            len(seqlens),
+            len(embeddings),
+        )
+        
         token_embeds = self.tok_embeddings(input_ids)
         (num_toks,) = input_ids.shape
+        
         if embeddings is not None and self.w_embeds:
             h = torch.zeros(
                 (num_toks + len(seqlens), self.args.dim),
@@ -202,14 +215,17 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 dtype=self.dtype,
             )
             new_seqlens = []
-            ind = 0
+            
+            final_ind = 0
             for i, size in enumerate(seqlens):
                 assert size > 0
-                h[ind, :] = embeddings[i, :]
+                # Insert embedding at the beginning of the sequence
+                h[final_ind, :] = embeddings[i, :]
                 self.pos_to_keep.append(False)
-                h[ind + 1 : ind + size + 1, :] = token_embeds[ind : ind + size, :]
+                # Insert token embeddings
+                h[final_ind + 1 : final_ind + size + 1, :] = token_embeds[final_ind - i: final_ind - i + size, :]
                 self.pos_to_keep.extend([True] * size)
-                ind += size
+                final_ind += size + 1 
                 new_seqlens.append(size + 1)
             seqlens = new_seqlens
         else:
@@ -220,9 +236,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
-        for layer in self.layers:
+        for i, layer in enumerate(self.layers):
             h = layer(x=h, freqs_cis=freqs_cis, mask=att_mask)
-
         assert self.norm is not None
  
         if embeddings is not None and self.w_embeds and self.norm_wo_embeds:

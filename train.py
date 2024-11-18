@@ -25,11 +25,7 @@ from embed_llm.training.distributed import (
 )
 from embed_llm.training.eval import evaluate
 from embed_llm.training.loss import compute_loss_with_mask
-# from embed_llm.training.mixed_precision import (
-#     downcast_mixed_precision,
-#     prepare_mixed_precision,
-#     upcast_mixed_precision,
-# )
+
 from embed_llm.training.utils import (
     TrainState,
     logged_closing,
@@ -43,8 +39,8 @@ from embed_llm.monitoring.metrics_logger import (
     train_log_msg,
 )
 from embed_llm.monitoring.utils import set_logger
-
-
+import os
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 # Define depending on the model
 
 import warnings
@@ -101,10 +97,10 @@ def _train(
 
     if is_torchrun():
         if run_dir.exists():
-            # raise RuntimeError(
-            #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
-            # )
-            print("Run dir already exists. OVERWRITTING...")
+            raise RuntimeError(
+                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
+            )
+
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -193,8 +189,8 @@ def _train(
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
         )
-        # pre-load all eval batches, restrain to 10 batches
-        eval_batches = list(eval_data_loader)[:10]
+        # pre-load all eval batches, restrain to 20 batches * n_gpus
+        eval_batches = list(eval_data_loader)[:20] 
     # 9. Load optimizer
     optimizer = AdamW(
         model.parameters(),
@@ -225,18 +221,12 @@ def _train(
         num_ckpt_keep=args.num_ckpt_keep,
     )
 
-    # # 11. Prepare mixed precision
-    # prepare_mixed_precision(
-    #     model.parameters(), param_dtype=param_dtype, optim_dtype=optim_dtype
-    # )
-
-    # 12. Prepare forward function to adapt batch to LLM forward input and calculate embedding
+    # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
     prepare_batch_fn = pipeline.prepare_forward
-
-    # 12. train!
     model.train()
-    model.llm.train()
     torch.cuda.empty_cache()
+    
+    train_ppl = torch.tensor([0.0], device="cuda")
     while state.step < args.max_steps:
         state.start_step()
         is_last_step = state.step == args.max_steps
@@ -250,35 +240,25 @@ def _train(
             batch = next(train_data_loader)
             
             """ Training loop for basic reconstruction"""
-            
+    
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
-            output = model.forward(
-                x=x, embeddings=embeddings, seqlens=seqlens, step=state.step
-            )
+            output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
             
             if len(output.size()) > 2:
-                output = output.view(-1, output.size(-1)).float()
-                y = y.view(-1).long()
-                y_mask = None if y_mask is None else y_mask.view(-1)
-                assert output.size(0) == y.size(0), (f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}")
-        
-            if torch.any(torch.isnan(output)).item():
-                raise ValueError(f"Output contains NaN or Inf values at step {state.step}")
-            
+                    output = output.view(-1, output.size(-1)).float()
+                    y = y.view(-1).long()
+                    y_mask = None if y_mask is None else y_mask.view(-1)
+                    assert output.size(0) == y.size(0), (f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}")
+                
             mb_loss = compute_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
 
             mb_loss.backward()
-            
-            # Print the gradients for the mlp_project and llm parameters
-            # print("llm gradients:")        
-            # for p in model.llm.parameters():
-            #     if p.requires_grad:
-            #         print(p.grad**2)
-
+        
             loss += mb_loss.detach()
             n_batch_tokens += x.numel()
+            train_ppl += 2**(mb_loss.detach())
 
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward
@@ -287,47 +267,40 @@ def _train(
 
         if args.num_microbatches > 1:
             loss /= args.num_microbatches
+            train_ppl /= args.num_microbatches
             for p in model.parameters():
                 if p.requires_grad:
                     assert p.grad is not None
                     p.grad.div_(args.num_microbatches)
+            
 
-        # # upcast params for optimizer update
-        # upcast_mixed_precision(model.parameters(), optim_dtype=optim_dtype)
-        
-
-
+        grad_norm = torch.tensor([0.0], device="cuda")
+        for name, p in model.named_parameters():
+            if p.requires_grad:
+                assert p.grad is not None
+                grad_norm += torch.norm(p.grad).item() ** 2
+                
+        if torch.any(torch.isnan(grad_norm)).item():
+            raise ValueError(f"Grad contains NaN before clipping or Inf values at step {state.step}")
+                
         # clip grad norm
         model.clip_grad_norm_(max_norm=args.max_norm)
-            
+        
         # optimizer step
         optimizer.step()
-        
-        # grad_norm = torch.tensor([0.0], device="cuda")
-        # pos_grad_count = 0
-        # required_grad_count = 0
-        # for p in model.parameters():
-        #     if p.requires_grad:
-        #         required_grad_count += 1
-        #         if torch.sum(p.grad**2) > 0:
-        #             pos_grad_count += 1
-        #         assert p.grad is not None
-        #         grad_norm += torch.norm(p.grad).item() ** 2
-        # print('Ratio of non zero grad:',  pos_grad_count/required_grad_count)
-        # # downcast params for forward & backward
-        # downcast_mixed_precision(model.parameters(), param_dtype=param_dtype)
 
+                
         last_lr = scheduler.get_last_lr()[0]
         scheduler.step()
 
         # Host sync
         loss_item = loss.item()
-    
         avg_loss = avg_aggregate(loss_item)
+        train_ppl = avg_aggregate(train_ppl.item())
         
         if not args.no_eval and (
             (args.eval_freq > 0 and state.step % args.eval_freq == 0) or is_last_step
-        ):
+        or state.step == 1):
             # write perplexity to state
             evaluate(
                 model=model,
@@ -348,16 +321,18 @@ def _train(
 
         if state.step % args.log_freq == 0 or state.step == 1 or is_last_step:
             train_logs = get_train_logs(
-                state,
-                avg_loss,
-                avg_aggregate(torch.mean(grad_norm).item()),
-                last_lr,
-                torch.cuda.max_memory_allocated(),
-                torch.cuda.memory_allocated(),
-                args,
+                state = state,
+                loss = avg_loss,
+                ppl = train_ppl/args.log_freq,
+                avg_grad_norm = avg_aggregate(torch.mean(grad_norm).item()),
+                lr = last_lr,
+                peak_allocated_mem = torch.cuda.max_memory_allocated(),
+                allocated_mem = torch.cuda.memory_allocated(),
+                train_args = args,
             )
             main_logger_info(train_log_msg(state, logs=train_logs, loss=avg_loss))
             metrics_logger.log(train_logs, step=state.step)
+            train_ppl = torch.tensor([0.0], device="cuda")
 
         if not args.no_ckpt and (
             (args.ckpt_freq > 0 and state.step % args.ckpt_freq == 0) or is_last_step
