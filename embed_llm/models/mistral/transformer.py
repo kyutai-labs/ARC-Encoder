@@ -64,6 +64,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.pos_to_keep = []
         self.norm_wo_embeds = args.norm_wo_embeds
         self.w_embeds = args.w_embeds
+        self.pipeline_rank = pipeline_rank
+        self.num_pipeline_ranks = num_pipeline_ranks
         if training:
             self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
             self.layers = torch.nn.ModuleList()
@@ -272,7 +274,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
         assert sum(seqlens) == num_toks, (sum(seqlens), num_toks)
 
         input_metadata: List[CacheInputMetadata] | List[SimpleInputMetadata]
-
+        
+        if embeddings is not None:
+            seqlens = [size + 1 for size in seqlens]
+            
         if cache is not None:
             input_metadata = cache.get_input_metadata(seqlens)
         else:
@@ -293,17 +298,18 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     device=self.device,
                     dtype=self.dtype,
                 )
-                new_seqlens = []
-                ind = 0
+
+                final_ind = 0
                 for i, size in enumerate(seqlens):
                     assert size > 0
-                    h[ind, :] = embeddings[i, :]
+                    # Insert embedding at the beginning of the sequence
+                    h[final_ind, :] = embeddings[i, :]
                     self.pos_to_keep.append(False)
-                    h[ind + 1 : ind + size + 1, :] = token_embeds[ind : ind + size, :]
-                    self.pos_to_keep.extend([True] * size)
-                    ind += size
-                    new_seqlens.append(size + 1)
-                seqlens = new_seqlens
+                    # Insert token embeddings
+                    # Seqlen has already been updated with embeddings
+                    h[final_ind + 1 : final_ind + size, :] = token_embeds[final_ind - i : final_ind - i + size - 1, :]
+                    self.pos_to_keep.extend([True] * (size-1))
+                    final_ind += size 
             else:
                 h = token_embeds
         else:
@@ -382,6 +388,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
     ) -> None:
         state_to_load = {}
         skipped = set([])
+
         for k, v in state_dict.items():
             if k.startswith("tok_embeddings"):
                 if self.pipeline_rank == 0:
@@ -405,7 +412,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     skipped.add(k)
             elif k.startswith("layers"):
                 layer_id = k.split(".")[1]
-                if layer_id in self.layers:
+                if layer_id in self.layers.keys():
                     state_to_load[k] = v
                 else:
                     logging.debug(
@@ -444,6 +451,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 pipeline_rank=pipeline_rank,
                 num_pipeline_ranks=num_pipeline_ranks,
                 softmax_fp32=softmax_fp32,
+                training = False
             )
 
         pt_model_file = Path(folder) / "consolidated.00.pth"
@@ -460,7 +468,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             loaded = torch.load(str(pt_model_file), mmap=True)
         else:
             loaded = safetensors.torch.load_file(str(safetensors_model_file))
-
+            
         model.load_state_dict_for_inference(loaded, assign=True, strict=True)
 
         return model.to(device=device, dtype=dtype)

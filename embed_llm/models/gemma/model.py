@@ -607,8 +607,10 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         # See https://github.com/huggingface/transformers/pull/29402
         normalizer = torch.tensor(self.args.hidden_size**0.5, dtype=hidden_states.dtype)
         hidden_states = hidden_states * normalizer
-        
-        freqs_cis = self.freqs_cis[:input_token_ids.shape[1]+1].to(device=hidden_states.device)
+        if self.w_embeds:
+            freqs_cis = self.freqs_cis[:input_token_ids.shape[1]+1].to(device=hidden_states.device)
+        else:
+            freqs_cis = self.freqs_cis[:input_token_ids.shape[1]].to(device=hidden_states.device)
         if not is_training:
             hidden_states = self.model(
                 hidden_states=hidden_states,
