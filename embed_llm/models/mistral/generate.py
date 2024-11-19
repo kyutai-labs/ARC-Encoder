@@ -15,6 +15,7 @@ def generate(
     embeddings: torch.Tensor = None,
     chunk_size: Optional[int] = None,
     eos_id: Optional[int] = None,
+    norm_wo_embeds: Optional[bool] = False,
 ) -> Tuple[List[List[int]], List[List[float]]]:
     # images_torch: List[List[torch.Tensor]] = []
     # if images:
@@ -63,6 +64,7 @@ def generate(
             seqlens=[len(p) for p in prompt_chunks],
             embeddings=embeddings,
             cache=cache,
+            norm_wo_embeds=norm_wo_embeds,
         )
         logits = torch.log_softmax(prelogits, dim=-1)
 
@@ -117,8 +119,12 @@ def generate(
             seqlens=[1] * B,
             embeddings=embeddings,
             cache=cache,
+            norm_wo_embeds=norm_wo_embeds,
         )
-        assert last_token_prelogits.shape == (B, V), f'last token prelogit: {last_token_prelogits.shape}; B: {B}; V: {V}'
+        assert last_token_prelogits.shape == (
+            B,
+            V,
+        ), f"last token prelogit: {last_token_prelogits.shape}; B: {B}; V: {V}"
 
     generated_tokens: List[List[int]]
     if generated_tensors:

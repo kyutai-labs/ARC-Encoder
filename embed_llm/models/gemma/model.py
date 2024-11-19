@@ -94,14 +94,17 @@ class Sampler(nn.Module):
         return next_token_ids, logits
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0,device: Optional[torch.device] = None) -> torch.Tensor:
+def precompute_freqs_cis(
+    dim: int, end: int, theta: float = 10000.0, device: Optional[torch.device] = None
+) -> torch.Tensor:
     """Precomputes the frequency cis."""
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2, device = device)[: (dim // 2)].float() / dim))
+    freqs = 1.0 / (
+        theta ** (torch.arange(0, dim, 2, device=device)[: (dim // 2)].float() / dim)
+    )
     t = torch.arange(end, device=freqs.device)
     freqs = torch.outer(t, freqs).float()
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
     return freqs_cis
-
 
 
 def apply_rotary_emb(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
@@ -254,9 +257,13 @@ class GemmaAttention(nn.Module):
             self.scaling = self.head_dim**-0.5
         MaybeLora = maybe_lora(lora)
         self.qkv_proj = MaybeLora(
-            self.hidden_size, (self.num_heads + 2 * self.num_kv_heads) * self.head_dim
+            self.hidden_size,
+            (self.num_heads + 2 * self.num_kv_heads) * self.head_dim,
+            bias=False,
         )
-        self.o_proj = MaybeLora(self.num_heads * self.head_dim, self.hidden_size)
+        self.o_proj = MaybeLora(
+            self.num_heads * self.head_dim, self.hidden_size, bias=False
+        )
 
         self.attn_type = attn_type
         self.sliding_window_size = sliding_window_size
@@ -473,10 +480,9 @@ class GemmaModel(nn.Module, LoRALoaderMixin):
 
     def __init__(self, config: GemmaConfig, checkpoint: Optional[bool] = False):
         super().__init__()
-        self.config = config
         self.vocab_size = config.vocab_size
-
-        self.layers = nn.ModuleList()
+        self.args = config
+        self.layers = nn.ModuleDict()
         for i in range(config.num_hidden_layers):
             if config.architecture == Architecture.GEMMA_1:
                 block: GemmaDecoderLayer = GemmaDecoderLayer(config)
@@ -489,20 +495,28 @@ class GemmaModel(nn.Module, LoRALoaderMixin):
                 block: Gemma2DecoderLayer = Gemma2DecoderLayer(config, attn_type)
             else:
                 raise ValueError(f"Unknown architecture: {config.architecture}")
-            
+
             if checkpoint:
-             # activate gradient checkpointing as, see: https://pytorch.org/docs/stable/checkpoint.html
+                # activate gradient checkpointing as, see: https://pytorch.org/docs/stable/checkpoint.html
                 non_reentrant_wrapper = partial(
                     torch_ckpt.checkpoint_wrapper,
                     checkpoint_impl=torch_ckpt.CheckpointImpl.NO_REENTRANT,
                 )
                 block = non_reentrant_wrapper(block)
 
-            self.layers.append(block)
+            self.layers[str(i)] = block
 
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.n_layers = config.num_hidden_layers
-        
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return next(self.parameters()).dtype
+
+    @property
+    def device(self) -> torch.device:
+        return next(self.parameters()).device
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -513,7 +527,7 @@ class GemmaModel(nn.Module, LoRALoaderMixin):
         norm_wo_embedding: bool = False,
     ) -> torch.Tensor:
         for i in range(self.n_layers):
-            layer = self.layers[i]
+            layer = self.layers[str(i)]
             hidden_states = layer(
                 hidden_states=hidden_states,
                 freqs_cis=freqs_cis,
@@ -528,7 +542,7 @@ class GemmaModel(nn.Module, LoRALoaderMixin):
         return hidden_states
 
 
-class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
+class GemmaForCausalLM(nn.Module):
 
     def __init__(
         self,
@@ -545,10 +559,8 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         self.embedder = Embedding(vocab_size, args.hidden_size, args.quant)
         self.model = GemmaModel(args, checkpoint=checkpoint)
         self.sampler = Sampler(vocab_size, args)
-        self.rope_theta = getattr(args, 'rope_theta', 10000)
-        self.w_embeds = args.w_embeds
-    
-   
+        self.rope_theta = getattr(args, "rope_theta", 10000)
+
     @property
     def freqs_cis(self) -> torch.Tensor:
         # We cache freqs_cis but need to take care that it is on the right device
@@ -557,27 +569,19 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         # lazy init
         device = next(iter(self.parameters())).device
         if self._precomputed_freqs_cis is None:
-            theta = self.rope_theta 
-            if self.w_embeds:
-                self._precomputed_freqs_cis = precompute_freqs_cis(
-                    self.args.head_dim,
-                    (self.args.max_position_embeddings + 1) * 2,
-                    theta=theta,
-                    device=device,
-                )
-            else:
-                self._precomputed_freqs_cis = precompute_freqs_cis(
-                    self.args.head_dim,
-                    self.args.max_position_embeddings *2 ,
-                    theta=theta,
-                    device=device,
-                )
+            theta = self.rope_theta
+            self._precomputed_freqs_cis = precompute_freqs_cis(
+                self.args.head_dim,
+                (self.args.max_position_embeddings + 1) * 2,
+                theta=theta,
+                device=device,
+            )
+
         return self._precomputed_freqs_cis
 
     def forward(
         self,
-        input_token_ids: torch.Tensor,
-        mask: torch.Tensor,
+        input_ids: torch.Tensor,
         embeddings: Optional[torch.Tensor] = None,
         input_positions: Optional[torch.Tensor] = None,
         kv_caches: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None,
@@ -585,20 +589,34 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         temperatures: Union[torch.Tensor, None] = None,
         top_ps: Optional[torch.Tensor] = None,
         top_ks: Optional[torch.Tensor] = None,
-        is_training: bool = False,
+        mask: Optional[torch.Tensor] = None,
+        training: bool = False,
+        norm_wo_embedding: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if is_training:
+        bs, seq_len = input_ids.size()
+        if training:
             input_positions = torch.arange(
-                0, input_token_ids.size(1), device=input_token_ids.device
+                0, input_ids.size(1), device=input_ids.device
             )
+
+            if embeddings is not None:
+                att_mask = torch.full((seq_len + 1, seq_len + 1), float("-inf")).cuda(
+                    non_blocking=True
+                )
+            else:
+                att_mask = torch.full((seq_len, seq_len), float("-inf")).cuda(
+                    non_blocking=True
+                )
+            mask = torch.triu(att_mask, diagonal=1)
         else:
-            raise ValueError("Must provide input_positions during inference.")
+            if input_positions is None or mask is None:
+                raise ValueError("Must provide input_positions during inference.")
 
         kv_write_indices = input_positions
 
         # [batch_size, input_len, hidden_size]
-        hidden_states = self.embedder(input_token_ids)
+        hidden_states = self.embedder(input_ids)
         if embeddings is not None:
             hidden_states = torch.cat((embeddings.unsqueeze(1), hidden_states), dim=1)
 
@@ -607,17 +625,22 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         # See https://github.com/huggingface/transformers/pull/29402
         normalizer = torch.tensor(self.args.hidden_size**0.5, dtype=hidden_states.dtype)
         hidden_states = hidden_states * normalizer
-        if self.w_embeds:
-            freqs_cis = self.freqs_cis[:input_token_ids.shape[1]+1].to(device=hidden_states.device)
+        if embeddings is not None:
+            freqs_cis = self.freqs_cis[: input_ids.shape[1] + 1].to(
+                device=hidden_states.device
+            )
         else:
-            freqs_cis = self.freqs_cis[:input_token_ids.shape[1]].to(device=hidden_states.device)
-        if not is_training:
+            freqs_cis = self.freqs_cis[: input_ids.shape[1]].to(
+                device=hidden_states.device
+            )
+        if not training:
             hidden_states = self.model(
                 hidden_states=hidden_states,
                 freqs_cis=freqs_cis,
                 kv_write_indices=kv_write_indices,
                 kv_caches=kv_caches,
                 mask=mask,
+                norm_wo_embedding=norm_wo_embedding,
             )
             embedder_weight = self.embedder.weight
             if self.args.quant:
@@ -640,13 +663,18 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
                 kv_write_indices=None,
                 kv_caches=None,
                 mask=mask,
-                norm_wo_embedding=self.norm_wo_embedding if (self.w_embeds and embeddings is not None) else False,
+                norm_wo_embedding=(
+                    norm_wo_embedding if embeddings is not None else False
+                ),
             )
             embedder_weight = self.embedder.weight
             # hidden_states (bs, seq_len, hidden_size); embedder_weight (vocab_size, hidden_size)
-            if embeddings is not None and self.w_embeds and not self.norm_wo_embedding:
+            if embeddings is not None and not self.norm_wo_embedding:
                 hidden_states = hidden_states[:, 1:, :]
-            logits = torch.matmul(hidden_states, torch.transpose(embedder_weight, 0, 1).to(device = hidden_states.device))
+            logits = torch.matmul(
+                hidden_states,
+                torch.transpose(embedder_weight, 0, 1).to(device=hidden_states.device),
+            )
             return logits
 
     def generate(
@@ -658,6 +686,7 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         top_p: float = 1.0,
         top_k: int = 100,
         embeddings: Optional[torch.Tensor] = None,
+        norm_wo_embedding: bool = False,
     ) -> Union[str, Sequence[str]]:
         """Generates responses for given prompts using Gemma model."""
         # If a single prompt is provided, treat it as a batch of 1.
@@ -690,20 +719,22 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         token_ids_tensor = torch.full(
             (batch_size, max_seq_len), self.tokenizer.pad_id, dtype=torch.int64
         )
-        input_token_ids_tensor = torch.full(
+        input_ids_tensor = torch.full(
             (batch_size, min_prompt_len), self.tokenizer.pad_id, dtype=torch.int64
         )
         for i, p in enumerate(prompt_tokens):
             token_ids_tensor[i, : len(p)] = torch.tensor(p)
-            input_token_ids_tensor[i, :min_prompt_len] = torch.tensor(
-                p[:min_prompt_len]
-            )
+            input_ids_tensor[i, :min_prompt_len] = torch.tensor(p[:min_prompt_len])
+        # TODO Fix pb with size when concatenating embeddings
+
         token_ids_tensor = token_ids_tensor.to(device)
-        input_token_ids_tensor = input_token_ids_tensor.to(device)
+        input_ids_tensor = input_ids_tensor.to(device)
         prompt_mask_tensor = token_ids_tensor != self.tokenizer.pad_id
         input_positions_tensor = torch.arange(0, min_prompt_len, dtype=torch.int64).to(
             device
         )
+        max_seq_len = max_seq_len if embeddings is None else max_seq_len + 1
+
         mask_tensor = torch.full((1, 1, max_seq_len, max_seq_len), -2.3819763e38).to(
             torch.float
         )
@@ -723,7 +754,7 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         # decode and ignore output.
         for i in range(max_seq_len - min_prompt_len):
             next_token_ids, _ = self(
-                input_token_ids=input_token_ids_tensor,
+                input_ids=input_ids_tensor,
                 input_positions=input_positions_tensor,
                 embeddings=embeddings,
                 kv_write_indices=None,
@@ -733,6 +764,8 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
                 temperatures=temperatures_tensor,
                 top_ps=top_ps_tensor,
                 top_ks=top_ks_tensor,
+                norm_wo_embedding=norm_wo_embedding,
+                training=False,
             )
 
             curr_prompt_mask = prompt_mask_tensor.index_select(1, output_index).squeeze(
@@ -746,7 +779,7 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
             ).unsqueeze(dim=1)
             token_ids_tensor.index_copy_(1, output_index, output_token_ids)
 
-            input_token_ids_tensor = output_token_ids
+            input_ids_tensor = output_token_ids
             input_positions_tensor = output_index.unsqueeze(dim=-1)
             curr_mask_tensor = mask_tensor.index_select(2, input_positions_tensor)
             output_positions_tensor = torch.tensor(0, dtype=torch.int64).to(device)
@@ -766,33 +799,6 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
 
         # If a string was provided as input, return a string as output.
         return results[0] if is_str_prompt else results
-
-    def load_weights(self, model_path: str, lora_path: Optional[str] = None):
-        if os.path.isfile(model_path):
-            self.load_state_dict(
-                torch.load(
-                    model_path,
-                    mmap=True,
-                    weights_only=True,
-                )["model_state_dict"],
-                strict=False,
-            )
-        else:
-            index_path = os.path.join(model_path, "pytorch_model.bin.index.json")
-            with open(index_path, "r", encoding="utf-8") as f:
-                index = json.load(f)
-            shard_files = list(set(index["weight_map"].values()))
-            for shard_file in shard_files:
-                shard_path = os.path.join(model_path, shard_file)
-                state_dict = torch.load(
-                    shard_path, map_location="cpu", weights_only=True
-                )
-                self.load_state_dict(state_dict, strict=False)
-                del state_dict  # Save memory.
-                gc.collect()
-
-        if lora_path is not None:
-            self.model.load_lora(Path(lora_path))
 
 
 @contextlib.contextmanager

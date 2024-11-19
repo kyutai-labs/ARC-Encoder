@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-13%4
+#SBATCH --array=0-1%1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
@@ -17,22 +17,23 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID))
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-config/experiments/llama/hidden_dim2048Llama3.2-3B.yaml
-config/experiments/llama/lr0.0005Llama3.2-3B.yaml
-config/experiments/llama/n_layers2Llama3.2-3B.yaml
-config/experiments/llama/no_embed_lr5e-5Llama3.2-3Bb00319493d3f10e95678.yaml
-config/experiments/llama/hidden_dim3072Llama3.2-3B.yaml
-config/experiments/llama/n_layers1Llama3.2-3B.yaml
-config/experiments/llama/n_layers3Llama3.2-3B.yaml
-config/experiments/gemma/hidden_dim2048Gemma7B.yaml
-config/experiments/gemma/hidden_dim3072Gemma7B.yaml
-config/experiments/gemma/lr0.0005Gemma7B.yaml
-config/experiments/gemma/n_layers1Gemma7B.yaml
-config/experiments/gemma/n_layers2Gemma7B.yaml
-config/experiments/gemma/n_layers3Gemma7B.yaml
-config/experiments/gemma/no_embed_lr5e-5Gemma7B7dd9d4cecfbff5795710.yaml
-
+config/default_gemma.yaml
 )
+# config/experiments/gemma/n_layers3Gemma7B.yaml
+# config/experiments/llama/hidden_dim2048Llama3.2-3B.yaml
+# config/experiments/llama/lr0.0005Llama3.2-3B.yaml
+# config/experiments/llama/n_layers2Llama3.2-3B.yaml
+# config/experiments/llama/no_embed_lr5e-5Llama3.2-3Bb00319493d3f10e95678.yaml
+# config/experiments/llama/hidden_dim3072Llama3.2-3B.yaml
+# config/experiments/llama/n_layers1Llama3.2-3B.yaml
+# config/experiments/llama/n_layers3Llama3.2-3B.yaml
+# config/experiments/gemma/hidden_dim2048Gemma7B.yaml
+# config/experiments/gemma/hidden_dim3072Gemma7B.yaml
+# config/experiments/gemma/lr0.0005Gemma7B.yaml
+# config/experiments/gemma/n_layers1Gemma7B.yaml
+# config/experiments/gemma/n_layers2Gemma7B.yaml
+# config/experiments/gemma/n_layers3Gemma7B.yaml
+# config/experiments/gemma/no_embed_lr5e-5Gemma7B7dd9d4cecfbff5795710.yaml
 # config/experiments/mistral/lr0.0005Mistral7B.yaml
 # config/experiments/mistral/lr5e-05Mistral7B.yaml
 # config/experiments/mistral/n_layers0Mistral7B.yaml

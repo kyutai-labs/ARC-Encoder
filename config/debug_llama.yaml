@@ -8,7 +8,7 @@ embedder:
   dim: 4096
   name: NVEmbed
 eval_freq: 100
-exp_name: testing
+exp_name: test_llama
 llm_name: Llama3.2-3B
 log_freq: 5
 lora:
@@ -34,8 +34,8 @@ save_adapters: true
 seed: 0
 seq_len: 512
 w_embeds: true
-# wandb:
-#   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
-#   offline: false
-#   project: embed_llm
-#   run_name: act0a84d43f52dc15053eff
+wandb:
+  key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
+  offline: false
+  project: embed_llm
+  run_name: test_llama

@@ -4,37 +4,40 @@ import logging
 import math
 from pathlib import Path
 from typing import Callable, Union, Optional, Tuple, Any
-import safetensors
-from ast import literal_eval
 import torch
 import torch.distributed.fsdp.wrap as torch_wrap
 from torch.distributed.fsdp import BackwardPrefetch
 from torch.distributed.fsdp.api import ShardingStrategy
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
-from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.models.args import (
     MistralModelArgs,
     LlamaModelArgs,
     GemmaConfig,
-    MLPProjectArgs,
 )
-from embed_llm.training.mixed_precision import fp32_policy, bfSixteen, bfSixteen_mixed, fpSixteen
+from embed_llm.training.mixed_precision import (
+    fp32_policy,
+    bfSixteen,
+    bfSixteen_mixed,
+    fpSixteen,
+)
 from embed_llm.models.args import LoraArgs
 from embed_llm.training.distributed import (
     get_rank,
     get_world_size,
 )
-from embed_llm.models.augmented_model import EmbedAugPipeline
+from embed_llm.models.augmented_model import (
+    EmbedAugPipeline,
+    load_state_dict,
+    load_args,
+)
 from embed_llm.training.args import TrainArgs
-from embed_llm.models.embedding_modules import MLP_project
 
 # Mistral specifics
-from embed_llm.models.mistral.moe import MoeArgs
 from embed_llm.models.mistral.transformer import Transformer as MistralTransformer
 from embed_llm.models.mistral.transformer import (
     TransformerBlock as MistralTransformerBlock,
 )
-from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistraltokenizer
+from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_tokenizer
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 
 # Gemma specifics
@@ -53,7 +56,6 @@ from embed_llm.models.llama.model import TransformerBlock as LlamaTransformerBlo
 from embed_llm.models.llama.model import Transformer as LlamaTransformer
 
 
-ModelsArgs = Union[MistralModelArgs, LlamaModelArgs, GemmaConfig]
 Tokenizer = Union[MistralTokenizer, LlamaTokenizer, GemmaTokenizer]
 
 
@@ -76,7 +78,15 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     # Each transformer block becomes a FSDP group, each being sharded separately
     transformer_block_wrap_policy = functools.partial(
         torch_wrap.transformer_auto_wrap_policy,
-        transformer_layer_cls=set([MistralTransformerBlock, LlamaTransformerBlock, Gemma2DecoderLayer, GemmaDecoderLayer,]),)
+        transformer_layer_cls=set(
+            [
+                MistralTransformerBlock,
+                LlamaTransformerBlock,
+                Gemma2DecoderLayer,
+                GemmaDecoderLayer,
+            ]
+        ),
+    )
 
     if not is_lora:
         return transformer_block_wrap_policy
@@ -89,7 +99,6 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
         ):
             return True
         return False
-
 
     # For LoRA training, trainable and non-trainable parameters need to be put into
     # different FSDP groups
@@ -108,7 +117,10 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     #     torch_wrap.lambda_auto_wrap_policy, lambda_fn=fsdp_mlp_proj_policy_fn
     # )
 
-    policies = [fsdp_lora_policy, transformer_block_wrap_policy] #, fsdp_mlp_proj_policy]
+    policies = [
+        fsdp_lora_policy,
+        transformer_block_wrap_policy,
+    ]  # , fsdp_mlp_proj_policy]
 
     return functools.partial(torch_wrap._or_policy, policies=policies)
 
@@ -148,88 +160,10 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                     raise ValueError("Only Lora layers should be randomly initialized.")
 
 
-
-def load_args(
-    folder: Path,
-    lora: LoraArgs,
-    model_name: str,
-    norm_wo_embeds: Optional[bool] = False,
-    w_embeds: Optional[bool] = False,
-    max_seq_len: Optional[int] = None,
-    max_batch_size: Optional[int] = None,
-    variant: Optional[str] = None,
-) -> ModelsArgs:
-
-    assert (folder / "params.json").exists(), f"params.json not found in {folder}"
-
-    if "mistral" in model_name.lower():
-
-        with open(folder / "params.json", "r") as f:
-            args = json.loads(f.read())
-
-        model_args = MistralModelArgs(
-            lora=lora,
-            dim=args["dim"],
-            n_layers=args["n_layers"],
-            head_dim=args["head_dim"],
-            hidden_dim=args["hidden_dim"],
-            n_heads=args["n_heads"],
-            n_kv_heads=args["n_kv_heads"],
-            norm_eps=args["norm_eps"],
-            vocab_size=args["vocab_size"],
-            norm_wo_embeds=norm_wo_embeds,
-            w_embeds=w_embeds,
-        )
-
-        if args.get("rope_theta") is not None:
-            model_args.rope_theta = args["rope_theta"]
-
-        if args.get("moe") is not None:
-            model_args.moe = MoeArgs(**args["moe"])
-
-        if model_args.vocab_size == 32000:
-            raise ValueError(
-                f"Fine-tuning is not supported for older model versions with vocab_size 32000. Make sure to extend your model to vocab_size=32768 using `python -m utils.extend_model_vocab --original_model_ckpt {folder} --extended_model_ckpt {folder}_extended`."
-            )
-
-        assert (
-            model_args.vocab_size >= 32768
-        ), "Make sure to use a model with a vocab size of at least 32768"
-
-    elif "llama" in model_name.lower():
-
-        with open(folder / "params.json", "r") as f:
-            args = json.loads(f.read())
-
-        model_args = LlamaModelArgs(
-            max_seq_len=max_seq_len,
-            max_batch_size=max_batch_size,
-            norm_wo_embeds=norm_wo_embeds,
-            w_embeds=w_embeds,
-            lora=lora,
-            **args,
-        )
-
-    elif "gemma" in model_name.lower():
-        with open(folder / "params.json", "r") as f:
-            args = json.loads(f.read())
-
-        model_args = GemmaConfig(lora=lora, 
-                                 norm_wo_embeds=norm_wo_embeds, 
-                                 w_embeds=w_embeds,
-                                 **args)
-        assert variant is not None, "Variant must be provided for Gemma model."
-        model_args.quant = False
-        model_args.norm_wo_embeds = norm_wo_embeds
-
-    return model_args
-
-
 def load_training_model(
     args: TrainArgs,
     folder: Path,
     lora: LoraArgs,
-    mlp_projector_args: MLPProjectArgs,
     llm_name: str,
     embedding_model: Any,
     checkpoint: Optional[bool] = False,
@@ -239,60 +173,72 @@ def load_training_model(
     variant: Optional[str] = None,
 ) -> Tuple[Tokenizer, FullyShardedDataParallel, int]:
 
-    model_args = load_args(
+    llm_args, pipeline_args = load_args(
         folder,
         lora,
-        model_name=llm_name,
+        llm_name=llm_name,
         max_seq_len=max_seq_len,
         max_batch_size=max_batch_size,
         variant=variant,
         norm_wo_embeds=args.norm_wo_embeds,
         w_embeds=args.w_embeds,
+        param_dtype=param_dtype,
     )
+    pipeline_args.mlp_project = args.projector
 
     if "mistral" in llm_name.lower():
-        tokenizer = load_mistraltokenizer(folder).instruct_tokenizer.tokenizer
+        tokenizer = load_mistral_tokenizer(folder).instruct_tokenizer.tokenizer
         with torch.device("meta"):
-            model = MistralTransformer(args=model_args, checkpoint=checkpoint)
+            model = MistralTransformer(args=llm_args, checkpoint=checkpoint)
 
         embed_dim = model.args.dim
         if get_rank() == 0:
             state_dict = load_state_dict(folder, dtype=param_dtype)
             model.load_state_dict(state_dict, assign=True)  # type: ignore
             logger.info("Loaded model on cpu!")
-        if mlp_projector_args.n_layers == 0:
-            assert args.embedder.dim == model.args.dim, "Embedder dim must match model dim if no MLP projector."
+
+        if pipeline_args.mlp_project.n_layers == 0:
+            assert (
+                args.embedder.dim == model.args.dim
+            ), "Embedder dim must match model dim if no MLP projector."
 
     elif "llama" in llm_name.lower():
         tokenizer = LlamaTokenizer(model_path=str(folder / "tokenizer.model"))
         with torch.device("meta"):
-            model = LlamaTransformer(args=model_args, checkpoint=checkpoint, training = True)
+            model = LlamaTransformer(args=llm_args, checkpoint=checkpoint)
         embed_dim = model.args.dim
 
         if get_rank() == 0:
             state_dict = load_state_dict(folder, dtype=param_dtype)
             model.load_state_dict(state_dict, assign=True)  # type: ignore
             logger.info("Loaded model on cpu!")
-        if mlp_projector_args.n_layers == 0 and args.w_embeds:
-            assert args.embedder.dim == model.args.dim, "Embedder dim must match model dim if no MLP projector."
-        
+        if pipeline_args.mlp_project.n_layers == 0:
+            assert (
+                args.embedder.dim == model.args.dim
+            ), "Embedder dim must match model dim if no MLP projector."
 
     elif "gemma" in llm_name.lower():
-        embed_dim = model_args.hidden_size
-        model_args.tokenizer = str(folder / "tokenizer.model")
+        embed_dim = llm_args.hidden_size
+        llm_args.tokenizer = str(folder / "tokenizer.model")
         with set_default_tensor_type(param_dtype):
             with torch.device("meta"):
-                model = GemmaForCausalLM(model_args, checkpoint=checkpoint)
+                model = GemmaForCausalLM(llm_args, checkpoint=checkpoint)
             tokenizer = model.tokenizer
             if get_rank() == 0:
                 state_dict = load_state_dict(folder, dtype=param_dtype, gemma=True)
-                del state_dict['freqs_cis']
+                del state_dict["freqs_cis"]
                 model.load_state_dict(state_dict, assign=True)  # type: ignore
                 logger.info("Loaded model on cpu!")
-            if mlp_projector_args.n_layers == 0:
-                assert args.embedder.dim == model.args.hidden_size, "Embedder dim must match model dim if no MLP projector."
-        assert args.seq_len < model_args.max_position_embeddings, f"Sequence length too long! Must be less than {model_args.max_position_embeddings - 1}."
-         
+
+        if pipeline_args.mlp_project.n_layers == 0:
+            assert (
+                args.embedder.dim == model.args.dim
+            ), "Embedder dim must match model dim if no MLP projector."
+
+        assert (
+            args.seq_len < llm_args.max_position_embeddings
+        ), f"Sequence length too long! Must be less than {llm_args.max_position_embeddings - 1}."
+
     else:
         raise ValueError(f"Model name {llm_name} not recognized.")
     if get_rank() == 0:
@@ -305,7 +251,7 @@ def load_training_model(
         assert not any(
             p.is_meta for p in model.parameters()
         ), "All parameters should be initialized by now"
-        
+
         assert all(
             p.dtype == param_dtype for p in model.parameters()
         ), f"All parameters should be on {param_dtype}"
@@ -324,19 +270,17 @@ def load_training_model(
 
     torch.distributed.barrier()
 
-    mlp_projector_args.in_dim = args.embedder.dim
-    mlp_projector_args.out_dim = embed_dim
+    pipeline_args.mlp_project.in_dim = args.embedder.dim
+    pipeline_args.mlp_project.out_dim = embed_dim
 
     augmented_pipeline = EmbedAugPipeline(
         llm_name=llm_name,
-        mlp_project_args=mlp_projector_args,
-        param_dtype=param_dtype,
+        pipeline_args=pipeline_args,
         tokenizer=tokenizer,
         embed_model_name=args.embedder.name,
         embedding_model=embedding_model,
         pad_token_id=tokenizer.pad_id,
         max_seq_len=max_seq_len,
-        w_embeds = args.w_embeds,
     )
 
     augmented_model = augmented_pipeline.get_model(llm=model)
@@ -352,20 +296,20 @@ def load_training_model(
         for name, param in augmented_model.named_parameters():
             param.requires_grad = True
 
-    auto_wrap_policy = get_fsdp_policy(model_args.lora.enable)
+    auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
-        sharding_strategy=ShardingStrategy.FULL_SHARD, # Gradients, activations, and parameters are sharded
+        sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
         auto_wrap_policy=auto_wrap_policy,
-        backward_prefetch=BackwardPrefetch.BACKWARD_PRE, # Default param
-        mixed_precision=  fp32_policy, # bfSixteen_mixed if args.mixed_precision else bfSixteen,
+        backward_prefetch=BackwardPrefetch.BACKWARD_PRE,  # Default param
+        mixed_precision=bfSixteen_mixed if args.mixed_precision else bfSixteen,
         limit_all_gathers=True,
         device_id=torch.cuda.current_device(),
-        sync_module_states=True, # saves cpu memory by loading pretrained model on rank0 only, not working with False
-        param_init_fn=param_init_fn, # Condition on the fact that sync_module_states is True otherwise None
+        sync_module_states=True,  # saves cpu memory by loading pretrained model on rank0 only, not working with False
+        param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
     )
 
     main_logger_info("Model sharded!")
@@ -375,40 +319,3 @@ def load_training_model(
         augmented_pipeline,
         wrapped_model,
     )
-
-
-@torch.no_grad()
-def load_state_dict(
-    path: Path, dtype: torch.dtype, gemma: bool = False
-) -> dict[str, torch.Tensor]:
-    assert path.is_dir(), path
-
-    this_safetensors_path = Checkpointer.consolidated_path(path, use_safetensors=True)
-
-    if not gemma:
-        this_torch_path = Checkpointer.consolidated_path(path, use_safetensors=False)
-    else:
-        this_torch_path = path / list(path.glob("*.ckpt"))[0]
-
-    assert (
-        this_safetensors_path.exists() or this_torch_path.exists()
-    ), f"Either {this_safetensors_path} or {this_torch_path} must exist."
-    assert not (
-        this_safetensors_path.exists() and this_torch_path.exists()
-    ), f"Only one of {this_safetensors_path} or {this_torch_path} should exist."
-
-    if this_safetensors_path.exists():
-        logger.info(f"Reloading model from {this_safetensors_path} ...")
-        model_state_dict = safetensors.torch.load_file(this_safetensors_path)
-    else:
-        logger.info(f"Reloading model from {this_torch_path} ...")
-        model_state_dict = torch.load(this_torch_path)
-        if gemma:
-            model_state_dict = model_state_dict["model_state_dict"]
-
-    logger.info(f"Converting model to dtype {dtype} ...")
-
-    for k, v in model_state_dict.items():
-        model_state_dict[k] = v.to(dtype)
-
-    return model_state_dict

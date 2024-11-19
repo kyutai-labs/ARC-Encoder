@@ -13,6 +13,7 @@ from embed_llm.models.lora import LoRALinear
 
 from embed_llm.training.distributed import get_rank, get_world_size
 from embed_llm.training.utils import TrainState
+from embed_llm.models.augmented_model import EmbedAugPipeline
 
 logger = logging.getLogger("checkpointing")
 
@@ -32,9 +33,11 @@ class Checkpointer:
         run_dir: Union[Path, str],
         optimizer: Optional[torch.optim.Optimizer] = None,
         num_ckpt_keep: Optional[int] = None,
+        pipeline: EmbedAugPipeline = None,
     ):
         self.llm: nn.Module = model.llm
         self.mlp_project: nn.Module = model.mlp_project
+        self.pipeline: EmbedAugPipeline = pipeline
         self.llm_name = model.llm_name
         self.optimizer = optimizer
         self.state = state
@@ -81,6 +84,12 @@ class Checkpointer:
             with open(params_path, "w") as f:
                 model_args = self.mlp_project.args.to_dict()
                 f.write(json.dumps(model_args, indent=4))
+
+    def write_embedaugpipeline_params_info(self, tmp_dst: Path):
+        params_path = tmp_dst / "params.json"
+        with open(params_path, "w") as f:
+            model_args = self.pipeline.pipeline_args.to_dict()
+            f.write(json.dumps(model_args, indent=4))
 
     def delete_old_ckpts(self) -> List[Path]:
         all_saved_ckpts = [d for d in self.ckpt_dir.iterdir() if d.is_dir()]
@@ -240,22 +249,6 @@ class Checkpointer:
         mlp_project_states = dict(sorted(mlp_project_states.items()))
         return llm_states, mlp_project_states
 
-    # @staticmethod
-    # def save_tokenizer(instruct_tokenizer: InstructTokenizerBase, tmp_dst: Path):
-    #     if isinstance(instruct_tokenizer.tokenizer, SentencePieceTokenizer):
-    #         serialized_spm = (
-    #             instruct_tokenizer.tokenizer._model.serialized_model_proto()
-    #         )  # type: ignore
-
-    #         tokenizer_path = tmp_dst / "tokenizer.model.v3"
-
-    #         with open(tokenizer_path, "wb") as f:
-    #             f.write(serialized_spm)
-    #     else:
-    #         path = instruct_tokenizer.tokenizer._path
-    #         assert path is not None
-    #         shutil.copy(path, tmp_dst / "tekken.json")
-
     @torch.no_grad()
     def save_checkpoint(
         self,
@@ -301,10 +294,8 @@ class Checkpointer:
 
             self.write_llm_params_info(tmp_llm_dst)
             self.write_mlp_project_params_info(tmp_mlp_project_dst)
-
-            # save tokenizer
-            # if tokenizer is not None:
-            #     self.save_tokenizer(instruct_tokenizer, tmp_dst)
+            # Put the params of the pipeline above the two models directories
+            self.write_embedaugpipeline_params_info(tmp_mlp_project_dst.parent)
 
             assert (
                 not self.dst_dir[0].exists() and not self.dst_dir[1].exists()

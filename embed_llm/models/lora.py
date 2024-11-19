@@ -95,7 +95,7 @@ class LoRALinear(nn.Module):
                 "linear.weight": w_ref,
             }
             self.load_state_dict(state_dict, assign=True, strict=True)
-        
+
         if prefix + "lora_A.weight" in state_dict:
             lora_a = state_dict[prefix + "lora_A.weight"]
             lora_b = state_dict[prefix + "lora_B.weight"]
@@ -104,7 +104,6 @@ class LoRALinear(nn.Module):
                 "lora_B.weight": lora_b,
             }
             self.load_state_dict(state_dict, assign=True, strict=True)
-     
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         lora = self.lora_B(self.lora_A(x))
@@ -155,11 +154,8 @@ class LoRALoaderMixin:
                     layer_id = name.split(".")[1]
                     # type: ignore[attr-defined]
                     if layer_id not in self.layers:
-                        print(
-                            "Skipping parameter",
-                            name
-                        )
-                        
+                        print("Skipping parameter", name)
+
                     elif (name + ".lora_B.weight") in lora_state_dict:
                         weight = (
                             module.weight
@@ -180,10 +176,7 @@ class LoRALoaderMixin:
                 if layer_id in self.layers:  # type: ignore[attr-defined]
                     state_dict[k] = v
                 else:
-                        print(
-                            "Skipping parameter",
-                            name
-                        )
+                    print("Skipping parameter", name)
 
         # type: ignore[attr-defined]
         self.load_state_dict(state_dict, strict=True)

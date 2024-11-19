@@ -4,6 +4,7 @@ import enum
 import torch
 from typing import Optional, Sequence
 from simple_parsing.helpers import Serializable
+from dataclasses import dataclass, field
 import torch
 from embed_llm.models.mistral.moe import MoeArgs
 from embed_llm.models.lora import LoraArgs
@@ -16,6 +17,15 @@ class MLPProjectArgs(Serializable):
     act: Optional[str] = "id"
     in_dim: Optional[int] = None
     out_dim: Optional[int] = None
+
+
+@dataclass
+class EmbedAugArgs(Serializable):
+    w_embeds: Optional[bool] = False
+    norm_wo_embeds: Optional[bool] = False
+    mlp_project: Optional[MLPProjectArgs] = field(default_factory=MLPProjectArgs)
+    training: Optional[bool] = False
+    param_dtype: Optional[torch.dtype] = torch.bfloat16
 
 
 @dataclass
@@ -38,11 +48,10 @@ class MistralModelArgs(Serializable):
     sliding_window: Optional[int] | Optional[List[int]] = None
     _sliding_window: Optional[int] | Optional[List[int]] = None
     model_type: str = "transformer"
-    norm_wo_embeds: Optional[bool] = False
-    w_embeds: Optional[bool] = False
 
     # vision_encoder: Optional[VisionEncoderArgs] = None
     """ If adding new args take care giving it to load args """
+
     def __post_init__(self) -> None:
         assert self.model_type == "transformer", self.model_type
         assert self.sliding_window is None or self._sliding_window is None
@@ -70,10 +79,9 @@ class LlamaModelArgs(Serializable):
     max_batch_size: int = 32
     max_seq_len: int = 2048
     lora: Optional[LoraArgs] = None
-    norm_wo_embeds: Optional[bool] = False
-    w_embeds: Optional[bool] = False
     use_scaled_rope: Optional[bool] = True  # Not implemented in the model
     """ If adding new args take care giving it to load args """
+
 
 """Gemma model config."""
 
@@ -142,10 +150,8 @@ class GemmaConfig(Serializable):
     # Whether to use post mlp normalization.
     use_post_ffw_norm: bool = False
     lora: Optional[LoraArgs] = None
-    norm_wo_embeds: Optional[bool] = False
-    w_embeds: Optional[bool] = False
     """ If adding new args take care giving it to load args """
-    
+
     def get_dtype(self) -> Optional[torch.dtype]:
         """Gets the torch dtype from the config dtype string."""
         return _STR_DTYPE_TO_TORCH_DTYPE.get(self.dtype, None)

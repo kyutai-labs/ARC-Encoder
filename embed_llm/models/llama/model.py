@@ -84,7 +84,7 @@ class Attention(nn.Module):
         self.head_dim = args.dim // args.n_heads
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
-        
+
         MaybeLora = maybe_lora(args.lora)
         self.wq = MaybeLora(
             args.dim,
@@ -106,11 +106,10 @@ class Attention(nn.Module):
             args.dim,
             bias=False,
         )
-        
+
         self.cache_k = None
         self.cache_v = None
 
-   
     def forward(
         self,
         x: torch.Tensor,
@@ -129,23 +128,23 @@ class Attention(nn.Module):
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
         if not training:
-            
+
             if self.cache_k is None:
                 self.cache_k = torch.zeros(
-                        self.max_batch_size,
-                        self.max_seq_len,
-                        self.n_local_kv_heads,
-                        self.head_dim,
-                    ).to(xq)
-                
+                    self.max_batch_size,
+                    self.max_seq_len,
+                    self.n_local_kv_heads,
+                    self.head_dim,
+                ).to(xq)
+
             if self.cache_v is None:
                 self.cache_v = torch.zeros(
-                        self.max_batch_size,
-                        self.max_seq_len,
-                        self.n_local_kv_heads,
-                        self.head_dim,
-                    ).to(xq)
- 
+                    self.max_batch_size,
+                    self.max_seq_len,
+                    self.n_local_kv_heads,
+                    self.head_dim,
+                ).to(xq)
+
             self.cache_k = self.cache_k.to(xq)
             self.cache_v = self.cache_v.to(xq)
 
@@ -244,15 +243,15 @@ class TransformerBlock(nn.Module):
 
 
 class Transformer(nn.Module, LoRALoaderMixin):
-    def __init__(self, args: ModelArgs, checkpoint: bool = False, training: Optional[bool] = True):
+    def __init__(self, args: ModelArgs, checkpoint: bool = False):
         super().__init__()
         self.args = args
         self.vocab_size = args.vocab_size
         self.n_layers = args.n_layers
 
         self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
-        
-        layers = torch.nn.ModuleList()
+
+        layers = [torch.nn.ModuleList()]
         for layer_id in range(args.n_layers):
             block: TransformerBlock = TransformerBlock(layer_id, args)
             if checkpoint:
@@ -263,21 +262,16 @@ class Transformer(nn.Module, LoRALoaderMixin):
                 )
                 block = non_reentrant_wrapper(block)
             layers.append(block)
-        
-        if training:
-            self.layers = nn.ModuleList(layers)
-        else:
-            self.layers = nn.ModuleDict({str(i): layers[i] for i, layer in enumerate(layers)})
-            
-        self.training = training
+
+        self.layers = nn.ModuleDict(
+            {str(i): layers[i] for i, layer in enumerate(layers)}
+        )
+
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
         MaybeLora = maybe_lora(args.lora)
         self.output = MaybeLora(args.dim, args.vocab_size, bias=False)
-        self.norm_wo_embeds = args.norm_wo_embeds
-        self.w_embeds = args.w_embeds
         self._precomputed_freqs_cis: Optional[torch.Tensor] = None
-    
 
     @property
     def dtype(self) -> torch.dtype:
@@ -296,33 +290,27 @@ class Transformer(nn.Module, LoRALoaderMixin):
         device = next(iter(self.parameters())).device
         if self._precomputed_freqs_cis is None:
             theta = self.args.rope_theta or 1000000.0
-            if self.w_embeds:
-                self._precomputed_freqs_cis = precompute_freqs_cis(
-                    self.args.dim // self.args.n_heads,
-                    (self.args.max_seq_len + 1) * 2,
-                    theta=theta,
-                    device=device,
-                )
-            else:
-                self._precomputed_freqs_cis = precompute_freqs_cis(
-                    self.args.dim // self.args.n_heads,
-                    self.args.max_seq_len  * 2,
-                    theta=theta,
-                    device=device,
-                )
+            self._precomputed_freqs_cis = precompute_freqs_cis(
+                self.args.dim // self.args.n_heads,
+                (self.args.max_seq_len + 1) * 2,
+                theta=theta,
+                device=device,
+            )
         return self._precomputed_freqs_cis
 
     def forward(
         self,
-        tokens: torch.Tensor,
+        input_ids: torch.Tensor,
         embeddings: Optional[torch.Tensor] = None,
         start_pos: Optional[int] = None,
+        training: Optional[bool] = False,
+        norm_wo_embeds: Optional[bool] = False,
     ):
 
-        _bsz, seqlen = tokens.shape
+        _bsz, seqlen = input_ids.shape
 
-        h = self.tok_embeddings(tokens)
-        if embeddings is not None and self.w_embeds:
+        h = self.tok_embeddings(input_ids)
+        if embeddings is not None:
             seqlen += 1
             h = torch.cat((embeddings.unsqueeze(1), h), dim=1)
 
@@ -333,9 +321,8 @@ class Transformer(nn.Module, LoRALoaderMixin):
 
         mask = None
         if seqlen > 1:
-   
-            mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
 
+            mask = torch.full((seqlen, seqlen), float("-inf"), device=input_ids.device)
 
             mask = torch.triu(mask, diagonal=1)
 
@@ -344,26 +331,22 @@ class Transformer(nn.Module, LoRALoaderMixin):
             # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
             # j > cache_len + i, since row i corresponds to token cache_len + i.
             # try:
-            if not self.training:
+            if not training:
                 mask = torch.hstack(
-                    [torch.zeros((seqlen, start_pos), device=tokens.device), mask] 
+                    [torch.zeros((seqlen, start_pos), device=input_ids.device), mask]
                 ).type_as(h)
             # except:
             #     mask = torch.hstack([torch.zeros((seqlen, start_pos)), mask]).type_as(h)
 
-        if self.training:
-            for layer in self.layers:
-                h = layer(h, start_pos, freqs_cis, mask, training=self.training)
-        else:
-            for name, layer in self.layers.items():
-                h = layer(h, start_pos, freqs_cis, mask, training=self.training)
-            
-        if embeddings is not None and self.norm_wo_embeds and self.w_embeds:
+        for i in range(self.n_layers):
+            h = self.layers[str(i)](h, start_pos, freqs_cis, mask, training=training)
+
+        if embeddings is not None and norm_wo_embeds:
             h = self.norm(h[:, 1:, :])  # type: ignore
-            
-        elif embeddings is not None and self.w_embeds and not self.norm_wo_embeds:
+        elif embeddings is not None and not norm_wo_embeds:
             h = self.norm(h)[:, 1:, :]  # type: ignore
         else:
             h = self.norm(h)
+
         output = self.output(h).float()
         return output

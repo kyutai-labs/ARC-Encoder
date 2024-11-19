@@ -87,7 +87,9 @@ class Tokenizer:
         # BOS / EOS token IDs
         self.bos_id: int = self.special_tokens["<|begin_of_text|>"]
         self.eos_id: int = self.special_tokens["<|end_of_text|>"]
-        self.pad_id: int = self.special_tokens["<|reserved_special_token_0|>"] # Was -1 but create a bug with the embedder
+        self.pad_id: int = self.special_tokens[
+            "<|reserved_special_token_0|>"
+        ]  # Was -1 but create a bug with the embedder
         self.stop_tokens = {
             self.special_tokens["<|end_of_text|>"],
             self.special_tokens["<|eot_id|>"],
@@ -158,8 +160,7 @@ class Tokenizer:
         if eos:
             t.append(self.eos_id)
         return t
-    
-    
+
     def encode_batch(
         self,
         s: list[str],
@@ -171,9 +172,17 @@ class Tokenizer:
     ) -> List[List[int]]:
         results = []
         for string in s:
-            results.append(self.encode(string, bos=bos, eos=eos, allowed_special=allowed_special, disallowed_special=disallowed_special))
+            results.append(
+                self.encode(
+                    string,
+                    bos=bos,
+                    eos=eos,
+                    allowed_special=allowed_special,
+                    disallowed_special=disallowed_special,
+                )
+            )
         return results
-    
+
     def decode(self, t: Sequence[int]) -> str:
         """
         Decodes a list of token IDs into a string.
@@ -201,7 +210,7 @@ class Tokenizer:
         for seq in t:
             results.append(self.model.decode(cast(List[int], seq)))
         return results
-    
+
     @staticmethod
     def _split_whitespaces_or_nonwhitespaces(
         s: str, max_consecutive_slice_len: int

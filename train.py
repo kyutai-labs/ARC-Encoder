@@ -40,7 +40,8 @@ from embed_llm.monitoring.metrics_logger import (
 )
 from embed_llm.monitoring.utils import set_logger
 import os
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 # Define depending on the model
 
 import warnings
@@ -56,14 +57,14 @@ def main_logger_info(message: str) -> None:
         logger.info(message)
 
 
-def train(config: Union[str,dict]):
+def train(config: Union[str, dict]):
     if isinstance(config, str):
         args: TrainArgs = TrainArgs.load(config, drop_extra_fields=False)
     elif isinstance(config, dict):
         args: TrainArgs = TrainArgs.from_dict(**config)
     else:
         raise ValueError("Config should be a string or a dictionary")
-    
+
     set_logger(logging.INFO)
 
     with ExitStack() as exit_stack:
@@ -100,7 +101,6 @@ def _train(
             raise RuntimeError(
                 f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
             )
-
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -147,7 +147,7 @@ def _train(
 
     """ Load LLM and tokenizers """
 
-    param_dtype = torch.bfloat16
+    param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
 
     assert args.lora is not None, "`args.lora` should be set to a valid value."
     pipeline, model = load_training_model(
@@ -155,7 +155,6 @@ def _train(
         folder=model_folder,
         lora=args.lora,
         llm_name=args.llm_name,
-        mlp_projector_args=args.projector,
         embedding_model=embedding_model,
         checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
         param_dtype=param_dtype,
@@ -190,7 +189,7 @@ def _train(
             is_eval=True,
         )
         # pre-load all eval batches, restrain to 20 batches * n_gpus
-        eval_batches = list(eval_data_loader)[:20] 
+        eval_batches = list(eval_data_loader)[:20]
     # 9. Load optimizer
     optimizer = AdamW(
         model.parameters(),
@@ -219,6 +218,7 @@ def _train(
         run_dir=run_dir,
         optimizer=optimizer,
         num_ckpt_keep=args.num_ckpt_keep,
+        pipeline=pipeline,
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
@@ -233,31 +233,33 @@ def _train(
         optimizer.zero_grad()
         loss = torch.tensor([0.0], device="cuda")
         n_batch_tokens: int = 0
-        
+
         # Number of steps to accumulate gradients before doing an optimizer step.
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
-                
+
             """ Training loop for basic reconstruction"""
-    
+
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
             output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
-            
+
             if len(output.size()) > 2:
-                    output = output.view(-1, output.size(-1)).float()
-                    y = y.view(-1).long()
-                    y_mask = None if y_mask is None else y_mask.view(-1)
-                    assert output.size(0) == y.size(0), (f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}")
-                
+                output = output.view(-1, output.size(-1)).float()
+                y = y.view(-1).long()
+                y_mask = None if y_mask is None else y_mask.view(-1)
+                assert output.size(0) == y.size(
+                    0
+                ), f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}"
+
             mb_loss = compute_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
 
             mb_loss.backward()
-        
+
             loss += mb_loss.item()
             n_batch_tokens += x.numel()
-            train_ppl += 2**(mb_loss.item())
+            train_ppl += 2 ** (mb_loss.item())
 
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward
@@ -271,24 +273,24 @@ def _train(
                 if p.requires_grad:
                     assert p.grad is not None
                     p.grad.div_(args.num_microbatches)
-            
 
         grad_norm = torch.tensor([0.0], device="cuda")
         for name, p in model.named_parameters():
             if p.requires_grad:
                 assert p.grad is not None
                 grad_norm += torch.norm(p.grad).item() ** 2
-                
+
         if torch.any(torch.isnan(grad_norm)).item():
-            raise ValueError(f"Grad contains NaN before clipping or Inf values at step {state.step}")
-                
+            raise ValueError(
+                f"Grad contains NaN before clipping or Inf values at step {state.step}"
+            )
+
         # clip grad norm
         model.clip_grad_norm_(max_norm=args.max_norm)
-        
+
         # optimizer step
         optimizer.step()
 
-                
         last_lr = scheduler.get_last_lr()[0]
         scheduler.step()
 
@@ -296,10 +298,12 @@ def _train(
         loss_item = loss.item()
         avg_loss = avg_aggregate(loss_item)
         train_ppl = avg_aggregate(train_ppl)
-        
+
         if not args.no_eval and (
-            (args.eval_freq > 0 and state.step % args.eval_freq == 0) or is_last_step
-        or state.step == 1):
+            (args.eval_freq > 0 and state.step % args.eval_freq == 0)
+            or is_last_step
+            or state.step == 1
+        ):
             # write perplexity to state
             evaluate(
                 model=model,
@@ -320,14 +324,14 @@ def _train(
 
         if state.step % args.log_freq == 0 or state.step == 1 or is_last_step:
             train_logs = get_train_logs(
-                state = state,
-                loss = avg_loss,
-                ppl = train_ppl/args.log_freq,
-                avg_grad_norm = avg_aggregate(torch.mean(grad_norm).item()),
-                lr = last_lr,
-                peak_allocated_mem = torch.cuda.max_memory_allocated(),
-                allocated_mem = torch.cuda.memory_allocated(),
-                train_args = args,
+                state=state,
+                loss=avg_loss,
+                ppl=train_ppl / args.log_freq,
+                avg_grad_norm=avg_aggregate(torch.mean(grad_norm).item()),
+                lr=last_lr,
+                peak_allocated_mem=torch.cuda.max_memory_allocated(),
+                allocated_mem=torch.cuda.memory_allocated(),
+                train_args=args,
             )
             main_logger_info(train_log_msg(state, logs=train_logs, loss=avg_loss))
             metrics_logger.log(train_logs, step=state.step)
