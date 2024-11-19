@@ -18,7 +18,14 @@ from fairscale.nn.model_parallel.initialize import (
 
 from embed_llm.models.llama.model import ModelArgs, Transformer
 from embed_llm.models.llama.tokenizer import Tokenizer
-
+from embed_llm.training.distributed import (
+    BACKEND,
+    avg_aggregate,
+    get_rank,
+    get_world_size,
+    is_torchrun,
+    set_device,
+)
 
 class CompletionPrediction(TypedDict, total=False):
     generation: str
@@ -36,6 +43,7 @@ class Llama:
         model_parallel_size: Optional[int] = None,
         norm_wo_embeds: bool = False,
         seed: int = 1,
+        device: str = "cuda",
     ) -> "Llama":
         """
         Build a Llama instance by initializing and loading a model checkpoint.
@@ -69,8 +77,23 @@ class Llama:
             tokenizer_path
         ), f"Tokenizer file '{tokenizer_path}' does not exist."
 
-        if not torch.distributed.is_initialized():
-            torch.distributed.init_process_group("nccl")
+        # Init NCCL
+        if "LOCAL_RANK" in os.environ:
+            set_device()
+            torch.distributed.init_process_group(backend='nccl')
+        else:
+            print('Warning: LOCAL_RANK not found in os.environ. \
+                  Initializing process group with rank 0 and world size 1 and set master port etc')
+            os.environ['RANK'] = '0'
+            os.environ['WORLD_SIZE'] = '1'
+            os.environ['LOCAL_RANK'] = '0'
+            # Adress used to ssh the notebook on the gpu
+            os.environ['MASTER_PORT'] = '8888'
+            os.environ['MASTER_ADDR'] = '0.0.0.0'
+            torch.distributed.init_process_group(backend='nccl', rank=0, world_size=1)
+
+            
+            
         if not model_parallel_is_initialized():
             if model_parallel_size is None:
                 model_parallel_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -104,12 +127,9 @@ class Llama:
         )
         tokenizer = Tokenizer(model_path=tokenizer_path)
         assert model_args.vocab_size == tokenizer.n_words
-        if torch.cuda.is_bf16_supported():
-            torch.set_default_tensor_type(torch.cuda.BFloat16Tensor)
-        else:
-            torch.set_default_tensor_type(torch.cuda.HalfTensor)
-        model = Transformer(model_args)
-        model.load_state_dict(checkpoint, strict=False)
+        model = Transformer(model_args, training = False)
+        model.load_state_dict(checkpoint, strict=False, assign = True)
+        model = model.to(device)
         print(f"Loaded in {time.time() - start_time:.2f} seconds")
 
         return Llama(model, tokenizer)
@@ -158,17 +178,17 @@ class Llama:
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_len)
 
         pad_id = self.tokenizer.pad_id
-        tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device="cuda")
+        tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device=self.model.device)
         for k, t in enumerate(prompt_tokens):
-            tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda")
+            tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device=self.model.device)
         if logprobs:
             token_logprobs = torch.zeros_like(tokens, dtype=torch.float)
 
         prev_pos = 0
-        eos_reached = torch.tensor([False] * bsz, device="cuda")
+        eos_reached = torch.tensor([False] * bsz, device=self.model.device)
         input_text_mask = tokens != pad_id
         if min_prompt_len == total_len:
-            logits = self.model.forward(tokens, embeddings, prev_pos, training=False)
+            logits = self.model.forward(tokens, embeddings, prev_pos)
             token_logprobs = -F.cross_entropy(
                 input=logits.transpose(1, 2),
                 target=tokens,
@@ -176,11 +196,10 @@ class Llama:
                 ignore_index=pad_id,
             )
 
-        stop_tokens = torch.tensor(list(self.tokenizer.stop_tokens))
-
+        stop_tokens = torch.tensor(list(self.tokenizer.stop_tokens)).to(self.model.device)
         for cur_pos in range(min_prompt_len, total_len):
             logits = self.model.forward(
-                tokens[:, prev_pos:cur_pos], embeddings, prev_pos, training=False
+                tokens[:, prev_pos:cur_pos], embeddings, prev_pos
             )
             if temperature > 0:
                 probs = torch.softmax(logits[:, -1] / temperature, dim=-1)

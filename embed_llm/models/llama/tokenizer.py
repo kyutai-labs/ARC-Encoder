@@ -158,7 +158,22 @@ class Tokenizer:
         if eos:
             t.append(self.eos_id)
         return t
-
+    
+    
+    def encode_batch(
+        self,
+        s: list[str],
+        *,
+        bos: bool,
+        eos: bool,
+        allowed_special: Union[Literal["all"], AbstractSet[str]] = set(),
+        disallowed_special: Union[Literal["all"], Collection[str]] = (),
+    ) -> List[List[int]]:
+        results = []
+        for string in s:
+            results.append(self.encode(string, bos=bos, eos=eos, allowed_special=allowed_special, disallowed_special=disallowed_special))
+        return results
+    
     def decode(self, t: Sequence[int]) -> str:
         """
         Decodes a list of token IDs into a string.
@@ -172,6 +187,21 @@ class Tokenizer:
         # Typecast is safe here. Tiktoken doesn't do anything list-related with the sequence.
         return self.model.decode(cast(List[int], t))
 
+    def decode_batch(self, t: Sequence[Sequence[int]]) -> str:
+        """
+        Decodes a list of token IDs into a string.
+
+        Args:
+            t (List[int]): The list of token IDs to be decoded.
+
+        Returns:
+            str: The decoded string.
+        """
+        results = []
+        for seq in t:
+            results.append(self.model.decode(cast(List[int], seq)))
+        return results
+    
     @staticmethod
     def _split_whitespaces_or_nonwhitespaces(
         s: str, max_consecutive_slice_len: int

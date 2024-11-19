@@ -122,7 +122,7 @@ class EmbedAugModel(nn.Module):
 
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
-        return self.llm.forward(tokens=x, embeddings=embeddings, is_training=True)
+        return self.llm.forward(tokens=x, embeddings=embeddings)
 
     def forward_gemma(
         self,
@@ -276,6 +276,7 @@ class EmbedAugPipeline(nn.Module):
                 max_batch_size=max_batch_size,
                 max_seq_len=max_seq_len,
                 tokenizer_path=str(Path(llm_path) / "tokenizer.model"),
+                device = device
             )
             llm = llama.model
 
@@ -283,7 +284,7 @@ class EmbedAugPipeline(nn.Module):
             llm.load_lora(Path(lora_path))
 
             llm.eval()
-            tokenizer = llm.tokenizer
+            tokenizer = llama.tokenizer
         else:
             raise NotImplementedError("Model not yet implemented")
 
@@ -307,7 +308,9 @@ class EmbedAugPipeline(nn.Module):
             augmented_pipeline.model.mlp_project.load_state_dict(safetensors.torch.load_file(mlp_path+'/lora.safetensors')
             )
 
+        augmented_pipeline.model = augmented_pipeline.model.to(device)
         augmented_pipeline.model.eval()
+
         if "mistral" in model_name.lower():
             augmented_pipeline.generate = partial(augmented_pipeline.generate_mistral, device = device)
         elif "llama" in model_name.lower():
@@ -341,6 +344,8 @@ class EmbedAugPipeline(nn.Module):
                 query_embedding=False,
                 device=device,
             )
+            if self.model.mlp_project is not None:
+                embeddings = self.model.mlp_project(embeddings.to(self.param_dtype))
         else:
             embeddings = None
         self.model.llm.w_embeds = w_embeds if w_embeds is not None else self.w_embeds
@@ -372,6 +377,8 @@ class EmbedAugPipeline(nn.Module):
                 query_embedding=False,
                 device=device,
             )
+            if self.model.mlp_project is not None:
+                embeddings = self.model.mlp_project(embeddings.to(self.param_dtype))
         else:
             embeddings = None
 
@@ -421,14 +428,23 @@ class EmbedAugPipeline(nn.Module):
                 query_embedding=False,
                 device=device,
             )
+            if self.model.mlp_project is not None:
+                embeddings = self.model.mlp_project(embeddings.to(self.param_dtype))
         else:
             embeddings = None
         self.model.llm.w_embeds = w_embeds if w_embeds is not None else self.w_embeds
-        prompt_tokens = llama_model.tokenizer.encode_batch(prompts)
-        out_tokens = llama_model.generate(
+        prompt_tokens = llama_model.tokenizer.encode_batch(s = prompts, bos = True, eos = False)
+        out_tokens, logprobs = llama_model.generate(
             prompt_tokens=prompt_tokens,
             embeddings=embeddings,
             max_gen_len=max_tokens,
             temperature=temperature,
+            logprobs=True,
         )
-        return llama_model.tokenizer.decode_batch(out_tokens)
+        produced_text = llama_model.tokenizer.decode_batch(out_tokens)
+        final_texts = []
+        for text in produced_text:
+            if '\n\n' in text:
+                text = text.split('\n\n')[0]
+            final_texts.append(text)
+        return final_texts

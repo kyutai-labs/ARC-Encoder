@@ -155,11 +155,11 @@ class LoRALoaderMixin:
                     layer_id = name.split(".")[1]
                     # type: ignore[attr-defined]
                     if layer_id not in self.layers:
-                        logging.debug(
-                            "Skipping parameter %s at pipeline rank %d",
-                            name,
-                            self.pipeline_rank,  # type: ignore[attr-defined]
+                        print(
+                            "Skipping parameter",
+                            name
                         )
+                        
                     elif (name + ".lora_B.weight") in lora_state_dict:
                         weight = (
                             module.weight
@@ -180,11 +180,10 @@ class LoRALoaderMixin:
                 if layer_id in self.layers:  # type: ignore[attr-defined]
                     state_dict[k] = v
                 else:
-                    logging.debug(
-                        "Skipping parameter %s at pipeline rank %d",
-                        k,
-                        self.pipeline_rank,  # type: ignore[attr-defined]
-                    )
+                        print(
+                            "Skipping parameter",
+                            name
+                        )
 
         # type: ignore[attr-defined]
         self.load_state_dict(state_dict, strict=True)

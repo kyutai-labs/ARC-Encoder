@@ -266,7 +266,7 @@ def load_training_model(
     elif "llama" in llm_name.lower():
         tokenizer = LlamaTokenizer(model_path=str(folder / "tokenizer.model"))
         with torch.device("meta"):
-            model = LlamaTransformer(args=model_args, checkpoint=checkpoint)
+            model = LlamaTransformer(args=model_args, checkpoint=checkpoint, training = True)
         embed_dim = model.args.dim
 
         if get_rank() == 0:

@@ -244,15 +244,15 @@ class TransformerBlock(nn.Module):
 
 
 class Transformer(nn.Module, LoRALoaderMixin):
-    def __init__(self, args: ModelArgs, checkpoint: bool = False):
+    def __init__(self, args: ModelArgs, checkpoint: bool = False, training: Optional[bool] = True):
         super().__init__()
         self.args = args
         self.vocab_size = args.vocab_size
         self.n_layers = args.n_layers
 
         self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
-
-        self.layers = torch.nn.ModuleList()
+        
+        layers = torch.nn.ModuleList()
         for layer_id in range(args.n_layers):
             block: TransformerBlock = TransformerBlock(layer_id, args)
             if checkpoint:
@@ -262,17 +262,30 @@ class Transformer(nn.Module, LoRALoaderMixin):
                     checkpoint_impl=torch_ckpt.CheckpointImpl.NO_REENTRANT,
                 )
                 block = non_reentrant_wrapper(block)
-
-            self.layers.append(block)
-
+            layers.append(block)
+        
+        if training:
+            self.layers = nn.ModuleList(layers)
+        else:
+            self.layers = nn.ModuleDict({str(i): layers[i] for i, layer in enumerate(layers)})
+            
+        self.training = training
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
         MaybeLora = maybe_lora(args.lora)
         self.output = MaybeLora(args.dim, args.vocab_size, bias=False)
-
         self.norm_wo_embeds = args.norm_wo_embeds
         self.w_embeds = args.w_embeds
         self._precomputed_freqs_cis: Optional[torch.Tensor] = None
+    
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return next(self.parameters()).dtype
+
+    @property
+    def device(self) -> torch.device:
+        return next(self.parameters()).device
 
     @property
     def freqs_cis(self) -> torch.Tensor:
@@ -304,7 +317,6 @@ class Transformer(nn.Module, LoRALoaderMixin):
         tokens: torch.Tensor,
         embeddings: Optional[torch.Tensor] = None,
         start_pos: Optional[int] = None,
-        is_training: bool = True,
     ):
 
         _bsz, seqlen = tokens.shape
@@ -314,7 +326,7 @@ class Transformer(nn.Module, LoRALoaderMixin):
             seqlen += 1
             h = torch.cat((embeddings.unsqueeze(1), h), dim=1)
 
-        if is_training:
+        if self.training:
             start_pos = 0
 
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen].to(device=h.device)
@@ -332,16 +344,20 @@ class Transformer(nn.Module, LoRALoaderMixin):
             # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
             # j > cache_len + i, since row i corresponds to token cache_len + i.
             # try:
-            if not is_training:
+            if not self.training:
                 mask = torch.hstack(
                     [torch.zeros((seqlen, start_pos), device=tokens.device), mask] 
                 ).type_as(h)
             # except:
             #     mask = torch.hstack([torch.zeros((seqlen, start_pos)), mask]).type_as(h)
 
-        for layer in self.layers:
-            h = layer(h, start_pos, freqs_cis, mask, is_training)
-
+        if self.training:
+            for layer in self.layers:
+                h = layer(h, start_pos, freqs_cis, mask, training=self.training)
+        else:
+            for name, layer in self.layers.items():
+                h = layer(h, start_pos, freqs_cis, mask, training=self.training)
+            
         if embeddings is not None and self.norm_wo_embeds and self.w_embeds:
             h = self.norm(h[:, 1:, :])  # type: ignore
             
