@@ -31,7 +31,7 @@ class Batch:
             assert self.y_mask.dtype == bool
             assert sum(self.sizes) == self.y_mask.size
             assert not self.y_mask.all()
-            assert self.y_mask.object()
+            assert self.y_mask.any()
 
         if self.is_pad_only:
             assert np.sum(np.abs(self.y)) == 0

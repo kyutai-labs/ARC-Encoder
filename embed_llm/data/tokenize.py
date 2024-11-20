@@ -32,7 +32,7 @@ def get_sample(data: dict[str, object]) -> str:
     assert not all(
         k in data for k in content_keys
     ), "Make sure to have either 'text' or 'content' in your data. Not both."
-    assert object(
+    assert any(
         data.get(k) is not None for k in content_keys
     ), f"Must have one of 'text' or 'content' in your data. Only have {data.keys()}"
 

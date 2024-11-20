@@ -141,7 +141,8 @@ def _train(
 
     """ Load embedder model """
     print(f"Before embedder {get_rank()}", torch.cuda.memory_allocated() / GB)
-    embedding_model = get_embedder(args.embedder.name, device_map="cuda")
+    embedding_model = get_embedder(args.embedder.name, device_map="auto")
+    embedding_model.train() # Avoir OOM due to inference
     embedding_model.config.max_length = (
         embedding_model.config.max_length if args.seq_len is None else args.seq_len
     )

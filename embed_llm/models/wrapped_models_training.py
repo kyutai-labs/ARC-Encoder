@@ -272,7 +272,7 @@ def load_training_model(
         if augmented_model.mlp_project is not None:
             initialize_mlp_project(augmented_model.mlp_project, param_dtype)
 
-        assert not object(
+        assert not any(
             p.is_meta for p in model.parameters()
         ), "All parameters should be initialized by now"
 

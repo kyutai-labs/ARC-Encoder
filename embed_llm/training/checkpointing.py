@@ -118,7 +118,7 @@ class Checkpointer:
         return {
             k: v
             for k, v in state_dict.items()
-            if not object(l_key in k for l_key in ["lora", "frozen"])
+            if not any(l_key in k for l_key in ["lora", "frozen"])
         }
 
     @torch.no_grad()
