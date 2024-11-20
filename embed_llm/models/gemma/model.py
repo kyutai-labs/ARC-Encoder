@@ -489,7 +489,7 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         self.embedder = Embedding(vocab_size, args.hidden_size, args.quant)
         self.sampler = Sampler(vocab_size, args)
         self.rope_theta = getattr(args, "rope_theta", 10000)
-        
+
         self.vocab_size = args.vocab_size
         self.args = args
         self.layers = nn.ModuleDict()
@@ -536,7 +536,7 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
             )
 
         return self._precomputed_freqs_cis
-    
+
     @property
     def dtype(self) -> torch.dtype:
         return next(self.parameters()).dtype
@@ -598,7 +598,7 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
             freqs_cis = self.freqs_cis[: input_ids.shape[1]].to(
                 device=hidden_states.device
             )
-            
+
         for i in range(self.n_layers):
             layer = self.layers[str(i)]
             hidden_states = layer(
@@ -615,9 +615,9 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
             hidden_states = hidden_states[:, 1:, :]
         else:
             hidden_states = self.norm(hidden_states)
-    
+
         embedder_weight = self.embedder.weight
-            
+
         if not training:
             if self.args.quant:
                 embedder_weight = (
@@ -638,7 +638,6 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
                 torch.transpose(embedder_weight, 0, 1).to(device=hidden_states.device),
             )
             return logits
-
 
 
 @contextlib.contextmanager

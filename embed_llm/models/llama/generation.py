@@ -120,6 +120,7 @@ class CompletionPrediction(TypedDict, total=False):
 #         self.model = model
 #         self.tokenizer = tokenizer
 
+
 @torch.inference_mode()
 def generate(
     model: Transformer,
@@ -162,13 +163,9 @@ def generate(
     total_len = min(params.max_seq_len, max_gen_len + max_prompt_len)
 
     pad_id = tokenizer.pad_id
-    tokens = torch.full(
-        (bsz, total_len), pad_id, dtype=torch.long, device=model.device
-    )
+    tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device=model.device)
     for k, t in enumerate(prompt_tokens):
-        tokens[k, : len(t)] = torch.tensor(
-            t, dtype=torch.long, device=model.device
-        )
+        tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device=model.device)
     if logprobs:
         token_logprobs = torch.zeros_like(tokens, dtype=torch.float)
 
@@ -190,9 +187,7 @@ def generate(
             ignore_index=pad_id,
         )
 
-    stop_tokens = torch.tensor(list(tokenizer.stop_tokens)).to(
-        model.device
-    )
+    stop_tokens = torch.tensor(list(tokenizer.stop_tokens)).to(model.device)
     for cur_pos in range(min_prompt_len, total_len):
         logits = model.forward(
             tokens[:, prev_pos:cur_pos],

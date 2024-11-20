@@ -214,18 +214,18 @@ if __name__ == "__main__":
     #         with open("config/experiments/"+filename,'r') as file:
     #             config = yaml.safe_load(file)
 
-            # if config['llm_name'] == 'Mistral7B':
-            #     if config['batch_size'] > 16:
-            #         config['batch_size'] = 16
-            #     with open("config/experiments/"+filename, 'w') as file:
-            #         yaml.dump(config, file)
+    # if config['llm_name'] == 'Mistral7B':
+    #     if config['batch_size'] > 16:
+    #         config['batch_size'] = 16
+    #     with open("config/experiments/"+filename, 'w') as file:
+    #         yaml.dump(config, file)
 
-            # if config['llm_name'] == 'Llama3.2-3B':
-            #     config['w_embeds'] = True
-            #     with open("config/experiments/"+filename, 'w') as file:
-            #         yaml.dump(config, file)
+    # if config['llm_name'] == 'Llama3.2-3B':
+    #     config['w_embeds'] = True
+    #     with open("config/experiments/"+filename, 'w') as file:
+    #         yaml.dump(config, file)
 
-            # elif config['llm_name'] == 'Gemma7B':
-            #     config['w_embeds'] = True
-            #     with open("config/experiments/"+filename, 'w') as file:
-            #         yaml.dump(config, file)
+    # elif config['llm_name'] == 'Gemma7B':
+    #     config['w_embeds'] = True
+    #     with open("config/experiments/"+filename, 'w') as file:
+    #         yaml.dump(config, file)

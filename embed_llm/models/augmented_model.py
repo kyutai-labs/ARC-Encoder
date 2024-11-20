@@ -343,7 +343,8 @@ class EmbedAugPipeline(nn.Module):
             )
         elif "llama" in llm_name.lower():
             augmented_pipeline.generate = partial(
-                augmented_pipeline.generate_llama, device=device,
+                augmented_pipeline.generate_llama,
+                device=device,
             )
         elif "gemma" in llm_name.lower():
             augmented_pipeline.generate = partial(
@@ -464,7 +465,7 @@ class EmbedAugPipeline(nn.Module):
         else:
             embeddings = None
         return gemma_generate(
-            model = self.model.llm,
+            model=self.model.llm,
             tokenizer=self.tokenizer,
             prompts=prompts,
             embeddings=embeddings,
