@@ -48,21 +48,23 @@ def pad_and_convert_to_tensor(
     x: List[int],
     y: List[int],
     sizes: List[int],
+    embeddings: Union[torch.Tensor, None],
     y_mask: Union[List[bool], None],
     seq_len: int,
     pad_id: int,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    batch_size: int,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
     final_x = (
-        torch.ones((len(sizes), seq_len), dtype=torch.long).cuda(non_blocking=True)
+        torch.ones((batch_size, seq_len), dtype=torch.long).cuda(non_blocking=True)
         * pad_id
     )
     final_y = (
-        torch.ones((len(sizes), seq_len), dtype=torch.long).cuda(non_blocking=True)
+        torch.ones((batch_size, seq_len), dtype=torch.long).cuda(non_blocking=True)
         * pad_id
     )
     final_mask = (
-        torch.zeros((len(sizes), seq_len), dtype=torch.bool).cuda(non_blocking=True)
+        torch.zeros((batch_size, seq_len), dtype=torch.bool).cuda(non_blocking=True)
         if y_mask is not None
         else None
     )
@@ -76,7 +78,10 @@ def pad_and_convert_to_tensor(
                 non_blocking=True
             )
         ind += size
-    return final_x, final_y, final_mask
+        if i == batch_size - 1:
+            break
+        
+    return final_x, final_y, embeddings[:batch_size,:] if embeddings is not None else None, final_mask
 
 
 class EmbedAugModel(nn.Module):
@@ -95,11 +100,9 @@ class EmbedAugModel(nn.Module):
         self.norm_wo_embeds = pipeline_args.norm_wo_embeds
         self.training = pipeline_args.training
         self.mlp_project_args = pipeline_args.mlp_project
-
         if "mistral" in self.llm_name:
             self.forward = partial(
                 self.forward_seq,
-                training=self.training,
                 norm_wo_embeds=self.norm_wo_embeds,
             )
 
@@ -122,7 +125,6 @@ class EmbedAugModel(nn.Module):
         x: torch.Tensor,
         seqlens: List[int],
         embeddings: Optional[torch.Tensor] = None,
-        training: bool = False,
         norm_wo_embeds: bool = False,
     ) -> torch.Tensor:
 
@@ -132,15 +134,14 @@ class EmbedAugModel(nn.Module):
             input_ids=x,
             embeddings=embeddings,
             seqlens=seqlens,
-            training=training,
             norm_wo_embeds=norm_wo_embeds,
         )
 
     def forward_batch(
         self,
-        x: torch.Tensor,
-        embeddings: Optional[torch.Tensor] = None,
+        x: torch.Tensor,        
         seqlens: Optional[List[int]] = None,
+        embeddings: Optional[torch.Tensor] = None,
         training: bool = False,
         norm_wo_embeds: bool = False,
     ) -> torch.Tensor:
@@ -189,7 +190,7 @@ class EmbedAugPipeline(nn.Module):
     def store_model(self, model: nn.Module):
         self.model = model
 
-    def prepare_forward(self, batch: Batch):
+    def prepare_forward(self, batch: Batch, batch_size: int) -> Tuple:
 
         if self.pipeline_args.w_embeds:
             with torch.no_grad():
@@ -217,13 +218,15 @@ class EmbedAugPipeline(nn.Module):
             )
 
         elif "llama" in self.llm_name or "gemma" in self.llm_name:
-            x, y, y_mask = pad_and_convert_to_tensor(
+            x, y, embeddings, y_mask = pad_and_convert_to_tensor(
                 x=batch.x,
                 y=batch.y,
                 sizes=batch.sizes,
+                embeddings = embeddings,
                 y_mask=batch.y_mask,
                 seq_len=self.max_seq_len,
                 pad_id=self.pad_token_id,
+                batch_size=batch_size,
             )
 
         seqlens = batch.sizes
@@ -542,18 +545,18 @@ def load_args(
         assert variant is not None, "Variant must be provided for Gemma model."
         llm_args.quant = False
 
-        if pipe_path is not None:
-            with open(pipe_path + "/params.json", "r") as f:
-                args = json.loads(f.read())
-            del args["training"]
-            pipeline_args = EmbedAugArgs(training=False, **args)
-        else:
-            pipeline_args = EmbedAugArgs(
-                training=False,
-                w_embeds=w_embeds,
-                norm_wo_embeds=norm_wo_embeds,
-                param_dtype=param_dtype,
-            )
+    if pipe_path is not None:
+        with open(pipe_path + "/params.json", "r") as f:
+            args = json.loads(f.read())
+        del args["training"]
+        pipeline_args = EmbedAugArgs(training=False, **args)
+    else:
+        pipeline_args = EmbedAugArgs(
+            training=True,
+            w_embeds=w_embeds,
+            norm_wo_embeds=norm_wo_embeds,
+            param_dtype=param_dtype,
+        )
 
     return llm_args, pipeline_args
 
@@ -586,6 +589,12 @@ def load_state_dict(
         model_state_dict = torch.load(this_torch_path)
         if gemma:
             model_state_dict = model_state_dict["model_state_dict"]
+            new_state_dict = {}
+            for k, v in model_state_dict.items():
+                if 'model' in k:
+                    k = k.replace('model.','')
+                new_state_dict[k] = v
+                model_state_dict = new_state_dict
 
     logger.info(f"Converting model to dtype {dtype} ...")
 

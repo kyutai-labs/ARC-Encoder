@@ -9,6 +9,7 @@ import torch.cuda
 import torch.distributed as dist
 from torch.optim import AdamW, lr_scheduler
 from typing import Union
+from functools import partial
 from embed_llm.models.wrapped_models_training import load_training_model
 
 from embed_llm.retrieval.embeddings import get_embedder
@@ -98,9 +99,10 @@ def _train(
 
     if is_torchrun():
         if run_dir.exists():
-            raise RuntimeError(
-                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
-            )
+            # raise RuntimeError(
+            #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
+            # )
+            print(f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}.")
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -165,7 +167,6 @@ def _train(
     main_logger_info("Model loading done")
 
     """ Load  Dataloader"""
-
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
         args=args.data,
@@ -222,7 +223,8 @@ def _train(
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
-    prepare_batch_fn = pipeline.prepare_forward
+
+    prepare_batch_fn = partial(pipeline.prepare_forward, batch_size = args.batch_size)
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
@@ -239,8 +241,8 @@ def _train(
             batch = next(train_data_loader)
 
             """ Training loop for basic reconstruction"""
-
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
+            embeddings = embeddings.detach() if embeddings is not None else None
             output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
 
             if len(output.size()) > 2:
@@ -250,7 +252,7 @@ def _train(
                 assert output.size(0) == y.size(
                     0
                 ), f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}"
-
+                
             mb_loss = compute_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )

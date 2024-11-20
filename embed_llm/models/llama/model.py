@@ -119,19 +119,16 @@ class Attention(nn.Module):
     ):
         bsz, seqlen, _ = x.shape
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
-
         xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
-
         if not training:
-
             if self.cache_k is None:
                 self.cache_k = torch.zeros(
                     self.max_batch_size,
-                    self.max_seq_len,
+                    self.max_seq_len + 1,
                     self.n_local_kv_heads,
                     self.head_dim,
                 ).to(xq)
@@ -139,14 +136,14 @@ class Attention(nn.Module):
             if self.cache_v is None:
                 self.cache_v = torch.zeros(
                     self.max_batch_size,
-                    self.max_seq_len,
+                    self.max_seq_len + 1,
                     self.n_local_kv_heads,
                     self.head_dim,
                 ).to(xq)
 
             self.cache_k = self.cache_k.to(xq)
             self.cache_v = self.cache_v.to(xq)
-
+        
             self.cache_k[:bsz, start_pos : start_pos + seqlen] = xk
             self.cache_v[:bsz, start_pos : start_pos + seqlen] = xv
 
@@ -261,9 +258,9 @@ class Transformer(nn.Module, LoRALoaderMixin):
                 )
                 block = non_reentrant_wrapper(block)
             layers.append(block)
-
+        # To adapt to existing ckpt
         self.layers = nn.ModuleDict(
-            {str(i): layers[i] for i, layer in enumerate(layers)}
+            {str(i-1): layers[i] for i, layer in enumerate(layers)}
         )
 
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
@@ -307,13 +304,12 @@ class Transformer(nn.Module, LoRALoaderMixin):
     ):
 
         _bsz, seqlen = input_ids.shape
-
         h = self.tok_embeddings(input_ids)
         if embeddings is not None:
             seqlen += 1
             h = torch.cat((embeddings.unsqueeze(1), h), dim=1)
 
-        if self.training:
+        if self.training or start_pos is None:
             start_pos = 0
 
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen].to(device=h.device)
@@ -329,20 +325,17 @@ class Transformer(nn.Module, LoRALoaderMixin):
             # only for the new sequence. Thus, the matrix of scores is of size
             # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
             # j > cache_len + i, since row i corresponds to token cache_len + i.
-            # try:
             if not training:
                 mask = torch.hstack(
                     [torch.zeros((seqlen, start_pos), device=input_ids.device), mask]
                 ).type_as(h)
-            # except:
-            #     mask = torch.hstack([torch.zeros((seqlen, start_pos)), mask]).type_as(h)
 
         for i in range(self.n_layers):
             h = self.layers[str(i)](h, start_pos, freqs_cis, mask, training=training)
 
         if embeddings is not None and norm_wo_embeds:
             h = self.norm(h[:, 1:, :])  # type: ignore
-        elif embeddings is not None and not norm_wo_embeds:
+        elif embeddings is not None:
             h = self.norm(h)[:, 1:, :]  # type: ignore
         else:
             h = self.norm(h)

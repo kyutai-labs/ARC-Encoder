@@ -102,22 +102,11 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
         torch_wrap.lambda_auto_wrap_policy, lambda_fn=lambda_policy_fn
     )
 
-    # def fsdp_mlp_proj_policy_fn(module):
-    #     return all(
-    #         p.requires_grad
-    #         for p in module.parameters()
-    #         if isinstance(module, MLP_project)
-    #     )
-
-    # fsdp_mlp_proj_policy = functools.partial(
-    #     torch_wrap.lambda_auto_wrap_policy, lambda_fn=fsdp_mlp_proj_policy_fn
-    # )
-
     policies = [
         fsdp_lora_policy,
         transformer_block_wrap_policy,
-    ]  # , fsdp_mlp_proj_policy]
-
+    ] 
+    
     return functools.partial(torch_wrap._or_policy, policies=policies)
 
 
@@ -155,7 +144,24 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                 else:
                     raise ValueError("Only Lora layers should be randomly initialized.")
 
+def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
+    for m_name, module in model.named_modules():
+            if all(p.is_meta for p in module.parameters()):
+                for p_name, param in module.named_parameters():
+                    
+                    if 'mlp_project' in m_name:
+                        
+                        module._parameters[p_name] = torch.nn.Parameter(
+                            torch.empty_like(param, device="cpu", dtype=param_dtype)
+                        )
+                        param = module._parameters[p_name]
+                        
+                        if m_name.split(".")[-1] == "layer1":
+                            torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+                        elif m_name.split(".")[-1] == "layer2":
+                            torch.nn.init.zeros_(param)
 
+    
 def load_training_model(
     args: TrainArgs,
     folder: Path,
@@ -237,13 +243,32 @@ def load_training_model(
 
     else:
         raise ValueError(f"Model name {llm_name} not recognized.")
+    
+    pipeline_args.mlp_project.in_dim = args.embedder.dim
+    pipeline_args.mlp_project.out_dim = embed_dim
+
+    augmented_pipeline = EmbedAugPipeline(
+        llm_name=llm_name,
+        pipeline_args=pipeline_args,
+        tokenizer=tokenizer,
+        embed_model_name=args.embedder.name,
+        embedding_model=embedding_model,
+        pad_token_id=tokenizer.pad_id,
+        max_seq_len=max_seq_len,
+    )
+
+    augmented_model = augmented_pipeline.get_model(llm=model)
+    
     if get_rank() == 0:
 
         if lora.enable:
             logger.info("Initializing lora layers ...")
             # initialize LoRA layers
-            initialize_lora_parameters(model, param_dtype)
-
+            initialize_lora_parameters(augmented_model.llm, param_dtype)
+        
+        # if augmented_model.mlp_project is not None:
+            # initialize_mlp_project(augmented_model.mlp_project, param_dtype)
+            
         assert not any(
             p.is_meta for p in model.parameters()
         ), "All parameters should be initialized by now"
@@ -266,21 +291,7 @@ def load_training_model(
 
     torch.distributed.barrier()
 
-    pipeline_args.mlp_project.in_dim = args.embedder.dim
-    pipeline_args.mlp_project.out_dim = embed_dim
-
-    augmented_pipeline = EmbedAugPipeline(
-        llm_name=llm_name,
-        pipeline_args=pipeline_args,
-        tokenizer=tokenizer,
-        embed_model_name=args.embedder.name,
-        embedding_model=embedding_model,
-        pad_token_id=tokenizer.pad_id,
-        max_seq_len=max_seq_len,
-    )
-
-    augmented_model = augmented_pipeline.get_model(llm=model)
-
+  
     # only finetune LoRA parameters and freeze before wrapping
     if lora.enable:
         for name, param in augmented_model.named_parameters():

@@ -2,7 +2,7 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Tuple
+from typing import Dict, List, Optional, Union, Tuple, Any
 import torch.nn as nn
 import safetensors.torch
 import torch
@@ -13,7 +13,6 @@ from embed_llm.models.lora import LoRALinear
 
 from embed_llm.training.distributed import get_rank, get_world_size
 from embed_llm.training.utils import TrainState
-from embed_llm.models.augmented_model import EmbedAugPipeline
 
 logger = logging.getLogger("checkpointing")
 
@@ -33,11 +32,11 @@ class Checkpointer:
         run_dir: Union[Path, str],
         optimizer: Optional[torch.optim.Optimizer] = None,
         num_ckpt_keep: Optional[int] = None,
-        pipeline: EmbedAugPipeline = None,
+        pipeline: Optional[Any] = None,
     ):
         self.llm: nn.Module = model.llm
         self.mlp_project: nn.Module = model.mlp_project
-        self.pipeline: EmbedAugPipeline = pipeline
+        self.pipeline = pipeline
         self.llm_name = model.llm_name
         self.optimizer = optimizer
         self.state = state
@@ -89,6 +88,7 @@ class Checkpointer:
         params_path = tmp_dst / "params.json"
         with open(params_path, "w") as f:
             model_args = self.pipeline.pipeline_args.to_dict()
+            model_args['param_dtype'] = str(model_args['param_dtype']).split('.')[-1]
             f.write(json.dumps(model_args, indent=4))
 
     def delete_old_ckpts(self) -> List[Path]:

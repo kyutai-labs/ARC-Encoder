@@ -49,6 +49,8 @@ def evaluate(
     for batch in batches:
         with torch.no_grad():
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
+            
+            # set training to True to not use KV cache and inference code
             output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
 
             if len(output.size()) > 2:

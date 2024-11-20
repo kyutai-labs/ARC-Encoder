@@ -484,7 +484,6 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         assert args.hidden_size % args.num_attention_heads == 0
         vocab_size = args.vocab_size
         self._precomputed_freqs_cis: Optional[torch.Tensor] = None
-        self.norm_wo_embedding = args.norm_wo_embeds
         self.tokenizer = tokenizer.Tokenizer(args.tokenizer)
         self.embedder = Embedding(vocab_size, args.hidden_size, args.quant)
         self.sampler = Sampler(vocab_size, args)
@@ -557,7 +556,7 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         top_ks: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
         training: bool = False,
-        norm_wo_embedding: bool = False,
+        norm_wo_embeds: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         bs, seq_len = input_ids.size()
         if training:
@@ -608,7 +607,7 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
                 kv_cache=None if kv_caches is None else kv_caches[i],
                 mask=mask,
             )
-        if embeddings is not None and norm_wo_embedding:
+        if embeddings is not None and norm_wo_embeds:
             hidden_states = self.norm(hidden_states[:, 1:, :])
         elif embeddings is not None:
             hidden_states = self.norm(hidden_states)

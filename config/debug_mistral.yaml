@@ -1,5 +1,5 @@
-batch_size: 32
-ckpt_freq: 5
+batch_size: 2
+ckpt_freq: 2
 data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
   shuffle: false
@@ -8,7 +8,7 @@ embedder:
   dim: 4096
   name: NVEmbed
 eval_freq: 50
-exp_name: mlp_proj7a3a4ade9c98ec81b556
+exp_name: debug_mistral
 llm_name: Mistral7B
 log_freq: 1
 lora:
@@ -17,8 +17,8 @@ lora:
   scaling: 2.0
 max_steps: 1000
 model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-no_eval: true
-norm_wo_embeds: true
+no_eval: false
+norm_wo_embeds: false
 optim:
   final_lr: 1.0e-10
   initial_lr: 1.0e-20

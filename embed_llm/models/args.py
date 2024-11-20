@@ -12,8 +12,8 @@ from embed_llm.models.lora import LoraArgs
 
 @dataclass
 class MLPProjectArgs(Serializable):
-    hidden_dim: int
-    n_layers: int
+    hidden_dim: int = 4096
+    n_layers: int = 3
     act: Optional[str] = "id"
     in_dim: Optional[int] = None
     out_dim: Optional[int] = None
