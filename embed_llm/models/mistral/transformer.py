@@ -220,7 +220,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         assert (
             len(seqlens) <= self.args.max_batch_size
         ), f"Max batch size is {self.args.max_batch_size}, got batch size of {len(seqlens)}"
-        print("Inpud ids shape:", input_ids.shape)
         (num_toks,) = input_ids.shape
         assert sum(seqlens) == num_toks, (sum(seqlens), num_toks)
 

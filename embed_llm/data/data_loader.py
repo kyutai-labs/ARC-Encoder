@@ -1,5 +1,5 @@
 import dataclasses
-from typing import object, Iterator
+from typing import Iterator
 import numpy as np
 
 from embed_llm.data.args import DataArgs

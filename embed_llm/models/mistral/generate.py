@@ -24,12 +24,11 @@ def generate(
     #         for images_for_sample in images
     #     ]
 
-    if len(encoded_prompts) > 0 and isinstance(encoded_prompts[0], list):
+    if len(encoded_prompts) > 0 and not isinstance(encoded_prompts[0], list):
         encoded_prompts = [encoded_prompts]
 
     model = model.eval()
     B, V = len(encoded_prompts), model.args.vocab_size
-    print("B", B)
     seqlens = [len(x) for x in encoded_prompts]
 
     # Cache
@@ -59,7 +58,6 @@ def generate(
     # Encode prompt by chunks
     for s in range(0, max_prompt_len, chunk_size):
         prompt_chunks = [p[s : s + chunk_size] for p in encoded_prompts]
-        print("prompt_chunks", prompt_chunks)
         assert all(len(p) > 0 for p in prompt_chunks)
         prelogits = model.generate(
             torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
