@@ -102,7 +102,9 @@ def _train(
             # raise RuntimeError(
             #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
             # )
-            print(f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}.")
+            print(
+                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
+            )
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -224,7 +226,7 @@ def _train(
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
 
-    prepare_batch_fn = partial(pipeline.prepare_forward, batch_size = args.batch_size)
+    prepare_batch_fn = partial(pipeline.prepare_forward, batch_size=args.batch_size)
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
@@ -252,7 +254,7 @@ def _train(
                 assert output.size(0) == y.size(
                     0
                 ), f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}"
-                
+
             mb_loss = compute_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )

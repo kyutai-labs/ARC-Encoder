@@ -143,7 +143,7 @@ class Attention(nn.Module):
 
             self.cache_k = self.cache_k.to(xq)
             self.cache_v = self.cache_v.to(xq)
-        
+
             self.cache_k[:bsz, start_pos : start_pos + seqlen] = xk
             self.cache_v[:bsz, start_pos : start_pos + seqlen] = xv
 
@@ -260,7 +260,7 @@ class Transformer(nn.Module, LoRALoaderMixin):
             layers.append(block)
         # To adapt to existing ckpt
         self.layers = nn.ModuleDict(
-            {str(i-1): layers[i] for i, layer in enumerate(layers)}
+            {str(i - 1): layers[i] for i, layer in enumerate(layers)}
         )
 
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)

@@ -88,7 +88,7 @@ class Checkpointer:
         params_path = tmp_dst / "params.json"
         with open(params_path, "w") as f:
             model_args = self.pipeline.pipeline_args.to_dict()
-            model_args['param_dtype'] = str(model_args['param_dtype']).split('.')[-1]
+            model_args["param_dtype"] = str(model_args["param_dtype"]).split(".")[-1]
             f.write(json.dumps(model_args, indent=4))
 
     def delete_old_ckpts(self) -> List[Path]:

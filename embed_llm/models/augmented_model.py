@@ -80,8 +80,13 @@ def pad_and_convert_to_tensor(
         ind += size
         if i == batch_size - 1:
             break
-        
-    return final_x, final_y, embeddings[:batch_size,:] if embeddings is not None else None, final_mask
+
+    return (
+        final_x,
+        final_y,
+        embeddings[:batch_size, :] if embeddings is not None else None,
+        final_mask,
+    )
 
 
 class EmbedAugModel(nn.Module):
@@ -139,7 +144,7 @@ class EmbedAugModel(nn.Module):
 
     def forward_batch(
         self,
-        x: torch.Tensor,        
+        x: torch.Tensor,
         seqlens: Optional[List[int]] = None,
         embeddings: Optional[torch.Tensor] = None,
         training: bool = False,
@@ -222,7 +227,7 @@ class EmbedAugPipeline(nn.Module):
                 x=batch.x,
                 y=batch.y,
                 sizes=batch.sizes,
-                embeddings = embeddings,
+                embeddings=embeddings,
                 y_mask=batch.y_mask,
                 seq_len=self.max_seq_len,
                 pad_id=self.pad_token_id,
@@ -591,8 +596,8 @@ def load_state_dict(
             model_state_dict = model_state_dict["model_state_dict"]
             new_state_dict = {}
             for k, v in model_state_dict.items():
-                if 'model' in k:
-                    k = k.replace('model.','')
+                if "model" in k:
+                    k = k.replace("model.", "")
                 new_state_dict[k] = v
                 model_state_dict = new_state_dict
 
