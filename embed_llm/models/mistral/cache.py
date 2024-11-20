@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
 
 import torch
 from xformers.ops.fmha.attn_bias import (  # type: ignore
@@ -11,8 +10,8 @@ from xformers.ops.fmha.attn_bias import (  # type: ignore
 
 
 def get_cache_sizes(
-    n_layers: int, max_seq_len: int, sliding_window: Optional[int] | Optional[List[int]]
-) -> List[int]:
+    n_layers: int, max_seq_len: int, sliding_window: int | list[int] | None = None
+) -> list[int]:
     if sliding_window is None:
         return n_layers * [max_seq_len]
     elif isinstance(sliding_window, int):
@@ -41,7 +40,7 @@ class CacheInputMetadata:
     # # else use causal with padded key mask
     # prefill: bool
     # mask: AttentionBias
-    # seqlens: List[int]
+    # seqlens: list[int]
     # rope absolute positions
     positions: torch.Tensor
     # which elements in the sequences need to be cached
@@ -54,12 +53,12 @@ class CacheInputMetadata:
     # else use causal with padded key mask
     prefill: bool
     mask: AttentionBias
-    seqlens: List[int]
+    seqlens: list[int]
 
 
 def interleave_list(
-    l1: List[torch.Tensor], l2: List[torch.Tensor]
-) -> List[torch.Tensor]:
+    l1: list[torch.Tensor], l2: list[torch.Tensor]
+) -> list[torch.Tensor]:
     assert len(l1) == len(l2)
     return [v for pair in zip(l1, l2) for v in pair]
 
@@ -105,7 +104,7 @@ class CacheView:
 
     def interleave_kv(
         self, xk: torch.Tensor, xv: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         This is a naive implementation and not optimized for speed.
         """
@@ -117,8 +116,8 @@ class CacheView:
             return xk, xv
 
         # Make it a list of [(T, H, D)]
-        xk: Tuple[torch.Tensor] = torch.split(xk, self.metadata.seqlens)  # type: ignore
-        xv: Tuple[torch.Tensor] = torch.split(xv, self.metadata.seqlens)  # type: ignore
+        xk: tuple[torch.Tensor] = torch.split(xk, self.metadata.seqlens)  # type: ignore
+        xv: tuple[torch.Tensor] = torch.split(xv, self.metadata.seqlens)  # type: ignore
         assert len(xk) == len(
             self.kv_seqlens
         ), f"Batch size is {len(self.kv_seqlens)}, got {len(xk)}"
@@ -166,14 +165,14 @@ class BufferCache:
         max_seq_len: int,
         n_kv_heads: int,
         head_dim: int,
-        sliding_window: Optional[int] | Optional[List[int]] = None,
+        sliding_window: int | list[int] | None = None,
     ):
         self.max_seq_len = max_seq_len
         self.n_kv_heads = n_kv_heads
         self.head_dim = head_dim
         self.n_layers = n_layers
 
-        self.cache_sizes: List[int] = get_cache_sizes(
+        self.cache_sizes: list[int] = get_cache_sizes(
             n_layers, max_seq_len, sliding_window
         )
         assert (
@@ -191,7 +190,7 @@ class BufferCache:
             )
 
         # holds the valid length for each batch element in the cache
-        self.kv_seqlens: Optional[torch.Tensor] = None
+        self.kv_seqlens: torch.Tensor | None = None
 
     def get_view(self, layer_id: int, metadata: CacheInputMetadata) -> CacheView:
         assert self.kv_seqlens is not None
@@ -218,11 +217,11 @@ class BufferCache:
 
         return self
 
-    def update_seqlens(self, seqlens: List[int]) -> None:
+    def update_seqlens(self, seqlens: list[int]) -> None:
         assert self.kv_seqlens is not None
         self.kv_seqlens += torch.tensor(seqlens, device=self.device, dtype=torch.long)
 
-    def get_input_metadata(self, seqlens: List[int]) -> List[CacheInputMetadata]:
+    def get_input_metadata(self, seqlens: list[int]) -> list[CacheInputMetadata]:
         """
         input = seqlens [5,7,2] // seqpos [0, 1, 3] // sliding_window 3
         --> only cache last 3 tokens in each sequence
@@ -233,7 +232,7 @@ class BufferCache:
         --> cache positions are positions cache_masked, modulo sliding_window + batch_idx * sliding_window
         - cache_positions = [2 0 1 | 5 3 4 | 6 7]
         """
-        metadata: List[CacheInputMetadata] = []
+        metadata: list[CacheInputMetadata] = []
 
         if self.kv_seqlens is None:
             self.init_kvseqlens(len(seqlens))
@@ -251,7 +250,7 @@ class BufferCache:
         return metadata
 
     def _get_input_metadata_layer(
-        self, cache_size: int, seqlens: List[int], seqpos: List[int]
+        self, cache_size: int, seqlens: list[int], seqpos: list[int]
     ) -> CacheInputMetadata:
         masks = [
             [x >= seqlen - cache_size for x in range(seqlen)] for seqlen in seqlens

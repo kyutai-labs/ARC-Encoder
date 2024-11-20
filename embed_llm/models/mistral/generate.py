@@ -1,23 +1,22 @@
 import torch
-from typing import List, Optional, Tuple
 from embed_llm.models.mistral.cache import BufferCache
 from embed_llm.models.mistral.transformer import Transformer
 
 
 @torch.inference_mode()
 def generate(
-    encoded_prompts: List[List[int]],
+    encoded_prompts: list[list[int]] | list[int],
     model: Transformer,
-    # images: List[List[np.ndarray]] = [],
+    # images: list[list[np.ndarray]] = [],
     *,
     max_tokens: int,
     temperature: float,
-    embeddings: torch.Tensor = None,
-    chunk_size: Optional[int] = None,
-    eos_id: Optional[int] = None,
-    norm_wo_embeds: Optional[bool] = False,
-) -> Tuple[List[List[int]], List[List[float]]]:
-    # images_torch: List[List[torch.Tensor]] = []
+    embeddings: torch.Tensor | None = None,
+    chunk_size: int | None = None,
+    eos_id: int | None = None,
+    norm_wo_embeds: bool = False,
+) -> tuple[list[list[int]], list[list[float]]]:
+    # images_torch: list[list[torch.Tensor]] = []
     # if images:
     #     assert chunk_size is None
     #     images_torch = [
@@ -25,9 +24,12 @@ def generate(
     #         for images_for_sample in images
     #     ]
 
+    if len(encoded_prompts) > 0 and isinstance(encoded_prompts[0], list):
+        encoded_prompts = [encoded_prompts]
+
     model = model.eval()
     B, V = len(encoded_prompts), model.args.vocab_size
-
+    print("B", B)
     seqlens = [len(x) for x in encoded_prompts]
 
     # Cache
@@ -44,7 +46,7 @@ def generate(
     cache.reset()
 
     # Bookkeeping
-    logprobs: List[List[float]] = [[] for _ in range(B)]
+    logprobs: list[list[float]] = [[] for _ in range(B)]
     last_token_prelogits = None
 
     # One chunk if size not specified
@@ -52,11 +54,12 @@ def generate(
     if chunk_size is None:
         chunk_size = max_prompt_len
 
-    # flattened_images: List[torch.Tensor] = sum(images_torch, [])
+    # flattened_images: list[torch.Tensor] = sum(images_torch, [])
 
     # Encode prompt by chunks
     for s in range(0, max_prompt_len, chunk_size):
         prompt_chunks = [p[s : s + chunk_size] for p in encoded_prompts]
+        print("prompt_chunks", prompt_chunks)
         assert all(len(p) > 0 for p in prompt_chunks)
         prelogits = model.generate(
             torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
@@ -126,7 +129,7 @@ def generate(
             V,
         ), f"last token prelogit: {last_token_prelogits.shape}; B: {B}; V: {V}"
 
-    generated_tokens: List[List[int]]
+    generated_tokens: list[list[int]]
     if generated_tensors:
         generated_tokens = torch.cat(generated_tensors, 1).tolist()
     else:

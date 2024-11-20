@@ -8,9 +8,7 @@ from typing import (
     AbstractSet,
     cast,
     Collection,
-    Dict,
     Iterator,
-    List,
     Literal,
     Sequence,
     TypedDict,
@@ -40,7 +38,7 @@ class Tokenizer:
     Tokenizing and encoding/decoding text using the Tiktoken tokenizer.
     """
 
-    special_tokens: Dict[str, int]
+    special_tokens: dict[str, int]
 
     num_reserved_special_tokens = 256
 
@@ -104,9 +102,9 @@ class Tokenizer:
         *,
         bos: bool,
         eos: bool,
-        allowed_special: Union[Literal["all"], AbstractSet[str]] = set(),
-        disallowed_special: Union[Literal["all"], Collection[str]] = (),
-    ) -> List[int]:
+        allowed_special: Literal["all"] | AbstractSet[str] = set(),
+        disallowed_special: Literal["all"] | Collection[str] = (),
+    ) -> list[int]:
         """
         Encodes a string into a list of token IDs.
 
@@ -146,7 +144,7 @@ class Tokenizer:
                 s[i : i + TIKTOKEN_MAX_ENCODE_CHARS], MAX_NO_WHITESPACES_CHARS
             )
         )
-        t: List[int] = []
+        t: list[int] = []
         for substr in substrs:
             t.extend(
                 self.model.encode(
@@ -167,9 +165,9 @@ class Tokenizer:
         *,
         bos: bool,
         eos: bool,
-        allowed_special: Union[Literal["all"], AbstractSet[str]] = set(),
-        disallowed_special: Union[Literal["all"], Collection[str]] = (),
-    ) -> List[List[int]]:
+        allowed_special: Literal["all"] | AbstractSet[str] = set(),
+        disallowed_special: Literal["all"] | Collection[str] = (),
+    ) -> list[list[int]]:
         results = []
         for string in s:
             results.append(
@@ -188,27 +186,27 @@ class Tokenizer:
         Decodes a list of token IDs into a string.
 
         Args:
-            t (List[int]): The list of token IDs to be decoded.
+            t (list[int]): The list of token IDs to be decoded.
 
         Returns:
             str: The decoded string.
         """
         # Typecast is safe here. Tiktoken doesn't do anything list-related with the sequence.
-        return self.model.decode(cast(List[int], t))
+        return self.model.decode(cast(list[int], t))
 
     def decode_batch(self, t: Sequence[Sequence[int]]) -> str:
         """
         Decodes a list of token IDs into a string.
 
         Args:
-            t (List[int]): The list of token IDs to be decoded.
+            t (list[int]): The list of token IDs to be decoded.
 
         Returns:
             str: The decoded string.
         """
         results = []
         for seq in t:
-            results.append(self.model.decode(cast(List[int], seq)))
+            results.append(self.model.decode(cast(list[int], seq)))
         return results
 
     @staticmethod

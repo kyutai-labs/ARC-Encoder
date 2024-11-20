@@ -2,7 +2,6 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 from simple_parsing.helpers import Serializable
 from embed_llm.models.args import LoraArgs, MLPProjectArgs
 from embed_llm.data.args import DataArgs
@@ -19,10 +18,10 @@ class OptimArgs(Serializable):
 
 @dataclass
 class WandbArgs(Serializable):
-    project: Optional[str] = None  # Fill this argument to use wandb.
+    project: str | None = None  # Fill this argument to use wandb.
     offline: bool = False
-    key: Optional[str] = None
-    run_name: Optional[str] = None
+    key: str | None = None
+    run_name: str | None = None
 
     def __post_init__(self) -> None:
         if self.project is not None:
@@ -55,7 +54,7 @@ class TrainArgs(Serializable):
     # Name of the wandb run, if None it will be set to the name of the run_dir.
     data: DataArgs
 
-    exp_name: Optional[str] = None
+    exp_name: str | None = None
     optim: OptimArgs = field(default_factory=OptimArgs)
     seed: int = 0
     # Number of steps to accumulate gradients before doing an optimizer step.
@@ -72,7 +71,7 @@ class TrainArgs(Serializable):
     save_adapters: bool = True
     # If True, no checkpoint will be saved. This is useful for development.
     no_ckpt: bool = False
-    num_ckpt_keep: Optional[int] = 3
+    num_ckpt_keep: int = 3
     eval_freq: int = 0
     no_eval: bool = True
 
@@ -80,24 +79,24 @@ class TrainArgs(Serializable):
     # Determines whether gradient checkpointing should be utilized or not during the training process. Gradient checkpointing can be beneficial in reducing memory usage at the cost of slightly longer training times.
     checkpoint: bool = True
 
-    world_size: Optional[int] = field(init=False, default=None)
+    world_size: int = field(init=False, default=None)
 
-    variant: Optional[str] = None  # '7b', "2b", "2b-v2", "7b", "9b", "27b"
-    quant: Optional[bool] = False  # False
+    variant: str | None = None  # '7b', "2b", "2b-v2", "7b", "9b", "27b"
+    quant: bool = False  # False
 
     # logging
     wandb: WandbArgs = field(default_factory=WandbArgs)
 
     # LoRA
-    lora: Optional[LoraArgs] = field(default_factory=LoraArgs)
+    lora: LoraArgs = field(default_factory=LoraArgs)
 
     # mlp projector
-    projector: Optional[MLPProjectArgs] = field(default_factory=MLPProjectArgs)
+    projector: MLPProjectArgs = field(default_factory=MLPProjectArgs)
 
     # Embedder
     embedder: Embedder = field(default_factory=Embedder)
 
-    norm_wo_embeds: Optional[bool] = False
+    norm_wo_embeds: bool = False
     w_embeds: bool = True
     mixed_precision: bool = True
 

@@ -11,16 +11,16 @@ def main(args):
             "/home/hippolytepilchen/code/embed_llm/config/default/default_mistral.yaml"
         ) as file:
             config = yaml.safe_load(file)
-    elif args.llm_name == "Gemma7B":
-        with open(
-            "/home/hippolytepilchen/code/embed_llm/config/default/default_gemma.yaml"
-        ) as file:
-            config = yaml.safe_load(file)
-    elif args.llm_name == "Llama3.2-3B":
-        with open(
-            "/home/hippolytepilchen/code/embed_llm/config/default/default_llama.yaml"
-        ) as file:
-            config = yaml.safe_load(file)
+    # elif args.llm_name == "Gemma7B":
+    #     with open(
+    #         "/home/hippolytepilchen/code/embed_llm/config/default/default_gemma.yaml"
+    #     ) as file:
+    #         config = yaml.safe_load(file)
+    # elif args.llm_name == "Llama3.2-3B":
+    #     with open(
+    #         "/home/hippolytepilchen/code/embed_llm/config/default/default_llama.yaml"
+    #     ) as file:
+    #         config = yaml.safe_load(file)
     else:
         raise ValueError(f"{args.llm_name} not supported yet !")
 
@@ -110,18 +110,18 @@ def main(args):
             "w",
         ) as file:
             yaml.dump(config, file)
-    elif args.llm_name == "Gemma7B":
-        with open(
-            f'/home/hippolytepilchen/code/embed_llm/config/experiments/gemma/{config["exp_name"]}.yaml',
-            "w",
-        ) as file:
-            yaml.dump(config, file)
-    elif args.llm_name == "Llama3.2-3B":
-        with open(
-            f'/home/hippolytepilchen/code/embed_llm/config/experiments/llama/{config["exp_name"]}.yaml',
-            "w",
-        ) as file:
-            yaml.dump(config, file)
+    # elif args.llm_name == "Gemma7B":
+    #     with open(
+    #         f'/home/hippolytepilchen/code/embed_llm/config/experiments/gemma/{config["exp_name"]}.yaml',
+    #         "w",
+    #     ) as file:
+    #         yaml.dump(config, file)
+    # elif args.llm_name == "Llama3.2-3B":
+    #     with open(
+    #         f'/home/hippolytepilchen/code/embed_llm/config/experiments/llama/{config["exp_name"]}.yaml',
+    #         "w",
+    #     ) as file:
+    #         yaml.dump(config, file)
     else:
         raise ValueError(f"{args.llm_name} not supported yet !")
 
@@ -159,11 +159,11 @@ def arg_parser():
     parser.add_argument(
         "--proj_act",
         type=str,
-        default="id",
+        default="gelu",
         help="Activation function of the projection MLP",
         choices=["id", "gelu", "relu"],
     )
-    parser.add_argument("--batch_size", type=int, default=4, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
     parser.add_argument(
         "--max_lr", type=float, default=5e-5, help="Maximum learning rate"
     )
@@ -208,24 +208,12 @@ if __name__ == "__main__":
 
     # import os
     # import yaml
-    # filenames =  ['mistral/'+file for file in os.listdir("config/experiments/mistral")] + ['gemma/'+file for file in os.listdir("config/experiments/gemma")] + ['llama/'+file for file in os.listdir("config/experiments/llama")]
+    # filenames =  ['mistral/'+file for file in os.listdir("config/experiments/mistral")]
     # for filename in filenames:
     #     if filename.endswith(".yaml"):
     #         with open("config/experiments/"+filename,'r') as file:
     #             config = yaml.safe_load(file)
-
-    # if config['llm_name'] == 'Mistral7B':
     #     if config['batch_size'] > 16:
     #         config['batch_size'] = 16
-    #     with open("config/experiments/"+filename, 'w') as file:
-    #         yaml.dump(config, file)
-
-    # if config['llm_name'] == 'Llama3.2-3B':
-    #     config['w_embeds'] = True
-    #     with open("config/experiments/"+filename, 'w') as file:
-    #         yaml.dump(config, file)
-
-    # elif config['llm_name'] == 'Gemma7B':
-    #     config['w_embeds'] = True
     #     with open("config/experiments/"+filename, 'w') as file:
     #         yaml.dump(config, file)

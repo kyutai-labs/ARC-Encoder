@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, NamedTuple, Union, Optional, Type
+from typing import NamedTuple, Optional
 from functools import partial
 import safetensors.torch
 import torch
@@ -82,7 +82,7 @@ class LoRALinear(nn.Module):
 
     # type: ignore[no-untyped-def]
     def _load_from_state_dict(
-        self, state_dict: Dict[str, Any], prefix: str, *args, **kwargs
+        self, state_dict: dict[str, object], prefix: str, *args, **kwargs
     ) -> None:
         key_name = prefix + "weight"
 
@@ -112,7 +112,7 @@ class LoRALinear(nn.Module):
 
 
 class LoRALoaderMixin:
-    def load_lora(self, lora_path: Union[Path, str], scaling: float = 2.0) -> None:
+    def load_lora(self, lora_path: Path | str, scaling: float = 2.0) -> None:
         """Loads LoRA checkpoint"""
 
         lora_path = Path(lora_path)
@@ -123,7 +123,7 @@ class LoRALoaderMixin:
         self._load_lora_state_dict(state_dict, scaling=scaling)
 
     def _load_lora_state_dict(
-        self, lora_state_dict: Dict[str, torch.Tensor], scaling: float = 2.0
+        self, lora_state_dict: dict[str, torch.Tensor], scaling: float = 2.0
     ) -> None:
         """Loads LoRA state_dict"""
         lora_dtypes = set([p.dtype for p in lora_state_dict.values()])
@@ -183,8 +183,8 @@ class LoRALoaderMixin:
 
 
 def maybe_lora(
-    lora_args: Optional[LoraArgs],
-) -> Union[Type[nn.Linear], partial[LoRALinear]]:
+    lora_args: LoraArgs | None = None,
+) -> type[nn.Linear] | partial[LoRALinear]:
     if lora_args is None or not lora_args.enable:
         return nn.Linear
     else:

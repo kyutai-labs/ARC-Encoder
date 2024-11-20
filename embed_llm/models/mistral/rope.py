@@ -1,10 +1,8 @@
-from typing import Tuple, Optional
-
 import torch
 
 
 def precompute_freqs_cis(
-    dim: int, end: int, theta: float, device: Optional[torch.device] = None
+    dim: int, end: int, theta: float, device: torch.device | None = None
 ) -> torch.Tensor:
     freqs = 1.0 / (
         theta ** (torch.arange(0, dim, 2, device=device)[: (dim // 2)].float() / dim)
@@ -18,7 +16,7 @@ def apply_rotary_emb(
     xq: torch.Tensor,
     xk: torch.Tensor,
     freqs_cis: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
     freqs_cis = freqs_cis[:, None, :]

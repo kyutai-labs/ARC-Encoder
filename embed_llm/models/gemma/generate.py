@@ -1,20 +1,19 @@
 import torch
-from typing import Any, Optional, Sequence, Union
 from embed_llm.models.gemma.model import GemmaForCausalLM
 
 
 @torch.inference_mode()
 def generate(
     model: GemmaForCausalLM,
-    prompts: Union[str, Sequence[str]],
-    device: Any,
+    prompts: str | list[str],
+    device: object,
+    embeddings: torch.Tensor | None = None,
     output_len: int = 100,
-    temperature: Union[float, None] = 0.95,
+    temperature: float = 0.95,
     top_p: float = 1.0,
     top_k: int = 100,
-    embeddings: Optional[torch.Tensor] = None,
     norm_wo_embedding: bool = False,
-) -> Union[str, Sequence[str]]:
+) -> str | list[str]:
     """Generates responses for given prompts using Gemma model."""
     # If a single prompt is provided, treat it as a batch of 1.
     is_str_prompt = isinstance(prompts, str)

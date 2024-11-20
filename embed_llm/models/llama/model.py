@@ -2,7 +2,6 @@
 # This software may be used and distributed in accordance with the terms of the Llama 3 Community License Agreement.
 
 import math
-from typing import Optional, Tuple
 from functools import partial
 import torch
 import torch.nn.functional as F
@@ -28,7 +27,10 @@ class RMSNorm(torch.nn.Module):
 
 
 def precompute_freqs_cis(
-    dim: int, end: int, theta: float = 10000.0, device: Optional[torch.device] = None
+    dim: int,
+    end: int,
+    device: torch.device | None,
+    theta: float = 10000.0,
 ):
     freqs = 1.0 / (
         theta ** (torch.arange(0, dim, 2, device=device)[: (dim // 2)].float() / dim)
@@ -51,7 +53,7 @@ def apply_rotary_emb(
     xq: torch.Tensor,
     xk: torch.Tensor,
     freqs_cis: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
     freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
@@ -114,7 +116,7 @@ class Attention(nn.Module):
         x: torch.Tensor,
         start_pos: int,
         freqs_cis: torch.Tensor,
-        mask: Optional[torch.Tensor],
+        mask: torch.Tensor | None = None,
         training: bool = True,
     ):
         bsz, seqlen, _ = x.shape
@@ -186,8 +188,8 @@ class FeedForward(nn.Module):
         dim: int,
         hidden_dim: int,
         multiple_of: int,
-        ffn_dim_multiplier: Optional[float],
-        lora: Optional[LoraArgs] = None,
+        ffn_dim_multiplier: float | None = None,
+        lora: LoraArgs | None = None,
     ):
         super().__init__()
         hidden_dim = int(2 * hidden_dim / 3)
@@ -228,7 +230,7 @@ class TransformerBlock(nn.Module):
         x: torch.Tensor,
         start_pos: int,
         freqs_cis: torch.Tensor,
-        mask: Optional[torch.Tensor],
+        mask: torch.Tensor | None = None,
         training: bool = True,
     ):
         h = x + self.attention(
@@ -267,7 +269,7 @@ class Transformer(nn.Module, LoRALoaderMixin):
 
         MaybeLora = maybe_lora(args.lora)
         self.output = MaybeLora(args.dim, args.vocab_size, bias=False)
-        self._precomputed_freqs_cis: Optional[torch.Tensor] = None
+        self._precomputed_freqs_cis: torch.Tensor | None = None
 
     @property
     def dtype(self) -> torch.dtype:
@@ -297,10 +299,10 @@ class Transformer(nn.Module, LoRALoaderMixin):
     def forward(
         self,
         input_ids: torch.Tensor,
-        embeddings: Optional[torch.Tensor] = None,
-        start_pos: Optional[int] = None,
-        training: Optional[bool] = False,
-        norm_wo_embeds: Optional[bool] = False,
+        embeddings: torch.Tensor | None = None,
+        start_pos: int | None = None,
+        training: bool = False,
+        norm_wo_embeds: bool = False,
     ):
 
         _bsz, seqlen = input_ids.shape

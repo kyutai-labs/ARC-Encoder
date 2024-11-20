@@ -8,8 +8,6 @@
 # From https://github.com/facebookresearch/FiD/blob/main/passage_retrieval.py
 import logging
 import pickle
-from typing import List, Tuple
-
 import faiss
 import numpy as np
 from tqdm import tqdm
@@ -39,7 +37,7 @@ class Indexer(object):
 
     def search_knn(
         self, query_vectors: np.array, top_docs: int, index_batch_size=1024
-    ) -> List[Tuple[List[object], List[float]]]:
+    ) -> list[tuple[list[object], list[float]]]:
         query_vectors = query_vectors.astype("float32")
         result = []
         nbatch = (len(query_vectors) - 1) // index_batch_size + 1
@@ -81,7 +79,7 @@ class Indexer(object):
             len(self.index_id_to_db_id) == self.index.ntotal
         ), "Deserialized index_id_to_db_id should match faiss index size"
 
-    def _update_id_mapping(self, db_ids: List):
+    def _update_id_mapping(self, db_ids: list):
         new_ids = np.array(db_ids, dtype=np.int64)
         self.index_id_to_db_id = np.concatenate(
             (self.index_id_to_db_id, new_ids), axis=0

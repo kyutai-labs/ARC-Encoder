@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from pathlib import Path
-from typing import Union, List, Tuple, Any, Optional, Sequence
+from typing import Sequence
 from functools import partial
 import safetensors.torch
 import json
@@ -38,22 +38,22 @@ from embed_llm.models.llama.generation import generate as llama_generate
 from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
 
 
-Models = Union[LlamaTransformer, MistralTransformer, GemmaForCausalLM]
+Models = LlamaTransformer | MistralTransformer | GemmaForCausalLM
 logger = logging.getLogger(__name__)
 
-ModelsArgs = Union[MistralModelArgs, LlamaModelArgs, GemmaConfig]
+ModelsArgs = MistralModelArgs | LlamaModelArgs | GemmaConfig
 
 
 def pad_and_convert_to_tensor(
-    x: List[int],
-    y: List[int],
-    sizes: List[int],
-    embeddings: Union[torch.Tensor, None],
-    y_mask: Union[List[bool], None],
+    x: list[int],
+    y: list[int],
+    sizes: list[int],
     seq_len: int,
     pad_id: int,
     batch_size: int,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    embeddings: torch.Tensor | None = None,
+    y_mask: list[bool] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
     final_x = (
         torch.ones((batch_size, seq_len), dtype=torch.long).cuda(non_blocking=True)
@@ -95,7 +95,7 @@ class EmbedAugModel(nn.Module):
         llm_name: str,
         pipeline_args: EmbedAugArgs,
         llm: Models,
-        max_seq_len: Optional[int] = None,
+        max_seq_len: int | None = None,
     ):
         super().__init__()
         self.add_module("llm", llm)
@@ -128,8 +128,8 @@ class EmbedAugModel(nn.Module):
     def forward_seq(
         self,
         x: torch.Tensor,
-        seqlens: List[int],
-        embeddings: Optional[torch.Tensor] = None,
+        seqlens: list[int],
+        embeddings: torch.Tensor | None = None,
         norm_wo_embeds: bool = False,
     ) -> torch.Tensor:
 
@@ -145,8 +145,8 @@ class EmbedAugModel(nn.Module):
     def forward_batch(
         self,
         x: torch.Tensor,
-        seqlens: Optional[List[int]] = None,
-        embeddings: Optional[torch.Tensor] = None,
+        seqlens: list[int] | None = None,
+        embeddings: torch.Tensor | None = None,
         training: bool = False,
         norm_wo_embeds: bool = False,
     ) -> torch.Tensor:
@@ -167,10 +167,10 @@ class EmbedAugPipeline(nn.Module):
         llm_name: str,
         pipeline_args: EmbedAugArgs,
         embed_model_name: str,
-        embedding_model: Any,
-        tokenizer: Any = None,
-        pad_token_id: Optional[int] = None,
-        max_seq_len: Optional[int] = None,
+        embedding_model: object,
+        pad_token_id: int | None = None,
+        max_seq_len: int | None = None,
+        tokenizer: object = None,
     ):
         super().__init__()
 
@@ -184,7 +184,7 @@ class EmbedAugPipeline(nn.Module):
         self.model = None
         self.generate = None
 
-    def get_model(self, llm: Any) -> nn.Module:
+    def get_model(self, llm: object) -> nn.Module:
         return EmbedAugModel(
             llm_name=self.llm_name,
             pipeline_args=self.pipeline_args,
@@ -195,7 +195,7 @@ class EmbedAugPipeline(nn.Module):
     def store_model(self, model: nn.Module):
         self.model = model
 
-    def prepare_forward(self, batch: Batch, batch_size: int) -> Tuple:
+    def prepare_forward(self, batch: Batch, batch_size: int) -> tuple:
 
         if self.pipeline_args.w_embeds:
             with torch.no_grad():
@@ -245,9 +245,9 @@ class EmbedAugPipeline(nn.Module):
         device: str,
         llm_name: str,
         embed_model_name: str,
-        max_batch_size: Optional[int] = 4,
-        max_seq_len: Optional[int] = 512,
-        variant: Optional[str] = None,
+        variant: str | None = None,
+        max_batch_size: int = 4,
+        max_seq_len: int = 512,
     ):
         lora_path = (
             ckpt_path + "/" + llm_name.lower() + "/consolidated/lora.safetensors"
@@ -259,7 +259,7 @@ class EmbedAugPipeline(nn.Module):
         llm_args, pipeline_args = load_args(
             Path(llm_path),
             lora=None,
-            model_name=llm_name,
+            llm_name=llm_name,
             max_seq_len=max_seq_len,
             max_batch_size=max_batch_size,
             variant=variant,
@@ -276,7 +276,7 @@ class EmbedAugPipeline(nn.Module):
                 Path(llm_path)
             ).instruct_tokenizer.tokenizer
             state_dict = load_state_dict(
-                Path(ckpt_path), dtype=pipeline_args.param_dtype
+                Path(llm_path), dtype=pipeline_args.param_dtype
             )
             llm.load_state_dict(state_dict, assign=True)  # type: ignore
             # load LoRA
@@ -292,7 +292,7 @@ class EmbedAugPipeline(nn.Module):
                 llm = LlamaTransformer(args=llm_args)
 
             state_dict = load_state_dict(
-                Path(ckpt_path), dtype=pipeline_args.param_dtype
+                Path(llm_path), dtype=pipeline_args.param_dtype
             )
             llm.load_state_dict(state_dict, assign=True)  # type: ignore
             # load LoRA
@@ -324,6 +324,7 @@ class EmbedAugPipeline(nn.Module):
         with open(Path(mlp_path) / "params.json", "r") as f:
             args = json.loads(f.read())
         mlp_project_args = MLPProjectArgs(**args)
+        pipeline_args.mlp_project = mlp_project_args
 
         augmented_pipeline = EmbedAugPipeline(
             llm_name=llm_name,
@@ -364,12 +365,15 @@ class EmbedAugPipeline(nn.Module):
     @torch.inference_mode()
     def generate_mistral(
         self,
-        prompts: Union[str, Sequence[str]],
-        text_conditioning: Union[str, Sequence[str]],
+        prompts: str | Sequence[str],
+        text_conditioning: str | Sequence[str],
         device: str,
         max_tokens: int = 100,
         temperature: float = 0.6,
     ):
+        if isinstance(prompts, str):
+            prompts = [prompts]
+
         if self.pipeline_args.w_embeds:
             embeddings = encode_text(
                 text_conditioning,
@@ -379,7 +383,9 @@ class EmbedAugPipeline(nn.Module):
                 device=device,
             )
             if self.model.mlp_project is not None:
-                embeddings = self.model.mlp_project(embeddings.to(self.param_dtype))
+                embeddings = self.model.mlp_project(
+                    embeddings.to(self.pipeline_args.param_dtype)
+                )
         else:
             embeddings = None
 
@@ -412,8 +418,8 @@ class EmbedAugPipeline(nn.Module):
     @torch.inference_mode()
     def generate_llama(
         self,
-        prompts: Union[str, Sequence[str]],
-        text_conditioning: Union[str, Sequence[str]],
+        prompts: str | Sequence[str],
+        text_conditioning: str | Sequence[str],
         device: str,
         max_tokens: int = 100,
         temperature: float = 0.6,
@@ -427,7 +433,9 @@ class EmbedAugPipeline(nn.Module):
                 device=device,
             )
             if self.model.mlp_project is not None:
-                embeddings = self.model.mlp_project(embeddings.to(self.param_dtype))
+                embeddings = self.model.mlp_project(
+                    embeddings.to(self.pipeline_args.param_dtype)
+                )
         else:
             embeddings = None
 
@@ -453,11 +461,11 @@ class EmbedAugPipeline(nn.Module):
     @torch.inference_mode()
     def generate_gemma(
         self,
-        prompts: Union[str, Sequence[str]],
-        text_conditioning: Union[str, Sequence[str]],
+        prompts: str | Sequence[str],
+        text_conditioning: str | Sequence[str],
         device: str,
         max_tokens: int = 100,
-        temperature: Union[float, None] = 0.95,
+        temperature: float = 0.95,
     ):
 
         if self.pipeline_args.w_embeds:
@@ -469,7 +477,9 @@ class EmbedAugPipeline(nn.Module):
                 device=device,
             )
             if self.model.mlp_project is not None:
-                embeddings = self.model.mlp_project(embeddings.to(self.param_dtype))
+                embeddings = self.model.mlp_project(
+                    embeddings.to(self.pipeline_args.param_dtype)
+                )
         else:
             embeddings = None
         return gemma_generate(
@@ -487,13 +497,13 @@ def load_args(
     folder: Path,
     lora: LoraArgs,
     llm_name: str,
-    norm_wo_embeds: Optional[bool] = False,
-    w_embeds: Optional[bool] = False,
-    max_seq_len: Optional[int] = None,
-    max_batch_size: Optional[int] = None,
-    variant: Optional[str] = None,
-    param_dtype: Optional[torch.dtype] = None,
-    pipe_path: Optional[str] = None,
+    max_seq_len: int | None = None,
+    max_batch_size: int | None = None,
+    variant: str | None = None,
+    param_dtype: torch.Tensor | None = None,
+    pipe_path: str | None = None,
+    norm_wo_embeds: bool = False,
+    w_embeds: bool = False,
 ) -> ModelsArgs:
 
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
@@ -513,6 +523,7 @@ def load_args(
             n_kv_heads=args["n_kv_heads"],
             norm_eps=args["norm_eps"],
             vocab_size=args["vocab_size"],
+            max_batch_size=max_batch_size,
         )
 
         if args.get("rope_theta") is not None:
@@ -562,6 +573,8 @@ def load_args(
             norm_wo_embeds=norm_wo_embeds,
             param_dtype=param_dtype,
         )
+    if isinstance(pipeline_args.param_dtype, str):
+        pipeline_args.param_dtype = getattr(torch, pipeline_args.param_dtype)
 
     return llm_args, pipeline_args
 

@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import Iterator
 import numpy as np
 import torch.distributed as dist
 from embed_llm.training.distributed import get_rank
@@ -14,7 +14,7 @@ from embed_llm.data.tokenize import Mask, TokenSample, Sequence, encode, Tokeniz
 logger = logging.getLogger("dataset")
 
 
-_LOADED_DATASETS: Dict[Path, List[TokenSample]] = {}
+_LOADED_DATASETS: dict[Path, list[TokenSample]] = {}
 
 
 def main_logger_info(message: str) -> None:
@@ -22,7 +22,7 @@ def main_logger_info(message: str) -> None:
         logger.info(message)
 
 
-def load_file(path: Path, world_size: int, rank: int) -> List[str]:
+def load_file(path: Path, world_size: int, rank: int) -> list[str]:
     lines = []
     with path.open() as f:
         for idx, line in enumerate(f):
@@ -33,21 +33,21 @@ def load_file(path: Path, world_size: int, rank: int) -> List[str]:
 
 
 def maybe_load_local_dataset(
-    path: Path, rank: int, world_size: int, tokenizer: Optional[Tokenizer] = None
-) -> List[TokenSample]:
+    path: Path, rank: int, world_size: int, tokenizer: Tokenizer | None = None
+) -> list[TokenSample]:
     global _LOADED_DATASETS
 
     if path in _LOADED_DATASETS:
         return _LOADED_DATASETS[path]
 
     main_logger_info(f"Loading {path} ...")
-    lines: List[str] = load_file(path, rank=rank, world_size=world_size)
+    lines: list[str] = load_file(path, rank=rank, world_size=world_size)
 
-    data_list: List[TokenSample] = []
+    data_list: list[TokenSample] = []
     for line in lines:
         data = json.loads(line)
 
-        data_sample: Union[TokenSample] = encode(
+        data_sample: TokenSample = encode(
             data,
             tokenizer=tokenizer,
         )
@@ -85,10 +85,10 @@ class DataFile:
 
 def parse_data_sources(
     pretrain_data: str,
-) -> Tuple[List[Union[DataDir, DataFile]], List[float]]:
-    seen: Set[str] = set()
-    sources: List[Union[DataDir, DataFile]] = []
-    weights: List[float] = []
+) -> tuple[list[DataDir | DataFile], list[float]]:
+    seen: set[str] = set()
+    sources: list[DataDir | DataFile] = []
+    weights: list[float] = []
     for source in pretrain_data.strip().split(","):
         if not source:
             continue
@@ -112,7 +112,7 @@ def parse_data_sources(
             weight > 0
         ), f"Make sure to define strictly positive data sampling weights, not {weight}"
 
-        data: Union[DataDir, DataFile]
+        data: DataDir | DataFile
         if Path(path_).is_dir():
             data = DataDir(path=Path(path_))
         elif Path(path_).is_file():
@@ -143,11 +143,11 @@ class SequenceTextMaskAndSizes:
     Concatenation of samples to reach a given size
     """
 
-    x: List[int]
-    y: List[int]
-    texts: List[str]
+    x: list[int]
+    y: list[int]
+    texts: list[str]
     mask: Mask
-    sizes: List[int]
+    sizes: list[int]
 
     def __post_init__(self):
         assert sum(self.sizes) == len(self.x) == len(self.y) == len(self.mask)
@@ -163,12 +163,12 @@ def sequence_iterator(
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
     """
-    x_buffer: List[int] = []
-    y_buffer: List[int] = []
-    text_buffer: List[str] = []
+    x_buffer: list[int] = []
+    y_buffer: list[int] = []
+    text_buffer: list[str] = []
     mask_buffer: Mask = []
 
-    sizes: List[int] = []
+    sizes: list[int] = []
     n_missing = seq_len
     for sample in ds_it:
         assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
@@ -242,10 +242,10 @@ def build_dataset(
     pretrain_data: str,
     tokenizer: Tokenizer,
     seq_len: int,
-    seed: Optional[int],
     rank: int,
     world_size: int,
     is_eval: bool,
+    seed: int | None = None,
     shuffle: bool = False,
 ) -> Iterator[SequenceTextMaskAndSizes]:
     sources, probabilities = parse_data_sources(pretrain_data)
@@ -293,16 +293,16 @@ def get_rng(seed: int, rank: int) -> np.random.RandomState:
 
 
 def get_dataset_iterator(
-    source: Union[DataDir, DataFile],
+    source: DataDir | DataFile,
     rank: int,
     world_size: int,
     is_finite: bool,
-    seed: Optional[int],
     shuffle_at_epoch: bool,
     tokenizer: Tokenizer,
+    seed: int | None = None,
 ) -> Iterator[TokenSample]:
     jsonl_files = source.jsonl_files
-    rng: Optional[np.random.RandomState] = (
+    rng: np.random.RandomState | None = (
         get_rng(seed, rank) if seed is not None else None
     )
 
@@ -346,8 +346,8 @@ def preload_and_yield(
     rank: int,
     world_size: int,
     rng: np.random.RandomState,
-    tokenizer: Optional[Tokenizer] = None,
-) -> Union[Iterator[TokenSample], Iterator[str]]:
+    tokenizer: Tokenizer | None = None,
+) -> Iterator[TokenSample] | Iterator[str]:
     # only instruct data has to be chunked
     # load dataset if not already loaded. Make sure to only load 1/world_size dataset
     data_list = maybe_load_local_dataset(
@@ -365,7 +365,7 @@ def lazy_load_and_yield(
     jsonl_file: Path,
     rank: int,
     world_size: int,
-    tokenizer: Optional[Tokenizer] = None,
+    tokenizer: Tokenizer | None = None,
 ):
     with jsonl_file.open() as file_handle:
         for idx, line in enumerate(file_handle):
@@ -379,7 +379,7 @@ def lazy_load_and_yield(
             )
 
 
-def interleave_iterators(iterators: List[Iterator], probabilities, rng):
+def interleave_iterators(iterators: list[Iterator], probabilities, rng):
     while True:
         it_id = rng.choice(range(len(iterators)), p=probabilities)
         yield next(iterators[it_id])

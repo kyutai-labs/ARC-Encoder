@@ -1,9 +1,8 @@
 import functools
-import json
 import logging
 import math
 from pathlib import Path
-from typing import Callable, Union, Optional, Tuple, Any
+from typing import Callable
 import torch
 import torch.distributed.fsdp.wrap as torch_wrap
 from torch.distributed.fsdp import BackwardPrefetch
@@ -52,7 +51,7 @@ from embed_llm.models.llama.model import TransformerBlock as LlamaTransformerBlo
 from embed_llm.models.llama.model import Transformer as LlamaTransformer
 
 
-Tokenizer = Union[MistralTokenizer, LlamaTokenizer, GemmaTokenizer]
+Tokenizer = MistralTokenizer | LlamaTokenizer | GemmaTokenizer
 
 
 logger = logging.getLogger(__name__)
@@ -110,7 +109,7 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     return functools.partial(torch_wrap._or_policy, policies=policies)
 
 
-def log_train_params(model: Union[torch.nn.Module, FullyShardedDataParallel]):
+def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
     world_size = get_world_size()
 
     num_params = world_size * sum(p.numel() for p in model.parameters())
@@ -168,13 +167,13 @@ def load_training_model(
     folder: Path,
     lora: LoraArgs,
     llm_name: str,
-    embedding_model: Any,
-    checkpoint: Optional[bool] = False,
-    param_dtype: Optional[torch.dtype] = torch.bfloat16,
-    max_seq_len: Optional[int] = 512,
-    max_batch_size: Optional[int] = 32,
-    variant: Optional[str] = None,
-) -> Tuple[Tokenizer, FullyShardedDataParallel, int]:
+    embedding_model: object,
+    variant: None | str = None,
+    checkpoint: bool = False,
+    param_dtype: torch.dtype = torch.bfloat16,
+    max_seq_len: int = 512,
+    max_batch_size: int = 32,
+) -> tuple[Tokenizer, FullyShardedDataParallel, int]:
 
     llm_args, pipeline_args = load_args(
         folder,
@@ -187,7 +186,10 @@ def load_training_model(
         w_embeds=args.w_embeds,
         param_dtype=param_dtype,
     )
+
     pipeline_args.mlp_project = args.projector
+    if not args.w_embeds:
+        assert args.projector.n_layers == 0, "Only no MLP if no embeddings."
 
     if "mistral" in llm_name.lower():
         tokenizer = load_mistral_tokenizer(folder).instruct_tokenizer.tokenizer
@@ -267,10 +269,10 @@ def load_training_model(
             # initialize LoRA layers
             initialize_lora_parameters(augmented_model.llm, param_dtype)
 
-        # if augmented_model.mlp_project is not None:
-        # initialize_mlp_project(augmented_model.mlp_project, param_dtype)
+        if augmented_model.mlp_project is not None:
+            initialize_mlp_project(augmented_model.mlp_project, param_dtype)
 
-        assert not any(
+        assert not object(
             p.is_meta for p in model.parameters()
         ), "All parameters should be initialized by now"
 

@@ -1,5 +1,4 @@
 import logging
-from typing import List, Any
 import numpy as np
 import torch.cuda
 import torch.distributed as dist
@@ -19,8 +18,8 @@ def main_logger_info(message: str) -> None:
 
 def evaluate(
     model: FullyShardedDataParallel,
-    prepare_batch_fn: Any,
-    batches: List[Batch],
+    prepare_batch_fn: object,
+    batches: list[Batch],
     state: TrainState,
 ):
     # Create fake samples to make FSDP happy for unbalanced data

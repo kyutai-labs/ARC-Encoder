@@ -1,7 +1,6 @@
 from gritlm import GritLM
 from transformers import AutoTokenizer, AutoModel
 import os
-from typing import Optional, Union
 import torch.nn.functional as F
 import torch
 from tqdm.auto import tqdm
@@ -41,13 +40,15 @@ def get_embedder(model_name: str, device_map: str = "auto"):
 
 
 def encode_text(
-    text: list[str],
+    text: list[str] | str,
     model_name: str,
-    model: Union[GritLM, AutoModel] = None,
+    model: GritLM | AutoModel | None = None,
     query_embedding: bool = True,
-    tokenizer: Optional[AutoTokenizer] = None,
+    tokenizer: AutoTokenizer | None = None,
     device: str = "cpu",
 ):
+    if isinstance(text, str):
+        text = [text]
 
     if model_name == "GritLM":
         results = []

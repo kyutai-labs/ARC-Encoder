@@ -3,7 +3,6 @@ from torch import nn
 import torch.nn.functional as F
 
 import dataclasses
-from typing import List
 from simple_parsing.helpers import Serializable
 
 
@@ -14,7 +13,7 @@ class MoeArgs(Serializable):
 
 
 class MoeLayer(nn.Module):
-    def __init__(self, experts: List[nn.Module], gate: nn.Module, moe_args: MoeArgs):
+    def __init__(self, experts: list[nn.Module], gate: nn.Module, moe_args: MoeArgs):
         super().__init__()
         assert len(experts) > 0
         self.experts = nn.ModuleList(experts)

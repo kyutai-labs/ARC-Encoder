@@ -4,7 +4,7 @@ import datetime
 import logging
 import time
 import torch
-from typing import Optional, Protocol
+from typing import Protocol
 
 
 logger = logging.getLogger("utils")
@@ -18,8 +18,8 @@ class TrainState:
     n_seen_tokens: int = 0
     this_step_time: float = 0.0
     begin_step_time: float = 0.0
-    this_eval_perplexity: Optional[float] = None
-    this_eval_loss: Optional[float] = None
+    this_eval_perplexity: float | None = None
+    this_eval_loss: float | None = None
 
     def start_step(self):
         self.step += 1

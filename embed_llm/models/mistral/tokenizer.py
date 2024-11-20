@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 from mistral_common.tokens.tokenizers.sentencepiece import is_sentencepiece
-from typing import List
 from mistral_common.tokens.tokenizers.tekken import (
     SpecialTokenPolicy,
     Tekkenizer,

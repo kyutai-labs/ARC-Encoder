@@ -1,8 +1,6 @@
 import logging
 import os
 from functools import lru_cache
-from typing import List, Union
-
 import torch
 import torch.distributed as dist
 
@@ -21,7 +19,7 @@ def get_world_size() -> int:
     return dist.get_world_size()
 
 
-def visible_devices() -> List[int]:
+def visible_devices() -> list[int]:
     return [int(d) for d in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]
 
 
@@ -49,7 +47,7 @@ def set_device():
     torch.cuda.set_device(local_rank)
 
 
-def avg_aggregate(metric: Union[float, int]) -> Union[float, int]:
+def avg_aggregate(metric: float | int) -> float | int:
     buffer = torch.tensor([metric], dtype=torch.float32, device="cuda")
     dist.all_reduce(buffer, op=dist.ReduceOp.SUM)
     return buffer[0].item() / get_world_size()

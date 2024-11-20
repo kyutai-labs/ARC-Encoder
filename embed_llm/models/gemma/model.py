@@ -17,7 +17,6 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from typing import List, Optional, Tuple, Union
 import contextlib
 from functools import partial
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
@@ -44,11 +43,11 @@ class Sampler(nn.Module):
         embedding: torch.Tensor,
         hidden_states: torch.Tensor,
         output_positions: torch.Tensor,
-        temperatures: Union[torch.Tensor, None],
         top_ps: torch.Tensor,
         top_ks: torch.Tensor,
-        embedding_bias: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        temperatures: torch.Tensor | None = None,
+        embedding_bias: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         # Select the last element for each sequence.
         # (batch_size, input_len, hidden_size) -> (batch_size, hidden_size)
         hidden_states = hidden_states.index_select(1, output_positions).squeeze(dim=1)
@@ -91,7 +90,10 @@ class Sampler(nn.Module):
 
 
 def precompute_freqs_cis(
-    dim: int, end: int, theta: float = 10000.0, device: Optional[torch.device] = None
+    dim: int,
+    end: int,
+    device: torch.device | None = None,
+    theta: float = 10000.0,
 ) -> torch.Tensor:
     """Precomputes the frequency cis."""
     freqs = 1.0 / (
@@ -201,7 +203,7 @@ class GemmaMLP(nn.Module):
         hidden_size: int,
         intermediate_size: int,
         quant: bool,
-        lora: Optional[LoraArgs] = None,
+        lora: LoraArgs | None = None,
     ):
         super().__init__()
         MaybeLora = maybe_lora(lora)
@@ -225,13 +227,13 @@ class GemmaAttention(nn.Module):
         hidden_size: int,
         num_heads: int,
         num_kv_heads: int,
-        attn_logit_softcapping: Optional[float],
-        query_pre_attn_scalar: Optional[int],
         head_dim: int,
         quant: bool,
         attn_type: AttentionType,
-        sliding_window_size: Optional[int] = None,
-        lora: Optional[LoraArgs] = None,
+        sliding_window_size: int | None = None,
+        lora: LoraArgs | None = None,
+        attn_logit_softcapping: float | None = None,
+        query_pre_attn_scalar: int | None = None,
     ):
         super().__init__()
 
@@ -269,9 +271,9 @@ class GemmaAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         freqs_cis: torch.Tensor,
-        kv_write_indices: Optional[torch.Tensor],
-        kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]],
         mask: torch.Tensor,
+        kv_write_indices: torch.Tensor | None = None,
+        kv_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         hidden_states_shape = hidden_states.shape
         assert len(hidden_states_shape) == 3
@@ -375,8 +377,8 @@ class GemmaDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         freqs_cis: torch.Tensor,
         kv_write_indices: torch.Tensor,
-        kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]],
         mask: torch.Tensor,
+        kv_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         # Self Attention
         residual = hidden_states
@@ -444,8 +446,8 @@ class Gemma2DecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         freqs_cis: torch.Tensor,
         kv_write_indices: torch.Tensor,
-        kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]],
         mask: torch.Tensor,
+        kv_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         # Self Attention
         residual = hidden_states
@@ -477,13 +479,13 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
     def __init__(
         self,
         args: GemmaConfig,
-        checkpoint: Optional[bool] = False,
+        checkpoint: bool = False,
     ):
         super().__init__()
         self.args = args
         assert args.hidden_size % args.num_attention_heads == 0
         vocab_size = args.vocab_size
-        self._precomputed_freqs_cis: Optional[torch.Tensor] = None
+        self._precomputed_freqs_cis: torch.Tensor | None = None
         self.tokenizer = tokenizer.Tokenizer(args.tokenizer)
         self.embedder = Embedding(vocab_size, args.hidden_size, args.quant)
         self.sampler = Sampler(vocab_size, args)
@@ -547,17 +549,17 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
     def forward(
         self,
         input_ids: torch.Tensor,
-        embeddings: Optional[torch.Tensor] = None,
-        input_positions: Optional[torch.Tensor] = None,
-        kv_caches: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None,
-        output_positions: Optional[torch.Tensor] = None,
-        temperatures: Union[torch.Tensor, None] = None,
-        top_ps: Optional[torch.Tensor] = None,
-        top_ks: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
+        embeddings: torch.Tensor | None = None,
+        input_positions: torch.Tensor | None = None,
+        kv_caches: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
+        output_positions: torch.Tensor | None = None,
+        temperatures: torch.Tensor | None = None,
+        top_ps: torch.Tensor | None = None,
+        top_ks: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
         training: bool = False,
         norm_wo_embeds: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         bs, seq_len = input_ids.size()
         if training:
             input_positions = torch.arange(

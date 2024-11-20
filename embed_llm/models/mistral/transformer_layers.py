@@ -1,5 +1,3 @@
-from typing import Optional, Tuple
-
 import torch
 from torch import nn
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
@@ -15,7 +13,7 @@ from embed_llm.models.mistral.rope import apply_rotary_emb
 
 def repeat_kv(
     keys: torch.Tensor, values: torch.Tensor, repeats: int, dim: int
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     keys = torch.repeat_interleave(keys, repeats=repeats, dim=dim)
     values = torch.repeat_interleave(values, repeats=repeats, dim=dim)
     return keys, values
@@ -28,7 +26,7 @@ class Attention(nn.Module):
         n_heads: int,
         head_dim: int,
         n_kv_heads: int,
-        lora: Optional[LoraArgs] = None,
+        lora: LoraArgs | None = None,
     ):
         super().__init__()
 
@@ -50,8 +48,8 @@ class Attention(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-        cache: Optional[CacheView] = None,
-        mask: Optional[BlockDiagonalMask] = None,
+        cache: CacheView | None = None,
+        mask: BlockDiagonalMask | None = None,
     ) -> torch.Tensor:
         assert mask is None or cache is None
         seqlen_sum, _ = x.shape
@@ -93,7 +91,7 @@ class Attention(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim: int, hidden_dim: int, lora: Optional[LoraArgs] = None):
+    def __init__(self, dim: int, hidden_dim: int, lora: LoraArgs | None = None):
         super().__init__()
 
         MaybeLora = maybe_lora(lora)
@@ -129,8 +127,8 @@ class TransformerBlock(nn.Module):
         n_kv_heads: int,
         head_dim: int,
         norm_eps: float,
-        lora: Optional[LoraArgs] = None,
-        moe: Optional[MoeArgs] = None,
+        lora: LoraArgs | None = None,
+        moe: MoeArgs | None = None,
     ):
         super().__init__()
         self.n_heads = n_heads
@@ -162,8 +160,8 @@ class TransformerBlock(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-        cache: Optional[CacheView] = None,
-        mask: Optional[BlockDiagonalMask] = None,
+        cache: CacheView | None = None,
+        mask: BlockDiagonalMask | None = None,
     ) -> torch.Tensor:
         r = self.attention.forward(
             self.attention_norm(x), freqs_cis, cache=cache, mask=mask

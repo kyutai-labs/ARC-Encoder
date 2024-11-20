@@ -1,5 +1,5 @@
-batch_size: 2
-ckpt_freq: 2
+batch_size: 16
+ckpt_freq: 10
 data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
   shuffle: false
@@ -8,7 +8,7 @@ embedder:
   dim: 4096
   name: NVEmbed
 eval_freq: 50
-exp_name: debug_mistral
+exp_name: debug_mistral3
 llm_name: Mistral7B
 log_freq: 1
 lora:

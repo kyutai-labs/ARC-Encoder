@@ -3,7 +3,6 @@ import logging
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -24,7 +23,7 @@ def get_train_logs(
     peak_allocated_mem: float,
     allocated_mem: float,
     train_args: TrainArgs,
-) -> Dict[str, Union[float, int]]:
+) -> dict[str, float | int]:
     metrics = {
         "lr": lr,
         "step": state.step,
@@ -45,9 +44,9 @@ def get_train_logs(
 def get_eval_logs(
     step: int,
     train_loss: float,
-    perplexity: Optional[float],
-    eval_loss: Optional[float],
-) -> Dict[str, Union[float, int]]:
+    perplexity: float | None = None,
+    eval_loss: float | None = None,
+) -> dict[str, float | int]:
     eval_dict = {"step": step, "train_loss": train_loss}
 
     if perplexity is not None:
@@ -58,10 +57,8 @@ def get_eval_logs(
     return eval_dict
 
 
-def train_log_msg(
-    state: TrainState, logs: Dict[str, Union[float, int]], loss: float
-) -> str:
-    metrics: Dict[str, Union[float, int, datetime]] = dict(logs)  # shallow copy
+def train_log_msg(state: TrainState, logs: dict[str, float | int], loss: float) -> str:
+    metrics: dict[str, float | int | datetime] = dict(logs)  # shallow copy
     metrics.pop("eta_in_seconds")
 
     metrics["eta"] = datetime.now() + timedelta(seconds=state.eta)
@@ -92,7 +89,7 @@ def train_log_msg(
     return " - ".join(parts)
 
 
-def eval_log_msg(logs: Dict[str, Union[float, int]]) -> str:
+def eval_log_msg(logs: dict[str, float | int]) -> str:
     parts = []
     for key, fmt, new_name in [
         ("step", "06", None),
@@ -114,14 +111,14 @@ class MetricsLogger:
         tag: str,
         is_master: bool,
         wandb_args: WandbArgs,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, object] | None = None,
     ):
         self.dst_dir = dst_dir
         self.tag = tag
         self.is_master = is_master
         self.jsonl_path = dst_dir / f"metrics.{tag}.jsonl"
         self.tb_dir = dst_dir / "tb"
-        self.summary_writer: Optional[SummaryWriter] = None
+        self.summary_writer: SummaryWriter | None = None
 
         if not self.is_master:
             return
@@ -155,7 +152,7 @@ class MetricsLogger:
 
             self.wandb_log = wandb.log
 
-    def log(self, metrics: Dict[str, Union[float, int]], step: int):
+    def log(self, metrics: dict[str, float | int], step: int):
         if not self.is_master:
             return
 
@@ -180,7 +177,7 @@ class MetricsLogger:
                 step=step,
             )
 
-        metrics_: Dict[str, Any] = dict(metrics)  # shallow copy
+        metrics_: dict[str, object] = dict(metrics)  # shallow copy
         if "step" in metrics_:
             assert step == metrics_["step"]
         else:

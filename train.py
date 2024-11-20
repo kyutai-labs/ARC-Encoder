@@ -8,7 +8,6 @@ import fire
 import torch.cuda
 import torch.distributed as dist
 from torch.optim import AdamW, lr_scheduler
-from typing import Union
 from functools import partial
 from embed_llm.models.wrapped_models_training import load_training_model
 
@@ -58,7 +57,7 @@ def main_logger_info(message: str) -> None:
         logger.info(message)
 
 
-def train(config: Union[str, dict]):
+def train(config: str | dict):
     if isinstance(config, str):
         args: TrainArgs = TrainArgs.load(config, drop_extra_fields=False)
     elif isinstance(config, dict):
@@ -102,9 +101,7 @@ def _train(
             # raise RuntimeError(
             #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
             # )
-            print(
-                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
-            )
+            print("Run dir already exists, removing it")
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -143,12 +140,12 @@ def _train(
         )
 
     """ Load embedder model """
-
+    print(f"Before embedder {get_rank()}", torch.cuda.memory_allocated() / GB)
     embedding_model = get_embedder(args.embedder.name, device_map="cuda")
     embedding_model.config.max_length = (
         embedding_model.config.max_length if args.seq_len is None else args.seq_len
     )
-
+    print(f"After embedder {get_rank()}", torch.cuda.memory_allocated() / GB)
     """ Load LLM and tokenizers """
 
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
@@ -167,7 +164,7 @@ def _train(
         variant=args.variant if hasattr(args, "variant") else None,
     )
     main_logger_info("Model loading done")
-
+    print(f"After model {get_rank()}", torch.cuda.memory_allocated() / GB)
     """ Load  Dataloader"""
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
@@ -179,7 +176,7 @@ def _train(
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
     )
-
+    print(f"After dataloader {get_rank()}", torch.cuda.memory_allocated() / GB)
     if not args.no_eval:
         eval_data_loader = build_data_loader(
             tokenizer=pipeline.tokenizer,
@@ -193,6 +190,8 @@ def _train(
         )
         # pre-load all eval batches, restrain to 20 batches * n_gpus
         eval_batches = list(eval_data_loader)[:20]
+    print(f"After eval dataloader {get_rank()}", torch.cuda.memory_allocated() / GB)
+
     # 9. Load optimizer
     optimizer = AdamW(
         model.parameters(),
@@ -230,6 +229,8 @@ def _train(
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
+    print(f"After train set up {get_rank()}", torch.cuda.memory_allocated() / GB)
+
     while state.step < args.max_steps:
         state.start_step()
         is_last_step = state.step == args.max_steps
@@ -244,8 +245,15 @@ def _train(
 
             """ Training loop for basic reconstruction"""
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
+            print(
+                f"After preparing the batch {get_rank()}",
+                torch.cuda.memory_allocated() / GB,
+            )
             embeddings = embeddings.detach() if embeddings is not None else None
             output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
+            print(
+                f"After forward pass {get_rank()}", torch.cuda.memory_allocated() / GB
+            )
 
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()

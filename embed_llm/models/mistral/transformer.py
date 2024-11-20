@@ -1,12 +1,7 @@
-import json
 import operator
-import logging
-import math
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, List, Mapping, Optional, Iterable
+from typing import Iterable
 from functools import partial, reduce
-import safetensors.torch
 import torch
 from torch import nn
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
@@ -29,7 +24,7 @@ class SimpleInputMetadata:
     positions: torch.Tensor
 
     @staticmethod
-    def from_seqlens(seqlens: List[int], device: torch.device) -> "SimpleInputMetadata":
+    def from_seqlens(seqlens: list[int], device: torch.device) -> "SimpleInputMetadata":
         return SimpleInputMetadata(
             positions=torch.cat([torch.arange(0, seqlen) for seqlen in seqlens]).to(
                 device=device, dtype=torch.long
@@ -50,7 +45,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.args = args
         self.vocab_size = args.vocab_size
         self.n_layers = args.n_layers
-        self._precomputed_freqs_cis: Optional[torch.Tensor] = None
+        self._precomputed_freqs_cis: torch.Tensor | None = None
         assert self.vocab_size > 0
         self.pos_to_keep = []
         self.pipeline_rank = pipeline_rank
@@ -115,7 +110,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         return self._precomputed_freqs_cis
 
-    # def embed_vision_language_features(self, input_ids: torch.Tensor, images: List[torch.tensor]) -> torch.Tensor:  # type: ignore[valid-type]
+    # def embed_vision_language_features(self, input_ids: torch.Tensor, images: list[torch.tensor]) -> torch.Tensor:  # type: ignore[valid-type]
     #     assert self.tok_embeddings is not None
     #     assert self.vision_encoder is not None
     #     assert self.vision_language_adapter is not None
@@ -147,9 +142,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
     def forward(
         self,
         input_ids: torch.Tensor,
-        seqlens: List[int],
-        embeddings: Optional[torch.Tensor] = None,
-        norm_wo_embeds: Optional[bool] = False,
+        seqlens: list[int],
+        embeddings: torch.Tensor | None,
+        norm_wo_embeds: bool = False,
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
         assert len(seqlens) == len(embeddings) if embeddings is not None else True, (
@@ -211,11 +206,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
     def generate_partial(
         self,
         input_ids: torch.Tensor,
-        seqlens: List[int],
-        embeddings: Optional[torch.Tensor] = None,
-        cache: Optional[BufferCache] = None,
-        norm_wo_embeds: Optional[bool] = False,
-        # images: Optional[List[torch.Tensor]] = None,
+        seqlens: list[int],
+        embeddings: torch.Tensor | None,
+        cache: BufferCache | None,
+        norm_wo_embeds: bool = False,
+        # images: list[torch.Tensor] | None,
     ) -> torch.Tensor:
         """Local forward pass.
 
@@ -225,10 +220,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
         assert (
             len(seqlens) <= self.args.max_batch_size
         ), f"Max batch size is {self.args.max_batch_size}, got batch size of {len(seqlens)}"
+        print("Inpud ids shape:", input_ids.shape)
         (num_toks,) = input_ids.shape
         assert sum(seqlens) == num_toks, (sum(seqlens), num_toks)
 
-        input_metadata: List[CacheInputMetadata] | List[SimpleInputMetadata]
+        input_metadata: list[CacheInputMetadata] | list[SimpleInputMetadata]
 
         if embeddings is not None:
             seqlens = [size + 1 for size in seqlens]
@@ -315,11 +311,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
     def generate(
         self,
         input_ids: torch.Tensor,
-        seqlens: List[int],
-        embeddings: Optional[torch.Tensor] = None,
-        cache: Optional[BufferCache] = None,
-        norm_wo_embeds: Optional[bool] = False,
-        # images: Optional[List[torch.Tensor]] = None,
+        seqlens: list[int],
+        embeddings: torch.Tensor | None,
+        cache: BufferCache | None,
+        norm_wo_embeds: bool = False,
+        # images: list[torch.Tensor | None,
     ) -> torch.Tensor:
         h = self.generate_partial(
             input_ids,
@@ -393,11 +389,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
     # @staticmethod
     # def from_folder(
-    #     folder: Union[Path, str],
+    #     folder: Path | str,
+    #     dtype: torch.dtype |  None,
     #     max_batch_size: int = 1,
     #     num_pipeline_ranks: int = 1,
-    #     device: Union[torch.device, str] = "cuda",
-    #     dtype: Optional[torch.dtype] = None,
+    #     device: torch.device | str = "cuda",
     #     softmax_fp32: bool = True,
     # ) -> "Transformer":
     #     with open(Path(folder) / "params.json", "r") as f:

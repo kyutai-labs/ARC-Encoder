@@ -2,7 +2,7 @@
 # This software may be used and distributed in accordance with the terms of the Llama 3 Community License Agreement.
 
 
-from typing import List, Optional, Tuple, TypedDict
+from typing import TypedDict
 import torch
 import torch.nn.functional as F
 from embed_llm.models.llama.model import Transformer
@@ -11,8 +11,8 @@ from embed_llm.models.llama.tokenizer import Tokenizer
 
 class CompletionPrediction(TypedDict, total=False):
     generation: str
-    tokens: List[str]  # not required
-    logprobs: List[float]  # not required
+    tokens: list[str]  # not required
+    logprobs: list[float]  # not required
 
 
 # class Llama:
@@ -125,20 +125,20 @@ class CompletionPrediction(TypedDict, total=False):
 def generate(
     model: Transformer,
     tokenizer: Tokenizer,
-    prompt_tokens: List[List[int]],
+    prompt_tokens: list[list[int]],
     max_gen_len: int,
+    embeddings: torch.Tensor | None = None,
     temperature: float = 0.6,
     top_p: float = 0.9,
     logprobs: bool = False,
     echo: bool = False,
-    embeddings: Optional[torch.Tensor] = None,
-    norm_wo_embeds: Optional[bool] = False,
-) -> Tuple[List[List[int]], Optional[List[List[float]]]]:
+    norm_wo_embeds: bool = False,
+) -> tuple[list[list[int]], list[list[float]] | None]:
     """
     Generate text sequences based on provided prompts using the language generation model.
 
     Args:
-        prompt_tokens (List[List[int]]): List of tokenized prompts, where each prompt is represented as a list of integers.
+        prompt_tokens (list[list[int]]): list of tokenized prompts, where each prompt is represented as a list of integers.
         max_gen_len (int): Maximum length of the generated text sequence.
         temperature (float, optional): Temperature value for controlling randomness in sampling. Defaults to 0.6.
         top_p (float, optional): Top-p probability threshold for nucleus sampling. Defaults to 0.9.
@@ -146,7 +146,7 @@ def generate(
         echo (bool, optional): Flag indicating whether to include prompt tokens in the generated output. Defaults to False.
 
     Returns:
-        Tuple[List[List[int]], Optional[List[List[float]]]]: A tuple containing generated token sequences and, if logprobs is True, corresponding token log probabilities.
+        tuple[list[list[int]], Optional[list[list[float]]]]: A tuple containing generated token sequences and, if logprobs is True, corresponding token log probabilities.
 
     Note:
         This method uses the provided prompts as a basis for generating text. It employs nucleus sampling to produce text with controlled randomness.

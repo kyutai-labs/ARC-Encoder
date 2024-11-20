@@ -2,7 +2,6 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Tuple, Any
 import torch.nn as nn
 import safetensors.torch
 import torch
@@ -29,10 +28,10 @@ class Checkpointer:
         self,
         model: FullyShardedDataParallel,
         state: TrainState,
-        run_dir: Union[Path, str],
-        optimizer: Optional[torch.optim.Optimizer] = None,
-        num_ckpt_keep: Optional[int] = None,
-        pipeline: Optional[Any] = None,
+        run_dir: Path | str,
+        optimizer: torch.optim.Optimizer | None = None,
+        num_ckpt_keep: int | None = None,
+        pipeline: object | None = None,
     ):
         self.llm: nn.Module = model.llm
         self.mlp_project: nn.Module = model.mlp_project
@@ -49,7 +48,7 @@ class Checkpointer:
         return self.run_dir / "checkpoints"
 
     @property
-    def dst_dir(self) -> Tuple[Path, Path]:
+    def dst_dir(self) -> tuple[Path, Path]:
         return (
             self.ckpt_dir
             / f"checkpoint_{self.state.step:06d}"
@@ -60,7 +59,7 @@ class Checkpointer:
 
     @staticmethod
     def consolidated_path(
-        ckpt_dir: Path, use_safetensors: bool, save_only_lora: Optional[bool] = False
+        ckpt_dir: Path, use_safetensors: bool, save_only_lora: bool = False
     ) -> Path:
         suffix = "safetensors" if use_safetensors else "00.pth"
         prefix = "lora" if save_only_lora else "consolidated"
@@ -91,7 +90,7 @@ class Checkpointer:
             model_args["param_dtype"] = str(model_args["param_dtype"]).split(".")[-1]
             f.write(json.dumps(model_args, indent=4))
 
-    def delete_old_ckpts(self) -> List[Path]:
+    def delete_old_ckpts(self) -> list[Path]:
         all_saved_ckpts = [d for d in self.ckpt_dir.iterdir() if d.is_dir()]
 
         # Sort directories by creation time (oldest to newest)
@@ -109,23 +108,23 @@ class Checkpointer:
         return ckpts_to_delete
 
     @staticmethod
-    def get_lora_states(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def get_lora_states(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         return {k: v for k, v in state_dict.items() if "lora" in k}
 
     @staticmethod
     def get_non_lora_states(
-        state_dict: Dict[str, torch.Tensor],
-    ) -> Dict[str, torch.Tensor]:
+        state_dict: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
         return {
             k: v
             for k, v in state_dict.items()
-            if not any(l_key in k for l_key in ["lora", "frozen"])
+            if not object(l_key in k for l_key in ["lora", "frozen"])
         }
 
     @torch.no_grad()
     def retrieve_save_states(
         self, save_only_lora: bool, save_dtype: torch.dtype
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         if save_only_lora:
             assert (
                 self.llm.args.lora.enable
@@ -141,7 +140,7 @@ class Checkpointer:
 
             def merge_lora(
                 m: torch.nn.Module,
-                destination: Dict[str, torch.Tensor],
+                destination: dict[str, torch.Tensor],
                 prefix: str,
                 *args,
             ):
@@ -158,7 +157,7 @@ class Checkpointer:
         if save_only_lora:
 
             def is_trainable_fsdp(
-                module: Union[torch.nn.Module, FullyShardedDataParallel],
+                module: torch.nn.Module | FullyShardedDataParallel,
             ):
                 is_fsdp = isinstance(module, FullyShardedDataParallel)
                 all_params_have_grads = is_fsdp and all(
@@ -226,7 +225,7 @@ class Checkpointer:
                 self.llm, FullyShardedDataParallel
             ), "`self.llm` should be an instance of `FullyShardedDataParallel`"
             assert isinstance(
-                self.mlp_project, Union[FullyShardedDataParallel, None]
+                self.mlp_project, FullyShardedDataParallel | None
             ), "`self.mlp_project` should be an instance of `FullyShardedDataParallel`"
 
             with self.llm.summon_full_params(

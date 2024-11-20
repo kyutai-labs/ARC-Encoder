@@ -1,8 +1,7 @@
 from dataclasses import dataclass
-from typing import Optional, List, Sequence
+from typing import Sequence
 import enum
 import torch
-from typing import Optional, Sequence
 from simple_parsing.helpers import Serializable
 from dataclasses import dataclass, field
 import torch
@@ -13,19 +12,19 @@ from embed_llm.models.lora import LoraArgs
 @dataclass
 class MLPProjectArgs(Serializable):
     hidden_dim: int = 4096
-    n_layers: int = 3
-    act: Optional[str] = "id"
-    in_dim: Optional[int] = None
-    out_dim: Optional[int] = None
+    n_layers: int = 0
+    act: str = "id"
+    in_dim: int | None = None
+    out_dim: int | None = None
 
 
 @dataclass
 class EmbedAugArgs(Serializable):
-    w_embeds: Optional[bool] = False
-    norm_wo_embeds: Optional[bool] = False
-    mlp_project: Optional[MLPProjectArgs] = field(default_factory=MLPProjectArgs)
-    training: Optional[bool] = False
-    param_dtype: Optional[torch.dtype] = torch.bfloat16
+    w_embeds: bool = False
+    norm_wo_embeds: bool = False
+    mlp_project: MLPProjectArgs = field(default_factory=MLPProjectArgs)
+    training: bool = False
+    param_dtype: torch.dtyp = torch.bfloat16
 
 
 @dataclass
@@ -38,18 +37,18 @@ class MistralModelArgs(Serializable):
     n_kv_heads: int
     norm_eps: float
     vocab_size: int
-    max_batch_size: int = 0
+    max_batch_size: int = 1
     # For rotary embeddings. If not set, will be inferred
-    rope_theta: Optional[float] = None
+    rope_theta: float | None = None
     # If this is set, we will use MoE layers instead of dense layers.
-    moe: Optional[MoeArgs] = None
+    moe: MoeArgs | None = None
     # If this is set, we will load LoRA linear layers instead of linear layers.
-    lora: Optional[LoraArgs] = None
-    sliding_window: Optional[int] | Optional[List[int]] = None
-    _sliding_window: Optional[int] | Optional[List[int]] = None
+    lora: LoraArgs | None = None
+    sliding_window: int | list[int] | None = None
+    _sliding_window: int | list[int] | None = None
     model_type: str = "transformer"
 
-    # vision_encoder: Optional[VisionEncoderArgs] = None
+    # vision_encoder: VisionEncoderArgs] | None = None
     """ If adding new args take care giving it to load args """
 
     def __post_init__(self) -> None:
@@ -69,17 +68,17 @@ class LlamaModelArgs(Serializable):
     dim: int = 4096
     n_layers: int = 32
     n_heads: int = 32
-    n_kv_heads: Optional[int] = None
+    n_kv_heads: int | None = None
     vocab_size: int = -1
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
-    ffn_dim_multiplier: Optional[float] = None
+    ffn_dim_multiplier: float | None = None
     norm_eps: float = 1e-5
     rope_theta: float = 500000
 
     max_batch_size: int = 32
     max_seq_len: int = 2048
-    lora: Optional[LoraArgs] = None
-    use_scaled_rope: Optional[bool] = True  # Not implemented in the model
+    lora: LoraArgs | None = None
+    use_scaled_rope: bool = True  # Not implemented in the model
     """ If adding new args take care giving it to load args """
 
 
@@ -133,35 +132,35 @@ class GemmaConfig(Serializable):
     # Whether a quantized version of the model is used.
     quant: bool = False
     # The path to the model tokenizer.
-    tokenizer: Optional[str] = "tokenizer/tokenizer.model"
+    tokenizer: str = "tokenizer/tokenizer.model"
     # The types of attention used in the layers of the model.
-    attn_types: Optional[Sequence[AttentionType]] = None
+    attn_types: Sequence[AttentionType] | None = None
     # The size of the sliding window used for local attention.
-    sliding_window_size: Optional[int] = None
+    sliding_window_size: int | None = None
     # If provided, the final logits are softcapped to this value.
-    final_logit_softcapping: Optional[float] = None
+    final_logit_softcapping: float | None = None
     # If provided, the attention logits are softcapped to this value.
-    attn_logit_softcapping: Optional[float] = None
+    attn_logit_softcapping: float | None = None
     # If provided, the query vector is normalized using the
     # inverse square root of this value instead of head_dim.
-    query_pre_attn_scalar: Optional[int] = None
+    query_pre_attn_scalar: int | None = None
     # Whether to use pre mlp normalization.
     use_pre_ffw_norm: bool = False
     # Whether to use post mlp normalization.
     use_post_ffw_norm: bool = False
-    lora: Optional[LoraArgs] = None
+    lora: LoraArgs | None = None
     """ If adding new args take care giving it to load args """
 
-    def get_dtype(self) -> Optional[torch.dtype]:
+    def get_dtype(self) -> torch.dtype | None:
         """Gets the torch dtype from the config dtype string."""
         return _STR_DTYPE_TO_TORCH_DTYPE.get(self.dtype, None)
 
 
-def get_config_for_7b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
+def get_config_for_7b(lora: LoraArgs | None = None) -> GemmaConfig:
     return GemmaConfig(lora=lora)
 
 
-def get_config_for_2b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
+def get_config_for_2b(lora: LoraArgs | None = None) -> GemmaConfig:
     return GemmaConfig(
         num_hidden_layers=18,
         num_attention_heads=8,
@@ -172,7 +171,7 @@ def get_config_for_2b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
     )
 
 
-def get_config_for_2b_v2(lora: Optional[LoraArgs] = None) -> GemmaConfig:
+def get_config_for_2b_v2(lora: LoraArgs | None = None) -> GemmaConfig:
     return GemmaConfig(
         architecture=Architecture.GEMMA_2,
         num_hidden_layers=26,
@@ -191,7 +190,7 @@ def get_config_for_2b_v2(lora: Optional[LoraArgs] = None) -> GemmaConfig:
     )
 
 
-def get_config_for_9b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
+def get_config_for_9b(lora: LoraArgs | None = None) -> GemmaConfig:
     return GemmaConfig(
         architecture=Architecture.GEMMA_2,
         num_hidden_layers=42,
@@ -210,7 +209,7 @@ def get_config_for_9b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
     )
 
 
-def get_config_for_27b(lora: Optional[LoraArgs] = None) -> GemmaConfig:
+def get_config_for_27b(lora: LoraArgs | None = None) -> GemmaConfig:
     return GemmaConfig(
         architecture=Architecture.GEMMA_2,
         num_hidden_layers=46,
