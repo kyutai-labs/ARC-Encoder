@@ -29,11 +29,12 @@ from embed_llm.models.mistral.generate import generate as mistral_generate
 
 # Gemma specifics
 from embed_llm.models.gemma.model import GemmaForCausalLM, set_default_tensor_type
+from embed_llm.models.gemma.generate import generate as gemma_generate
 from embed_llm.models.args import GemmaConfig
 
 # Llama specifics
 from embed_llm.models.llama.model import Transformer as LlamaTransformer
-from embed_llm.models.llama.generation import Llama
+from embed_llm.models.llama.generation import generate as llama_generate
 from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
 
 
@@ -305,7 +306,7 @@ class EmbedAugPipeline(nn.Module):
             llm.load_state_dict(state_dict, assign=True)  # type: ignore
             tokenizer = llm.tokenizer
             # load LoRA
-            llm.model.load_lora(Path(lora_path))
+            llm.load_lora(Path(lora_path))
             llm = llm.to(device)
             llm.eval()
 
@@ -342,9 +343,7 @@ class EmbedAugPipeline(nn.Module):
             )
         elif "llama" in llm_name.lower():
             augmented_pipeline.generate = partial(
-                augmented_pipeline.generate_llama,
-                llama_model=Llama(llm, tokenizer),
-                device=device,
+                augmented_pipeline.generate_llama, device=device,
             )
         elif "gemma" in llm_name.lower():
             augmented_pipeline.generate = partial(
@@ -422,10 +421,11 @@ class EmbedAugPipeline(nn.Module):
                 embeddings = self.model.mlp_project(embeddings.to(self.param_dtype))
         else:
             embeddings = None
-        llama = Llama(self.model.llm, self.tokenizer)
 
-        prompt_tokens = llama.tokenizer.encode_batch(s=prompts, bos=True, eos=False)
-        out_tokens, logprobs = llama.generate(
+        prompt_tokens = self.tokenizer.encode_batch(s=prompts, bos=True, eos=False)
+        out_tokens, logprobs = llama_generate(
+            model=self.model.llm,
+            tokenizer=self.tokenizer,
             prompt_tokens=prompt_tokens,
             embeddings=embeddings,
             max_gen_len=max_tokens,
@@ -433,7 +433,7 @@ class EmbedAugPipeline(nn.Module):
             logprobs=True,
             norm_wo_embeds=self.pipeline_args.norm_wo_embeds,
         )
-        produced_text = llama.tokenizer.decode_batch(out_tokens)
+        produced_text = self.tokenizer.decode_batch(out_tokens)
         final_texts = []
         for text in produced_text:
             if "\n\n" in text:
@@ -463,7 +463,9 @@ class EmbedAugPipeline(nn.Module):
                 embeddings = self.model.mlp_project(embeddings.to(self.param_dtype))
         else:
             embeddings = None
-        return self.model.llm.generate(
+        return gemma_generate(
+            model = self.model.llm,
+            tokenizer=self.tokenizer,
             prompts=prompts,
             embeddings=embeddings,
             device=device,

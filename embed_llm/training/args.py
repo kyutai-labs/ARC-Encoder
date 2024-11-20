@@ -2,10 +2,8 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Union
-
+from typing import Optional
 from simple_parsing.helpers import Serializable
-
 from embed_llm.models.args import LoraArgs, MLPProjectArgs
 from embed_llm.data.args import DataArgs
 

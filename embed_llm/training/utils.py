@@ -4,7 +4,7 @@ import datetime
 import logging
 import time
 import torch
-from typing import Optional, Protocol, List, Tuple
+from typing import Optional, Protocol
 
 
 logger = logging.getLogger("utils")

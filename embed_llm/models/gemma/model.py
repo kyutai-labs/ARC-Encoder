@@ -13,21 +13,17 @@
 # limitations under the License.
 """Inference-only Gemma model implementation."""
 
-import json
-import gc
-import os
+
 import torch
 from torch import nn
 import torch.nn.functional as F
-from typing import Any, List, Optional, Sequence, Tuple, Union
-from pathlib import Path
+from typing import List, Optional, Tuple, Union
 import contextlib
 from functools import partial
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from embed_llm.models.gemma import tokenizer
 from embed_llm.models.args import (
     GemmaConfig,
-    get_model_config,
     AttentionType,
     Architecture,
     LoraArgs,
@@ -476,73 +472,7 @@ class Gemma2DecoderLayer(nn.Module):
         return hidden_states
 
 
-class GemmaModel(nn.Module, LoRALoaderMixin):
-
-    def __init__(self, config: GemmaConfig, checkpoint: Optional[bool] = False):
-        super().__init__()
-        self.vocab_size = config.vocab_size
-        self.args = config
-        self.layers = nn.ModuleDict()
-        for i in range(config.num_hidden_layers):
-            if config.architecture == Architecture.GEMMA_1:
-                block: GemmaDecoderLayer = GemmaDecoderLayer(config)
-            elif config.architecture == Architecture.GEMMA_2:
-                attn_type = (
-                    config.attn_types[i]
-                    if config.attn_types is not None
-                    else AttentionType.GLOBAL
-                )
-                block: Gemma2DecoderLayer = Gemma2DecoderLayer(config, attn_type)
-            else:
-                raise ValueError(f"Unknown architecture: {config.architecture}")
-
-            if checkpoint:
-                # activate gradient checkpointing as, see: https://pytorch.org/docs/stable/checkpoint.html
-                non_reentrant_wrapper = partial(
-                    torch_ckpt.checkpoint_wrapper,
-                    checkpoint_impl=torch_ckpt.CheckpointImpl.NO_REENTRANT,
-                )
-                block = non_reentrant_wrapper(block)
-
-            self.layers[str(i)] = block
-
-        self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.n_layers = config.num_hidden_layers
-
-    @property
-    def dtype(self) -> torch.dtype:
-        return next(self.parameters()).dtype
-
-    @property
-    def device(self) -> torch.device:
-        return next(self.parameters()).device
-
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        freqs_cis: torch.Tensor,
-        kv_write_indices: Optional[torch.Tensor],
-        kv_caches: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
-        mask: torch.Tensor,
-        norm_wo_embedding: bool = False,
-    ) -> torch.Tensor:
-        for i in range(self.n_layers):
-            layer = self.layers[str(i)]
-            hidden_states = layer(
-                hidden_states=hidden_states,
-                freqs_cis=freqs_cis,
-                kv_write_indices=None if kv_write_indices is None else kv_write_indices,
-                kv_cache=None if kv_caches is None else kv_caches[i],
-                mask=mask,
-            )
-        if norm_wo_embedding:
-            hidden_states = self.norm(hidden_states[:, 1:, :])
-        else:
-            hidden_states = self.norm(hidden_states)
-        return hidden_states
-
-
-class GemmaForCausalLM(nn.Module):
+class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
 
     def __init__(
         self,
@@ -557,9 +487,37 @@ class GemmaForCausalLM(nn.Module):
         self.norm_wo_embedding = args.norm_wo_embeds
         self.tokenizer = tokenizer.Tokenizer(args.tokenizer)
         self.embedder = Embedding(vocab_size, args.hidden_size, args.quant)
-        self.model = GemmaModel(args, checkpoint=checkpoint)
         self.sampler = Sampler(vocab_size, args)
         self.rope_theta = getattr(args, "rope_theta", 10000)
+        
+        self.vocab_size = args.vocab_size
+        self.args = args
+        self.layers = nn.ModuleDict()
+        for i in range(args.num_hidden_layers):
+            if args.architecture == Architecture.GEMMA_1:
+                block: GemmaDecoderLayer = GemmaDecoderLayer(args)
+            elif args.architecture == Architecture.GEMMA_2:
+                attn_type = (
+                    args.attn_types[i]
+                    if args.attn_types is not None
+                    else AttentionType.GLOBAL
+                )
+                block: Gemma2DecoderLayer = Gemma2DecoderLayer(args, attn_type)
+            else:
+                raise ValueError(f"Unknown architecture: {args.architecture}")
+
+            if checkpoint:
+                # activate gradient checkpointing as, see: https://pytorch.org/docs/stable/checkpoint.html
+                non_reentrant_wrapper = partial(
+                    torch_ckpt.checkpoint_wrapper,
+                    checkpoint_impl=torch_ckpt.CheckpointImpl.NO_REENTRANT,
+                )
+                block = non_reentrant_wrapper(block)
+
+            self.layers[str(i)] = block
+
+        self.norm = RMSNorm(args.hidden_size, eps=args.rms_norm_eps)
+        self.n_layers = args.num_hidden_layers
 
     @property
     def freqs_cis(self) -> torch.Tensor:
@@ -578,6 +536,14 @@ class GemmaForCausalLM(nn.Module):
             )
 
         return self._precomputed_freqs_cis
+    
+    @property
+    def dtype(self) -> torch.dtype:
+        return next(self.parameters()).dtype
+
+    @property
+    def device(self) -> torch.device:
+        return next(self.parameters()).device
 
     def forward(
         self,
@@ -592,7 +558,6 @@ class GemmaForCausalLM(nn.Module):
         mask: Optional[torch.Tensor] = None,
         training: bool = False,
         norm_wo_embedding: bool = False,
-        **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         bs, seq_len = input_ids.size()
         if training:
@@ -633,16 +598,27 @@ class GemmaForCausalLM(nn.Module):
             freqs_cis = self.freqs_cis[: input_ids.shape[1]].to(
                 device=hidden_states.device
             )
-        if not training:
-            hidden_states = self.model(
+            
+        for i in range(self.n_layers):
+            layer = self.layers[str(i)]
+            hidden_states = layer(
                 hidden_states=hidden_states,
                 freqs_cis=freqs_cis,
-                kv_write_indices=kv_write_indices,
-                kv_caches=kv_caches,
+                kv_write_indices=None if kv_write_indices is None else kv_write_indices,
+                kv_cache=None if kv_caches is None else kv_caches[i],
                 mask=mask,
-                norm_wo_embedding=norm_wo_embedding,
             )
-            embedder_weight = self.embedder.weight
+        if embeddings is not None and norm_wo_embedding:
+            hidden_states = self.norm(hidden_states[:, 1:, :])
+        elif embeddings is not None:
+            hidden_states = self.norm(hidden_states)
+            hidden_states = hidden_states[:, 1:, :]
+        else:
+            hidden_states = self.norm(hidden_states)
+    
+        embedder_weight = self.embedder.weight
+            
+        if not training:
             if self.args.quant:
                 embedder_weight = (
                     embedder_weight * self.embedder.weight_scaler.unsqueeze(-1)
@@ -657,148 +633,12 @@ class GemmaForCausalLM(nn.Module):
             )
             return next_tokens, logits
         else:
-            hidden_states = self.model(
-                hidden_states=hidden_states,
-                freqs_cis=freqs_cis,
-                kv_write_indices=None,
-                kv_caches=None,
-                mask=mask,
-                norm_wo_embedding=(
-                    norm_wo_embedding if embeddings is not None else False
-                ),
-            )
-            embedder_weight = self.embedder.weight
-            # hidden_states (bs, seq_len, hidden_size); embedder_weight (vocab_size, hidden_size)
-            if embeddings is not None and not self.norm_wo_embedding:
-                hidden_states = hidden_states[:, 1:, :]
             logits = torch.matmul(
                 hidden_states,
                 torch.transpose(embedder_weight, 0, 1).to(device=hidden_states.device),
             )
             return logits
 
-    def generate(
-        self,
-        prompts: Union[str, Sequence[str]],
-        device: Any,
-        output_len: int = 100,
-        temperature: Union[float, None] = 0.95,
-        top_p: float = 1.0,
-        top_k: int = 100,
-        embeddings: Optional[torch.Tensor] = None,
-        norm_wo_embedding: bool = False,
-    ) -> Union[str, Sequence[str]]:
-        """Generates responses for given prompts using Gemma model."""
-        # If a single prompt is provided, treat it as a batch of 1.
-        is_str_prompt = isinstance(prompts, str)
-        if is_str_prompt:
-            prompts = [prompts]
-
-        batch_size = len(prompts)
-        prompt_tokens = [self.tokenizer.encode(prompt) for prompt in prompts]
-        min_prompt_len = min(len(p) for p in prompt_tokens)
-        max_prompt_len = max(len(p) for p in prompt_tokens)
-        max_seq_len = max_prompt_len + output_len
-        assert max_seq_len <= self.args.max_position_embeddings
-
-        # build KV caches
-        kv_caches = []
-        for _ in range(self.args.num_hidden_layers):
-            size = (
-                batch_size,
-                max_seq_len,
-                self.args.num_key_value_heads,
-                self.args.head_dim,
-            )
-            dtype = self.args.get_dtype()
-            k_cache = torch.zeros(size=size, dtype=dtype, device=device)
-            v_cache = torch.zeros(size=size, dtype=dtype, device=device)
-            kv_caches.append((k_cache, v_cache))
-
-        # prepare inputs
-        token_ids_tensor = torch.full(
-            (batch_size, max_seq_len), self.tokenizer.pad_id, dtype=torch.int64
-        )
-        input_ids_tensor = torch.full(
-            (batch_size, min_prompt_len), self.tokenizer.pad_id, dtype=torch.int64
-        )
-        for i, p in enumerate(prompt_tokens):
-            token_ids_tensor[i, : len(p)] = torch.tensor(p)
-            input_ids_tensor[i, :min_prompt_len] = torch.tensor(p[:min_prompt_len])
-        # TODO Fix pb with size when concatenating embeddings
-
-        token_ids_tensor = token_ids_tensor.to(device)
-        input_ids_tensor = input_ids_tensor.to(device)
-        prompt_mask_tensor = token_ids_tensor != self.tokenizer.pad_id
-        input_positions_tensor = torch.arange(0, min_prompt_len, dtype=torch.int64).to(
-            device
-        )
-        max_seq_len = max_seq_len if embeddings is None else max_seq_len + 1
-
-        mask_tensor = torch.full((1, 1, max_seq_len, max_seq_len), -2.3819763e38).to(
-            torch.float
-        )
-        mask_tensor = torch.triu(mask_tensor, diagonal=1).to(device)
-        curr_mask_tensor = mask_tensor.index_select(2, input_positions_tensor)
-        output_positions_tensor = torch.LongTensor([min_prompt_len - 1]).to(device)
-        temperatures_tensor = (
-            None
-            if not temperature
-            else torch.FloatTensor([temperature] * batch_size).to(device)
-        )
-        top_ps_tensor = torch.FloatTensor([top_p] * batch_size).to(device)
-        top_ks_tensor = torch.LongTensor([top_k] * batch_size).to(device)
-        output_index = torch.tensor(min_prompt_len, dtype=torch.int64).to(device)
-
-        # Prefill up to min_prompt_len tokens, then treat other prefill as
-        # decode and ignore output.
-        for i in range(max_seq_len - min_prompt_len):
-            next_token_ids, _ = self(
-                input_ids=input_ids_tensor,
-                input_positions=input_positions_tensor,
-                embeddings=embeddings,
-                kv_write_indices=None,
-                kv_caches=kv_caches,
-                mask=curr_mask_tensor,
-                output_positions=output_positions_tensor,
-                temperatures=temperatures_tensor,
-                top_ps=top_ps_tensor,
-                top_ks=top_ks_tensor,
-                norm_wo_embedding=norm_wo_embedding,
-                training=False,
-            )
-
-            curr_prompt_mask = prompt_mask_tensor.index_select(1, output_index).squeeze(
-                dim=1
-            )
-            curr_token_ids = token_ids_tensor.index_select(1, output_index).squeeze(
-                dim=1
-            )
-            output_token_ids = torch.where(
-                curr_prompt_mask, curr_token_ids, next_token_ids
-            ).unsqueeze(dim=1)
-            token_ids_tensor.index_copy_(1, output_index, output_token_ids)
-
-            input_ids_tensor = output_token_ids
-            input_positions_tensor = output_index.unsqueeze(dim=-1)
-            curr_mask_tensor = mask_tensor.index_select(2, input_positions_tensor)
-            output_positions_tensor = torch.tensor(0, dtype=torch.int64).to(device)
-            output_index = output_index + 1
-
-        # Detokenization.
-        token_ids = token_ids_tensor.tolist()
-        results = []
-        for i, tokens in enumerate(token_ids):
-            trimmed_output = tokens[
-                len(prompt_tokens[i]) : len(prompt_tokens[i]) + output_len
-            ]
-            if self.tokenizer.eos_id in trimmed_output:
-                eos_index = trimmed_output.index(self.tokenizer.eos_id)
-                trimmed_output = trimmed_output[:eos_index]
-            results.append(self.tokenizer.decode(trimmed_output))
-
-        # If a string was provided as input, return a string as output.
-        return results[0] if is_str_prompt else results
 
 
 @contextlib.contextmanager
