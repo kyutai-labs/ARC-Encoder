@@ -77,6 +77,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
         MaybeLora = maybe_lora(args.lora)
+
         self.output = MaybeLora(
             args.dim,
             args.vocab_size,
@@ -86,6 +87,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.softmax_fp32 = softmax_fp32
         self.embeds_pos = []
         self.n_local_layers = self.n_layers
+        self.for_embedding = False
 
     @property
     def dtype(self) -> torch.dtype:
@@ -194,12 +196,14 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 h[torch.tensor(self.pos_to_keep, dtype=torch.bool)]
             )  # type: ignore
         elif embeddings is not None:
-
             normalized_h = self.norm(h)[torch.tensor(self.pos_to_keep, dtype=torch.bool)]  # type: ignore
         else:
-
             normalized_h = self.norm(h)
         self.pos_to_keep = []
+
+        if self.for_embedding:
+            return normalized_h, seqlens
+
         return self.output(normalized_h).float()
 
     # Below functions serve for inference

@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from simple_parsing.helpers import Serializable
-from embed_llm.models.args import LoraArgs, MLPProjectArgs
+from embed_llm.models.args import LoraArgs, MLPProjectArgs, PoolingArgs
 from embed_llm.data.args import DataArgs
 
 
@@ -39,7 +39,9 @@ class WandbArgs(Serializable):
 @dataclass
 class Embedder(Serializable):
     dim: int = 4096
-    name: str = "NVEmbed"
+    name: str = ""
+    train: bool = False
+    pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
 
 
 @dataclass
@@ -93,7 +95,7 @@ class TrainArgs(Serializable):
     # mlp projector
     projector: MLPProjectArgs = field(default_factory=MLPProjectArgs)
 
-    # Embedder
+    # Pretrained embedder to use off the shelf
     embedder: Embedder = field(default_factory=Embedder)
 
     norm_wo_embeds: bool = False

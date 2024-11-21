@@ -246,6 +246,7 @@ class Transformer(nn.Module, LoRALoaderMixin):
         self.args = args
         self.vocab_size = args.vocab_size
         self.n_layers = args.n_layers
+        self.for_embedding = False
 
         self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
 
@@ -341,6 +342,9 @@ class Transformer(nn.Module, LoRALoaderMixin):
             h = self.norm(h)[:, 1:, :]  # type: ignore
         else:
             h = self.norm(h)
+
+        if self.for_embedding:
+            return h
 
         output = self.output(h).float()
         return output

@@ -490,7 +490,7 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
         self.embedder = Embedding(vocab_size, args.hidden_size, args.quant)
         self.sampler = Sampler(vocab_size, args)
         self.rope_theta = getattr(args, "rope_theta", 10000)
-
+        self.for_embedding = False
         self.vocab_size = args.vocab_size
         self.args = args
         self.layers = nn.ModuleDict()
@@ -616,6 +616,9 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
             hidden_states = hidden_states[:, 1:, :]
         else:
             hidden_states = self.norm(hidden_states)
+
+        if self.for_embedding:
+            return hidden_states
 
         embedder_weight = self.embedder.weight
 

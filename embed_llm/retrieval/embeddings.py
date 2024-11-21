@@ -19,7 +19,7 @@ def mean_pooling(model_output, attention_mask):
     )
 
 
-def get_embedder(model_name: str, device_map: str = "auto"):
+def get_pretrained_embedder(model_name: str, device_map: str = "auto"):
     if model_name == "GritLM":
         model = GritLM("GritLM/GritLM-7B", torch_dtype="auto", device_map="auto")
         return model

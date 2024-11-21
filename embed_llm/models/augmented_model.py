@@ -8,8 +8,8 @@ import json
 import safetensors
 import logging
 from embed_llm.training.checkpointing import Checkpointer
-from embed_llm.models.embedding_modules import MLP_project
-from embed_llm.retrieval.embeddings import encode_text, get_embedder
+from embed_llm.models.embedding_modules import MLP_project, PoolingModule
+from embed_llm.retrieval.embeddings import encode_text, get_pretrained_embedder
 from embed_llm.data.data_loader import Batch
 from embed_llm.models.args import LoraArgs
 from embed_llm.models.args import MLPProjectArgs, EmbedAugArgs
@@ -96,6 +96,7 @@ class EmbedAugModel(nn.Module):
         pipeline_args: EmbedAugArgs,
         llm: Models,
         max_seq_len: int | None = None,
+        trainable_embedder: Models | None = None,
     ):
         super().__init__()
         self.add_module("llm", llm)
@@ -105,6 +106,11 @@ class EmbedAugModel(nn.Module):
         self.norm_wo_embeds = pipeline_args.norm_wo_embeds
         self.training = pipeline_args.training
         self.mlp_project_args = pipeline_args.mlp_project
+        self.trainable_embedder = trainable_embedder
+        self.pooling_args = (
+            None if trainable_embedder is None else pipeline_args.pooling_module
+        )
+
         if "mistral" in self.llm_name:
             self.forward = partial(
                 self.forward_seq,
@@ -125,6 +131,15 @@ class EmbedAugModel(nn.Module):
         else:
             self.mlp_project = None
 
+        if self.trainable_embedder is not None:
+            self.pooling_module = PoolingModule(
+                args=self.pooling_args,
+                hidden_dim=pipeline_args.mlp_project.in_dim,
+                dtype=pipeline_args.param_dtype,
+            )
+        else:
+            self.pooling_module = None
+
     def forward_seq(
         self,
         x: torch.Tensor,
@@ -133,8 +148,15 @@ class EmbedAugModel(nn.Module):
         norm_wo_embeds: bool = False,
     ) -> torch.Tensor:
 
+        if self.trainable_embedder is not None:
+            embed_output, seqlens = self.trainable_embedder(
+                input_ids=x, embeddings=None, seqlens=seqlens
+            )
+            embeddings = self.pooling_module(x=embed_output, seqlens=seqlens)
+
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
+
         return self.llm.forward(
             input_ids=x,
             embeddings=embeddings,
@@ -151,8 +173,15 @@ class EmbedAugModel(nn.Module):
         norm_wo_embeds: bool = False,
     ) -> torch.Tensor:
 
+        if self.trainable_embedder is not None:
+            embed_output = self.trainable_embedder(
+                input_ids=x, embeddings=None, training=training
+            )
+            embeddings = self.pooling_module(x=embed_output)
+
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
+
         return self.llm.forward(
             input_ids=x,
             embeddings=embeddings,
@@ -190,6 +219,9 @@ class EmbedAugPipeline(nn.Module):
             pipeline_args=self.pipeline_args,
             llm=llm,
             max_seq_len=self.max_seq_len,
+            trainable_embedder=(
+                self.embedding_model if self.pipeline_args.trainable_embedder else None
+            ),
         )
 
     def store_model(self, model: nn.Module):
@@ -197,7 +229,7 @@ class EmbedAugPipeline(nn.Module):
 
     def prepare_forward(self, batch: Batch, batch_size: int) -> tuple:
 
-        if self.pipeline_args.w_embeds:
+        if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
             # To avoid OOM
             with torch.no_grad():
                 embeddings = []
@@ -230,6 +262,7 @@ class EmbedAugPipeline(nn.Module):
                 embeddings = torch.concatenate(embeddings, dim=0)
         else:
             embeddings = None
+
         if "mistral" in self.llm_name:
             x = torch.from_numpy(batch.x).cuda(non_blocking=True)
             y = torch.from_numpy(batch.y).cuda(non_blocking=True)
@@ -250,7 +283,6 @@ class EmbedAugPipeline(nn.Module):
                 pad_id=self.pad_token_id,
                 batch_size=batch_size,
             )
-
         seqlens = batch.sizes
         return x, y, y_mask, seqlens, embeddings
 
@@ -271,7 +303,7 @@ class EmbedAugPipeline(nn.Module):
         )
         mlp_path = ckpt_path + "/" + "MLP_projector"
 
-        embedding_model = get_embedder(embed_model_name, device_map=device)
+        embedding_model = get_pretrained_embedder(embed_model_name, device_map=device)
 
         llm_args, pipeline_args = load_args(
             Path(llm_path),
@@ -521,7 +553,8 @@ def load_args(
     pipe_path: str | None = None,
     norm_wo_embeds: bool = False,
     w_embeds: bool = False,
-) -> ModelsArgs:
+    trainable_embedder: bool = False,
+) -> tuple[ModelsArgs, EmbedAugArgs]:
 
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
 
@@ -589,6 +622,7 @@ def load_args(
             w_embeds=w_embeds,
             norm_wo_embeds=norm_wo_embeds,
             param_dtype=param_dtype,
+            trainable_embedder=trainable_embedder,
         )
     if isinstance(pipeline_args.param_dtype, str):
         pipeline_args.param_dtype = getattr(torch, pipeline_args.param_dtype)

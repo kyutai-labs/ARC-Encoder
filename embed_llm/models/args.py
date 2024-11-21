@@ -10,6 +10,14 @@ from embed_llm.models.lora import LoraArgs
 
 
 @dataclass
+class PoolingArgs(Serializable):
+    type: str = "eos"  # latent_attention, mean
+    r: int = 512  # Hidden dim of latent if latent attention pooling
+    n_heads: int = 8  # Number of heads in latent attention pooling
+    n_layers: int = 1
+
+
+@dataclass
 class MLPProjectArgs(Serializable):
     hidden_dim: int = 4096
     n_layers: int = 0
@@ -25,6 +33,8 @@ class EmbedAugArgs(Serializable):
     mlp_project: MLPProjectArgs = field(default_factory=MLPProjectArgs)
     training: bool = False
     param_dtype: torch.dtype = torch.bfloat16
+    trainable_embedder: bool = False
+    pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
 
 
 @dataclass

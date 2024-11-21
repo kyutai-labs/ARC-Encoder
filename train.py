@@ -16,7 +16,7 @@ from torch.autograd.profiler import profile, record_function
 import subprocess as sp
 
 from embed_llm.models.wrapped_models_training import load_training_model
-from embed_llm.retrieval.embeddings import get_embedder
+from embed_llm.retrieval.embeddings import get_pretrained_embedder
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.data.data_loader import build_data_loader
@@ -111,10 +111,7 @@ def _train(
 
     if is_torchrun():
         if run_dir.exists():
-            # raise RuntimeError(
-            #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
-            # )
-            print(
+            raise RuntimeError(
                 f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
             )
 
@@ -154,12 +151,18 @@ def _train(
             "Invalid folder path. Please set `args.initial_model` to a valid folder path."
         )
 
-    """ Load embedder model """
-    embedding_model = get_embedder(args.embedder.name, device_map="cuda")
-    # embedding_model.train() # Avoir OOM due to inference
-    embedding_model.config.max_length = (
-        embedding_model.config.max_length if args.seq_len is None else args.seq_len
-    )
+    """ Load embedder model or use the one from the LLM """
+    if args.embedder.train:
+        embedding_model = None
+    else:
+        assert (
+            args.embedder.name != ""
+        ), "`args.embedder.name` should be set to a valid value."
+        embedding_model = get_pretrained_embedder(args.embedder.name, device_map="cuda")
+        # embedding_model.train() # Avoir OOM due to inference
+        embedding_model.config.max_length = (
+            embedding_model.config.max_length if args.seq_len is None else args.seq_len
+        )
 
     """ Load LLM and tokenizers """
 
@@ -203,7 +206,13 @@ def _train(
             is_eval=True,
         )
         # pre-load all eval batches, resssto 20 batches * n_gpus
-        eval_batches = list(eval_data_loader)[:20]
+        eval_batches = []
+        while len(eval_batches) < 20:
+            batch = next(eval_data_loader)
+            if len(batch.sizes) > 70:
+                continue
+            else:
+                eval_batches.append(batch)
 
     # 9. Load optimizer
     optimizer = AdamW(
@@ -241,15 +250,7 @@ def _train(
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
-
-    sizes_per_batch = []
-    precise = []
-    for i in range(1000):
-        batch = next(train_data_loader)
-        sizes_per_batch.append(len(batch.sizes))
-        if 110 < i <= 115:
-            precise.append(len(batch.sizes))
-
+    
     while state.step < args.max_steps:
         state.start_step()
         is_last_step = state.step == args.max_steps
@@ -263,8 +264,9 @@ def _train(
             batch = next(train_data_loader)
 
             # Avoid OOM due to too many embeddings
-            if len(batch.sizes) > 70:
-                continue
+            while len(batch.sizes) > 70:
+                batch = next(train_data_loader)
+                print("Too many embeddings, skipping batch")
 
             """ Training loop for basic reconstruction"""
 
@@ -315,7 +317,7 @@ def _train(
         grad_norm = torch.tensor([0.0], device="cuda")
         for name, p in model.named_parameters():
             if p.requires_grad:
-                assert p.grad is not None
+                assert p.grad is not None, f"None grad for this param {name}"
                 grad_norm += torch.norm(p.grad).item() ** 2
 
         if torch.any(torch.isnan(grad_norm)).item():

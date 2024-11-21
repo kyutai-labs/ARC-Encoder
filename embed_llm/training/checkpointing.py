@@ -35,6 +35,8 @@ class Checkpointer:
     ):
         self.llm: nn.Module = model.llm
         self.mlp_project: nn.Module = model.mlp_project
+        self.trainable_embedder: nn.Module | None = model.trainable_embedder
+        self.pooling_module: nn.Module | None = model.pooling_module
         self.pipeline = pipeline
         self.llm_name = model.llm_name
         self.optimizer = optimizer
@@ -69,6 +71,14 @@ class Checkpointer:
     @staticmethod
     def _tmp(ckpt_dir: Path) -> Path:
         return ckpt_dir.with_name(f"tmp.{ckpt_dir.name}")
+
+    def write_trainable_embedder_params_info(self, tmp_dst: Path):
+        params_path = tmp_dst / "params.json"
+        with open(params_path, "w") as f:
+            model_args = self.trainable_embedder.args.to_dict()
+            pooling_args = self.pooling_module.args.to_dict()
+            model_args["pooling_args"] = pooling_args
+            f.write(json.dumps(model_args, indent=4))
 
     def write_llm_params_info(self, tmp_dst: Path):
         params_path = tmp_dst / "params.json"
@@ -185,6 +195,21 @@ class Checkpointer:
                     if is_trainable_fsdp(m)
                 }
 
+            if self.trainable_embedder is None:
+                trainable_embedder_modules = {}
+                pooling_modules = {}
+            else:
+                trainable_embedder_modules = {
+                    k: m
+                    for k, m in self.trainable_embedder.named_modules()
+                    if is_trainable_fsdp(m)
+                }
+                pooling_modules = {
+                    k: m
+                    for k, m in self.pooling_module.named_modules()
+                    if is_trainable_fsdp(m)
+                }
+
             llm_states = {}
             for key, module in llm_modules.items():
                 assert isinstance(
@@ -202,6 +227,7 @@ class Checkpointer:
                             for k, v in module.state_dict().items()
                         }
                     )
+
             mlp_project_states = {}
             for key, module in mlp_project_modules.items():
                 assert isinstance(
@@ -219,6 +245,43 @@ class Checkpointer:
                             for k, v in module.state_dict().items()
                         }
                     )
+
+            trainable_embedder_states = {}
+            for key, module in trainable_embedder_modules.items():
+                assert isinstance(
+                    module, FullyShardedDataParallel
+                ), "`module` should be an instance of `FullyShardedDataParallel`"
+                parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                    "_checkpoint_wrapped_module.", ""
+                )
+                with module.summon_full_params(
+                    module, writeback=True, offload_to_cpu=offload_to_cpu
+                ):
+                    trainable_embedder_states.update(
+                        {
+                            f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                            for k, v in module.state_dict().items()
+                        }
+                    )
+
+            pooling_modules_states = {}
+            for key, module in pooling_modules.items():
+                assert isinstance(
+                    module, FullyShardedDataParallel
+                ), "`module` should be an instance of `FullyShardedDataParallel`"
+                parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                    "_checkpoint_wrapped_module.", ""
+                )
+                with module.summon_full_params(
+                    module, writeback=True, offload_to_cpu=offload_to_cpu
+                ):
+                    pooling_modules_states.update(
+                        {
+                            f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                            for k, v in module.state_dict().items()
+                        }
+                    )
+
         else:
             # make sure you have enough CPU RAM available to save the full model
             assert isinstance(
@@ -228,11 +291,17 @@ class Checkpointer:
                 self.mlp_project, FullyShardedDataParallel | None
             ), "`self.mlp_project` should be an instance of `FullyShardedDataParallel`"
 
+            assert isinstance(
+                self.trainable_embedder, FullyShardedDataParallel | None
+            ), "`self.trainable_embedder` should be an instance of `FullyShardedDataParallel`"
+
             with self.llm.summon_full_params(
                 self.llm, writeback=True, offload_to_cpu=offload_to_cpu
             ):
                 llm_states = self.get_non_lora_states(self.llm.state_dict())
                 llm_states = {k: v.to(dtype=save_dtype) for k, v in llm_states.items()}
+
+            mlp_project_states = {}
             if self.mlp_project is not None:
                 with self.mlp_project.summon_full_params(
                     self.mlp_project, writeback=True, offload_to_cpu=offload_to_cpu
@@ -244,9 +313,43 @@ class Checkpointer:
                         k: v.to(dtype=save_dtype) for k, v in mlp_project_states.items()
                     }
 
+            if self.trainable_embedder is not None:
+
+                trainable_embedder_states = {}
+                with self.trainable_embedder.summon_full_params(
+                    self.trainable_embedder,
+                    writeback=True,
+                    offload_to_cpu=offload_to_cpu,
+                ):
+                    trainable_embedder_states.update(
+                        self.get_non_lora_states(self.trainable_embedder.state_dict())
+                    )
+                    trainable_embedder_states = {
+                        k: v.to(dtype=save_dtype)
+                        for k, v in trainable_embedder_states.items()
+                    }
+                pooling_modules_states = {}
+                with self.pooling_modules.summon_full_params(
+                    self.pooling_modules, writeback=True, offload_to_cpu=offload_to_cpu
+                ):
+                    pooling_modules_states.update(
+                        self.get_non_lora_states(self.pooling_modules.state_dict())
+                    )
+                    pooling_modules_states = {
+                        k: v.to(dtype=save_dtype)
+                        for k, v in pooling_modules_states.items()
+                    }
+
         llm_states = dict(sorted(llm_states.items()))
         mlp_project_states = dict(sorted(mlp_project_states.items()))
-        return llm_states, mlp_project_states
+        pooling_modules_states = dict(sorted(pooling_modules_states.items()))
+        trainable_embedder_states = dict(sorted(trainable_embedder_states.items()))
+        return (
+            llm_states,
+            mlp_project_states,
+            trainable_embedder_states,
+            pooling_modules_states,
+        )
 
     @torch.no_grad()
     def save_checkpoint(
@@ -257,6 +360,7 @@ class Checkpointer:
         llm_dst, mlp_project_dst = self.dst_dir
         tmp_llm_dst = self._tmp(llm_dst)
         tmp_mlp_project_dst = self._tmp(mlp_project_dst)
+
         main_logger_info(
             f"Dumping checkpoint in {llm_dst} and {mlp_project_dst} using tmp name: {tmp_llm_dst.name} and {tmp_mlp_project_dst.name}"
         )
@@ -264,12 +368,24 @@ class Checkpointer:
         assert (
             not self.dst_dir[0].exists() and not self.dst_dir[1].exists()
         ), f"dst exists {self.dst_dir}"
+
         tmp_llm_dst.mkdir(parents=True, exist_ok=True)
         tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
 
-        llm_states, mlp_project_states = self.retrieve_save_states(
-            save_only_lora, dtype
-        )
+        if self.trainable_embedder is not None:
+            tmp_trainable_embedder_dst = self._tmp(
+                llm_dst.parent / "trainable_embedder"
+            )
+            tmp_pooling_module_dst = self._tmp(llm_dst.parent / "pooling_module")
+            tmp_trainable_embedder_dst.mkdir(parents=True, exist_ok=True)
+            tmp_pooling_module_dst.mkdir(parents=True, exist_ok=True)
+
+        (
+            llm_states,
+            mlp_project_states,
+            trainable_embedder_states,
+            pooling_module_states,
+        ) = self.retrieve_save_states(save_only_lora, dtype)
 
         barrier()
 
@@ -287,9 +403,27 @@ class Checkpointer:
                 self.consolidated_path(
                     tmp_mlp_project_dst,
                     use_safetensors=True,
-                    save_only_lora=save_only_lora,
+                    save_only_lora=False,
                 ),  # always use safetensors for checkpointing
             )
+            if self.trainable_embedder is not None:
+                safetensors.torch.save_file(
+                    trainable_embedder_states,
+                    self.consolidated_path(
+                        tmp_trainable_embedder_dst,
+                        use_safetensors=True,
+                        save_only_lora=save_only_lora,
+                    ),  # always use safetensors for checkpointing
+                )
+                safetensors.torch.save_file(
+                    pooling_module_states,
+                    self.consolidated_path(
+                        tmp_pooling_module_dst,
+                        use_safetensors=True,
+                        save_only_lora=False,
+                    ),  # always use safetensors for checkpointing
+                )
+                self.write_trainable_embedder_params_info(tmp_llm_dst.parent)
 
             self.write_llm_params_info(tmp_llm_dst)
             self.write_mlp_project_params_info(tmp_mlp_project_dst)

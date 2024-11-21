@@ -4,9 +4,15 @@ data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
+
 embedder:
   dim: 4096
-  name: NVEmbed
+  name: Mistral7B # put '' to use trainable embedder
+  train: true # put true to train embedder
+  pooling_module: # see `embedders.py` for available pooling modules
+    type: latent_attention # mean, cls ...
+
+    
 eval_freq: 50
 exp_name: debug_mistral3
 llm_name: Mistral7B
@@ -18,7 +24,6 @@ lora:
 max_steps: 1000
 model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
 no_eval: false
-norm_wo_embeds: false
 optim:
   final_lr: 1.0e-10
   initial_lr: 1.0e-20
@@ -33,7 +38,9 @@ run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 save_adapters: true
 seed: 0
 seq_len: 512
-w_embeds: true
+norm_wo_embeds: false # whether to normalize the output of the llm without the embeddings
+w_embeds: true # Whether to use document embeddings as preconditioning for text generation
+
 # wandb:
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
 #   offline: false

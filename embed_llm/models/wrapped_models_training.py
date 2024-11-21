@@ -15,7 +15,7 @@ from embed_llm.training.mixed_precision import (
     bfSixteen_mixed,
     fpSixteen,
 )
-from embed_llm.models.args import LoraArgs
+from embed_llm.models.args import LoraArgs, EmbedAugArgs
 from embed_llm.training.distributed import (
     get_rank,
     get_world_size,
@@ -24,6 +24,7 @@ from embed_llm.models.augmented_model import (
     EmbedAugPipeline,
     load_state_dict,
     load_args,
+    ModelsArgs,
 )
 from embed_llm.training.args import TrainArgs
 
@@ -162,12 +163,24 @@ def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
                         torch.nn.init.zeros_(param)
 
 
+def initialize_latent_attention(model: torch.nn.Module, param_dtype: torch.dtype):
+    for m_name, module in model.named_modules():
+        if all(p.is_meta for p in module.parameters()):
+            for p_name, param in module.named_parameters():
+                if "latentattention" in m_name:
+                    module._parameters[p_name] = torch.nn.Parameter(
+                        torch.empty_like(param, device="cpu", dtype=param_dtype)
+                    )
+                    param = module._parameters[p_name]
+                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+
+
 def load_training_model(
     args: TrainArgs,
     folder: Path,
     lora: LoraArgs,
     llm_name: str,
-    embedding_model: object,
+    embedding_model: object | None,
     variant: None | str = None,
     checkpoint: bool = False,
     param_dtype: torch.dtype = torch.bfloat16,
@@ -185,11 +198,149 @@ def load_training_model(
         norm_wo_embeds=args.norm_wo_embeds,
         w_embeds=args.w_embeds,
         param_dtype=param_dtype,
+        trainable_embedder=args.embedder.train,
+    )
+
+    model, tokenizer, embed_dim = load_llm_model(
+        llm_name=llm_name,
+        llm_args=llm_args,
+        pipeline_args=pipeline_args,
+        args=args,
+        folder=folder,
+        checkpoint=checkpoint,
+        param_dtype=param_dtype,
     )
 
     pipeline_args.mlp_project = args.projector
     if not args.w_embeds:
         assert args.projector.n_layers == 0, "Only no MLP if no embeddings."
+
+    if args.embedder.train:
+        llm_embedder, _, llm_embed_dim = load_llm_model(
+            llm_name=args.embedder.name,
+            llm_args=llm_args,
+            pipeline_args=pipeline_args,
+            args=args,
+            folder=folder,
+            checkpoint=checkpoint,
+            param_dtype=param_dtype,
+        )
+
+        # Setting llm to output embeddings
+        llm_embedder.for_embedding = True
+
+        try:
+            del llm_embedder.output
+        except AttributeError:
+            print("No output to delete")
+
+        embedding_model = llm_embedder
+        # Hidden dim of the embedder
+        pipeline_args.mlp_project.in_dim = llm_embed_dim
+        pipeline_args.pooling_module = args.embedder.pooling_module
+
+    if not args.embedder.train:
+        # If using pretrained embedder
+        pipeline_args.mlp_project.in_dim = args.embedder.dim
+
+    # Hidden dim of the llm
+    pipeline_args.mlp_project.out_dim = embed_dim
+
+    augmented_pipeline = EmbedAugPipeline(
+        llm_name=llm_name,
+        pipeline_args=pipeline_args,
+        tokenizer=tokenizer,
+        embed_model_name=args.embedder.name,
+        embedding_model=embedding_model,
+        pad_token_id=tokenizer.pad_id,
+        max_seq_len=max_seq_len,
+    )
+
+    augmented_model = augmented_pipeline.get_model(llm=model)
+
+    if get_rank() == 0:
+
+        if lora.enable:
+            logger.info("Initializing lora layers ...")
+            # initialize LoRA layers
+            initialize_lora_parameters(augmented_model.llm, param_dtype)
+
+        if augmented_model.mlp_project is not None:
+            initialize_mlp_project(augmented_model.mlp_project, param_dtype)
+
+        if (
+            augmented_model.pooling_args is not None
+            and augmented_model.pooling_args.type == "latent_attention"
+        ):
+            initialize_latent_attention(augmented_model.pooling_module, param_dtype)
+
+        assert not any(
+            p.is_meta for p in model.parameters()
+        ), "All parameters should be initialized by now"
+
+        assert all(
+            p.dtype == param_dtype for p in model.parameters()
+        ), f"All parameters should be on {param_dtype}"
+
+        logger.info("Finished initialization!")
+        param_init_fn = None
+    else:
+
+        def param_init_fn(m):
+            m.to_empty(device=torch.cuda.current_device(), recurse=False)
+            m.to(param_dtype)
+
+        assert all(
+            p.is_meta for p in model.parameters()
+        ), "All parameters should be on meta"
+
+    torch.distributed.barrier()
+
+    # only finetune LoRA parameters and freeze before wrapping
+    if lora.enable:
+        for name, param in augmented_model.named_parameters():
+            if "lora" in name or "mlp_project" in name or "pooling_module" in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+    else:
+        for name, param in augmented_model.named_parameters():
+            param.requires_grad = True
+
+    auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
+
+    main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
+
+    wrapped_model = FullyShardedDataParallel(
+        augmented_model,
+        sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
+        auto_wrap_policy=auto_wrap_policy,
+        backward_prefetch=BackwardPrefetch.BACKWARD_PRE,  # Default param
+        mixed_precision=bfSixteen_mixed if args.mixed_precision else bfSixteen,
+        limit_all_gathers=True,
+        device_id=torch.cuda.current_device(),
+        sync_module_states=True,  # saves cpu memory by loading pretrained model on rank0 only, not working with False
+        param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
+    )
+
+    main_logger_info("Model sharded!")
+    log_train_params(wrapped_model)
+
+    return (
+        augmented_pipeline,
+        wrapped_model,
+    )
+
+
+def load_llm_model(
+    llm_name: str,
+    llm_args: ModelsArgs,
+    pipeline_args: EmbedAugArgs,
+    args: TrainArgs,
+    folder: Path,
+    checkpoint: bool,
+    param_dtype: torch.dtype,
+) -> tuple[torch.nn.Module, Tokenizer, int]:
 
     if "mistral" in llm_name.lower():
         tokenizer = load_mistral_tokenizer(folder).instruct_tokenizer.tokenizer
@@ -247,84 +398,4 @@ def load_training_model(
     else:
         raise ValueError(f"Model name {llm_name} not recognized.")
 
-    pipeline_args.mlp_project.in_dim = args.embedder.dim
-    pipeline_args.mlp_project.out_dim = embed_dim
-
-    augmented_pipeline = EmbedAugPipeline(
-        llm_name=llm_name,
-        pipeline_args=pipeline_args,
-        tokenizer=tokenizer,
-        embed_model_name=args.embedder.name,
-        embedding_model=embedding_model,
-        pad_token_id=tokenizer.pad_id,
-        max_seq_len=max_seq_len,
-    )
-
-    augmented_model = augmented_pipeline.get_model(llm=model)
-
-    if get_rank() == 0:
-
-        if lora.enable:
-            logger.info("Initializing lora layers ...")
-            # initialize LoRA layers
-            initialize_lora_parameters(augmented_model.llm, param_dtype)
-
-        if augmented_model.mlp_project is not None:
-            initialize_mlp_project(augmented_model.mlp_project, param_dtype)
-
-        assert not any(
-            p.is_meta for p in model.parameters()
-        ), "All parameters should be initialized by now"
-
-        assert all(
-            p.dtype == param_dtype for p in model.parameters()
-        ), f"All parameters should be on {param_dtype}"
-
-        logger.info("Finished initialization!")
-        param_init_fn = None
-    else:
-
-        def param_init_fn(m):
-            m.to_empty(device=torch.cuda.current_device(), recurse=False)
-            m.to(param_dtype)
-
-        assert all(
-            p.is_meta for p in model.parameters()
-        ), "All parameters should be on meta"
-
-    torch.distributed.barrier()
-
-    # only finetune LoRA parameters and freeze before wrapping
-    if lora.enable:
-        for name, param in augmented_model.named_parameters():
-            if "lora" in name or "mlp_project" in name:
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
-    else:
-        for name, param in augmented_model.named_parameters():
-            param.requires_grad = True
-
-    auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
-
-    main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
-
-    wrapped_model = FullyShardedDataParallel(
-        augmented_model,
-        sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
-        auto_wrap_policy=auto_wrap_policy,
-        backward_prefetch=BackwardPrefetch.BACKWARD_PRE,  # Default param
-        mixed_precision=bfSixteen_mixed if args.mixed_precision else bfSixteen,
-        limit_all_gathers=True,
-        device_id=torch.cuda.current_device(),
-        sync_module_states=True,  # saves cpu memory by loading pretrained model on rank0 only, not working with False
-        param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
-    )
-
-    main_logger_info("Model sharded!")
-    log_train_params(wrapped_model)
-
-    return (
-        augmented_pipeline,
-        wrapped_model,
-    )
+    return model, tokenizer, embed_dim
