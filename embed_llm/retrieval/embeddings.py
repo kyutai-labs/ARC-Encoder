@@ -42,7 +42,7 @@ def get_embedder(model_name: str, device_map: str = "auto"):
 def encode_text(
     text: list[str] | str,
     model_name: str,
-    model: GritLM | AutoModel | None = None,
+    model: GritLM | AutoModel,
     query_embedding: bool = True,
     tokenizer: AutoTokenizer | None = None,
     device: str = "cpu",
@@ -104,7 +104,6 @@ def encode_text(
         raise ValueError(f"Unknown model name {model_name}")
 
 
-# TODO: Create a dataset format with each row is a dictionary with key 'text' and value a list of passages, each passage must be useful
 # Maybe modify truncation
 def generate_embeddings(
     model_name: str,

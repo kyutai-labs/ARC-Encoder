@@ -9,8 +9,13 @@ import torch.cuda
 import torch.distributed as dist
 from torch.optim import AdamW, lr_scheduler
 from functools import partial
-from embed_llm.models.wrapped_models_training import load_training_model
+import time
 
+# Debugging
+from torch.autograd.profiler import profile, record_function
+import subprocess as sp
+
+from embed_llm.models.wrapped_models_training import load_training_model
 from embed_llm.retrieval.embeddings import get_embedder
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.checkpointing import Checkpointer
@@ -57,6 +62,14 @@ def main_logger_info(message: str) -> None:
         logger.info(message)
 
 
+# Profiling memory
+def get_gpu_memory():
+    command = "nvidia-smi"
+    memory_free_info = sp.check_output(command.split()).decode("ascii")
+    # memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
+    return memory_free_info
+
+
 def train(config: str | dict):
     if isinstance(config, str):
         args: TrainArgs = TrainArgs.load(config, drop_extra_fields=False)
@@ -101,7 +114,9 @@ def _train(
             # raise RuntimeError(
             #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
             # )
-            print("Run dir already exists, removing it")
+            print(
+                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
+            )
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -140,13 +155,12 @@ def _train(
         )
 
     """ Load embedder model """
-    print(f"Before embedder {get_rank()}", torch.cuda.memory_allocated() / GB)
-    embedding_model = get_embedder(args.embedder.name, device_map="auto")
-    embedding_model.train() # Avoir OOM due to inference
+    embedding_model = get_embedder(args.embedder.name, device_map="cuda")
+    # embedding_model.train() # Avoir OOM due to inference
     embedding_model.config.max_length = (
         embedding_model.config.max_length if args.seq_len is None else args.seq_len
     )
-    print(f"After embedder {get_rank()}", torch.cuda.memory_allocated() / GB)
+
     """ Load LLM and tokenizers """
 
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
@@ -165,7 +179,6 @@ def _train(
         variant=args.variant if hasattr(args, "variant") else None,
     )
     main_logger_info("Model loading done")
-    print(f"After model {get_rank()}", torch.cuda.memory_allocated() / GB)
     """ Load  Dataloader"""
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
@@ -177,7 +190,7 @@ def _train(
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
     )
-    print(f"After dataloader {get_rank()}", torch.cuda.memory_allocated() / GB)
+
     if not args.no_eval:
         eval_data_loader = build_data_loader(
             tokenizer=pipeline.tokenizer,
@@ -189,9 +202,8 @@ def _train(
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
         )
-        # pre-load all eval batches, restrain to 20 batches * n_gpus
+        # pre-load all eval batches, resssto 20 batches * n_gpus
         eval_batches = list(eval_data_loader)[:20]
-    print(f"After eval dataloader {get_rank()}", torch.cuda.memory_allocated() / GB)
 
     # 9. Load optimizer
     optimizer = AdamW(
@@ -225,12 +237,18 @@ def _train(
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
-
     prepare_batch_fn = partial(pipeline.prepare_forward, batch_size=args.batch_size)
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
-    print(f"After train set up {get_rank()}", torch.cuda.memory_allocated() / GB)
+
+    sizes_per_batch = []
+    precise = []
+    for i in range(1000):
+        batch = next(train_data_loader)
+        sizes_per_batch.append(len(batch.sizes))
+        if 110 < i <= 115:
+            precise.append(len(batch.sizes))
 
     while state.step < args.max_steps:
         state.start_step()
@@ -244,17 +262,24 @@ def _train(
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
 
+            # Avoid OOM due to too many embeddings
+            if len(batch.sizes) > 70:
+                continue
+
             """ Training loop for basic reconstruction"""
+
+            # start_time = time.time()
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
-            print(
-                f"After preparing the batch {get_rank()}",
-                torch.cuda.memory_allocated() / GB,
-            )
-            embeddings = embeddings.detach() if embeddings is not None else None
+
+            # if get_rank() == 0:
+            #     print('GPU MEMORY \n', get_gpu_memory())
+
+            # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
+            # with profile(use_cuda = True) as prof:
+
             output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
-            print(
-                f"After forward pass {get_rank()}", torch.cuda.memory_allocated() / GB
-            )
+
+            # print(prof.key_averages().table(sort_by="cuda_time_total"))
 
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()

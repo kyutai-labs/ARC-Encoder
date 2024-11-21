@@ -198,21 +198,38 @@ class EmbedAugPipeline(nn.Module):
     def prepare_forward(self, batch: Batch, batch_size: int) -> tuple:
 
         if self.pipeline_args.w_embeds:
+            # To avoid OOM
             with torch.no_grad():
-                embeddings = (
-                    encode_text(
-                        batch.texts,
-                        self.embed_model_name,
-                        self.embedding_model,
-                        query_embedding=False,
-                        device="cuda",
+                embeddings = []
+                subbatch = []
+                # Maximum not to cause memory errors
+                subbatch_size = 16
+                for i, text in enumerate(batch.texts):
+                    subbatch.append(text)
+                    if len(subbatch) == subbatch_size:
+                        embeddings.append(
+                            encode_text(
+                                subbatch,
+                                model_name=self.embed_model_name,
+                                model=self.embedding_model,
+                                query_embedding=False,
+                                device=self.embedding_model.device,
+                            ).type(self.pipeline_args.param_dtype)
+                        )
+                        subbatch = []
+                if len(subbatch) > 0:
+                    embeddings.append(
+                        encode_text(
+                            subbatch,
+                            model_name=self.embed_model_name,
+                            model=self.embedding_model,
+                            query_embedding=False,
+                            device=self.embedding_model.device,
+                        ).type(self.pipeline_args.param_dtype)
                     )
-                    .type(self.pipeline_args.param_dtype)
-                    .detach()
-                )
+                embeddings = torch.concatenate(embeddings, dim=0)
         else:
             embeddings = None
-
         if "mistral" in self.llm_name:
             x = torch.from_numpy(batch.x).cuda(non_blocking=True)
             y = torch.from_numpy(batch.y).cuda(non_blocking=True)

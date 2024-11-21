@@ -21,7 +21,6 @@ config/experiments/mistral/lr0.0005Mistral7B.yaml
 config/experiments/mistral/lr5e-05Mistral7B.yaml
 config/experiments/mistral/n_layers0Mistral7B.yaml
 config/experiments/mistral/n_layers1Mistral7B.yaml
-config/experiments/mistral/n_layers2Mistral7B.yaml
 config/experiments/mistral/no_embed_bs16_lr5e-5Mistral7B88d0b42410aa4ec12025.yaml
 )
 

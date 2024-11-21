@@ -1,4 +1,4 @@
-batch_size: 16
+batch_size: 32
 ckpt_freq: 10
 data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl

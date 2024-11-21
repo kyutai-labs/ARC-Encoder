@@ -45,11 +45,9 @@ def evaluate(
 
     eval_loss = torch.tensor(0.0).cuda()
     main_logger_info(f"Start eval for {len(batches)} batches")
-    for batch in batches:
+    for i, batch in enumerate(batches):
         with torch.no_grad():
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
-
-            # set training to True to not use KV cache and inference code
             output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
 
             if len(output.size()) > 2:
