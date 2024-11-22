@@ -37,11 +37,12 @@ data:
 # Training and Optim
 seq_len: 512
 batch_size: 8
+num_microbatches: 1
 max_steps: 10000
 optim:
   max_lr: 5.e-6
   weight_decay: 0.1
-  pct_start: 0.2 # The percentage of the cycle (in number of steps) spent increasing the learning rate. 
+  warm_up_steps: 2000 
   initial_lr: 1.e-20 # cannot be strictly 0
   final_lr: 1.e-10
 
@@ -53,10 +54,6 @@ eval_freq: 500
 no_eval: False
 ckpt_freq: 500
 save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not working for now 
-
-#  weight = up_weight @ down_weight * self.scaling
-# RuntimeError: The tensor has a non-zero number of elements, but its data is not allocated yet. Caffe2 uses a lazy allocation, so you will need to call mutable_data() or raw_mutable_data() to actually allocate memory.
-
 
 # Monitoring
 wandb: 

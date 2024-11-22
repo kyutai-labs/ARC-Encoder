@@ -102,7 +102,6 @@ def _train(
         logger.error(
             "PyTorch environment is not correctly initialized. This message should only be displayed when testing."
         )
-
     # 2. Init run dir
     main_logger_info(f"Run dir: {args.run_dir}")
     run_dir = (
@@ -114,6 +113,7 @@ def _train(
             raise RuntimeError(
                 f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
             )
+            # print(f"Run dir {run_dir} already exists. Removing it.")
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -199,15 +199,15 @@ def _train(
             tokenizer=pipeline.tokenizer,
             args=args.data,
             seq_len=args.seq_len,
-            batch_size=args.batch_size,
+            batch_size=args.batch_size // 4,  # To avoid OOM
             seed=None,
             rank=get_rank(),  # DDP rank
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
         )
-        # pre-load all eval batches, resssto 20 batches * n_gpus
+        # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
         eval_batches = []
-        while len(eval_batches) < 20:
+        while len(eval_batches) < 40:
             batch = next(eval_data_loader)
             if len(batch.sizes) > 70:
                 continue
@@ -223,11 +223,14 @@ def _train(
         weight_decay=args.optim.weight_decay,
     )
 
+    assert (
+        args.max_steps > args.optim.warm_up_steps
+    ), "Max steps should be greater than 0"
     scheduler = lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=args.optim.max_lr,
         total_steps=args.max_steps,
-        pct_start=args.optim.pct_start,
+        pct_start=float(args.optim.warm_up_steps) / args.max_steps,
         anneal_strategy="cos",
         div_factor=args.optim.max_lr / args.optim.initial_lr,
         final_div_factor=args.optim.max_lr / args.optim.final_lr,
@@ -250,7 +253,13 @@ def _train(
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
-    
+
+    # if get_rank() == 0:
+    #     for name, param in model.named_parameters():
+    #         if "pooling" in name:
+    #             if param.requires_grad:
+    #                 print("REQUIRE GRADS", name, param.size())
+
     while state.step < args.max_steps:
         state.start_step()
         is_last_step = state.step == args.max_steps

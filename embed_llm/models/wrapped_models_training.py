@@ -26,6 +26,7 @@ from embed_llm.models.augmented_model import (
     load_args,
     ModelsArgs,
 )
+from embed_llm.models.embedding_modules import LatentAttention
 from embed_llm.training.args import TrainArgs
 
 # Mistral specifics
@@ -63,6 +64,31 @@ def main_logger_info(message: str) -> None:
         logger.info(message)
 
 
+# def gather_policy_fn(
+#         module: torch.nn.Module,
+#         recurse: bool,
+#         nonwrapped_numel: int,
+#         policies) -> bool | dict:
+#         """
+#         A policy that wraps ``module`` if any policy in the passed in iterable of
+#         ``policies`` returns ``True``.
+#         """
+#         bool_outputs = []
+#         dict_outputs = []
+#         for policy in policies:
+#             output = policy(module=module, recurse=recurse, nonwrapped_numel=nonwrapped_numel)
+#             if isinstance(output, bool):
+#                 bool_outputs.append(output)
+#             elif isinstance(output, dict):
+#                 dict_outputs.append(output)
+#             else:
+#                 raise ValueError(f"Policy {policy} returned an unexpected type {type(output)}")
+#         if len(dict_outputs) ==0 :
+#             return any(bool_outputs)
+#         else:
+#             return dict_outputs[0]
+
+
 def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     """
     This function instantiates the FSDP wrap policy.
@@ -94,13 +120,26 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
             and module.weight.requires_grad
         ):
             return True
-        return False
+        else:
+            return False
 
     # For LoRA training, trainable and non-trainable parameters need to be put into
     # different FSDP groups
     fsdp_lora_policy = functools.partial(
         torch_wrap.lambda_auto_wrap_policy, lambda_fn=lambda_policy_fn
     )
+
+    # def latent_attention_policy(module):
+    #     if isinstance(module, LatentAttention):
+    #         return {"sharding_strategy": ShardingStrategy.SHARD_GRAD_OP}
+    #     elif (
+    #         len(list(module.named_children())) == 0
+    #         and getattr(module, "weight", None) is not None
+    #         and module.weight.requires_grad
+    #     ):
+    #         return True
+    #     else:
+    #         return False
 
     policies = [
         fsdp_lora_policy,
@@ -109,10 +148,17 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
 
     return functools.partial(torch_wrap._or_policy, policies=policies)
 
+    # policies = [
+    #     torch_wrap.CustomPolicy(latent_attention_policy),
+    #     fsdp_lora_policy,
+    #     transformer_block_wrap_policy,
+    # ]
+
+    # return functools.partial(gather_policy_fn, policies=policies)
+
 
 def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
     world_size = get_world_size()
-
     num_params = world_size * sum(p.numel() for p in model.parameters())
     num_train_params = world_size * sum(
         p.numel() for p in model.parameters() if p.requires_grad
@@ -156,7 +202,6 @@ def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
                         torch.empty_like(param, device="cpu", dtype=param_dtype)
                     )
                     param = module._parameters[p_name]
-
                     if m_name.split(".")[-1] == "layer1":
                         torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
                     elif m_name.split(".")[-1] == "layer2":
@@ -321,9 +366,20 @@ def load_training_model(
         device_id=torch.cuda.current_device(),
         sync_module_states=True,  # saves cpu memory by loading pretrained model on rank0 only, not working with False
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
+        # use_orig_params= ( True if args.embedder.train and
+        #                   args.embedder.pooling_module.type == "latent_attention"
+        #                   else False )
     )
+    #     ignored_modules=(
+    #         [LatentAttention()]
+    #         if args.embedder.train
+    #         and args.embedder.pooling_module.type == "latent_attention"
+    #         else None
+    #     ),  # LatentAttention are not sharded
+    # )
 
     main_logger_info("Model sharded!")
+
     log_train_params(wrapped_model)
 
     return (

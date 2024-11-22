@@ -11,7 +11,7 @@ from embed_llm.data.args import DataArgs
 class OptimArgs(Serializable):
     max_lr: float = 1e-4
     weight_decay: float = 0.1
-    pct_start: float = 0.05
+    warm_up_steps: int = 2000
     initial_lr: float = 0
     final_lr: float = 1e-5
 

@@ -31,7 +31,7 @@ def get_pretrained_embedder(model_name: str, device_map: str = "auto"):
         model = AutoModel.from_pretrained(
             "nvidia/NV-Embed-v2",
             trust_remote_code=True,
-            device_map="auto",
+            device_map=device_map,
             torch_dtype="bfloat16",
         )
         return model
@@ -114,7 +114,7 @@ def generate_embeddings(
     partition: int = 0,
     checkpoint: int = 1000,
 ):
-    model = get_embedder(model_name)
+    model = get_pretrained_embedder(model_name)
     os.makedirs(os.path.join(output_path, model_name), exist_ok=True)
 
     size_partition = len(dataset) // n_gpu

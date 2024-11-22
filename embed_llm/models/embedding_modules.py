@@ -83,8 +83,8 @@ class MLP_project(nn.Module):
 class LatentAttention(nn.Module):
     def __init__(
         self,
-        r: int,
-        hidden_dim: int,
+        r: int = 512,
+        hidden_dim: int = 4096,
         n_heads: int = 8,
         n_layers: int = 1,
         dtype: torch.dtype = torch.bfloat16,
@@ -93,12 +93,15 @@ class LatentAttention(nn.Module):
         self.r = r
         self.n_layers = n_layers
         self.n_heads = n_heads
-        self.mlp = MLP_block(
-            in_dim=hidden_dim, out_dim=hidden_dim, act="gelu", dtype=dtype
-        )
-        self.kv_latent = nn.Parameter(torch.randn(r, hidden_dim), requires_grad=True)
+        self.mlp_layers = nn.ModuleList()
+        for _ in range(n_layers):
+            self.mlp_layers.append(
+                MLP_block(
+                    in_dim=hidden_dim, out_dim=hidden_dim, act="gelu", dtype=dtype
+                )
+            )
+        self.kv_latent = nn.Linear(hidden_dim, r, dtype=dtype, bias=False)
         self.scale = r**-0.5
-
         self.wo = nn.Linear(hidden_dim, hidden_dim, dtype=dtype, bias=False)
         self.wq = nn.Linear(hidden_dim, hidden_dim, dtype=dtype, bias=False)
 
@@ -107,25 +110,33 @@ class LatentAttention(nn.Module):
         seqlen_sum, _ = query.shape
 
         xq = self.wq(query)
-        xq = xq.view(seqlen_sum, self.n_heads, -1) * self.scale
-        kv_latent = self.kv_latent.view(self.r, self.n_heads, -1)
+        xq = (
+            xq.reshape(seqlen_sum, self.n_heads, -1) * self.scale
+        )  # (S, D) -> (S, H, D/H)
+        kv_matrix = self.kv_latent.weight
+        print("Shape of xq:", xq.shape)
+        print("Shape of kv_matrix:", kv_matrix.shape)
+        kv_matrix = kv_matrix.reshape(self.r, self.n_heads, -1).transpose(
+            0, 1
+        )  # (H, r, D/H)
 
-        xq, key, val = (
-            xq.transpose(1, 2),
-            kv_latent.transpose(1, 2),
-            kv_latent.transpose(1, 2),
-        )
-        attn = xq @ key.transpose(-2, -1)
+        (xq,) = (xq.transpose(0, 1),)  # (H, S, D/H)
+
+        attn = xq @ kv_matrix.transpose(-2, -1)  # (H, S, r)
 
         # Softmax over the latent dimension (r)
         attn = attn.softmax(dim=-1)
-        attn = attn @ val
-        attn = attn.transpose(1, 2)
+        attn = attn @ kv_matrix  # (H, S, D/H)
+        attn = attn.transpose(0, 1)  # (S, H, D/H)
 
         # MHA concatenation
-        output = attn.view(seqlen_sum, -1)
-        concatenated_output = self.wo(output)
-        return self.mlp(concatenated_output)
+        output = attn.reshape(seqlen_sum, -1)  # (S, H, D/H) -> (S, D)
+        output = self.wo(output)
+
+        for i in range(self.n_layers):
+            output = self.mlp_layers[i](output)
+
+        return output
 
 
 class PoolingModule(nn.Module):
@@ -144,7 +155,7 @@ class PoolingModule(nn.Module):
                 dtype=dtype,
             )
         else:
-            self.process = nn.Identity()
+            self.process = None
 
     def forward(
         self, x: torch.Tensor, seqlens: list[int] | None = None
@@ -154,7 +165,10 @@ class PoolingModule(nn.Module):
             seqlens = [x.shape[1]] * x.shape[0]
             x = x.view(-1, x.shape[-1])  # (B, S, D) -> (B*S, D)
 
-        out = self.process(x)
+        if not self.args.type == "latent_attention":
+            out = x
+        else:
+            out = self.process.forward(x)
 
         if self.args.type == "latent_attention" or self.args.type == "mean":
             mean_mask = torch.block_diag(*[torch.ones(l) / l for l in seqlens]).to(
@@ -169,3 +183,7 @@ class PoolingModule(nn.Module):
             raise ValueError(f"Pooling type {self.args.type} not supported")
 
         return out
+
+
+if __name__ == "__main__":
+    pass

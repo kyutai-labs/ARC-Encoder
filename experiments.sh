@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-4%5
+#SBATCH --array=0-3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=4
@@ -17,13 +17,17 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID))
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-config/experiments/mistral/no_embed_bs16_lr5e-5Mistral7B88d0b42410aa4ec12025.yaml
-config/experiments/mistral/n_layers0Mistral7B.yaml
-config/experiments/mistral/lr0.0005Mistral7B.yaml
-config/experiments/mistral/lr5e-05Mistral7B.yaml
-config/experiments/mistral/n_layers1Mistral7B.yaml
+config/experiments/mistral/lr5e-05Mistral7B.yaml                
+config/experiments/mistral/n_layers1Mistral7B.yaml                          
+config/experiments/mistral/n_layers2Mistral7B.yaml
+config/experiments/mistral/n_layers0Mistral7B.yaml                
 )
-
+# config/experiments/mistral/eos_Mistral7B3923ee72a684f4be9a25.yaml
+# config/experiments/mistral/mean_Mistral7B3923ee72a684f4be9a25.yaml
+# config/experiments/mistral/lr_eos_Mistral7Bc7bdf67aecb4b9693bae.yaml
+# config/experiments/mistral/lr_lat_Mistral7Bc7bdf67aecb4b9693bae.yaml
+# config/experiments/mistral/lr_mean_Mistral7Bc7bdf67aecb4b9693bae.yaml
+# config/experiments/mistral/latt_Mistral7B3923ee72a684f4be9a25.yaml
 
 
 # Get the specific config file for this array task

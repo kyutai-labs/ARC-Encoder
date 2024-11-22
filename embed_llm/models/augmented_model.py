@@ -234,8 +234,8 @@ class EmbedAugPipeline(nn.Module):
             with torch.no_grad():
                 embeddings = []
                 subbatch = []
-                # Maximum not to cause memory errors
-                subbatch_size = 16
+                # Maximum not to cause memory errors or also unspecified launch failure
+                subbatch_size = 16 if batch_size > 16 else batch_size
                 for i, text in enumerate(batch.texts):
                     subbatch.append(text)
                     if len(subbatch) == subbatch_size:
@@ -260,6 +260,7 @@ class EmbedAugPipeline(nn.Module):
                         ).type(self.pipeline_args.param_dtype)
                     )
                 embeddings = torch.concatenate(embeddings, dim=0)
+
         else:
             embeddings = None
 

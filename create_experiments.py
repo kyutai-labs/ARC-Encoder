@@ -31,12 +31,20 @@ def main(args):
     config["projector"]["n_layers"] = args.proj_n_layers
     config["projector"]["act"] = args.proj_act
 
+    config["embedder"]["name"] = (
+        args.embedder_name if not args.train_embedder else args.llm_name
+    )
+    config["embedder"]["train"] = args.train_embedder
+    config["embedder"]["pooling_module"]["type"] = args.pooling
+    config["embedder"]["pooling_module"]["r"] = args.latent_dim
+    config["embedder"]["pooling_module"]["n_heads"] = args.n_heads
+
     config["batch_size"] = args.batch_size
     config["max_steps"] = args.max_steps
     config["seq_len"] = args.seq_len
 
     config["optim"]["max_lr"] = args.max_lr
-    config["optim"]["pct_start"] = args.pct_start
+    config["optim"]["warm_up_steps"] = args.warm_up_steps
     config["optim"]["initial_lr"] = args.initial_lr
     config["optim"]["final_lr"] = args.final_lr
 
@@ -58,7 +66,7 @@ def main(args):
         + str(args.max_steps)
         + str(args.seq_len)
         + str(args.max_lr)
-        + str(args.pct_start)
+        + str(args.warm_up_steps)
         + str(args.initial_lr)
         + str(args.final_lr)
         + str(args.log_freq)
@@ -109,19 +117,19 @@ def main(args):
             f'/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/{config["exp_name"]}.yaml',
             "w",
         ) as file:
-            yaml.dump(config, file)
+            yaml.dump(config, file, sort_keys=False)
     # elif args.llm_name == "Gemma7B":
     #     with open(
     #         f'/home/hippolytepilchen/code/embed_llm/config/experiments/gemma/{config["exp_name"]}.yaml',
     #         "w",
     #     ) as file:
-    #         yaml.dump(config, file)
+    #         yaml.dump(config, file, sort_keys=False)
     # elif args.llm_name == "Llama3.2-3B":
     #     with open(
     #         f'/home/hippolytepilchen/code/embed_llm/config/experiments/llama/{config["exp_name"]}.yaml',
     #         "w",
     #     ) as file:
-    #         yaml.dump(config, file)
+    #         yaml.dump(config, file, sort_keys=False)
     else:
         raise ValueError(f"{args.llm_name} not supported yet !")
 
@@ -171,7 +179,7 @@ def arg_parser():
         "--max_steps", type=int, default=1000, help="Maximum number of steps"
     )
     parser.add_argument(
-        "--pct_start",
+        "--warm_up_steps",
         type=float,
         default=0.2,
         help="Percentage of steps used for the warm-up",
@@ -199,6 +207,34 @@ def arg_parser():
         default=1,
         help="Number of gradient accumulation steps",
     )
+    parser.add_argument(
+        "--embedder_name", type=str, default="NVEmbed", help="Embedder name"
+    )
+    parser.add_argument(
+        "--train_embedder",
+        action="store_true",
+        help="Whether to train the embedder, if True embedder_name = llm_name",
+    )
+    parser.add_argument(
+        "--pooling",
+        type=str,
+        default="mean",
+        help="Pooling method",
+        choices=["mean", "eos", "latent_attention"],
+    )
+    parser.add_argument(
+        "--latent_dim",
+        type=int,
+        default=512,
+        help="Latent dimension for latent attention pooling",
+    )
+    parser.add_argument(
+        "--n_heads",
+        type=int,
+        default=8,
+        help="Number of heads for latent attention pooling",
+    )
+
     return parser.parse_args()
 
 
