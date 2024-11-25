@@ -35,6 +35,7 @@ def main(args):
         args.embedder_name if not args.train_embedder else args.llm_name
     )
     config["embedder"]["train"] = args.train_embedder
+    config["embedder"]["n_truncated_layers"] = args.n_truncated_layers
     config["embedder"]["pooling_module"]["type"] = args.pooling
     config["embedder"]["pooling_module"]["r"] = args.latent_dim
     config["embedder"]["pooling_module"]["n_heads"] = args.n_heads
@@ -171,17 +172,17 @@ def arg_parser():
         help="Activation function of the projection MLP",
         choices=["id", "gelu", "relu"],
     )
-    parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument(
         "--max_lr", type=float, default=5e-5, help="Maximum learning rate"
     )
     parser.add_argument(
-        "--max_steps", type=int, default=1000, help="Maximum number of steps"
+        "--max_steps", type=int, default=10000, help="Maximum number of steps"
     )
     parser.add_argument(
         "--warm_up_steps",
-        type=float,
-        default=0.2,
+        type=int,
+        default=2000,
         help="Percentage of steps used for the warm-up",
     )
     parser.add_argument(
@@ -190,9 +191,9 @@ def arg_parser():
     parser.add_argument(
         "--final_lr", type=float, default=1e-10, help="Final learning rate"
     )
-    parser.add_argument("--log_freq", type=int, default=5, help="Logging frequency")
+    parser.add_argument("--log_freq", type=int, default=10, help="Logging frequency")
     parser.add_argument(
-        "--eval_freq", type=int, default=50, help="Evaluation frequency"
+        "--eval_freq", type=int, default=100, help="Evaluation frequency"
     )
     parser.add_argument(
         "--ckpt_freq", type=int, default=500, help="Checkpoint frequency"
@@ -234,6 +235,9 @@ def arg_parser():
         default=8,
         help="Number of heads for latent attention pooling",
     )
+    parser.add_argument(
+        "-n_trunc", '--n_truncated_layers', type=int, default=4, help="Number of truncated layers to extract embedding"
+    )
 
     return parser.parse_args()
 
@@ -249,7 +253,6 @@ if __name__ == "__main__":
     #     if filename.endswith(".yaml"):
     #         with open("config/experiments/"+filename,'r') as file:
     #             config = yaml.safe_load(file)
-    #     if config['batch_size'] > 16:
-    #         config['batch_size'] = 16
-    #     with open("config/experiments/"+filename, 'w') as file:
-    #         yaml.dump(config, file)
+    #         config['batch_size'] = 32
+    #         with open("config/experiments/"+filename, 'w') as file:
+    #             yaml.dump(config, file)

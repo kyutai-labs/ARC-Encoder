@@ -609,6 +609,7 @@ class GemmaForCausalLM(nn.Module, LoRALoaderMixin):
                 kv_cache=None if kv_caches is None else kv_caches[i],
                 mask=mask,
             )
+
         if embeddings is not None and norm_wo_embeds:
             hidden_states = self.norm(hidden_states[:, 1:, :])
         elif embeddings is not None:

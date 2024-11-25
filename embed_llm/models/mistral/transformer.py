@@ -189,9 +189,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         for i in range(self.n_layers):
             h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=att_mask)
+
         assert self.norm is not None
         if embeddings is not None and norm_wo_embeds:
-
             normalized_h = self.norm(
                 h[torch.tensor(self.pos_to_keep, dtype=torch.bool)]
             )  # type: ignore

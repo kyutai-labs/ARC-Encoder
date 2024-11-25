@@ -335,7 +335,7 @@ class Transformer(nn.Module, LoRALoaderMixin):
 
         for i in range(self.n_layers):
             h = self.layers[str(i)](h, start_pos, freqs_cis, mask, training=training)
-
+            
         if embeddings is not None and norm_wo_embeds:
             h = self.norm(h[:, 1:, :])  # type: ignore
         elif embeddings is not None:

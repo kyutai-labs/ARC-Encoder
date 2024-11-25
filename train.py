@@ -256,9 +256,8 @@ def _train(
 
     # if get_rank() == 0:
     #     for name, param in model.named_parameters():
-    #         if "pooling" in name:
-    #             if param.requires_grad:
-    #                 print("REQUIRE GRADS", name, param.size())
+    #         if param.requires_grad:
+    #             print("REQUIRE GRADS", name, param.size())
 
     while state.step < args.max_steps:
         state.start_step()
@@ -272,10 +271,10 @@ def _train(
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
 
-            # Avoid OOM due to too many embeddings
+            # Avoid OOM due to too many embeddings for the same batch
             while len(batch.sizes) > 70:
                 batch = next(train_data_loader)
-                print("Too many embeddings, skipping batch")
+                print("Too many embeddings to do, skipping batch")
 
             """ Training loop for basic reconstruction"""
 

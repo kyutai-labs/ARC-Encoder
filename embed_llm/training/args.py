@@ -41,6 +41,7 @@ class Embedder(Serializable):
     dim: int = 4096
     name: str = ""
     train: bool = False
+    n_truncated_layers: int = 4
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
 
 
@@ -73,7 +74,7 @@ class TrainArgs(Serializable):
     save_adapters: bool = True
     # If True, no checkpoint will be saved. This is useful for development.
     no_ckpt: bool = False
-    num_ckpt_keep: int = 3
+    num_ckpt_keep: int = 2
     eval_freq: int = 0
     no_eval: bool = True
 

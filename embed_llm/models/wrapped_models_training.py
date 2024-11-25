@@ -269,10 +269,8 @@ def load_training_model(
             folder=folder,
             checkpoint=checkpoint,
             param_dtype=param_dtype,
+            for_embedding=True, 
         )
-
-        # Setting llm to output embeddings
-        llm_embedder.for_embedding = True
 
         try:
             del llm_embedder.output
@@ -351,6 +349,15 @@ def load_training_model(
     else:
         for name, param in augmented_model.named_parameters():
             param.requires_grad = True
+            
+    if args.embedder.train:
+        assert augmented_model.trainable_embedder.n_layers > args.embedder.n_truncated_layers, "Truncated layers must be less than total layers"
+        for i in range(augmented_model.trainable_embedder.n_layers):
+            if i > augmented_model.trainable_embedder.n_layers - args.embedder.n_truncated_layers:
+                module = augmented_model.trainable_embedder.layers.pop(str(i))
+                
+        augmented_model.trainable_embedder.n_layers = augmented_model.trainable_embedder.n_layers - args.embedder.n_truncated_layers
+         
 
     auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
 
@@ -396,6 +403,7 @@ def load_llm_model(
     folder: Path,
     checkpoint: bool,
     param_dtype: torch.dtype,
+    for_embedding: bool = False,
 ) -> tuple[torch.nn.Module, Tokenizer, int]:
 
     if "mistral" in llm_name.lower():
@@ -454,4 +462,7 @@ def load_llm_model(
     else:
         raise ValueError(f"Model name {llm_name} not recognized.")
 
+    if for_embedding:
+        model.for_embedding = True
+        
     return model, tokenizer, embed_dim

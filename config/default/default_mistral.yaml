@@ -23,6 +23,7 @@ embedder:
   dim: 4096
   name: NVEmbed # put '' to use trainable embedder
   train: false # put true to train embedder
+  n_truncated_layers: 5 # number of layers to truncate from the base model
   pooling_module: # see `embedders.py` for available pooling modules
     type: mean # mean, cls ...
   
