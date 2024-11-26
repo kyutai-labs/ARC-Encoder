@@ -202,7 +202,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.pos_to_keep = []
 
         if self.for_embedding:
-            return normalized_h, seqlens
+            return normalized_h
 
         return self.output(normalized_h).float()
 

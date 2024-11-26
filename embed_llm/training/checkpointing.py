@@ -86,12 +86,6 @@ class Checkpointer:
             model_args = self.llm.args.to_dict()
             f.write(json.dumps(model_args, indent=4))
 
-    def write_mlp_project_params_info(self, tmp_dst: Path):
-        if self.mlp_project is not None:
-            params_path = tmp_dst / "params.json"
-            with open(params_path, "w") as f:
-                model_args = self.mlp_project.args.to_dict()
-                f.write(json.dumps(model_args, indent=4))
 
     def delete_old_ckpts(self) -> list[Path]:
         all_saved_ckpts = [d for d in self.ckpt_dir.iterdir() if d.is_dir()]
@@ -425,9 +419,8 @@ class Checkpointer:
             if self.pipeline is None:
                 self.write_llm_params_info(tmp_llm_dst.parent)
             else:
-                self.write_pipeline_params_info(tmp_llm_dst.parent)
+                self.write_pipeline_params_info(tmp_llm_dst.parent.parent)
                 
-            self.write_mlp_project_params_info(tmp_mlp_project_dst)
 
             assert (
                 not self.dst_dir[0].exists() and not self.dst_dir[1].exists()

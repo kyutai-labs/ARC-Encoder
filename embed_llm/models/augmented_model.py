@@ -7,6 +7,8 @@ import safetensors.torch
 import json
 import safetensors
 import logging
+import numpy as np
+
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.models.embedding_modules import MLP_project, PoolingModule
 from embed_llm.retrieval.embeddings import encode_text, get_pretrained_embedder
@@ -155,7 +157,7 @@ class EmbedAugModel(nn.Module):
     ) -> torch.Tensor:
 
         if self.trainable_embedder is not None:
-            embed_output, seqlens = self.trainable_embedder(
+            embed_output = self.trainable_embedder(
                 input_ids=x, embeddings=None, seqlens=seqlens
             )
             embeddings = self.pooling_module(x=embed_output, seqlens=seqlens)
@@ -183,7 +185,7 @@ class EmbedAugModel(nn.Module):
             embed_output = self.trainable_embedder(
                 input_ids=x, embeddings=None, training=training
             )
-            embeddings = self.pooling_module(x=embed_output)
+            embeddings = self.pooling_module(x=embed_output, seqlens=seqlens)
 
         if self.mlp_project is not None:
             embeddings = self.mlp_project(embeddings)
@@ -324,14 +326,12 @@ class EmbedAugPipeline(nn.Module):
             max_seq_len=max_seq_len,
             max_batch_size=max_batch_size,
             variant=variant,
-            pipe_path=ckpt_path + "/" + llm_name.lower(),
+            pipe_path=ckpt_path,
             trainable_embedder = True if embed_model_name == '' else False
         )
         pipeline_args.training = False
         
-        with open(Path(mlp_path) / "params.json", "r") as f:
-            args = json.loads(f.read())
-        mlp_project_args = MLPProjectArgs(**args)
+        mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
         pipeline_args.mlp_project = mlp_project_args
         
         llm, tokenizer, embed_dim = load_llm_model(
@@ -354,7 +354,7 @@ class EmbedAugPipeline(nn.Module):
             llm_name=llm_name,
             llm_args=llm_args,
             pipeline_args=pipeline_args,
-            args=args,
+            args=None,
             folder=Path(llm_path),
             checkpoint=False,
             param_dtype=param_dtype,
@@ -437,6 +437,8 @@ class EmbedAugPipeline(nn.Module):
     ):
         if isinstance(prompts, str):
             prompts = [prompts]
+        if isinstance(text_conditioning, str):
+            text_conditioning = [text_conditioning]
 
         if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
             embeddings = encode_text(
@@ -454,10 +456,12 @@ class EmbedAugPipeline(nn.Module):
             x = [
                 self.tokenizer.encode(text, bos=True, eos=True) for text in text_conditioning
             ]
+            seqlens = [len(tokens) for tokens in x]
+            x  = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(device)
             embed_output = self.model.trainable_embedder(
-                input_ids=x, embeddings=None, training=False
+                input_ids=x, embeddings=None, seqlens = seqlens
             )
-            embeddings = self.model.pooling_module(x=embed_output)
+            embeddings = self.model.pooling_module(x=embed_output, seqlens=seqlens)
             
         else:
             embeddings = None
