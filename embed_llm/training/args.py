@@ -41,7 +41,6 @@ class Embedder(Serializable):
     dim: int = 4096
     name: str = ""
     train: bool = False
-    n_truncated_layers: int = 4
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
 
 

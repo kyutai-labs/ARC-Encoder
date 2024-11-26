@@ -12,7 +12,7 @@ from embed_llm.models.embedding_modules import MLP_project, PoolingModule
 from embed_llm.retrieval.embeddings import encode_text, get_pretrained_embedder
 from embed_llm.data.data_loader import Batch
 from embed_llm.models.args import LoraArgs
-from embed_llm.models.args import MLPProjectArgs, EmbedAugArgs
+from embed_llm.models.args import MLPProjectArgs, EmbedAugArgs, PoolingArgs
 from embed_llm.models.args import (
     MistralModelArgs,
     LlamaModelArgs,
@@ -20,17 +20,23 @@ from embed_llm.models.args import (
     MLPProjectArgs,
     EmbedAugArgs,
 )
+from embed_llm.training.args import TrainArgs
+from embed_llm.training.distributed import (
+    get_rank,
+)
 
 # Mistral specifics
 from embed_llm.models.mistral.transformer import Transformer as MistralTransformer
 from embed_llm.models.mistral.moe import MoeArgs
 from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_tokenizer
 from embed_llm.models.mistral.generate import generate as mistral_generate
+from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 
 # Gemma specifics
 from embed_llm.models.gemma.model import GemmaForCausalLM, set_default_tensor_type
 from embed_llm.models.gemma.generate import generate as gemma_generate
 from embed_llm.models.args import GemmaConfig
+from embed_llm.models.gemma.tokenizer import Tokenizer as GemmaTokenizer
 
 # Llama specifics
 from embed_llm.models.llama.model import Transformer as LlamaTransformer
@@ -42,7 +48,7 @@ Models = LlamaTransformer | MistralTransformer | GemmaForCausalLM
 logger = logging.getLogger(__name__)
 
 ModelsArgs = MistralModelArgs | LlamaModelArgs | GemmaConfig
-
+Tokenizer = MistralTokenizer | LlamaTokenizer | GemmaTokenizer
 
 def pad_and_convert_to_tensor(
     x: list[int],
@@ -294,17 +300,22 @@ class EmbedAugPipeline(nn.Module):
         ckpt_path: str,
         device: str,
         llm_name: str,
-        embed_model_name: str,
+        embed_model_name: str = '',
         variant: str | None = None,
         max_batch_size: int = 4,
         max_seq_len: int = 512,
+        param_dtype: torch.dtype = torch.float32,
     ):
         lora_path = (
             ckpt_path + "/" + llm_name.lower() + "/consolidated/lora.safetensors"
         )
         mlp_path = ckpt_path + "/" + "MLP_projector"
-
-        embedding_model = get_pretrained_embedder(embed_model_name, device_map=device)
+        
+        if embed_model_name == '':
+            trainable_embedder_path = ckpt_path + "/" + llm_name.lower() + "/trainable_embedder"
+            pooling_module_path = ckpt_path + "/" + llm_name.lower() + "/pooling_module"
+        else:
+            embedding_model = get_pretrained_embedder(embed_model_name, device_map=device)
 
         llm_args, pipeline_args = load_args(
             Path(llm_path),
@@ -313,84 +324,87 @@ class EmbedAugPipeline(nn.Module):
             max_seq_len=max_seq_len,
             max_batch_size=max_batch_size,
             variant=variant,
-            pipe_path=ckpt_path + "/",
+            pipe_path=ckpt_path + "/" + llm_name.lower(),
+            trainable_embedder = True if embed_model_name == '' else False
         )
         pipeline_args.training = False
-
-        if "mistral" in llm_name.lower():
-
-            with torch.device("meta"):
-                llm = MistralTransformer(args=llm_args)
-
-            tokenizer = load_mistral_tokenizer(
-                Path(llm_path)
-            ).instruct_tokenizer.tokenizer
-            state_dict = load_state_dict(
-                Path(llm_path), dtype=pipeline_args.param_dtype
-            )
-            llm.load_state_dict(state_dict, assign=True)  # type: ignore
-            # load LoRA
-            llm.load_lora(Path(lora_path))
-            llm = llm.to(device)
-            llm.eval()
-
-        elif "llama" in llm_name.lower():
-            tokenizer = LlamaTokenizer(
-                model_path=str(Path(llm_path) / "tokenizer.model")
-            )
-            with torch.device("meta"):
-                llm = LlamaTransformer(args=llm_args)
-
-            state_dict = load_state_dict(
-                Path(llm_path), dtype=pipeline_args.param_dtype
-            )
-            llm.load_state_dict(state_dict, assign=True)  # type: ignore
-            # load LoRA
-            llm.load_lora(Path(lora_path))
-            llm = llm.to(device)
-            llm.eval()
-
-        elif "gemma" in llm_name.lower():
-            llm_args.tokenizer = str(Path(llm_path) / "tokenizer.model")
-
-            with set_default_tensor_type(pipeline_args.param_dtype):
-                with torch.device("meta"):
-                    llm = GemmaForCausalLM(llm_args)
-
-            state_dict = load_state_dict(
-                Path(llm_path), dtype=pipeline_args.param_dtype, gemma=True
-            )
-            del state_dict["freqs_cis"]
-            llm.load_state_dict(state_dict, assign=True)  # type: ignore
-            tokenizer = llm.tokenizer
-            # load LoRA
-            llm.load_lora(Path(lora_path))
-            llm = llm.to(device)
-            llm.eval()
-
-        else:
-            raise NotImplementedError("Model not yet implemented")
-
+        
         with open(Path(mlp_path) / "params.json", "r") as f:
             args = json.loads(f.read())
         mlp_project_args = MLPProjectArgs(**args)
         pipeline_args.mlp_project = mlp_project_args
+        
+        llm, tokenizer, embed_dim = load_llm_model(
+                            llm_name=llm_name,
+                            llm_args=llm_args,
+                            pipeline_args=pipeline_args,
+                            args=None,
+                            folder=Path(llm_path),
+                            checkpoint=False,
+                            param_dtype=param_dtype,
+                            parll=False,
+        )
 
+        llm.load_lora(Path(lora_path))
+        llm = llm.to(device)
+        llm.eval() 
+        
+        if embed_model_name == '':
+            llm_embedder, _, llm_embed_dim = load_llm_model(
+            llm_name=llm_name,
+            llm_args=llm_args,
+            pipeline_args=pipeline_args,
+            args=args,
+            folder=Path(llm_path),
+            checkpoint=False,
+            param_dtype=param_dtype,
+            for_embedding=True,
+            parll=False,
+        )
+            pipeline_args.pooling_module = PoolingArgs(**pipeline_args.pooling_module)
+            try:
+                del llm_embedder.output
+            except AttributeError:
+                print("No output to delete")
+            for i in range(llm_embedder.n_layers):
+                if (
+                    i
+                    > llm_embedder.n_layers
+                    - (pipeline_args.pooling_module.n_truncated_layers + 1)
+                ):
+                    module = llm_embedder.layers.pop(str(i))
+                    del module
+
+            llm_embedder.n_layers = (
+                llm_embedder.n_layers
+                - pipeline_args.pooling_module.n_truncated_layers
+            )
+            
+            llm_embedder.load_lora(Path(trainable_embedder_path + "/lora.safetensors"))
+            embedding_model = llm_embedder.to(device)
+            embedding_model.eval()
+        
         augmented_pipeline = EmbedAugPipeline(
             llm_name=llm_name,
             pipeline_args=pipeline_args,
-            embed_model_name=embed_model_name,
+            embed_model_name=embed_model_name if embed_model_name != '' else llm_name,
             embedding_model=embedding_model,
             tokenizer=tokenizer,
             max_seq_len=max_seq_len,
             pad_token_id=tokenizer.pad_id,
         )
+        
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
-        augmented_pipeline.model.eval()
 
+        if embed_model_name == '':               
+            if augmented_pipeline.pipeline_args.pooling_module.type == 'latent_attention':
+                state_dict = load_state_dict(Path(pooling_module_path), dtype=param_dtype)
+                augmented_pipeline.model.pooling_module.process.load_state_dict(state_dict)
+                    
+                    
         if mlp_project_args.n_layers > 0:
             augmented_pipeline.model.mlp_project.load_state_dict(
-                safetensors.torch.load_file(mlp_path + "/lora.safetensors")
+                safetensors.torch.load_file(mlp_path + "/consolidated.safetensors")
             )
 
         augmented_pipeline.model = augmented_pipeline.model.to(device)
@@ -424,7 +438,7 @@ class EmbedAugPipeline(nn.Module):
         if isinstance(prompts, str):
             prompts = [prompts]
 
-        if self.pipeline_args.w_embeds:
+        if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
             embeddings = encode_text(
                 text_conditioning,
                 self.embed_model_name,
@@ -436,6 +450,15 @@ class EmbedAugPipeline(nn.Module):
                 embeddings = self.model.mlp_project(
                     embeddings.to(self.pipeline_args.param_dtype)
                 )
+        elif self.pipeline_args.w_embeds and self.pipeline_args.trainable_embedder:
+            x = [
+                self.tokenizer.encode(text, bos=True, eos=True) for text in text_conditioning
+            ]
+            embed_output = self.model.trainable_embedder(
+                input_ids=x, embeddings=None, training=False
+            )
+            embeddings = self.model.pooling_module(x=embed_output)
+            
         else:
             embeddings = None
 
@@ -672,3 +695,94 @@ def load_state_dict(
         model_state_dict[k] = v.to(dtype)
 
     return model_state_dict
+
+
+
+
+def load_llm_model(
+    llm_name: str,
+    llm_args: ModelsArgs,
+    pipeline_args: EmbedAugArgs,
+    args: TrainArgs | None,
+    folder: Path,
+    checkpoint: bool,
+    param_dtype: torch.dtype,
+    for_embedding: bool = False,
+    parll: bool = True,
+) -> tuple[torch.nn.Module, Tokenizer, int]:
+
+    if "mistral" in llm_name.lower():
+        tokenizer = load_mistral_tokenizer(folder).instruct_tokenizer.tokenizer
+        with torch.device("meta"):
+            model = MistralTransformer(args=llm_args, checkpoint=checkpoint)
+
+        embed_dim = model.args.dim
+        if parll and get_rank() == 0:
+            state_dict = load_state_dict(folder, dtype=param_dtype)
+            model.load_state_dict(state_dict, assign=True)  # type: ignore
+            logger.info("Loaded model on cpu!")
+        elif not parll:
+            state_dict = load_state_dict(folder, dtype=param_dtype)
+            model.load_state_dict(state_dict, assign=True)  # type: ignore
+            logger.info("Loaded model on cpu!")
+
+        if pipeline_args.mlp_project.n_layers == 0 and args is not None:
+            assert (
+                args.embedder.dim == model.args.dim
+            ), "Embedder dim must match model dim if no MLP projector."
+
+    elif "llama" in llm_name.lower():
+        tokenizer = LlamaTokenizer(model_path=str(folder / "tokenizer.model"))
+        with torch.device("meta"):
+            model = LlamaTransformer(args=llm_args, checkpoint=checkpoint)
+        embed_dim = model.args.dim
+
+        if parll and get_rank() == 0:
+            state_dict = load_state_dict(folder, dtype=param_dtype)
+            model.load_state_dict(state_dict, assign=True)  # type: ignore
+            logger.info("Loaded model on cpu!")
+        elif not parll:
+            state_dict = load_state_dict(folder, dtype=param_dtype)
+            model.load_state_dict(state_dict, assign=True)  # type: ignore
+            logger.info("Loaded model on cpu!")
+
+        if pipeline_args.mlp_project.n_layers == 0 and args is not None:
+            assert (
+                args.embedder.dim == model.args.dim
+            ), "Embedder dim must match model dim if no MLP projector."
+
+    elif "gemma" in llm_name.lower():
+        embed_dim = llm_args.hidden_size
+        llm_args.tokenizer = str(folder / "tokenizer.model")
+        with set_default_tensor_type(param_dtype):
+            with torch.device("meta"):
+                model = GemmaForCausalLM(llm_args, checkpoint=checkpoint)
+            tokenizer = model.tokenizer
+            if parll and get_rank() == 0:
+                state_dict = load_state_dict(folder, dtype=param_dtype, gemma=True)
+                del state_dict["freqs_cis"]
+                model.load_state_dict(state_dict, assign=True)  # type: ignore
+                logger.info("Loaded model on cpu!")
+            elif not parll:
+                state_dict = load_state_dict(folder, dtype=param_dtype, gemma=True)
+                del state_dict["freqs_cis"]
+                model.load_state_dict(state_dict, assign=True)  # type: ignore
+                logger.info("Loaded model on cpu!")
+
+
+        if pipeline_args.mlp_project.n_layers == 0 and args is not None:
+            assert (
+                args.embedder.dim == model.args.dim
+            ), "Embedder dim must match model dim if no MLP projector."
+        if args is not None:
+            assert (
+                args.seq_len < llm_args.max_position_embeddings
+            ), f"Sequence length too long! Must be less than {llm_args.max_position_embeddings - 1}."
+
+    else:
+        raise ValueError(f"Model name {llm_name} not recognized.")
+
+    if for_embedding:
+        model.for_embedding = True
+
+    return model, tokenizer, embed_dim

@@ -254,11 +254,6 @@ def _train(
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
 
-    # if get_rank() == 0:
-    #     for name, param in model.named_parameters():
-    #         if param.requires_grad:
-    #             print("REQUIRE GRADS", name, param.size())
-
     while state.step < args.max_steps:
         state.start_step()
         is_last_step = state.step == args.max_steps

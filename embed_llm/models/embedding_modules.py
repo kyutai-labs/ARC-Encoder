@@ -114,13 +114,12 @@ class LatentAttention(nn.Module):
             xq.reshape(seqlen_sum, self.n_heads, -1) * self.scale
         )  # (S, D) -> (S, H, D/H)
         kv_matrix = self.kv_latent.weight
-        print("Shape of xq:", xq.shape)
-        print("Shape of kv_matrix:", kv_matrix.shape)
+
         kv_matrix = kv_matrix.reshape(self.r, self.n_heads, -1).transpose(
             0, 1
         )  # (H, r, D/H)
 
-        (xq,) = (xq.transpose(0, 1),)  # (H, S, D/H)
+        xq = xq.transpose(0, 1)  # (H, S, D/H)
 
         attn = xq @ kv_matrix.transpose(-2, -1)  # (H, S, r)
 
@@ -164,12 +163,12 @@ class PoolingModule(nn.Module):
         if x.ndim == 3:
             seqlens = [x.shape[1]] * x.shape[0]
             x = x.view(-1, x.shape[-1])  # (B, S, D) -> (B*S, D)
-
+    
         if not self.args.type == "latent_attention":
             out = x
         else:
             out = self.process.forward(x)
-
+            
         if self.args.type == "latent_attention" or self.args.type == "mean":
             mean_mask = torch.block_diag(*[torch.ones(l) / l for l in seqlens]).to(
                 x.device

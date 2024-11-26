@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-11%6
+#SBATCH --array=0-6%3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=4
@@ -16,28 +16,16 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID))
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-config/experiments/mistral/n_layers2Mistral7B.yaml   
-config/experiments/mistral/lr_1e-4_3layersMistral7B6927e5b48173825489db.yaml     
-config/experiments/mistral/eos_Mistral7B3923ee72a684f4be9a25.yaml
-config/experiments/mistral/mean_Mistral7B3923ee72a684f4be9a25.yaml
-config/experiments/mistral/lr_5e-6_eos_Mistral7Bc7bdf67aecb4b9693bae.yaml
-config/experiments/mistral/lr_mean_5e-6_Mistral7Bc7bdf67aecb4b9693bae.yaml   
-config/experiments/mistral/lr_5e-4_meanMistral7Bfa8306da4b3147efcf92.yaml 
-config/experiments/mistral/lr_5e-4_eosMistral7Bf78982764a404a864e17.yaml
-config/experiments/mistral/lr_1e-4_eosMistral7B6927e5b48173825489db.yaml
-config/experiments/mistral/lr_1e-4_meanMistral7B6927e5b48173825489db.yaml
-config/experiments/mistral/lr_1e-5_meanMistral7B1d7cc6fe201846f30ef8.yaml
-config/experiments/mistral/lr_1e-5_eosMistral7Beb8f27d0c29997c5dfe9.yaml
+config/experiments/mistral/no_warmup_Mistral7B.yaml
+config/experiments/mistral/latt_Mistral7B3923ee72a684f4be9a25.yaml    
+config/experiments/mistral/lr_1e-4_lattMistral7B6927e5b48173825489db.yaml 
+config/experiments/mistral/2n_trunc_eos_Mistral7B845c88e6bde711a7a36e.yaml   
+config/experiments/mistral/3n_trunc_eos_Mistral7B845c88e6bde711a7a36e.yaml    
+config/experiments/mistral/5n_trunc_eos_Mistral7B845c88e6bde711a7a36e.yaml   
 )
-# config/experiments/mistral/lr5e-05Mistral7B.yaml                
-# config/experiments/mistral/n_layers1Mistral7B.yaml                          
-# config/experiments/mistral/n_layers0Mistral7B.yaml     
-# config/experiments/mistral/eos_Mistral7B3923ee72a684f4be9a25.yaml
-# config/experiments/mistral/mean_Mistral7B3923ee72a684f4be9a25.yaml
-# config/experiments/mistral/lr_eos_Mistral7Bc7bdf67aecb4b9693bae.yaml
-# config/experiments/mistral/lr_lat_Mistral7Bc7bdf67aecb4b9693bae.yaml
-# config/experiments/mistral/lr_mean_Mistral7Bc7bdf67aecb4b9693bae.yaml
-# config/experiments/mistral/latt_Mistral7B3923ee72a684f4be9a25.yaml
+
+
+
 
 
 # Get the specific config file for this array task

@@ -2,6 +2,7 @@ import json
 import logging
 import shutil
 from pathlib import Path
+import torch.distributed
 import torch.nn as nn
 import safetensors.torch
 import torch
@@ -9,7 +10,7 @@ from torch.distributed import barrier
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 
 from embed_llm.models.lora import LoRALinear
-
+from embed_llm.models.embedding_modules import LatentAttention
 from embed_llm.training.distributed import get_rank, get_world_size
 from embed_llm.training.utils import TrainState
 
@@ -72,13 +73,12 @@ class Checkpointer:
     def _tmp(ckpt_dir: Path) -> Path:
         return ckpt_dir.with_name(f"tmp.{ckpt_dir.name}")
 
-    def write_trainable_embedder_params_info(self, tmp_dst: Path):
+    def write_pipeline_params_info(self, tmp_dst: Path):
         params_path = tmp_dst / "params.json"
         with open(params_path, "w") as f:
-            model_args = self.trainable_embedder.args.to_dict()
-            pooling_args = self.pooling_module.args.to_dict()
-            model_args["pooling_args"] = pooling_args
-            f.write(json.dumps(model_args, indent=4))
+            pipeline_args = self.pipeline.pipeline_args.to_dict()
+            pipeline_args["param_dtype"] = str(pipeline_args["param_dtype"]).split(".")[-1]
+            f.write(json.dumps(pipeline_args, indent=4))
 
     def write_llm_params_info(self, tmp_dst: Path):
         params_path = tmp_dst / "params.json"
@@ -92,13 +92,6 @@ class Checkpointer:
             with open(params_path, "w") as f:
                 model_args = self.mlp_project.args.to_dict()
                 f.write(json.dumps(model_args, indent=4))
-
-    def write_embedaugpipeline_params_info(self, tmp_dst: Path):
-        params_path = tmp_dst / "params.json"
-        with open(params_path, "w") as f:
-            model_args = self.pipeline.pipeline_args.to_dict()
-            model_args["param_dtype"] = str(model_args["param_dtype"]).split(".")[-1]
-            f.write(json.dumps(model_args, indent=4))
 
     def delete_old_ckpts(self) -> list[Path]:
         all_saved_ckpts = [d for d in self.ckpt_dir.iterdir() if d.is_dir()]
@@ -204,10 +197,13 @@ class Checkpointer:
                     for k, m in self.trainable_embedder.named_modules()
                     if is_trainable_fsdp(m)
                 }
+                
                 pooling_modules = {
                     k: m
                     for k, m in self.pooling_module.named_modules()
-                    if is_trainable_fsdp(m)
+                    if all(
+                    p.requires_grad is True for p in module.parameters())
+                    and k == 'process'
                 }
 
             llm_states = {}
@@ -263,7 +259,7 @@ class Checkpointer:
                             for k, v in module.state_dict().items()
                         }
                     )
-
+                    
             pooling_modules_states = {}
             for key, module in pooling_modules.items():
                 assert isinstance(
@@ -277,11 +273,11 @@ class Checkpointer:
                 ):
                     pooling_modules_states.update(
                         {
-                            f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                            f"{k}": v.to(dtype=save_dtype)
                             for k, v in module.state_dict().items()
                         }
                     )
-
+    
         else:
             # make sure you have enough CPU RAM available to save the full model
             assert isinstance(
@@ -329,13 +325,15 @@ class Checkpointer:
                         for k, v in trainable_embedder_states.items()
                     }
                 pooling_modules_states = {}
-                with self.pooling_modules.summon_full_params(
-                    self.pooling_modules, writeback=True, offload_to_cpu=offload_to_cpu
+                with self.pooling_module.summon_full_params(
+                    self.pooling_module,
+                    writeback=True,
+                    offload_to_cpu=offload_to_cpu,
                 ):
                     pooling_modules_states.update(
-                        self.get_non_lora_states(self.pooling_modules.state_dict())
+                        self.get_non_lora_states(self.pooling_module.state_dict())
                     )
-                    pooling_modules_states = {
+                    pooling_modules_states = {  
                         k: v.to(dtype=save_dtype)
                         for k, v in pooling_modules_states.items()
                     }
@@ -423,19 +421,24 @@ class Checkpointer:
                         save_only_lora=False,
                     ),  # always use safetensors for checkpointing
                 )
-                self.write_trainable_embedder_params_info(tmp_llm_dst.parent)
 
-            self.write_llm_params_info(tmp_llm_dst)
+            if self.pipeline is None:
+                self.write_llm_params_info(tmp_llm_dst.parent)
+            else:
+                self.write_pipeline_params_info(tmp_llm_dst.parent)
+                
             self.write_mlp_project_params_info(tmp_mlp_project_dst)
-            # Put the params of the pipeline above the two models directories
-            self.write_embedaugpipeline_params_info(tmp_mlp_project_dst.parent)
 
             assert (
                 not self.dst_dir[0].exists() and not self.dst_dir[1].exists()
             ), f"should not happen! {self.dst_dir[0]} | {self.dst_dir[1]}"
             tmp_llm_dst.rename(self.dst_dir[0])
             tmp_mlp_project_dst.rename(self.dst_dir[1])
-
+            
+            if self.trainable_embedder is not None:
+                tmp_pooling_module_dst.rename(llm_dst.parent / "pooling_module")
+                tmp_trainable_embedder_dst.rename(llm_dst.parent / "trainable_embedder")
+                
             logger.info(
                 f"Done dumping checkpoint in {self.dst_dir[0]} and {self.dst_dir[1]} for step: {self.state.step}"
             )

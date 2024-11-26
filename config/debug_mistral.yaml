@@ -1,5 +1,5 @@
 batch_size: 32
-ckpt_freq: 3
+ckpt_freq: 5
 data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
   shuffle: false
@@ -11,10 +11,11 @@ embedder:
   train: true # put true to train embedder
   pooling_module: # see `embedders.py` for available pooling modules
     type: latent_attention # mean, cls ...
+    n_truncated_layers: 3
 
     
-eval_freq: 3
-exp_name: debug_mistral3
+eval_freq: 5
+exp_name: test_ckpt_w_pooling
 llm_name: Mistral7B
 log_freq: 1
 lora:
@@ -23,7 +24,7 @@ lora:
   scaling: 2.0
 max_steps: 10000
 model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-no_eval: false
+no_eval: true
 optim:
   final_lr: 1.0e-10
   initial_lr: 1.0e-20

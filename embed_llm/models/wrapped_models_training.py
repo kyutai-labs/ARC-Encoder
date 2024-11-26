@@ -10,31 +10,26 @@ from torch.distributed.fsdp.api import ShardingStrategy
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 
 from embed_llm.training.mixed_precision import (
-    fp32_policy,
     bfSixteen,
     bfSixteen_mixed,
-    fpSixteen,
 )
-from embed_llm.models.args import LoraArgs, EmbedAugArgs
+from embed_llm.models.args import LoraArgs
 from embed_llm.training.distributed import (
     get_rank,
     get_world_size,
 )
 from embed_llm.models.augmented_model import (
     EmbedAugPipeline,
-    load_state_dict,
     load_args,
-    ModelsArgs,
+    load_llm_model,
 )
 from embed_llm.models.embedding_modules import LatentAttention
 from embed_llm.training.args import TrainArgs
 
 # Mistral specifics
-from embed_llm.models.mistral.transformer import Transformer as MistralTransformer
 from embed_llm.models.mistral.transformer import (
     TransformerBlock as MistralTransformerBlock,
 )
-from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_tokenizer
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 
 # Gemma specifics
@@ -42,15 +37,13 @@ from embed_llm.models.gemma.tokenizer import Tokenizer as GemmaTokenizer
 from embed_llm.models.gemma.model import (
     GemmaDecoderLayer,
     Gemma2DecoderLayer,
-    GemmaForCausalLM,
-    set_default_tensor_type,
+
 )
 
 
 # Llama specifics
 from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
 from embed_llm.models.llama.model import TransformerBlock as LlamaTransformerBlock
-from embed_llm.models.llama.model import Transformer as LlamaTransformer
 
 
 Tokenizer = MistralTokenizer | LlamaTokenizer | GemmaTokenizer
@@ -64,29 +57,29 @@ def main_logger_info(message: str) -> None:
         logger.info(message)
 
 
-# def gather_policy_fn(
-#         module: torch.nn.Module,
-#         recurse: bool,
-#         nonwrapped_numel: int,
-#         policies) -> bool | dict:
-#         """
-#         A policy that wraps ``module`` if any policy in the passed in iterable of
-#         ``policies`` returns ``True``.
-#         """
-#         bool_outputs = []
-#         dict_outputs = []
-#         for policy in policies:
-#             output = policy(module=module, recurse=recurse, nonwrapped_numel=nonwrapped_numel)
-#             if isinstance(output, bool):
-#                 bool_outputs.append(output)
-#             elif isinstance(output, dict):
-#                 dict_outputs.append(output)
-#             else:
-#                 raise ValueError(f"Policy {policy} returned an unexpected type {type(output)}")
-#         if len(dict_outputs) ==0 :
-#             return any(bool_outputs)
-#         else:
-#             return dict_outputs[0]
+def gather_policy_fn(
+        module: torch.nn.Module,
+        recurse: bool,
+        nonwrapped_numel: int,
+        policies) -> bool | dict:
+        """
+        A policy that wraps ``module`` if any policy in the passed in iterable of
+        ``policies`` returns ``True``.
+        """
+        bool_outputs = []
+        dict_outputs = []
+        for policy in policies:
+            output = policy(module=module, recurse=recurse, nonwrapped_numel=nonwrapped_numel)
+            if isinstance(output, bool):
+                bool_outputs.append(output)
+            elif isinstance(output, dict):
+                dict_outputs.append(output)
+            else:
+                raise ValueError(f"Policy {policy} returned an unexpected type {type(output)}")
+        if len(dict_outputs) ==0 :
+            return any(bool_outputs)
+        else:
+            return dict_outputs[0]
 
 
 def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
@@ -129,32 +122,15 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
         torch_wrap.lambda_auto_wrap_policy, lambda_fn=lambda_policy_fn
     )
 
-    # def latent_attention_policy(module):
-    #     if isinstance(module, LatentAttention):
-    #         return {"sharding_strategy": ShardingStrategy.SHARD_GRAD_OP}
-    #     elif (
-    #         len(list(module.named_children())) == 0
-    #         and getattr(module, "weight", None) is not None
-    #         and module.weight.requires_grad
-    #     ):
-    #         return True
-    #     else:
-    #         return False
+ 
 
     policies = [
+        torch_wrap.ModuleWrapPolicy([LatentAttention]),
         fsdp_lora_policy,
         transformer_block_wrap_policy,
     ]
 
     return functools.partial(torch_wrap._or_policy, policies=policies)
-
-    # policies = [
-    #     torch_wrap.CustomPolicy(latent_attention_policy),
-    #     fsdp_lora_policy,
-    #     transformer_block_wrap_policy,
-    # ]
-
-    # return functools.partial(gather_policy_fn, policies=policies)
 
 
 def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
@@ -261,6 +237,7 @@ def load_training_model(
         assert args.projector.n_layers == 0, "Only no MLP if no embeddings."
 
     if args.embedder.train:
+        main_logger_info("Loading embedder model ...")
         llm_embedder, _, llm_embed_dim = load_llm_model(
             llm_name=args.embedder.name,
             llm_args=llm_args,
@@ -269,7 +246,7 @@ def load_training_model(
             folder=folder,
             checkpoint=checkpoint,
             param_dtype=param_dtype,
-            for_embedding=True, 
+            for_embedding=True,
         )
 
         try:
@@ -342,22 +319,35 @@ def load_training_model(
     # only finetune LoRA parameters and freeze before wrapping
     if lora.enable:
         for name, param in augmented_model.named_parameters():
-            if "lora" in name or "mlp_project" in name or "pooling_module" in name:
+            if "lora" in name or "mlp_project" in name: # or "pooling_module" in name:
                 param.requires_grad = True
             else:
                 param.requires_grad = False
     else:
         for name, param in augmented_model.named_parameters():
             param.requires_grad = True
-            
+
     if args.embedder.train:
-        assert augmented_model.trainable_embedder.n_layers > args.embedder.n_truncated_layers, "Truncated layers must be less than total layers"
+        assert (
+            augmented_model.trainable_embedder.n_layers
+            > args.embedder.pooling_module.n_truncated_layers
+        ), "Truncated layers must be less than total layers"
+        removed_layers = []
         for i in range(augmented_model.trainable_embedder.n_layers):
-            if i > augmented_model.trainable_embedder.n_layers - args.embedder.n_truncated_layers:
+            if (
+                i
+                > augmented_model.trainable_embedder.n_layers
+                - (args.embedder.pooling_module.n_truncated_layers + 1)
+            ):
                 module = augmented_model.trainable_embedder.layers.pop(str(i))
-                
-        augmented_model.trainable_embedder.n_layers = augmented_model.trainable_embedder.n_layers - args.embedder.n_truncated_layers
-         
+                del module
+                removed_layers.append(i)
+        
+        main_logger_info('Removed layers: ' + str(removed_layers))
+        augmented_model.trainable_embedder.n_layers = (
+            augmented_model.trainable_embedder.n_layers
+            - args.embedder.pooling_module.n_truncated_layers
+        )
 
     auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
 
@@ -373,96 +363,17 @@ def load_training_model(
         device_id=torch.cuda.current_device(),
         sync_module_states=True,  # saves cpu memory by loading pretrained model on rank0 only, not working with False
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
-        # use_orig_params= ( True if args.embedder.train and
-        #                   args.embedder.pooling_module.type == "latent_attention"
-        #                   else False )
     )
-    #     ignored_modules=(
-    #         [LatentAttention()]
-    #         if args.embedder.train
-    #         and args.embedder.pooling_module.type == "latent_attention"
-    #         else None
-    #     ),  # LatentAttention are not sharded
-    # )
 
     main_logger_info("Model sharded!")
 
     log_train_params(wrapped_model)
-
+    
+    for name, param in wrapped_model.named_parameters():
+        if "pooling_module" in name:
+            param.requires_grad = True
+            
     return (
         augmented_pipeline,
         wrapped_model,
     )
-
-
-def load_llm_model(
-    llm_name: str,
-    llm_args: ModelsArgs,
-    pipeline_args: EmbedAugArgs,
-    args: TrainArgs,
-    folder: Path,
-    checkpoint: bool,
-    param_dtype: torch.dtype,
-    for_embedding: bool = False,
-) -> tuple[torch.nn.Module, Tokenizer, int]:
-
-    if "mistral" in llm_name.lower():
-        tokenizer = load_mistral_tokenizer(folder).instruct_tokenizer.tokenizer
-        with torch.device("meta"):
-            model = MistralTransformer(args=llm_args, checkpoint=checkpoint)
-
-        embed_dim = model.args.dim
-        if get_rank() == 0:
-            state_dict = load_state_dict(folder, dtype=param_dtype)
-            model.load_state_dict(state_dict, assign=True)  # type: ignore
-            logger.info("Loaded model on cpu!")
-
-        if pipeline_args.mlp_project.n_layers == 0:
-            assert (
-                args.embedder.dim == model.args.dim
-            ), "Embedder dim must match model dim if no MLP projector."
-
-    elif "llama" in llm_name.lower():
-        tokenizer = LlamaTokenizer(model_path=str(folder / "tokenizer.model"))
-        with torch.device("meta"):
-            model = LlamaTransformer(args=llm_args, checkpoint=checkpoint)
-        embed_dim = model.args.dim
-
-        if get_rank() == 0:
-            state_dict = load_state_dict(folder, dtype=param_dtype)
-            model.load_state_dict(state_dict, assign=True)  # type: ignore
-            logger.info("Loaded model on cpu!")
-        if pipeline_args.mlp_project.n_layers == 0:
-            assert (
-                args.embedder.dim == model.args.dim
-            ), "Embedder dim must match model dim if no MLP projector."
-
-    elif "gemma" in llm_name.lower():
-        embed_dim = llm_args.hidden_size
-        llm_args.tokenizer = str(folder / "tokenizer.model")
-        with set_default_tensor_type(param_dtype):
-            with torch.device("meta"):
-                model = GemmaForCausalLM(llm_args, checkpoint=checkpoint)
-            tokenizer = model.tokenizer
-            if get_rank() == 0:
-                state_dict = load_state_dict(folder, dtype=param_dtype, gemma=True)
-                del state_dict["freqs_cis"]
-                model.load_state_dict(state_dict, assign=True)  # type: ignore
-                logger.info("Loaded model on cpu!")
-
-        if pipeline_args.mlp_project.n_layers == 0:
-            assert (
-                args.embedder.dim == model.args.dim
-            ), "Embedder dim must match model dim if no MLP projector."
-
-        assert (
-            args.seq_len < llm_args.max_position_embeddings
-        ), f"Sequence length too long! Must be less than {llm_args.max_position_embeddings - 1}."
-
-    else:
-        raise ValueError(f"Model name {llm_name} not recognized.")
-
-    if for_embedding:
-        model.for_embedding = True
-        
-    return model, tokenizer, embed_dim

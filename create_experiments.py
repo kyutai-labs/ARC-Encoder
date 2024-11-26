@@ -35,7 +35,7 @@ def main(args):
         args.embedder_name if not args.train_embedder else args.llm_name
     )
     config["embedder"]["train"] = args.train_embedder
-    config["embedder"]["n_truncated_layers"] = args.n_truncated_layers
+    config["embedder"]['pooling_module']["n_truncated_layers"] = args.n_truncated_layers
     config["embedder"]["pooling_module"]["type"] = args.pooling
     config["embedder"]["pooling_module"]["r"] = args.latent_dim
     config["embedder"]["pooling_module"]["n_heads"] = args.n_heads
@@ -236,7 +236,11 @@ def arg_parser():
         help="Number of heads for latent attention pooling",
     )
     parser.add_argument(
-        "-n_trunc", '--n_truncated_layers', type=int, default=4, help="Number of truncated layers to extract embedding"
+        "-n_trunc",
+        "--n_truncated_layers",
+        type=int,
+        default=4,
+        help="Number of truncated layers to extract embedding",
     )
 
     return parser.parse_args()

@@ -15,6 +15,7 @@ class PoolingArgs(Serializable):
     r: int = 512  # Hidden dim of latent if latent attention pooling
     n_heads: int = 8  # Number of heads in latent attention pooling
     n_layers: int = 1
+    n_truncated_layers: int = 4
 
 
 @dataclass
