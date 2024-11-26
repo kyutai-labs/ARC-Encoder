@@ -5,7 +5,7 @@ from functools import partial, reduce
 import torch
 from torch import nn
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
-from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask
+from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask
 
 from embed_llm.models.args import MistralModelArgs
 from embed_llm.models.lora import LoRALoaderMixin, maybe_lora
@@ -40,6 +40,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         checkpoint: bool = False,
         pipeline_rank: int = 0,
         num_pipeline_ranks: int = 1,  # Don't use pipeline parallelism for now
+        causal: bool = True,
     ):
         super().__init__()
         self.args = args
@@ -50,7 +51,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.pos_to_keep = []
         self.pipeline_rank = pipeline_rank
         self.num_pipeline_ranks = num_pipeline_ranks
-
+        self.causal = causal
         self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
         layers = []
         for _ in range(args.n_layers):
@@ -183,7 +184,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
             h = token_embeds
 
         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
-        att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
+        if self.causal:
+            att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
+        else:
+            att_mask = BlockDiagonalMask.from_seqlens(seqlens)
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 

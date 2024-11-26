@@ -42,6 +42,7 @@ class Embedder(Serializable):
     name: str = ""
     train: bool = False
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
+    causal: bool = True
 
 
 @dataclass

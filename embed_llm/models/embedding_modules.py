@@ -1,8 +1,8 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 from embed_llm.models.args import MLPProjectArgs
 from embed_llm.training.args import PoolingArgs
-from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 
 
@@ -20,18 +20,20 @@ class MLP_block(nn.Module):
         if hidden_dim is None:
             hidden_dim = out_dim
 
-        if act == "relu":
-            self.act = nn.ReLU()
-        elif act == "gelu":
-            self.act = nn.GELU()
-        else:
-            self.act = nn.Identity()
-
+        self.act = act
         self.layer1 = nn.Linear(in_dim, hidden_dim, dtype=dtype)
-
         self.layer2 = nn.Linear(hidden_dim, out_dim, dtype=dtype)
 
     def forward(self, x):
+        out = self.layer1(x)
+        
+        if self.act == "relu":
+            out = F.relu(out)
+        elif self.act == "gelu":
+            out = F.gelu(out)
+        elif self.act == "id":
+            pass     
+        
         out = self.act(self.layer1(x))
         out = self.layer2(out) + x
         return out

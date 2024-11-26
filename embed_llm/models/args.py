@@ -35,6 +35,7 @@ class EmbedAugArgs(Serializable):
     training: bool = False
     param_dtype: torch.dtype = torch.bfloat16
     trainable_embedder: bool = False
+    causal: bool = True
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
 
 

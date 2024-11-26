@@ -9,13 +9,14 @@ embedder:
   dim: 4096
   name: Mistral7B # put '' to use trainable embedder
   train: true # put true to train embedder
+  causal: false
   pooling_module: # see `embedders.py` for available pooling modules
     type: latent_attention # mean, cls ...
     n_truncated_layers: 3
 
     
 eval_freq: 5
-exp_name: test_ckpt_w_pooling
+exp_name: other
 llm_name: Mistral7B
 log_freq: 1
 lora:

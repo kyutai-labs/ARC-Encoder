@@ -582,6 +582,7 @@ def load_args(
     norm_wo_embeds: bool = False,
     w_embeds: bool = False,
     trainable_embedder: bool = False,
+    causal: bool = True,
 ) -> tuple[ModelsArgs, EmbedAugArgs]:
 
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
@@ -651,6 +652,7 @@ def load_args(
             norm_wo_embeds=norm_wo_embeds,
             param_dtype=param_dtype,
             trainable_embedder=trainable_embedder,
+            causal=causal,
         )
     if isinstance(pipeline_args.param_dtype, str):
         pipeline_args.param_dtype = getattr(torch, pipeline_args.param_dtype)
@@ -788,5 +790,9 @@ def load_llm_model(
 
     if for_embedding:
         model.for_embedding = True
+        if pipeline_args.causal:
+            model.causal = True
+        else:
+            model.causal = False
 
     return model, tokenizer, embed_dim

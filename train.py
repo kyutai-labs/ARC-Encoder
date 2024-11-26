@@ -113,7 +113,7 @@ def _train(
             raise RuntimeError(
                 f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
             )
-            # print(f"Run dir {run_dir} already exists. Removing it.")
+
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)

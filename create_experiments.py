@@ -35,10 +35,12 @@ def main(args):
         args.embedder_name if not args.train_embedder else args.llm_name
     )
     config["embedder"]["train"] = args.train_embedder
+    config["embedder"]["causal"] = args.causal
     config["embedder"]['pooling_module']["n_truncated_layers"] = args.n_truncated_layers
     config["embedder"]["pooling_module"]["type"] = args.pooling
     config["embedder"]["pooling_module"]["r"] = args.latent_dim
     config["embedder"]["pooling_module"]["n_heads"] = args.n_heads
+
 
     config["batch_size"] = args.batch_size
     config["max_steps"] = args.max_steps
@@ -243,6 +245,11 @@ def arg_parser():
         help="Number of truncated layers to extract embedding",
     )
 
+    parser.add_argument(
+        "--causal",
+        action="store_true",
+        help="Whether to use a causal embedder",
+    )
     return parser.parse_args()
 
 
