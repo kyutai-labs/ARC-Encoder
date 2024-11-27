@@ -115,7 +115,10 @@ class LatentAttention(nn.Module):
         )  # (S, D) -> (S, H, D/H)
         kv_matrix = self.kv_latent.weight
 
-        kv_matrix = kv_matrix.reshape(self.r, self.n_heads, -1).transpose(
+        kv_matrix = kv_matrix.reshape(self.r, self.n_heads, -1)
+        
+        
+        kv_matrix = kv_matrix.transpose(
             0, 1
         )  # (H, r, D/H)
 

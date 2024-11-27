@@ -360,10 +360,10 @@ def load_training_model(
     )
     
      
-    print("Trainable parameters:")
-    for namm, param in wrapped_model.named_parameters():
-        if param.requires_grad:
-            print(namm)
+    # print("Trainable parameters:")
+    # for namm, param in wrapped_model.named_parameters():
+    #     if param.requires_grad:
+    #         print(namm)
     
     main_logger_info("Model sharded!")
 
