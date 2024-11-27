@@ -25,8 +25,9 @@ def main(args):
         raise ValueError(f"{args.llm_name} not supported yet !")
 
     config["llm_name"] = args.llm_name
-    config["w_embeds"] = args.w_embeds
+    config["w_embeds"] = not args.wo_embeds
     config["norm_wo_embeds"] = args.norm_wo_embeds
+    config["continuation"] = args.continuation
     config["projector"]["hidden_dim"] = args.proj_hidden_dim
     config["projector"]["n_layers"] = args.proj_n_layers
     config["projector"]["act"] = args.proj_act
@@ -35,11 +36,15 @@ def main(args):
         args.embedder_name if not args.train_embedder else args.llm_name
     )
     config["embedder"]["train"] = args.train_embedder
-    config["embedder"]["causal"] = args.causal
-    config["embedder"]['pooling_module']["n_truncated_layers"] = args.n_truncated_layers
-    config["embedder"]["pooling_module"]["type"] = args.pooling
-    config["embedder"]["pooling_module"]["r"] = args.latent_dim
-    config["embedder"]["pooling_module"]["n_heads"] = args.n_heads
+    if args.train_embedder:
+        config["embedder"]["causal"] = not args.not_causal
+        config["embedder"]['pooling_module']["n_truncated_layers"] = args.n_truncated_layers
+        config["embedder"]["pooling_module"]["type"] = args.pooling
+        config["embedder"]["pooling_module"]["r"] = args.latent_dim
+        config["embedder"]["pooling_module"]["n_heads"] = args.n_heads
+    else:
+        del config["embedder"]["causal"]
+        del config["embedder"]["pooling_module"]
 
 
     config["batch_size"] = args.batch_size
@@ -60,7 +65,7 @@ def main(args):
 
     name = (
         args.llm_name
-        + str(args.w_embeds)
+        + str(args.wo_embeds)
         + str(args.norm_wo_embeds)
         + str(args.proj_hidden_dim)
         + str(args.proj_n_layers)
@@ -146,7 +151,7 @@ def arg_parser():
         choices=["Gemma7B", "Llama3.2-3B", "Mistral7B"],
     )
     parser.add_argument(
-        "--w_embeds",
+        "--wo_embeds",
         action="store_true",
         help="Whether to use word embeddings as preconditioning",
     )
@@ -184,7 +189,7 @@ def arg_parser():
     parser.add_argument(
         "--warm_up_steps",
         type=int,
-        default=2000,
+        default=500,
         help="Percentage of steps used for the warm-up",
     )
     parser.add_argument(
@@ -246,10 +251,17 @@ def arg_parser():
     )
 
     parser.add_argument(
-        "--causal",
+        "--not_causal",
         action="store_true",
         help="Whether to use a causal embedder",
     )
+    
+    parser.add_argument(
+        "--continuation",
+        action="store_true",
+        help="Whether to train on continuation task rather than next token prediction for reconstruction",
+    )
+    
     return parser.parse_args()
 
 

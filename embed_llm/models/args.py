@@ -37,6 +37,7 @@ class EmbedAugArgs(Serializable):
     trainable_embedder: bool = False
     causal: bool = True
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
+    continuation: bool = False
 
 
 @dataclass

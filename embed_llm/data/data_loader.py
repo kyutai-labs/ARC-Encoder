@@ -108,6 +108,7 @@ def build_data_loader(
     world_size: int,
     is_eval: bool,
     seed: int | None = None,
+    continuation: bool = False,
 ) -> Iterator[Batch]:
     data = args.train_data if not is_eval else args.eval_data
 
@@ -120,6 +121,7 @@ def build_data_loader(
         world_size=world_size,
         is_eval=is_eval,
         shuffle=args.shuffle,
+        continuation=continuation,
     )
 
     batch_list = Batchlist()

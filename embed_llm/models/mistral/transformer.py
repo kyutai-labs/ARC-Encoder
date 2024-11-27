@@ -51,7 +51,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.pos_to_keep = []
         self.pipeline_rank = pipeline_rank
         self.num_pipeline_ranks = num_pipeline_ranks
-        self.causal = causal
         self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
         layers = []
         for _ in range(args.n_layers):
@@ -89,6 +88,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.embeds_pos = []
         self.n_local_layers = self.n_layers
         self.for_embedding = False
+        self.causal = causal
 
     @property
     def dtype(self) -> torch.dtype:

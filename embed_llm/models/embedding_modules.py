@@ -6,6 +6,7 @@ from embed_llm.training.args import PoolingArgs
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 
 
+    
 class MLP_block(nn.Module):
     def __init__(
         self,
@@ -20,21 +21,21 @@ class MLP_block(nn.Module):
         if hidden_dim is None:
             hidden_dim = out_dim
 
-        self.layer1 = nn.Linear(in_dim, hidden_dim, dtype=dtype)
-        self.layer2 = nn.Linear(hidden_dim, out_dim, dtype=dtype)
-        
         if act == "relu":
             self.act = nn.ReLU()
         elif act == "gelu":
             self.act = nn.GELU()
-        elif act == "id":
-            self.act = nn.Identity()   
+        else:
+            self.act = nn.Identity()
+
+        self.layer1 = nn.Linear(in_dim, hidden_dim, dtype=dtype, bias=False)
+
+        self.layer2 = nn.Linear(hidden_dim, out_dim, dtype=dtype, bias=False)
 
     def forward(self, x):
         out = self.act(self.layer1(x))
         out = self.layer2(out) + x
         return out
-
 
 class MLP_project(nn.Module):
     def __init__(self, args: MLPProjectArgs, dtype: torch.dtype = torch.bfloat16):

@@ -238,6 +238,90 @@ def sequence_iterator(
             )
 
 
+def sequence_iterator_for_continuation(
+    ds_it: Iterator[TokenSample],
+    seq_len: int,
+    tokenizer: Tokenizer,
+    is_finite: bool,
+) -> Iterator[SequenceTextMaskAndSizes]:
+    """
+    Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
+    """
+    x_buffer: list[int] = []
+    y_buffer: list[int] = []
+    text_buffer: list[str] = []
+    mask_buffer: Mask = []
+
+    sizes: list[int] = []
+    n_missing = seq_len
+    for sample in ds_it:
+        assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
+        assert n_missing == seq_len - len(
+            x_buffer
+        ), f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
+
+        tokens, mask = sample.tokens, sample.masks[1:]
+        x, y = tokens[:-1], tokens[1:]
+        cur_pos = 0
+
+        while cur_pos < len(x):
+            size = len(x[cur_pos : cur_pos + n_missing])
+
+            curr_mask = mask[cur_pos : cur_pos + n_missing]
+            if not any(curr_mask):
+                cur_pos += size
+                # we have a sequence with a mask filled with False
+                continue
+
+            x_buffer.extend(x[cur_pos : cur_pos + n_missing])
+            y_buffer.extend(y[cur_pos : cur_pos + n_missing])
+            text_buffer.append(
+                tokenizer.decode([x[cur_pos]] + y[cur_pos : cur_pos + n_missing])
+            )
+            mask_buffer.extend(curr_mask)
+            n_missing -= size
+
+            sizes.append(size)
+
+            cur_pos += size
+
+            if n_missing == 0:
+                assert len(mask_buffer) == len(x_buffer) == seq_len == len(y_buffer)
+                assert sum(sizes) == seq_len
+                assert len(text_buffer) == len(sizes)
+                # we don't want to yield sequences with a mask filled with False
+                if any(mask_buffer):
+                    yield SequenceTextMaskAndSizes(
+                        x=x_buffer,
+                        y=y_buffer,
+                        texts=text_buffer,
+                        mask=mask_buffer,
+                        sizes=sizes,
+                    )
+                x_buffer, y_buffer = [], []
+                mask_buffer = []
+                text_buffer = []
+                sizes = []
+                n_missing = seq_len
+
+    if is_finite:
+        # if dataloader is in eval, pad to seq length
+        if any(mask_buffer):
+            mask_buffer.extend(n_missing * [False])
+            x_buffer.extend(n_missing * [0])
+            y_buffer.extend(n_missing * [0])
+            sizes.append(n_missing)
+            text_buffer.append("")
+
+            yield SequenceTextMaskAndSizes(
+                x=x_buffer,
+                y=y_buffer,
+                texts=text_buffer,
+                mask=mask_buffer,
+                sizes=sizes,
+            )
+
+
 def build_dataset(
     pretrain_data: str,
     tokenizer: Tokenizer,
@@ -247,6 +331,7 @@ def build_dataset(
     is_eval: bool,
     seed: int | None = None,
     shuffle: bool = False,
+    continuation: bool = False,
 ) -> Iterator[SequenceTextMaskAndSizes]:
     sources, probabilities = parse_data_sources(pretrain_data)
 
@@ -263,15 +348,26 @@ def build_dataset(
         for source in sources
     ]
 
-    sequence_iterators = [
-        sequence_iterator(
-            ds_it=it,
-            seq_len=seq_len,
-            is_finite=is_eval,
-            tokenizer=tokenizer,
-        )
-        for it in dataset_iterators
-    ]
+    if not continuation:
+        sequence_iterators = [
+            sequence_iterator(
+                ds_it=it,
+                seq_len=seq_len,
+                is_finite=is_eval,
+                tokenizer=tokenizer,
+            )
+            for it in dataset_iterators
+        ]
+    else:
+        sequence_iterators = [
+            sequence_iterator_for_continuation(
+                ds_it=it,
+                seq_len=seq_len,
+                is_finite=is_eval,
+                tokenizer=tokenizer,
+            )
+            for it in dataset_iterators
+        ]
 
     if is_eval:
         combined_iterator = itertools.chain.from_iterable(sequence_iterators)

@@ -24,7 +24,6 @@ from embed_llm.models.augmented_model import (
     load_llm_model,
 )
 
-from embed_llm.models.embedding_modules import LatentAttention, MLP_project, PoolingModule
 from embed_llm.training.args import TrainArgs
 
 # Mistral specifics
@@ -90,12 +89,6 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
             and module.weight.requires_grad
         ):
             return True
-        elif (
-            len(list(module.named_children())) == 0
-            and (getattr(module, "bias", None) is not None)
-            and module.bias.requires_grad
-        ):
-            return True
         else:
             return False
 
@@ -147,7 +140,7 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                 else:
                     raise ValueError("Only Lora layers should be randomly initialized.")
 
-
+                    
 def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
     for m_name, module in model.named_modules():
         if len(list(module.children())) == 0:
@@ -156,14 +149,14 @@ def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
                     torch.empty_like(param, device="cpu", dtype=param_dtype)
                 )
                 param = module._parameters[p_name]
-                # Initializes both the weights and biases of the MLP project
-                if m_name.split(".")[-1] == "layer1" and "weight" in p_name:
+                
+                if m_name.split(".")[-1] == "layer1":
                     torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+                    
                 elif m_name.split(".")[-1] == "layer2":
                     torch.nn.init.zeros_(param)
+
                     
-
-
 def initialize_latent_attention(model: torch.nn.Module, param_dtype: torch.dtype):
     for m_name, module in model.named_modules():
         if len(list(module.children())) == 0:
@@ -172,12 +165,9 @@ def initialize_latent_attention(model: torch.nn.Module, param_dtype: torch.dtype
                     torch.empty_like(param, device="cpu", dtype=param_dtype)
                 )
                 param = module._parameters[p_name]
-                if 'weight' in p_name:
-                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-                elif 'bias' in p_name:
-                    torch.nn.init.zeros_(param)
-
-
+                torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+        
+                    
 
 def load_training_model(
     args: TrainArgs,
@@ -190,7 +180,7 @@ def load_training_model(
     param_dtype: torch.dtype = torch.bfloat16,
     max_seq_len: int = 512,
     max_batch_size: int = 32,
-) -> tuple[Tokenizer, FullyShardedDataParallel, int]:
+) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
 
     llm_args, pipeline_args = load_args(
         folder,
@@ -203,6 +193,8 @@ def load_training_model(
         w_embeds=args.w_embeds,
         param_dtype=param_dtype,
         trainable_embedder=args.embedder.train,
+        causal = args.embedder.causal,
+        continuation = args.continuation,
     )
 
     # Load pretrained params on rank 0
@@ -214,6 +206,7 @@ def load_training_model(
         folder=folder,
         checkpoint=checkpoint,
         param_dtype=param_dtype,
+        for_embedding=False,
     )
 
         
@@ -367,10 +360,10 @@ def load_training_model(
     )
     
      
-    # print("Trainable parameters:")
-    # for namm, param in wrapped_model.named_parameters():
-    #     if param.requires_grad:
-    #         print(namm)
+    print("Trainable parameters:")
+    for namm, param in wrapped_model.named_parameters():
+        if param.requires_grad:
+            print(namm)
     
     main_logger_info("Model sharded!")
 

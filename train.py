@@ -110,10 +110,10 @@ def _train(
 
     if is_torchrun():
         if run_dir.exists():
-            # raise RuntimeError(
-            #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
-            # )
-            print(f"Run dir {run_dir} already exists. Removing it.")
+            raise RuntimeError(
+                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
+            )
+            # print(f"Run dir {run_dir} already exists. Removing it.")
 
 
     dist.barrier()
@@ -160,7 +160,6 @@ def _train(
             args.embedder.name != ""
         ), "`args.embedder.name` should be set to a valid value."
         embedding_model = get_pretrained_embedder(args.embedder.name, device_map="cuda")
-        # embedding_model.train() # Avoir OOM due to inference
         embedding_model.config.max_length = (
             embedding_model.config.max_length if args.seq_len is None else args.seq_len
         )
@@ -183,6 +182,8 @@ def _train(
         variant=args.variant if hasattr(args, "variant") else None,
     )
     main_logger_info("Model loading done")
+    main_logger_info(f"PipelineArgs: {pprint.pformat(dataclasses.asdict(pipeline.pipeline_args))}")
+    
     """ Load  Dataloader"""
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
@@ -193,6 +194,7 @@ def _train(
         rank=get_rank(),  # DDP rank
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
+        continuation = args.continuation,
     )
 
     if not args.no_eval:
@@ -205,6 +207,7 @@ def _train(
             rank=get_rank(),  # DDP rank
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
+            continuation = args.continuation,
         )
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
         eval_batches = []
@@ -227,6 +230,7 @@ def _train(
     assert (
         args.max_steps > args.optim.warm_up_steps
     ), "Max steps should be greater than 0"
+    
     scheduler = lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=args.optim.max_lr,
