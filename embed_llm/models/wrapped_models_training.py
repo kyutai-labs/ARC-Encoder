@@ -107,7 +107,6 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
 
 
     policies = [
-        torch_wrap.ModuleWrapPolicy([MLP_project]),
         fsdp_lora_policy,
         transformer_block_wrap_policy,
     ]
@@ -141,7 +140,6 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                     torch.empty_like(param, device="cpu", dtype=param_dtype)
                 )
                 param = module._parameters[p_name]
-
                 if m_name.split(".")[-1] == "lora_A":
                     torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
                 elif m_name.split(".")[-1] == "lora_B":
@@ -152,7 +150,7 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
 
 def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
     for m_name, module in model.named_modules():
-        if all(p.is_meta for p in module.parameters()):
+        if len(list(module.children())) == 0:
             for p_name, param in module.named_parameters():
                 module._parameters[p_name] = torch.nn.Parameter(
                     torch.empty_like(param, device="cpu", dtype=param_dtype)
@@ -168,7 +166,7 @@ def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
 
 def initialize_latent_attention(model: torch.nn.Module, param_dtype: torch.dtype):
     for m_name, module in model.named_modules():
-        if all(p.is_meta for p in module.parameters()):
+        if len(list(module.children())) == 0:
             for p_name, param in module.named_parameters():
                 module._parameters[p_name] = torch.nn.Parameter(
                     torch.empty_like(param, device="cpu", dtype=param_dtype)
@@ -207,6 +205,7 @@ def load_training_model(
         trainable_embedder=args.embedder.train,
     )
 
+    # Load pretrained params on rank 0
     model, tokenizer, embed_dim = load_llm_model(
         llm_name=llm_name,
         llm_args=llm_args,
@@ -217,12 +216,14 @@ def load_training_model(
         param_dtype=param_dtype,
     )
 
+        
     pipeline_args.mlp_project = args.projector
     if not args.w_embeds:
         assert args.projector.n_layers == 0, "Only no MLP if no embeddings."
 
     if args.embedder.train:
         main_logger_info("Loading embedder model ...")
+        # Load pretrained params on rank 0
         llm_embedder, _, llm_embed_dim = load_llm_model(
             llm_name=args.embedder.name,
             llm_args=llm_args,
@@ -237,7 +238,7 @@ def load_training_model(
         try:
             del llm_embedder.output
         except AttributeError:
-            print("No output to delete")
+            main_logger_info("No output to delete for the LLM Embedder")
 
         embedding_model = llm_embedder
         # Hidden dim of the embedder
@@ -262,11 +263,13 @@ def load_training_model(
         max_seq_len=max_seq_len,
     )
 
-    with torch.device('meta'):
+
+    with torch.device('meta'):  
         augmented_model = augmented_pipeline.get_model(llm=model)
+     
     
     if get_rank() == 0:
-
+  
         if lora.enable:
             logger.info("Initializing lora layers  for LLM ...")
             # initialize LoRA layers
@@ -316,6 +319,8 @@ def load_training_model(
                 param.requires_grad = True
             elif "mlp_project" in name:
                 param.requires_grad = True
+            elif "pooling_module" in name:
+                param.requires_grad = True
             else:
                 param.requires_grad = False
     else:
@@ -361,14 +366,7 @@ def load_training_model(
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
     )
     
-    # Pooling does not appear here
-    # if args.embedder.train and args.embedder.pooling_module.type == "latent_attention":
-    #     for name, param in wrapped_model.named_parameters():
-    #         print('Name:', name)
-            # if "pooling_module" in name:
-            #     print('Name:', name)
-            #     param.requires_grad = True
-            
+     
     # print("Trainable parameters:")
     # for namm, param in wrapped_model.named_parameters():
     #     if param.requires_grad:

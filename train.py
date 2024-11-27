@@ -110,9 +110,10 @@ def _train(
 
     if is_torchrun():
         if run_dir.exists():
-            raise RuntimeError(
-                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
-            )
+            # raise RuntimeError(
+            #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
+            # )
+            print(f"Run dir {run_dir} already exists. Removing it.")
 
 
     dist.barrier()

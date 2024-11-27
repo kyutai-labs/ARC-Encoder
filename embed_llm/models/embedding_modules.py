@@ -20,20 +20,17 @@ class MLP_block(nn.Module):
         if hidden_dim is None:
             hidden_dim = out_dim
 
-        self.act = act
         self.layer1 = nn.Linear(in_dim, hidden_dim, dtype=dtype)
         self.layer2 = nn.Linear(hidden_dim, out_dim, dtype=dtype)
+        
+        if act == "relu":
+            self.act = nn.ReLU()
+        elif act == "gelu":
+            self.act = nn.GELU()
+        elif act == "id":
+            self.act = nn.Identity()   
 
     def forward(self, x):
-        out = self.layer1(x)
-        
-        if self.act == "relu":
-            out = F.relu(out)
-        elif self.act == "gelu":
-            out = F.gelu(out)
-        elif self.act == "id":
-            pass     
-        
         out = self.act(self.layer1(x))
         out = self.layer2(out) + x
         return out
