@@ -148,7 +148,7 @@ class LatentAttention(nn.Module):
         self.cross_attend_block = PreNorm(latent_dim, Attention(latent_dim, context_dim = hidden_dim, n_heads = n_heads, 
                                             head_dim = hidden_dim // n_heads), context_dim=hidden_dim)
         
-        self.latents = torch.nn.Parameter(torch.randn(64, latent_dim), requires_grad = True)#torch.nn.Linear(latent_dim, r, dtype=dtype, bias=False)
+        self.latents = torch.nn.Parameter(torch.randn(self.r, latent_dim), requires_grad = True)#torch.nn.Linear(latent_dim, r, dtype=dtype, bias=False)
         
         self.mlp_layers = nn.ModuleList()
         for _ in range(n_layers):
@@ -159,12 +159,11 @@ class LatentAttention(nn.Module):
             )
       
 
-    def forward(self, queries: torch.Tensor, seqlens = list[int]) -> torch.Tensor:
+    def forward(self, queries: torch.Tensor, seqlens: list[int]) -> torch.Tensor:
         b = len(seqlens)
-
-        x = repeat(self.latents, 'r d -> b r d', b = b)
+        x = repeat(self.latents, 'r d -> (b r) d', b = b)
         hiddens = self.cross_attend_block(queries, context = x, 
-                                          mask = BlockDiagonalMask.from_seqlens(q_seqlen = seqlens, kv_seqlen=self.r)) + queries
+                                          mask = BlockDiagonalMask.from_seqlens(q_seqlen = seqlens, kv_seqlen=[self.r]*b)) + queries
 
         for i in range(self.n_layers):
             hiddens = self.mlp_layers[i](hiddens) + hiddens

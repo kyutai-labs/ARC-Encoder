@@ -333,7 +333,6 @@ def load_training_model(
         augmented_model.pooling_args is not None
         and augmented_model.pooling_args.type == "latent_attention"
     ):
-        main_logger_info('Initializing Pooling')
         initialize_latent_attention(augmented_model.pooling_module, param_dtype, latents=True, device = 'cuda')
         ignored_state = [augmented_model.pooling_module.process.latents]
     else:
