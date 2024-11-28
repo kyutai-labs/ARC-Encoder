@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
 
 import torch
 from xformers.ops.fmha.attn_bias import (  # type: ignore
@@ -10,18 +9,24 @@ from xformers.ops.fmha.attn_bias import (  # type: ignore
 )
 
 
-def get_cache_sizes(n_layers: int, max_seq_len: int, sliding_window: Optional[int] | Optional[List[int]]) -> List[int]:
+def get_cache_sizes(
+    n_layers: int, max_seq_len: int, sliding_window: int | list[int] | None = None
+) -> list[int]:
     if sliding_window is None:
         return n_layers * [max_seq_len]
     elif isinstance(sliding_window, int):
         return n_layers * [sliding_window]
     else:
-        assert isinstance(sliding_window, list), f"Expected list, got {type(sliding_window)}"
+        assert isinstance(
+            sliding_window, list
+        ), f"Expected list, got {type(sliding_window)}"
         assert (
             n_layers % len(sliding_window) == 0
         ), f"Expected n_layers % len(sliding_window) == 0, got {n_layers} % {len(sliding_window)}"
         num_repeats = n_layers // len(sliding_window)
-        return num_repeats * [w if w is not None else max_seq_len for w in sliding_window]
+        return num_repeats * [
+            w if w is not None else max_seq_len for w in sliding_window
+        ]
 
 
 @dataclass
@@ -35,7 +40,7 @@ class CacheInputMetadata:
     # # else use causal with padded key mask
     # prefill: bool
     # mask: AttentionBias
-    # seqlens: List[int]
+    # seqlens: list[int]
     # rope absolute positions
     positions: torch.Tensor
     # which elements in the sequences need to be cached
@@ -48,10 +53,12 @@ class CacheInputMetadata:
     # else use causal with padded key mask
     prefill: bool
     mask: AttentionBias
-    seqlens: List[int]
+    seqlens: list[int]
 
 
-def interleave_list(l1: List[torch.Tensor], l2: List[torch.Tensor]) -> List[torch.Tensor]:
+def interleave_list(
+    l1: list[torch.Tensor], l2: list[torch.Tensor]
+) -> list[torch.Tensor]:
     assert len(l1) == len(l2)
     return [v for pair in zip(l1, l2) for v in pair]
 
@@ -88,10 +95,16 @@ class CacheView:
         flat_cache_k = self.cache_k.view(-1, n_kv_heads, head_dim)
         flat_cache_v = self.cache_v.view(-1, n_kv_heads, head_dim)
 
-        flat_cache_k.index_copy_(0, self.metadata.cache_positions, xk[self.metadata.to_cache_mask])
-        flat_cache_v.index_copy_(0, self.metadata.cache_positions, xv[self.metadata.to_cache_mask])
+        flat_cache_k.index_copy_(
+            0, self.metadata.cache_positions, xk[self.metadata.to_cache_mask]
+        )
+        flat_cache_v.index_copy_(
+            0, self.metadata.cache_positions, xv[self.metadata.to_cache_mask]
+        )
 
-    def interleave_kv(self, xk: torch.Tensor, xv: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def interleave_kv(
+        self, xk: torch.Tensor, xv: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         This is a naive implementation and not optimized for speed.
         """
@@ -103,9 +116,11 @@ class CacheView:
             return xk, xv
 
         # Make it a list of [(T, H, D)]
-        xk: Tuple[torch.Tensor] = torch.split(xk, self.metadata.seqlens)  # type: ignore
-        xv: Tuple[torch.Tensor] = torch.split(xv, self.metadata.seqlens)  # type: ignore
-        assert len(xk) == len(self.kv_seqlens), f"Batch size is {len(self.kv_seqlens)}, got {len(xk)}"
+        xk: tuple[torch.Tensor] = torch.split(xk, self.metadata.seqlens)  # type: ignore
+        xv: tuple[torch.Tensor] = torch.split(xv, self.metadata.seqlens)  # type: ignore
+        assert len(xk) == len(
+            self.kv_seqlens
+        ), f"Batch size is {len(self.kv_seqlens)}, got {len(xk)}"
 
         # Order elements in cache by position by unrotating
         cache_k = [unrotate(t, s) for t, s in zip(self.cache_k, self.kv_seqlens)]
@@ -150,34 +165,46 @@ class BufferCache:
         max_seq_len: int,
         n_kv_heads: int,
         head_dim: int,
-        sliding_window: Optional[int] | Optional[List[int]] = None,
+        sliding_window: int | list[int] | None = None,
     ):
         self.max_seq_len = max_seq_len
         self.n_kv_heads = n_kv_heads
         self.head_dim = head_dim
         self.n_layers = n_layers
 
-        self.cache_sizes: List[int] = get_cache_sizes(n_layers, max_seq_len, sliding_window)
-        assert len(self.cache_sizes) == n_layers, f"Expected {n_layers} cache sizes, got {len(self.cache_sizes)}"
+        self.cache_sizes: list[int] = get_cache_sizes(
+            n_layers, max_seq_len, sliding_window
+        )
+        assert (
+            len(self.cache_sizes) == n_layers
+        ), f"Expected {n_layers} cache sizes, got {len(self.cache_sizes)}"
 
         self.cache_k = {}
         self.cache_v = {}
         for i, cache_size in enumerate(self.cache_sizes):
-            self.cache_k[i] = torch.empty((max_batch_size, cache_size, n_kv_heads, head_dim))
-            self.cache_v[i] = torch.empty((max_batch_size, cache_size, n_kv_heads, head_dim))
+            self.cache_k[i] = torch.empty(
+                (max_batch_size, cache_size, n_kv_heads, head_dim)
+            )
+            self.cache_v[i] = torch.empty(
+                (max_batch_size, cache_size, n_kv_heads, head_dim)
+            )
 
         # holds the valid length for each batch element in the cache
-        self.kv_seqlens: Optional[torch.Tensor] = None
+        self.kv_seqlens: torch.Tensor | None = None
 
     def get_view(self, layer_id: int, metadata: CacheInputMetadata) -> CacheView:
         assert self.kv_seqlens is not None
-        return CacheView(self.cache_k[layer_id], self.cache_v[layer_id], metadata, self.kv_seqlens)
+        return CacheView(
+            self.cache_k[layer_id], self.cache_v[layer_id], metadata, self.kv_seqlens
+        )
 
     def reset(self) -> None:
         self.kv_seqlens = None
 
     def init_kvseqlens(self, batch_size: int) -> None:
-        self.kv_seqlens = torch.zeros((batch_size,), device=self.device, dtype=torch.long)
+        self.kv_seqlens = torch.zeros(
+            (batch_size,), device=self.device, dtype=torch.long
+        )
 
     @property
     def device(self) -> torch.device:
@@ -190,11 +217,11 @@ class BufferCache:
 
         return self
 
-    def update_seqlens(self, seqlens: List[int]) -> None:
+    def update_seqlens(self, seqlens: list[int]) -> None:
         assert self.kv_seqlens is not None
         self.kv_seqlens += torch.tensor(seqlens, device=self.device, dtype=torch.long)
 
-    def get_input_metadata(self, seqlens: List[int]) -> List[CacheInputMetadata]:
+    def get_input_metadata(self, seqlens: list[int]) -> list[CacheInputMetadata]:
         """
         input = seqlens [5,7,2] // seqpos [0, 1, 3] // sliding_window 3
         --> only cache last 3 tokens in each sequence
@@ -205,7 +232,7 @@ class BufferCache:
         --> cache positions are positions cache_masked, modulo sliding_window + batch_idx * sliding_window
         - cache_positions = [2 0 1 | 5 3 4 | 6 7]
         """
-        metadata: List[CacheInputMetadata] = []
+        metadata: list[CacheInputMetadata] = []
 
         if self.kv_seqlens is None:
             self.init_kvseqlens(len(seqlens))
@@ -222,35 +249,50 @@ class BufferCache:
 
         return metadata
 
-    def _get_input_metadata_layer(self, cache_size: int, seqlens: List[int], seqpos: List[int]) -> CacheInputMetadata:
-        masks = [[x >= seqlen - cache_size for x in range(seqlen)] for seqlen in seqlens]
-        to_cache_mask = torch.tensor(sum(masks, []), device=self.device, dtype=torch.bool)
-        cached_elements = torch.tensor([sum(mask) for mask in masks], device=self.device, dtype=torch.long)
-        positions = torch.cat([torch.arange(pos, pos + seqlen) for pos, seqlen in zip(seqpos, seqlens)]).to(
-            device=self.device, dtype=torch.long
+    def _get_input_metadata_layer(
+        self, cache_size: int, seqlens: list[int], seqpos: list[int]
+    ) -> CacheInputMetadata:
+        masks = [
+            [x >= seqlen - cache_size for x in range(seqlen)] for seqlen in seqlens
+        ]
+        to_cache_mask = torch.tensor(
+            sum(masks, []), device=self.device, dtype=torch.bool
         )
+        cached_elements = torch.tensor(
+            [sum(mask) for mask in masks], device=self.device, dtype=torch.long
+        )
+        positions = torch.cat(
+            [torch.arange(pos, pos + seqlen) for pos, seqlen in zip(seqpos, seqlens)]
+        ).to(device=self.device, dtype=torch.long)
         batch_idx = torch.tensor(
-            sum([[i] * seqlen for i, seqlen in enumerate(seqlens)], []), device=self.device, dtype=torch.long
+            sum([[i] * seqlen for i, seqlen in enumerate(seqlens)], []),
+            device=self.device,
+            dtype=torch.long,
         )
         cache_positions = positions % cache_size + batch_idx * cache_size
         first_prefill = seqpos[0] == 0
         subsequent_prefill = any(seqlen > 1 for seqlen in seqlens)
         if first_prefill:
             assert all([pos == 0 for pos in seqpos]), seqpos
-            mask = BlockDiagonalCausalMask.from_seqlens(seqlens).make_local_attention(cache_size)
+            mask = BlockDiagonalCausalMask.from_seqlens(seqlens).make_local_attention(
+                cache_size
+            )
         elif subsequent_prefill:
             assert self.kv_seqlens is not None
             mask = BlockDiagonalMask.from_seqlens(
                 q_seqlen=seqlens,
                 kv_seqlen=[
-                    s + cached_s.clamp(max=cache_size).item() for (s, cached_s) in zip(seqlens, self.kv_seqlens)
+                    s + cached_s.clamp(max=cache_size).item()
+                    for (s, cached_s) in zip(seqlens, self.kv_seqlens)
                 ],
             ).make_local_attention_from_bottomright(cache_size)
         else:
             mask = BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
                 q_seqlen=seqlens,
                 kv_padding=cache_size,
-                kv_seqlen=(self.kv_seqlens + cached_elements).clamp(max=cache_size).tolist(),
+                kv_seqlen=(self.kv_seqlens + cached_elements)
+                .clamp(max=cache_size)
+                .tolist(),
             )
         return CacheInputMetadata(
             positions=positions,

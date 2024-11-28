@@ -2,21 +2,16 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Union
-
+import torch.distributed
+import torch.nn as nn
 import safetensors.torch
 import torch
-from mistral_common.tokens.tokenizers.sentencepiece import (
-    InstructTokenizerBase,
-    SentencePieceTokenizer,
-)
 from torch.distributed import barrier
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 
-from model.transformer import LoRALinear
-
-from .distributed import get_rank, get_world_size
-from .utils import TrainState
+from embed_llm.models.lora import LoRALinear
+from embed_llm.training.distributed import get_rank, get_world_size
+from embed_llm.training.utils import TrainState
 
 logger = logging.getLogger("checkpointing")
 
@@ -33,11 +28,17 @@ class Checkpointer:
         self,
         model: FullyShardedDataParallel,
         state: TrainState,
-        run_dir: Union[Path, str],
-        optimizer: Optional[torch.optim.Optimizer] = None,
-        num_ckpt_keep: Optional[int] = None,
+        run_dir: Path | str,
+        optimizer: torch.optim.Optimizer | None = None,
+        num_ckpt_keep: int | None = None,
+        pipeline: object | None = None,
     ):
-        self.model = model
+        self.llm: nn.Module = model.llm
+        self.mlp_project: nn.Module = model.mlp_project
+        self.trainable_embedder: nn.Module | None = model.trainable_embedder
+        self.pooling_module: nn.Module | None = model.pooling_module
+        self.pipeline = pipeline
+        self.llm_name = model.llm_name
         self.optimizer = optimizer
         self.state = state
         self.run_dir = Path(run_dir)
@@ -49,12 +50,18 @@ class Checkpointer:
         return self.run_dir / "checkpoints"
 
     @property
-    def dst_dir(self) -> Path:
-        return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / "consolidated"
+    def dst_dir(self) -> tuple[Path, Path]:
+        return (
+            self.ckpt_dir
+            / f"checkpoint_{self.state.step:06d}"
+            / self.llm_name
+            / "consolidated",
+            self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / "MLP_projector",
+        )
 
     @staticmethod
     def consolidated_path(
-        ckpt_dir: Path, use_safetensors: bool, save_only_lora: Optional[bool] = False
+        ckpt_dir: Path, use_safetensors: bool, save_only_lora: bool = False
     ) -> Path:
         suffix = "safetensors" if use_safetensors else "00.pth"
         prefix = "lora" if save_only_lora else "consolidated"
@@ -65,14 +72,21 @@ class Checkpointer:
     def _tmp(ckpt_dir: Path) -> Path:
         return ckpt_dir.with_name(f"tmp.{ckpt_dir.name}")
 
-    def write_params_info(self, tmp_dst: Path):
+    def write_pipeline_params_info(self, tmp_dst: Path):
         params_path = tmp_dst / "params.json"
         with open(params_path, "w") as f:
-            model_args = self.model.args.to_dict()
+            pipeline_args = self.pipeline.pipeline_args.to_dict()
+            pipeline_args["param_dtype"] = str(pipeline_args["param_dtype"]).split(".")[-1]
+            f.write(json.dumps(pipeline_args, indent=4))
 
+    def write_llm_params_info(self, tmp_dst: Path):
+        params_path = tmp_dst / "params.json"
+        with open(params_path, "w") as f:
+            model_args = self.llm.args.to_dict()
             f.write(json.dumps(model_args, indent=4))
 
-    def delete_old_ckpts(self) -> List[Path]:
+
+    def delete_old_ckpts(self) -> list[Path]:
         all_saved_ckpts = [d for d in self.ckpt_dir.iterdir() if d.is_dir()]
 
         # Sort directories by creation time (oldest to newest)
@@ -90,13 +104,13 @@ class Checkpointer:
         return ckpts_to_delete
 
     @staticmethod
-    def get_lora_states(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def get_lora_states(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         return {k: v for k, v in state_dict.items() if "lora" in k}
 
     @staticmethod
     def get_non_lora_states(
-        state_dict: Dict[str, torch.Tensor],
-    ) -> Dict[str, torch.Tensor]:
+        state_dict: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
         return {
             k: v
             for k, v in state_dict.items()
@@ -106,14 +120,14 @@ class Checkpointer:
     @torch.no_grad()
     def retrieve_save_states(
         self, save_only_lora: bool, save_dtype: torch.dtype
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         if save_only_lora:
             assert (
-                self.model.args.lora.enable
+                self.llm.args.lora.enable
             ), "Cannot save LoRA checkpoint as LoRA training is not enabled."
 
         # remove all potential hooks
-        for module in self.model.modules():
+        for module in self.llm.modules():
             if isinstance(module, LoRALinear) and hasattr(module, "_merge_lora_handle"):
                 module._merge_lora_handle.remove()  # type: ignore
 
@@ -122,14 +136,14 @@ class Checkpointer:
 
             def merge_lora(
                 m: torch.nn.Module,
-                destination: Dict[str, torch.Tensor],
+                destination: dict[str, torch.Tensor],
                 prefix: str,
                 *args,
             ):
-                weight = m.merge_weight()  # type: ignore
+                weight = m.merge_weight()
                 destination[prefix + "weight"] = weight
 
-            for module in self.model.modules():
+            for module in self.llm.modules():
                 if isinstance(module, LoRALinear):
                     module._merge_lora_handle = module._register_state_dict_hook(
                         merge_lora
@@ -139,7 +153,7 @@ class Checkpointer:
         if save_only_lora:
 
             def is_trainable_fsdp(
-                module: Union[torch.nn.Module, FullyShardedDataParallel],
+                module: torch.nn.Module | FullyShardedDataParallel,
             ):
                 is_fsdp = isinstance(module, FullyShardedDataParallel)
                 all_params_have_grads = is_fsdp and all(
@@ -147,17 +161,46 @@ class Checkpointer:
                 )
 
                 # need to make sure only lowest fsdp wrap is used
-                is_leaf_node = is_fsdp and len(list(module.module.children())) == 0  # type: ignore
+                is_leaf_node = (
+                    is_fsdp and len(list(module.module.children())) == 0
+                )  # type: ignore
 
                 return is_fsdp and all_params_have_grads and is_leaf_node
 
             # extract all modules with only trainable weights
-            modules = {
-                k: m for k, m in self.model.named_modules() if is_trainable_fsdp(m)
+            llm_modules = {
+                k: m for k, m in self.llm.named_modules() if is_trainable_fsdp(m)
             }
 
-            states = {}
-            for key, module in modules.items():
+            if self.mlp_project is None:
+                mlp_project_modules = {}
+            else:
+                mlp_project_modules = {
+                    k: m
+                    for k, m in self.mlp_project.named_modules()
+                    if is_trainable_fsdp(m)
+                }
+
+            if self.trainable_embedder is None:
+                trainable_embedder_modules = {}
+                pooling_modules = {}
+            else:
+                trainable_embedder_modules = {
+                    k: m
+                    for k, m in self.trainable_embedder.named_modules()
+                    if is_trainable_fsdp(m)
+                }
+                
+                pooling_modules = {
+                    k: m
+                    for k, m in self.pooling_module.named_modules()
+                    if all(
+                    p.requires_grad is True for p in module.parameters())
+                    and k == 'process'
+                }
+
+            llm_states = {}
+            for key, module in llm_modules.items():
                 assert isinstance(
                     module, FullyShardedDataParallel
                 ), "`module` should be an instance of `FullyShardedDataParallel`"
@@ -167,83 +210,229 @@ class Checkpointer:
                 with module.summon_full_params(
                     module, writeback=True, offload_to_cpu=offload_to_cpu
                 ):
-                    states.update(
+                    llm_states.update(
                         {
                             f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
                             for k, v in module.state_dict().items()
                         }
                     )
+
+            mlp_project_states = {}
+            for key, module in mlp_project_modules.items():
+                assert isinstance(
+                    module, FullyShardedDataParallel
+                ), "`module` should be an instance of `FullyShardedDataParallel`"
+                parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                    "_checkpoint_wrapped_module.", ""
+                )
+                with module.summon_full_params(
+                    module, writeback=True, offload_to_cpu=offload_to_cpu
+                ):
+                    mlp_project_states.update(
+                        {
+                            f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                            for k, v in module.state_dict().items()
+                        }
+                    )
+
+            trainable_embedder_states = {}
+            for key, module in trainable_embedder_modules.items():
+                assert isinstance(
+                    module, FullyShardedDataParallel
+                ), "`module` should be an instance of `FullyShardedDataParallel`"
+                parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                    "_checkpoint_wrapped_module.", ""
+                )
+                with module.summon_full_params(
+                    module, writeback=True, offload_to_cpu=offload_to_cpu
+                ):
+                    trainable_embedder_states.update(
+                        {
+                            f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                            for k, v in module.state_dict().items()
+                        }
+                    )
+                    
+            pooling_modules_states = {}
+            for key, module in pooling_modules.items():
+                assert isinstance(
+                    module, FullyShardedDataParallel
+                ), "`module` should be an instance of `FullyShardedDataParallel`"
+                parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                    "_checkpoint_wrapped_module.", ""
+                )
+                with module.summon_full_params(
+                    module, writeback=True, offload_to_cpu=offload_to_cpu
+                ):
+                    pooling_modules_states.update(
+                        {
+                            f"{k}": v.to(dtype=save_dtype)
+                            for k, v in module.state_dict().items()
+                        }
+                    )
+    
         else:
             # make sure you have enough CPU RAM available to save the full model
             assert isinstance(
-                self.model, FullyShardedDataParallel
-            ), "`self.model` should be an instance of `FullyShardedDataParallel`"
-            with self.model.summon_full_params(
-                self.model, writeback=True, offload_to_cpu=offload_to_cpu
+                self.llm, FullyShardedDataParallel
+            ), "`self.llm` should be an instance of `FullyShardedDataParallel`"
+            assert isinstance(
+                self.mlp_project, FullyShardedDataParallel | None
+            ), "`self.mlp_project` should be an instance of `FullyShardedDataParallel`"
+
+            assert isinstance(
+                self.trainable_embedder, FullyShardedDataParallel | None
+            ), "`self.trainable_embedder` should be an instance of `FullyShardedDataParallel`"
+
+            with self.llm.summon_full_params(
+                self.llm, writeback=True, offload_to_cpu=offload_to_cpu
             ):
-                states = self.get_non_lora_states(self.model.state_dict())
-                states = {k: v.to(dtype=save_dtype) for k, v in states.items()}
+                llm_states = self.get_non_lora_states(self.llm.state_dict())
+                llm_states = {k: v.to(dtype=save_dtype) for k, v in llm_states.items()}
 
-        states = dict(sorted(states.items()))
-        return states
+            mlp_project_states = {}
+            if self.mlp_project is not None:
+                with self.mlp_project.summon_full_params(
+                    self.mlp_project, writeback=True, offload_to_cpu=offload_to_cpu
+                ):
+                    mlp_project_states.update(
+                        self.get_non_lora_states(self.mlp_project.state_dict())
+                    )
+                    mlp_project_states = {
+                        k: v.to(dtype=save_dtype) for k, v in mlp_project_states.items()
+                    }
 
-    @staticmethod
-    def save_tokenizer(instruct_tokenizer: InstructTokenizerBase, tmp_dst: Path):
-        if isinstance(instruct_tokenizer.tokenizer, SentencePieceTokenizer):
-            serialized_spm = (
-                instruct_tokenizer.tokenizer._model.serialized_model_proto()
-            )  # type: ignore
+            if self.trainable_embedder is not None:
 
-            tokenizer_path = tmp_dst / "tokenizer.model.v3"
+                trainable_embedder_states = {}
+                with self.trainable_embedder.summon_full_params(
+                    self.trainable_embedder,
+                    writeback=True,
+                    offload_to_cpu=offload_to_cpu,
+                ):
+                    trainable_embedder_states.update(
+                        self.get_non_lora_states(self.trainable_embedder.state_dict())
+                    )
+                    trainable_embedder_states = {
+                        k: v.to(dtype=save_dtype)
+                        for k, v in trainable_embedder_states.items()
+                    }
+                pooling_modules_states = {}
+                with self.pooling_module.summon_full_params(
+                    self.pooling_module,
+                    writeback=True,
+                    offload_to_cpu=offload_to_cpu,
+                ):
+                    pooling_modules_states.update(
+                        self.get_non_lora_states(self.pooling_module.state_dict())
+                    )
+                    pooling_modules_states = {  
+                        k: v.to(dtype=save_dtype)
+                        for k, v in pooling_modules_states.items()
+                    }
 
-            with open(tokenizer_path, "wb") as f:
-                f.write(serialized_spm)
-        else:
-            path = instruct_tokenizer.tokenizer._path
-            assert path is not None
-            shutil.copy(path, tmp_dst / "tekken.json")
+        llm_states = dict(sorted(llm_states.items()))
+        mlp_project_states = dict(sorted(mlp_project_states.items()))
+        pooling_modules_states = dict(sorted(pooling_modules_states.items()))
+        trainable_embedder_states = dict(sorted(trainable_embedder_states.items()))
+        return (
+            llm_states,
+            mlp_project_states,
+            trainable_embedder_states,
+            pooling_modules_states,
+        )
 
     @torch.no_grad()
     def save_checkpoint(
         self,
         save_only_lora: bool,
         dtype: torch.dtype = torch.float16,
-        instruct_tokenizer: Optional[InstructTokenizerBase] = None,
     ):
-        tmp_dst = self._tmp(self.dst_dir)
+        llm_dst, mlp_project_dst = self.dst_dir
+        tmp_llm_dst = self._tmp(llm_dst)
+        tmp_mlp_project_dst = self._tmp(mlp_project_dst)
+
         main_logger_info(
-            f"Dumping checkpoint in {self.dst_dir} using tmp name: {tmp_dst.name}"
+            f"Dumping checkpoint in {llm_dst} and {mlp_project_dst} using tmp name: {tmp_llm_dst.name} and {tmp_mlp_project_dst.name}"
         )
 
-        assert not self.dst_dir.exists(), f"dst exists {self.dst_dir}"
-        tmp_dst.mkdir(parents=True, exist_ok=True)
+        assert (
+            not self.dst_dir[0].exists() and not self.dst_dir[1].exists()
+        ), f"dst exists {self.dst_dir}"
 
-        states: Dict[str, torch.Tensor] = self.retrieve_save_states(
-            save_only_lora, dtype
-        )
+        tmp_llm_dst.mkdir(parents=True, exist_ok=True)
+        tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
+
+        if self.trainable_embedder is not None:
+            tmp_trainable_embedder_dst = self._tmp(
+                llm_dst.parent / "trainable_embedder"
+            )
+            tmp_pooling_module_dst = self._tmp(llm_dst.parent / "pooling_module")
+            tmp_trainable_embedder_dst.mkdir(parents=True, exist_ok=True)
+            tmp_pooling_module_dst.mkdir(parents=True, exist_ok=True)
+
+        (
+            llm_states,
+            mlp_project_states,
+            trainable_embedder_states,
+            pooling_module_states,
+        ) = self.retrieve_save_states(save_only_lora, dtype)
 
         barrier()
 
         if self.rank == 0:
             # save checkpoint in tmp path
             safetensors.torch.save_file(
-                states,
+                llm_states,
                 self.consolidated_path(
-                    tmp_dst, use_safetensors=True, save_only_lora=save_only_lora
+                    tmp_llm_dst, use_safetensors=True, save_only_lora=save_only_lora
                 ),  # always use safetensors for checkpointing
             )
 
-            self.write_params_info(tmp_dst)
+            safetensors.torch.save_file(
+                mlp_project_states,
+                self.consolidated_path(
+                    tmp_mlp_project_dst,
+                    use_safetensors=True,
+                    save_only_lora=False,
+                ),  # always use safetensors for checkpointing
+            )
+            if self.trainable_embedder is not None:
+                safetensors.torch.save_file(
+                    trainable_embedder_states,
+                    self.consolidated_path(
+                        tmp_trainable_embedder_dst,
+                        use_safetensors=True,
+                        save_only_lora=save_only_lora,
+                    ),  # always use safetensors for checkpointing
+                )
+                safetensors.torch.save_file(
+                    pooling_module_states,
+                    self.consolidated_path(
+                        tmp_pooling_module_dst,
+                        use_safetensors=True,
+                        save_only_lora=False,
+                    ),  # always use safetensors for checkpointing
+                )
 
-            # save tokenizer
-            if instruct_tokenizer is not None:
-                self.save_tokenizer(instruct_tokenizer, tmp_dst)
+            if self.pipeline is None:
+                self.write_llm_params_info(tmp_llm_dst.parent)
+            else:
+                self.write_pipeline_params_info(tmp_llm_dst.parent.parent)
+                
 
-            assert not self.dst_dir.exists(), f"should not happen! {self.dst_dir}"
-            tmp_dst.rename(self.dst_dir)
-
+            assert (
+                not self.dst_dir[0].exists() and not self.dst_dir[1].exists()
+            ), f"should not happen! {self.dst_dir[0]} | {self.dst_dir[1]}"
+            tmp_llm_dst.rename(self.dst_dir[0])
+            tmp_mlp_project_dst.rename(self.dst_dir[1])
+            
+            if self.trainable_embedder is not None:
+                tmp_pooling_module_dst.rename(llm_dst.parent / "pooling_module")
+                tmp_trainable_embedder_dst.rename(llm_dst.parent / "trainable_embedder")
+                
             logger.info(
-                f"Done dumping checkpoint in {self.dst_dir} for step: {self.state.step}"
+                f"Done dumping checkpoint in {self.dst_dir[0]} and {self.dst_dir[1]} for step: {self.state.step}"
             )
 
             # delete last n checkpoints

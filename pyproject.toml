@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "embed_llm"
+version = "0.0"
+authors = [
+    {name = "Hippolyte Pilchen"},
+    {name = "Edouard Grave"},
+    {name = "Patrick Pérez"},
+]
+description = "Embedding augmented LLM experiments"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache 2.0"}
+classifiers = [
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dynamic = ["dependencies"]
+
+[tool.setuptools]
+packages = ["embed_llm"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}

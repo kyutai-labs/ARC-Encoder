@@ -1,11 +1,7 @@
-from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import List, Optional, Union
-
 import torch
 import torch.nn as nn
-
-from mistral_inference.cache import BufferCache
+from abc import ABC, abstractmethod
+from embed_llm.models.mistral.cache import BufferCache
 
 
 class ModelBase(nn.Module, ABC):
@@ -26,18 +22,18 @@ class ModelBase(nn.Module, ABC):
     def forward(
         self,
         input_ids: torch.Tensor,
-        seqlens: List[int],  # not supported for now
-        cache: Optional[BufferCache] = None,  # not supported for now
+        seqlens: list[int],  # not supported for now
+        cache: BufferCache | None = None,  # not supported for now
     ) -> torch.Tensor:
         pass
 
-    @staticmethod
-    @abstractmethod
-    def from_folder(
-        folder: Union[Path, str],
-        max_batch_size: int = 1,
-        num_pipeline_ranks: int = 1,
-        device: Union[torch.device, str] = "cuda",
-        dtype: Optional[torch.dtype] = None,
-    ) -> "ModelBase":
-        pass
+    # @staticmethod
+    # @abstractmethod
+    # def from_folder(
+    #     folder: Union[Path, str],
+    #     max_batch_size: int = 1,
+    #     num_pipeline_ranks: int = 1,
+    #     device: Union[torch.device, str] = "cuda",
+    #     dtype: Optional[torch.dtype] = None,
+    # ) -> "ModelBase":
+    #     pass

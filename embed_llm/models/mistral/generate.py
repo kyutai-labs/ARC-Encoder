@@ -1,57 +1,22 @@
-from typing import List, Optional, Tuple
-
-import numpy as np
 import torch
-
-from cache import BufferCache
-# mamba import Mamba
-from transformer import Transformer
-
-
-# @torch.inference_mode()
-# def generate_mamba(
-#     encoded_prompts: List[List[int]],
-#     model: Mamba,
-#     *,
-#     max_tokens: int,
-#     temperature: float,
-#     chunk_size: Optional[int] = None,
-#     eos_id: Optional[int] = None,
-# ) -> Tuple[List[List[int]], List[List[float]]]:
-#     input_ids = torch.tensor(encoded_prompts, device=model.device)
-#     output = model.model.generate(
-#         input_ids=input_ids,
-#         max_length=input_ids.shape[-1] + max_tokens,
-#         cg=True,
-#         return_dict_in_generate=True,
-#         output_scores=True,
-#         enable_timing=False,
-#         eos_token_id=eos_id,
-#         temperature=temperature,
-#         top_p=0.8,
-#     )
-#     generated_tokens = output.sequences[:, input_ids.shape[-1] :].tolist()
-
-#     _logprobs: List[List[float]] = [[] for _ in range(len(generated_tokens))]
-#     for seq_idx, batch_score in enumerate(output.scores):
-#         for batch_idx, score in enumerate(batch_score.tolist()):
-#             _logprobs[batch_idx].append(score[generated_tokens[batch_idx][seq_idx]])
-
-#     return generated_tokens, _logprobs
+from embed_llm.models.mistral.cache import BufferCache
+from embed_llm.models.mistral.transformer import Transformer
 
 
 @torch.inference_mode()
 def generate(
-    encoded_prompts: List[List[int]],
+    encoded_prompts: list[list[int]] | list[int],
     model: Transformer,
-    # images: List[List[np.ndarray]] = [],
+    # images: list[list[np.ndarray]] = [],
     *,
     max_tokens: int,
     temperature: float,
-    chunk_size: Optional[int] = None,
-    eos_id: Optional[int] = None,
-) -> Tuple[List[List[int]], List[List[float]]]:
-    # images_torch: List[List[torch.Tensor]] = []
+    embeddings: torch.Tensor | None = None,
+    chunk_size: int | None = None,
+    eos_id: int | None = None,
+    norm_wo_embeds: bool = False,
+) -> tuple[list[list[int]], list[list[float]]]:
+    # images_torch: list[list[torch.Tensor]] = []
     # if images:
     #     assert chunk_size is None
     #     images_torch = [
@@ -59,9 +24,11 @@ def generate(
     #         for images_for_sample in images
     #     ]
 
+    if len(encoded_prompts) > 0 and not isinstance(encoded_prompts[0], list):
+        encoded_prompts = [encoded_prompts]
+
     model = model.eval()
     B, V = len(encoded_prompts), model.args.vocab_size
-
     seqlens = [len(x) for x in encoded_prompts]
 
     # Cache
@@ -78,7 +45,7 @@ def generate(
     cache.reset()
 
     # Bookkeeping
-    logprobs: List[List[float]] = [[] for _ in range(B)]
+    logprobs: list[list[float]] = [[] for _ in range(B)]
     last_token_prelogits = None
 
     # One chunk if size not specified
@@ -86,17 +53,19 @@ def generate(
     if chunk_size is None:
         chunk_size = max_prompt_len
 
-    # flattened_images: List[torch.Tensor] = sum(images_torch, [])
+    # flattened_images: list[torch.Tensor] = sum(images_torch, [])
 
     # Encode prompt by chunks
     for s in range(0, max_prompt_len, chunk_size):
         prompt_chunks = [p[s : s + chunk_size] for p in encoded_prompts]
         assert all(len(p) > 0 for p in prompt_chunks)
-        prelogits = model.forward(
+        prelogits = model.generate(
             torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
             # images=flattened_images,
             seqlens=[len(p) for p in prompt_chunks],
+            embeddings=embeddings,
             cache=cache,
+            norm_wo_embeds=norm_wo_embeds,
         )
         logits = torch.log_softmax(prelogits, dim=-1)
 
@@ -104,16 +73,26 @@ def generate(
             # Pass > 1
             last_token_logits = torch.log_softmax(last_token_prelogits, dim=-1)
             for i_seq in range(B):
-                logprobs[i_seq].append(last_token_logits[i_seq, prompt_chunks[i_seq][0]].item())
+                logprobs[i_seq].append(
+                    last_token_logits[i_seq, prompt_chunks[i_seq][0]].item()
+                )
 
         offset = 0
         for i_seq, sequence in enumerate(prompt_chunks):
-            logprobs[i_seq].extend([logits[offset + i, sequence[i + 1]].item() for i in range(len(sequence) - 1)])
+            logprobs[i_seq].extend(
+                [
+                    logits[offset + i, sequence[i + 1]].item()
+                    for i in range(len(sequence) - 1)
+                ]
+            )
             offset += len(sequence)
 
         last_token_prelogits = prelogits.index_select(
             0,
-            torch.tensor([len(p) for p in prompt_chunks], device=prelogits.device).cumsum(dim=0) - 1,
+            torch.tensor(
+                [len(p) for p in prompt_chunks], device=prelogits.device
+            ).cumsum(dim=0)
+            - 1,
         )
         assert last_token_prelogits.shape == (B, V)
 
@@ -136,10 +115,19 @@ def generate(
             logprobs[i].append(last_token_logits[i, next_token[i]].item())
 
         generated_tensors.append(next_token[:, None])
-        last_token_prelogits = model.forward(next_token, seqlens=[1] * B, cache=cache)
-        assert last_token_prelogits.shape == (B, V)
+        last_token_prelogits = model.generate(
+            next_token,
+            seqlens=[1] * B,
+            embeddings=embeddings,
+            cache=cache,
+            norm_wo_embeds=norm_wo_embeds,
+        )
+        assert last_token_prelogits.shape == (
+            B,
+            V,
+        ), f"last token prelogit: {last_token_prelogits.shape}; B: {B}; V: {V}"
 
-    generated_tokens: List[List[int]]
+    generated_tokens: list[list[int]]
     if generated_tensors:
         generated_tokens = torch.cat(generated_tensors, 1).tolist()
     else:

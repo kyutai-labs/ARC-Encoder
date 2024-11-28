@@ -1,37 +1,33 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List,  Union, Optional
-
-
 from mistral_common.tokens.tokenizers.base import Tokenizer as MistralTokenizer
 from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
 from embed_llm.models.gemma.tokenizer import Tokenizer as GemmaTokenizer
 
 
-Tokenizer = Union[MistralTokenizer, LlamaTokenizer, GemmaTokenizer]
+Tokenizer = MistralTokenizer | LlamaTokenizer | GemmaTokenizer
 
 logger = logging.getLogger("tokenize")
 
-Sequence = List[int]
-Mask = List[bool]
+Sequence = list[int]
+Mask = list[bool]
+
 
 @dataclass()
 class TokenSample:
     tokens: Sequence
     masks: Mask
 
+
 def encode(
-    data: Dict[str, Any],
-    tokenizer: Optional[Tokenizer] = None,
-) -> Union[TokenSample, str]:
+    data: dict[str, object],
+    tokenizer: Tokenizer | None = None,
+) -> TokenSample | None:
     sample = get_sample(data)
-    if tokenizer is None:
-        return sample
-    else:
-        return tokenize(sample=sample, tokenizer=tokenizer)
+    return tokenize(sample=sample, tokenizer=tokenizer)
 
 
-def get_sample(data: Dict[str, Any]) -> str:
+def get_sample(data: dict[str, object]) -> str:
     content_keys = ["text", "content"]
     assert not all(
         k in data for k in content_keys
@@ -48,6 +44,7 @@ def get_sample(data: Dict[str, Any]) -> str:
     assert isinstance(sample, str), sample
 
     return sample
+
 
 def tokenize(sample: str, tokenizer: Tokenizer) -> TokenSample:
     tokens = tokenizer.encode(sample, bos=True, eos=True)

@@ -1,0 +1,50 @@
+batch_size: 32
+ckpt_freq: 2
+data:
+  eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
+  shuffle: false
+  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
+continuation: false
+embedder:
+  dim: 4096
+  name: Mistral7B # put '' to use trainable embedder
+  train: true # put true to train embedder
+  causal: true
+  pooling_module: # see `embedders.py` for available pooling modules
+    type: latent_attention # mean, cls ...
+    n_truncated_layers: 3
+
+    
+eval_freq: 5
+exp_name: other
+llm_name: Mistral7B
+log_freq: 1
+lora:
+  enable: true
+  rank: 64
+  scaling: 2.0
+max_steps: 10000
+model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
+no_eval: false
+optim:
+  final_lr: 1.0e-10
+  initial_lr: 1.0e-20
+  max_lr: 5.0e-06
+  warm_up_steps: 2000
+  weight_decay: 0.1
+projector:
+  act: gelu
+  hidden_dim: 4096
+  n_layers: 3
+run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
+save_adapters: true
+seed: 0
+seq_len: 512
+norm_wo_embeds: false # whether to normalize the output of the llm without the embeddings
+w_embeds: true # Whether to use document embeddings as preconditioning for text generation
+
+# wandb:
+#   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
+#   offline: false
+#   project: embed_llm
+#   run_name: mlp_proj7a3a4ade9c98ec81b556

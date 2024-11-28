@@ -3,9 +3,11 @@ import dataclasses
 import datetime
 import logging
 import time
-from typing import Optional, Protocol
-
 import torch
+from typing import Protocol
+import numpy as np
+import random
+
 
 logger = logging.getLogger("utils")
 
@@ -18,8 +20,8 @@ class TrainState:
     n_seen_tokens: int = 0
     this_step_time: float = 0.0
     begin_step_time: float = 0.0
-    this_eval_perplexity: Optional[float] = None
-    this_eval_loss: Optional[float] = None
+    this_eval_perplexity: float | None = None
+    this_eval_loss: float | None = None
 
     def start_step(self):
         self.step += 1
@@ -54,6 +56,8 @@ def set_random_seed(seed: int) -> None:
     """Set random seed for reproducibility."""
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
 
 class Closable(Protocol):
