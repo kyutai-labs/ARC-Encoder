@@ -385,7 +385,8 @@ def load_training_model(
         ):
             ignored_state = [augmented_model.pooling_module.process.latents]
 
-        auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
+
+    auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
     
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
     
