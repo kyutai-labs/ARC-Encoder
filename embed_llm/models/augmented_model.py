@@ -29,6 +29,7 @@ from embed_llm.training.distributed import (
 
 # Mistral specifics
 from embed_llm.models.mistral.transformer import Transformer as MistralTransformer
+from embed_llm.models.mistral.cross_att_transformer import Transformer as CrossAtt_MistralTransformer
 from embed_llm.models.mistral.moe import MoeArgs
 from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_tokenizer
 from embed_llm.models.mistral.generate import generate as mistral_generate
@@ -118,12 +119,17 @@ class EmbedAugModel(nn.Module):
         self.pooling_args = (
             None if trainable_embedder is None else pipeline_args.pooling_module
         )
-
+        self.cross_att = pipeline_args.cross_att
         if "mistral" in self.llm_name:
-            self.forward = partial(
-                self.forward_seq,
-                norm_wo_embeds=self.norm_wo_embeds,
-            )
+            if pipeline_args.cross_att:
+                self.forward = partial(
+                    self.forward_cross_att,
+                )
+            else:
+                self.forward = partial(
+                    self.forward_seq,
+                    norm_wo_embeds=self.norm_wo_embeds,
+                )
 
         elif "gemma" in self.llm_name or "llama" in self.llm_name:
             self.forward = partial(
@@ -147,6 +153,31 @@ class EmbedAugModel(nn.Module):
             )
         else:
             self.pooling_module = None
+            
+    def forward_cross_att(self,
+        x: torch.Tensor,
+        seqlens: list[int],
+        embeddings: torch.Tensor | None = None,
+        kv_seqlens: list[int] | None = None) -> torch.Tensor:
+        
+        if self.trainable_embedder is not None:
+            embeddings = self.trainable_embedder(
+                input_ids=x, embeddings=None, seqlens=seqlens
+            )
+            kv_seqlens = seqlens
+        else:
+            assert embeddings is not None, "Embeddings must be provided if no trainable embedder."
+            assert kv_seqlens is not None, "kv_seqlens must be provided if no trainable embedder."
+
+        if self.mlp_project is not None:
+            embeddings = self.mlp_project(embeddings)
+
+        return self.llm.forward(
+            input_ids=x,
+            embeddings=embeddings,
+            seqlens=seqlens,
+            kv_seqlens=kv_seqlens,
+        )
 
     def forward_seq(
         self,
@@ -235,8 +266,11 @@ class EmbedAugPipeline(nn.Module):
     def store_model(self, model: nn.Module):
         self.model = model
 
-    def prepare_forward(self, batch: Batch, batch_size: int) -> tuple:
-
+    def prepare_forward(self, batch: Batch, batch_size: int, cross_att: bool = False) -> tuple:
+        
+        # TODO: Add support for cross_att
+        kv_seqlens = None
+        
         if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
             # To avoid OOM
             with torch.no_grad():
@@ -293,7 +327,7 @@ class EmbedAugPipeline(nn.Module):
                 batch_size=batch_size,
             )
         seqlens = batch.sizes
-        return x, y, y_mask, seqlens, embeddings
+        return x, y, y_mask, seqlens, embeddings, kv_seqlens
 
     # TODO Gérer multi gpu + adaptative param dtype
     @staticmethod
@@ -344,6 +378,11 @@ class EmbedAugPipeline(nn.Module):
                             param_dtype=param_dtype,
                             parll=False,
         )
+        
+        if pipeline_args.cross_att:
+            state_dict = safetensors.torch.load_file(Path(lora_path))
+            cross_att_state_dicts = {k: v.to(llm.device).to(param_dtype) for k, v in state_dict.items() if "lora" not in k}
+            llm.load_state_dict(cross_att_state_dicts, assign=True)
 
         llm.load_lora(Path(lora_path))
         llm = llm.to(device)
@@ -584,6 +623,7 @@ def load_args(
     trainable_embedder: bool = False,
     causal: bool = True,
     continuation: bool = False,
+    cross_att: bool = False,
 ) -> tuple[ModelsArgs, EmbedAugArgs]:
 
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
@@ -655,6 +695,7 @@ def load_args(
             trainable_embedder=trainable_embedder, 
             causal=causal,
             continuation=continuation,
+            cross_att=cross_att,
         )
     if isinstance(pipeline_args.param_dtype, str):
         pipeline_args.param_dtype = getattr(torch, pipeline_args.param_dtype)
@@ -722,7 +763,12 @@ def load_llm_model(
     if "mistral" in llm_name.lower():
         tokenizer = load_mistral_tokenizer(folder).instruct_tokenizer.tokenizer
         with torch.device("meta"):
-            model = MistralTransformer(args=llm_args, checkpoint=checkpoint)
+            if not pipeline_args.cross_att:
+                model = MistralTransformer(args=llm_args, checkpoint=checkpoint)
+            elif pipeline_args.cross_att and for_embedding:
+                model = MistralTransformer(args=llm_args, checkpoint=checkpoint)
+            else:
+                model = CrossAtt_MistralTransformer(args=llm_args, checkpoint=checkpoint)
 
         embed_dim = model.args.dim
         if parll and get_rank() == 0:

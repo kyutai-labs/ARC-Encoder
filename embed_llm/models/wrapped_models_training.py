@@ -149,6 +149,22 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                 else:
                     raise ValueError("Only Lora layers should be randomly initialized.")
 
+def initialize_cross_attention(model: torch.nn.Module, param_dtype: torch.dtype):
+    for m_name, module in model.named_modules():
+        # Flag all the supplementary modules
+        if len(list(module.children())) == 0 and ('cross_attention' in m_name
+                                                  or 'gate' in m_name
+                                                  or 'to_k' in m_name
+                                                  or 'to_v' in m_name):
+        
+            for p_name, param in module.named_parameters():
+                module._parameters[p_name] = torch.nn.Parameter(
+                    torch.empty_like(param, device="cpu", dtype=param_dtype)
+                )
+                param = module._parameters[p_name]
+                torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+           
+    
                     
 def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
     for m_name, module in model.named_modules():
@@ -218,6 +234,7 @@ def load_training_model(
         trainable_embedder=args.embedder.train,
         causal = args.embedder.causal,
         continuation = args.continuation,
+        cross_att=args.cross_att,
     )
 
     # Load pretrained params on rank 0
@@ -291,6 +308,10 @@ def load_training_model(
             # initialize LoRA layers
             initialize_lora_parameters(augmented_model.llm, param_dtype)
             
+            if args.cross_att:
+                main_logger_info('Initializing Cross Attention')
+                initialize_cross_attention(augmented_model.llm, param_dtype)
+            
             if args.embedder.train:
                 logger.info("Initializing lora layers  for Embedder ...")
                 initialize_lora_parameters(augmented_model.trainable_embedder, param_dtype)
@@ -306,7 +327,7 @@ def load_training_model(
             main_logger_info('Initializing Pooling')
             initialize_latent_attention(augmented_model.pooling_module, param_dtype)
 
-                
+            
         assert not any(
             p.is_meta for n, p in augmented_model.named_parameters() if 'latents' not in n
         ), "All parameters should be initialized by now"
@@ -346,10 +367,12 @@ def load_training_model(
     if lora.enable:
         for name, param in augmented_model.named_parameters():
             if "lora" in name:
-                param.requires_grad = True
+                param.requires_grad = True            
             elif "mlp_project" in name:
                 param.requires_grad = True
             elif "pooling_module" in name:
+                param.requires_grad = True
+            elif "cross_attention" in name or "gate" in name or "to_k" in name or "to_v" in name:
                 param.requires_grad = True
             else:
                 param.requires_grad = False

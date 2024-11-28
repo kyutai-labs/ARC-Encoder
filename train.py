@@ -278,7 +278,7 @@ def _train(
             """ Training loop for basic reconstruction"""
 
             # start_time = time.time()
-            x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
+            x, y, y_mask, seqlens, embeddings, kv_seqlens = prepare_batch_fn(batch)
             
 
             # if get_rank() == 0:
@@ -286,8 +286,10 @@ def _train(
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
-
-            output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
+            if not args.cross_att:
+                output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
+            else:
+                output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens, kv_seqlens = kv_seqlens)
 
             # print(prof.key_averages().table(sort_by="cuda_time_total"))
 
@@ -358,7 +360,8 @@ def _train(
                 prepare_batch_fn=prepare_batch_fn,
                 batches=eval_batches,
                 state=state,
-            )
+                cross_att=args.cross_att
+                )
 
             eval_logs = get_eval_logs(
                 state.step, avg_loss, state.this_eval_perplexity, state.this_eval_loss
@@ -389,7 +392,6 @@ def _train(
             (args.ckpt_freq > 0 and state.step % args.ckpt_freq == 0) or is_last_step
         ):
             checkpointer.save_checkpoint(
-                save_only_lora=args.save_adapters,
                 dtype=param_dtype,
             )
 

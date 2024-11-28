@@ -72,13 +72,6 @@ class LoRALinear(nn.Module):
 
         self.register_load_state_dict_post_hook(ignore_missing_keys)
 
-    # def merge_weight(self):
-    #     with torch.no_grad():
-    #         up_weight = self.lora_B.weight
-    #         down_weight = self.lora_A.weight
-    #         weight = up_weight @ down_weight * self.scaling
-    #         weight += self.linear.weight
-    #     return weight
 
     # type: ignore[no-untyped-def]
     def _load_from_state_dict(

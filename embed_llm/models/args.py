@@ -38,6 +38,7 @@ class EmbedAugArgs(Serializable):
     causal: bool = True
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
     continuation: bool = False
+    cross_att: bool = False
 
 
 @dataclass

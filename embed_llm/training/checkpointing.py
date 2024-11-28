@@ -119,218 +119,140 @@ class Checkpointer:
 
     @torch.no_grad()
     def retrieve_save_states(
-        self, save_only_lora: bool, save_dtype: torch.dtype
+        self,  save_dtype: torch.dtype
     ) -> dict[str, torch.Tensor]:
-        if save_only_lora:
-            assert (
-                self.llm.args.lora.enable
-            ), "Cannot save LoRA checkpoint as LoRA training is not enabled."
+
+        assert (
+            self.llm.args.lora.enable
+        ), "Cannot save LoRA checkpoint as LoRA training is not enabled."
 
         # remove all potential hooks
         for module in self.llm.modules():
             if isinstance(module, LoRALinear) and hasattr(module, "_merge_lora_handle"):
                 module._merge_lora_handle.remove()  # type: ignore
 
-        # merge weights if we don't just save LoRA
-        if not save_only_lora:
-
-            def merge_lora(
-                m: torch.nn.Module,
-                destination: dict[str, torch.Tensor],
-                prefix: str,
-                *args,
-            ):
-                weight = m.merge_weight()
-                destination[prefix + "weight"] = weight
-
-            for module in self.llm.modules():
-                if isinstance(module, LoRALinear):
-                    module._merge_lora_handle = module._register_state_dict_hook(
-                        merge_lora
-                    )
 
         offload_to_cpu = get_world_size() > 1
-        if save_only_lora:
 
-            def is_trainable_fsdp(
-                module: torch.nn.Module | FullyShardedDataParallel,
-            ):
-                is_fsdp = isinstance(module, FullyShardedDataParallel)
-                all_params_have_grads = is_fsdp and all(
-                    p.requires_grad is True for p in module.parameters()
-                )
+        def is_trainable_fsdp(
+            module: torch.nn.Module | FullyShardedDataParallel,
+        ):
+            is_fsdp = isinstance(module, FullyShardedDataParallel)
+            all_params_have_grads = is_fsdp and all(
+                p.requires_grad is True for p in module.parameters()
+            )
 
-                # need to make sure only lowest fsdp wrap is used
-                is_leaf_node = (
-                    is_fsdp and len(list(module.module.children())) == 0
-                )  # type: ignore
+            # need to make sure only lowest fsdp wrap is used
+            is_leaf_node = (
+                is_fsdp and len(list(module.module.children())) == 0
+            )  # type: ignore
 
-                return is_fsdp and all_params_have_grads and is_leaf_node
+            return is_fsdp and all_params_have_grads and is_leaf_node
 
-            # extract all modules with only trainable weights
-            llm_modules = {
-                k: m for k, m in self.llm.named_modules() if is_trainable_fsdp(m)
+        # extract all modules with only trainable weights
+        llm_modules = {
+            k: m for k, m in self.llm.named_modules() if is_trainable_fsdp(m)
+        }
+
+        if self.mlp_project is None:
+            mlp_project_modules = {}
+        else:
+            mlp_project_modules = {
+                k: m
+                for k, m in self.mlp_project.named_modules()
+                if is_trainable_fsdp(m)
             }
 
-            if self.mlp_project is None:
-                mlp_project_modules = {}
-            else:
-                mlp_project_modules = {
-                    k: m
-                    for k, m in self.mlp_project.named_modules()
-                    if is_trainable_fsdp(m)
-                }
-
-            if self.trainable_embedder is None:
-                trainable_embedder_modules = {}
-                pooling_modules = {}
-            else:
-                trainable_embedder_modules = {
-                    k: m
-                    for k, m in self.trainable_embedder.named_modules()
-                    if is_trainable_fsdp(m)
-                }
-                
-                pooling_modules = {
-                    k: m
-                    for k, m in self.pooling_module.named_modules()
-                    if all(
-                    p.requires_grad is True for p in module.parameters())
-                    and k == 'process'
-                }
-
-            llm_states = {}
-            for key, module in llm_modules.items():
-                assert isinstance(
-                    module, FullyShardedDataParallel
-                ), "`module` should be an instance of `FullyShardedDataParallel`"
-                parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
-                    "_checkpoint_wrapped_module.", ""
-                )
-                with module.summon_full_params(
-                    module, writeback=True, offload_to_cpu=offload_to_cpu
-                ):
-                    llm_states.update(
-                        {
-                            f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
-                            for k, v in module.state_dict().items()
-                        }
-                    )
-
-            mlp_project_states = {}
-            for key, module in mlp_project_modules.items():
-                assert isinstance(
-                    module, FullyShardedDataParallel
-                ), "`module` should be an instance of `FullyShardedDataParallel`"
-                parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
-                    "_checkpoint_wrapped_module.", ""
-                )
-                with module.summon_full_params(
-                    module, writeback=True, offload_to_cpu=offload_to_cpu
-                ):
-                    mlp_project_states.update(
-                        {
-                            f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
-                            for k, v in module.state_dict().items()
-                        }
-                    )
-
-            trainable_embedder_states = {}
-            for key, module in trainable_embedder_modules.items():
-                assert isinstance(
-                    module, FullyShardedDataParallel
-                ), "`module` should be an instance of `FullyShardedDataParallel`"
-                parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
-                    "_checkpoint_wrapped_module.", ""
-                )
-                with module.summon_full_params(
-                    module, writeback=True, offload_to_cpu=offload_to_cpu
-                ):
-                    trainable_embedder_states.update(
-                        {
-                            f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
-                            for k, v in module.state_dict().items()
-                        }
-                    )
-                    
-            pooling_modules_states = {}
-            for key, module in pooling_modules.items():
-                assert isinstance(
-                    module, FullyShardedDataParallel
-                ), "`module` should be an instance of `FullyShardedDataParallel`"
-                parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
-                    "_checkpoint_wrapped_module.", ""
-                )
-                with module.summon_full_params(
-                    module, writeback=True, offload_to_cpu=offload_to_cpu
-                ):
-                    pooling_modules_states.update(
-                        {
-                            f"{k}": v.to(dtype=save_dtype)
-                            for k, v in module.state_dict().items()
-                        }
-                    )
-    
+        if self.trainable_embedder is None:
+            trainable_embedder_modules = {}
+            pooling_modules = {}
         else:
-            # make sure you have enough CPU RAM available to save the full model
-            assert isinstance(
-                self.llm, FullyShardedDataParallel
-            ), "`self.llm` should be an instance of `FullyShardedDataParallel`"
-            assert isinstance(
-                self.mlp_project, FullyShardedDataParallel | None
-            ), "`self.mlp_project` should be an instance of `FullyShardedDataParallel`"
+            trainable_embedder_modules = {
+                k: m
+                for k, m in self.trainable_embedder.named_modules()
+                if is_trainable_fsdp(m)
+            }
+            
+            pooling_modules = {
+                k: m
+                for k, m in self.pooling_module.named_modules()
+                if all(
+                p.requires_grad is True for p in module.parameters())
+                and k == 'process'
+            }
 
+        llm_states = {}
+        for key, module in llm_modules.items():
             assert isinstance(
-                self.trainable_embedder, FullyShardedDataParallel | None
-            ), "`self.trainable_embedder` should be an instance of `FullyShardedDataParallel`"
-
-            with self.llm.summon_full_params(
-                self.llm, writeback=True, offload_to_cpu=offload_to_cpu
+                module, FullyShardedDataParallel
+            ), "`module` should be an instance of `FullyShardedDataParallel`"
+            parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                "_checkpoint_wrapped_module.", ""
+            )
+            with module.summon_full_params(
+                module, writeback=True, offload_to_cpu=offload_to_cpu
             ):
-                llm_states = self.get_non_lora_states(self.llm.state_dict())
-                llm_states = {k: v.to(dtype=save_dtype) for k, v in llm_states.items()}
-
-            mlp_project_states = {}
-            if self.mlp_project is not None:
-                with self.mlp_project.summon_full_params(
-                    self.mlp_project, writeback=True, offload_to_cpu=offload_to_cpu
-                ):
-                    mlp_project_states.update(
-                        self.get_non_lora_states(self.mlp_project.state_dict())
-                    )
-                    mlp_project_states = {
-                        k: v.to(dtype=save_dtype) for k, v in mlp_project_states.items()
+                llm_states.update(
+                    {
+                        f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                        for k, v in module.state_dict().items()
                     }
+                )
 
-            if self.trainable_embedder is not None:
-
-                trainable_embedder_states = {}
-                with self.trainable_embedder.summon_full_params(
-                    self.trainable_embedder,
-                    writeback=True,
-                    offload_to_cpu=offload_to_cpu,
-                ):
-                    trainable_embedder_states.update(
-                        self.get_non_lora_states(self.trainable_embedder.state_dict())
-                    )
-                    trainable_embedder_states = {
-                        k: v.to(dtype=save_dtype)
-                        for k, v in trainable_embedder_states.items()
+        mlp_project_states = {}
+        for key, module in mlp_project_modules.items():
+            assert isinstance(
+                module, FullyShardedDataParallel
+            ), "`module` should be an instance of `FullyShardedDataParallel`"
+            parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                "_checkpoint_wrapped_module.", ""
+            )
+            with module.summon_full_params(
+                module, writeback=True, offload_to_cpu=offload_to_cpu
+            ):
+                mlp_project_states.update(
+                    {
+                        f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                        for k, v in module.state_dict().items()
                     }
-                pooling_modules_states = {}
-                with self.pooling_module.summon_full_params(
-                    self.pooling_module,
-                    writeback=True,
-                    offload_to_cpu=offload_to_cpu,
-                ):
-                    pooling_modules_states.update(
-                        self.get_non_lora_states(self.pooling_module.state_dict())
-                    )
-                    pooling_modules_states = {  
-                        k: v.to(dtype=save_dtype)
-                        for k, v in pooling_modules_states.items()
-                    }
+                )
 
+        trainable_embedder_states = {}
+        for key, module in trainable_embedder_modules.items():
+            assert isinstance(
+                module, FullyShardedDataParallel
+            ), "`module` should be an instance of `FullyShardedDataParallel`"
+            parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                "_checkpoint_wrapped_module.", ""
+            )
+            with module.summon_full_params(
+                module, writeback=True, offload_to_cpu=offload_to_cpu
+            ):
+                trainable_embedder_states.update(
+                    {
+                        f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                        for k, v in module.state_dict().items()
+                    }
+                )
+                
+        pooling_modules_states = {}
+        for key, module in pooling_modules.items():
+            assert isinstance(
+                module, FullyShardedDataParallel
+            ), "`module` should be an instance of `FullyShardedDataParallel`"
+            parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                "_checkpoint_wrapped_module.", ""
+            )
+            with module.summon_full_params(
+                module, writeback=True, offload_to_cpu=offload_to_cpu
+            ):
+                pooling_modules_states.update(
+                    {
+                        f"{k}": v.to(dtype=save_dtype)
+                        for k, v in module.state_dict().items()
+                    }
+                )
+    
         llm_states = dict(sorted(llm_states.items()))
         mlp_project_states = dict(sorted(mlp_project_states.items()))
         pooling_modules_states = dict(sorted(pooling_modules_states.items()))
@@ -345,7 +267,6 @@ class Checkpointer:
     @torch.no_grad()
     def save_checkpoint(
         self,
-        save_only_lora: bool,
         dtype: torch.dtype = torch.float16,
     ):
         llm_dst, mlp_project_dst = self.dst_dir
@@ -376,7 +297,7 @@ class Checkpointer:
             mlp_project_states,
             trainable_embedder_states,
             pooling_module_states,
-        ) = self.retrieve_save_states(save_only_lora, dtype)
+        ) = self.retrieve_save_states(dtype)
 
         barrier()
 
@@ -385,7 +306,7 @@ class Checkpointer:
             safetensors.torch.save_file(
                 llm_states,
                 self.consolidated_path(
-                    tmp_llm_dst, use_safetensors=True, save_only_lora=save_only_lora
+                    tmp_llm_dst, use_safetensors=True, save_only_lora=True
                 ),  # always use safetensors for checkpointing
             )
 
@@ -403,7 +324,7 @@ class Checkpointer:
                     self.consolidated_path(
                         tmp_trainable_embedder_dst,
                         use_safetensors=True,
-                        save_only_lora=save_only_lora,
+                        save_only_lora=True,
                     ),  # always use safetensors for checkpointing
                 )
                 safetensors.torch.save_file(
