@@ -1,15 +1,15 @@
-batch_size: 32
+batch_size: 2
 ckpt_freq: 5
 data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
-
+continuation: false
 embedder:
   dim: 4096
   name: Mistral7B # put '' to use trainable embedder
   train: true # put true to train embedder
-  causal: false
+  causal: true
   pooling_module: # see `embedders.py` for available pooling modules
     type: latent_attention # mean, cls ...
     n_truncated_layers: 3

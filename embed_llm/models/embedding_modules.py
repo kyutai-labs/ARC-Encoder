@@ -1,8 +1,10 @@
 import torch
+
 from torch import nn
-from torch.nn import functional as F
+from einops import  repeat
 from embed_llm.models.args import MLPProjectArgs
 from embed_llm.training.args import PoolingArgs
+from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 
 
@@ -79,6 +81,55 @@ class MLP_project(nn.Module):
             x = self.layers[i](x)
         return x
 
+class PreNorm(torch.nn.Module):
+    def __init__(self, dim, fn, context_dim = None):
+        super().__init__()
+        self.fn = fn
+        self.norm = torch.nn.LayerNorm(dim)
+        self.norm_context = None if context_dim is None else torch.nn.LayerNorm(context_dim) 
+
+    def forward(self, x, **kwargs):
+        x = self.norm(x)
+        if self.norm_context is not None:
+            context = kwargs['context']
+            normed_context = self.norm_context(context)
+            kwargs.update(context = normed_context)
+        return self.fn(x, **kwargs)
+    
+class Attention(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        head_dim: int,
+        context_dim: int = None,
+    ):
+        super().__init__()
+
+        self.n_heads: int = n_heads
+        self.head_dim: int = head_dim
+        self.inner_dim: int = n_heads * head_dim
+        context_dim = dim if context_dim is None else context_dim
+        self.scale = self.head_dim**-0.5
+
+        self.to_q = nn.Linear(dim, self.inner_dim, bias=False)
+        self.to_kv = nn.Linear(context_dim, self.inner_dim*2, bias=False)
+        self.to_out = nn.Linear(self.inner_dim, dim, bias=False)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        context: torch.Tensor = None,
+        mask: torch.Tensor = None,
+    ) -> torch.Tensor:
+        seqlen_sum, _ = x.shape
+        q = self.to_q(x)
+        context = x if context is None else context
+        k, v = self.to_kv(context).chunk(2, dim=-1)
+        q, k, v = map(lambda t: t.reshape(*t.shape[:-1], self.n_heads, self.head_dim)[None, ...], (q, k, v))
+        out = memory_efficient_attention(q, k, v, mask)
+        out = out.view(seqlen_sum, self.inner_dim)
+        return self.to_out(out)
 
 class LatentAttention(nn.Module):
     def __init__(
@@ -93,52 +144,32 @@ class LatentAttention(nn.Module):
         self.r = r
         self.n_layers = n_layers
         self.n_heads = n_heads
+        latent_dim = hidden_dim
+        self.cross_attend_block = PreNorm(latent_dim, Attention(latent_dim, context_dim = hidden_dim, n_heads = n_heads, 
+                                            head_dim = hidden_dim // n_heads), context_dim=hidden_dim)
+        
+        self.latents = torch.nn.Parameter(torch.randn(64, latent_dim), requires_grad = True)#torch.nn.Linear(latent_dim, r, dtype=dtype, bias=False)
+        
         self.mlp_layers = nn.ModuleList()
         for _ in range(n_layers):
             self.mlp_layers.append(
-                MLP_block(
-                    in_dim=hidden_dim, out_dim=hidden_dim, act="gelu", dtype=dtype
-                )
+                PreNorm(latent_dim, MLP_block(
+                    in_dim=latent_dim, out_dim=latent_dim, act="gelu", dtype=dtype
+                ))
             )
-        self.kv_latent = nn.Linear(hidden_dim, r, dtype=dtype, bias=False)
-        self.scale = r**-0.5
-        self.wo = nn.Linear(hidden_dim, hidden_dim, dtype=dtype, bias=False)
-        self.wq = nn.Linear(hidden_dim, hidden_dim, dtype=dtype, bias=False)
+      
 
-    def forward(self, query: torch.Tensor) -> torch.Tensor:
+    def forward(self, queries: torch.Tensor, seqlens = list[int]) -> torch.Tensor:
+        b = len(seqlens)
 
-        seqlen_sum, _ = query.shape
-
-        xq = self.wq(query)
-        xq = (
-            xq.reshape(seqlen_sum, self.n_heads, -1) * self.scale
-        )  # (S, D) -> (S, H, D/H)
-        kv_matrix = self.kv_latent.weight
-
-        kv_matrix = kv_matrix.reshape(self.r, self.n_heads, -1)
-        
-        
-        kv_matrix = kv_matrix.transpose(
-            0, 1
-        )  # (H, r, D/H)
-
-        xq = xq.transpose(0, 1)  # (H, S, D/H)
-
-        attn = xq @ kv_matrix.transpose(-2, -1)  # (H, S, r)
-
-        # Softmax over the latent dimension (r)
-        attn = attn.softmax(dim=-1)
-        attn = attn @ kv_matrix  # (H, S, D/H)
-        attn = attn.transpose(0, 1)  # (S, H, D/H)
-
-        # MHA concatenation
-        output = attn.reshape(seqlen_sum, -1)  # (S, H, D/H) -> (S, D)
-        output = self.wo(output)
+        x = repeat(self.latents, 'r d -> b r d', b = b)
+        hiddens = self.cross_attend_block(queries, context = x, 
+                                          mask = BlockDiagonalMask.from_seqlens(q_seqlen = seqlens, kv_seqlen=self.r)) + queries
 
         for i in range(self.n_layers):
-            output = self.mlp_layers[i](output)
-
-        return output
+            hiddens = self.mlp_layers[i](hiddens) + hiddens
+            
+        return hiddens
 
 
 class PoolingModule(nn.Module):
@@ -170,7 +201,7 @@ class PoolingModule(nn.Module):
         if not self.args.type == "latent_attention":
             out = x
         else:
-            out = self.process.forward(x)
+            out = self.process.forward(x, seqlens = seqlens)
             
         if self.args.type == "latent_attention" or self.args.type == "mean":
             mean_mask = torch.block_diag(*[torch.ones(l) / l for l in seqlens]).to(

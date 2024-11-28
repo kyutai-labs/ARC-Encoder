@@ -253,41 +253,47 @@ def sequence_iterator_for_continuation(
     mask_buffer: Mask = []
 
     sizes: list[int] = []
+    embed_tokens_size: list[int] = []
     n_missing = seq_len
     for sample in ds_it:
         assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
         assert n_missing == seq_len - len(
             x_buffer
-        ), f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
+        ) - sum(embed_tokens_size), f"n_missing: {n_missing} | seq_len - len(x_buffer) - len(tokens as text) {seq_len - len(x_buffer) - sum(embed_tokens_size)}"
 
         tokens, mask = sample.tokens, sample.masks[1:]
         x, y = tokens[:-1], tokens[1:]
         cur_pos = 0
 
         while cur_pos < len(x):
-            size = len(x[cur_pos : cur_pos + n_missing])
+            overall_size = len(x[cur_pos : cur_pos + n_missing])
 
             curr_mask = mask[cur_pos : cur_pos + n_missing]
             if not any(curr_mask):
-                cur_pos += size
+                cur_pos += overall_size
                 # we have a sequence with a mask filled with False
                 continue
 
-            x_buffer.extend(x[cur_pos : cur_pos + n_missing])
-            y_buffer.extend(y[cur_pos : cur_pos + n_missing])
+            upper_bound = min(cur_pos + n_missing, len(x))
+            
+            toks = x[cur_pos + (upper_bound-cur_pos)//2: upper_bound]
+            x_buffer.extend(toks)
+            y_buffer.extend(y[cur_pos + (upper_bound-cur_pos)//2: upper_bound])
+            mask_buffer.extend(mask[cur_pos + (upper_bound-cur_pos)//2: upper_bound])
             text_buffer.append(
-                tokenizer.decode([x[cur_pos]] + y[cur_pos : cur_pos + n_missing])
+                tokenizer.decode(x[cur_pos : cur_pos + (upper_bound-cur_pos)//2])
             )
-            mask_buffer.extend(curr_mask)
-            n_missing -= size
 
-            sizes.append(size)
-
-            cur_pos += size
+            
+            sizes.append(len(toks))
+            embed_tokens_size.append(len(x[cur_pos : cur_pos + (upper_bound-cur_pos)//2]))
+                
+            n_missing -= overall_size
+            cur_pos += overall_size
 
             if n_missing == 0:
-                assert len(mask_buffer) == len(x_buffer) == seq_len == len(y_buffer)
-                assert sum(sizes) == seq_len
+                assert len(mask_buffer) == len(x_buffer) == sum(sizes) == len(y_buffer)
+                assert sum(sizes) + sum(embed_tokens_size) == seq_len
                 assert len(text_buffer) == len(sizes)
                 # we don't want to yield sequences with a mask filled with False
                 if any(mask_buffer):
@@ -302,6 +308,7 @@ def sequence_iterator_for_continuation(
                 mask_buffer = []
                 text_buffer = []
                 sizes = []
+                embed_tokens_size = []
                 n_missing = seq_len
 
     if is_finite:

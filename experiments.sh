@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-7%5
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=4
@@ -16,6 +16,8 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID))
 
 # Get the configuration file for this job
 CONFIG_FILES=(
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/mean_Mistral7B_not_causal.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/continuation_Mistral7B20ed0018b2a84fba09c4.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/eos_Mistral7B_causal.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/eos_Mistral7B_not_causal.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/SL_512t_Mistral7B20ed0018b2a84fba09c4.yaml
@@ -23,9 +25,8 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/SL_128t_Mistral7B226729d875c65b331ef8.yaml 
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/SL_64t_Mistral7B9bbea1b3b8dc23079b04.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/SL_32t_Mistral7Bccbc3f29d69bd124c6cf.yaml   
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/SL_16t_Mistral7B7bc7dcc2ba28873eda96.yaml   
-)
-
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/SL_16t_Mistral7B7bc7dcc2ba28873eda96.yaml  
+ )
 
 
 # Get the specific config file for this array task

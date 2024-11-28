@@ -66,7 +66,6 @@ def main_logger_info(message: str) -> None:
 def get_gpu_memory():
     command = "nvidia-smi"
     memory_free_info = sp.check_output(command.split()).decode("ascii")
-    # memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
     return memory_free_info
 
 
@@ -110,10 +109,10 @@ def _train(
 
     if is_torchrun():
         if run_dir.exists():
-            raise RuntimeError(
-                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
-            )
-            # print(f"Run dir {run_dir} already exists. Removing it.")
+            # raise RuntimeError(
+            #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
+            # )
+            print(f"Run dir {run_dir} already exists. Removing it.")
 
 
     dist.barrier()
@@ -280,6 +279,15 @@ def _train(
 
             # start_time = time.time()
             x, y, y_mask, seqlens, embeddings = prepare_batch_fn(batch)
+            
+            # if get_rank() == 0:
+
+            #     first_size = seqlens[0]
+            #     print('Text', batch.texts[0])  
+            #     print('Decoded input Tokens',pipeline.tokenizer.decode([int(tok) for tok in list(batch.x)[:first_size]]))
+            #     print('Text', batch.texts[2])
+            #     print('Decoded output Tokens',pipeline.tokenizer.decode([int(tok) for tok in list(batch.x)[sum(seqlens[:2]):sum(seqlens[:3])]]))
+
 
             # if get_rank() == 0:
             #     print('GPU MEMORY \n', get_gpu_memory())
