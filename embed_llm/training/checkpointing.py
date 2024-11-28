@@ -10,7 +10,6 @@ from torch.distributed import barrier
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 
 from embed_llm.models.lora import LoRALinear
-from embed_llm.models.embedding_modules import LatentAttention
 from embed_llm.training.distributed import get_rank, get_world_size
 from embed_llm.training.utils import TrainState
 
