@@ -1,5 +1,6 @@
 from gritlm import GritLM
 from transformers import AutoTokenizer, AutoModel
+from embed_llm.retrieval.nvembed.modeling_nvembed import custom_encode
 import os
 import torch.nn.functional as F
 import torch
@@ -33,7 +34,7 @@ def get_pretrained_embedder(model_name: str, device_map: str = "auto"):
             trust_remote_code=True,
             device_map=device_map,
             torch_dtype="bfloat16",
-        )
+        ) 
         return model
     else:
         raise ValueError(f"Unknown model name {model_name}")
@@ -46,20 +47,18 @@ def encode_text(
     query_embedding: bool = True,
     tokenizer: AutoTokenizer | None = None,
     device: str = "cpu",
+    cross_att: bool = False,
 ):
     if isinstance(text, str):
         text = [text]
 
     if model_name == "GritLM":
-        results = []
         with torch.no_grad():
             embedding = model.encode(text)
         if device == "cpu":
-            results.append(embedding.cpu().numpy())
-            return np.concatenate(results, axis=0)
+            return embedding.cpu().numpy()
         else:
-            results.append(embedding)
-            return torch.cat(results, dim=0)
+            return embedding
 
     elif model_name == "Contriever":
         tokenizer = (
@@ -67,18 +66,15 @@ def encode_text(
             if tokenizer is None
             else tokenizer
         )
-        results = []
         inputs = tokenizer(text, padding=True, truncation=True, return_tensors="pt")
         with torch.no_grad():
             embedding = model(**inputs)
         if device == "cpu":
             embedding = mean_pooling(embedding[0].cpu(), inputs["attention_mask"])
-            results.append(embedding.cpu().numpy())
-            return np.concatenate(results, axis=0)
+            return embedding.cpu().numpy()
         else:
             embedding = mean_pooling(embedding[0], inputs["attention_mask"])
-            results.append(embedding)
-            return torch.cat(results, dim=0)
+            return embedding
 
     elif model_name == "NVEmbed":
 
@@ -89,17 +85,24 @@ def encode_text(
             instruction = "Instruct: " + task_name_to_instruct["example"] + "\nQuery: "
         else:
             instruction = ""
-
-        results = []
+            
         with torch.no_grad():
-            embedding = model.encode(text, instruction=instruction)
+            if cross_att:
+                embedding, seqlens = custom_encode(model, prompts = text, instruction=instruction, pool=False)
+                return  F.normalize(embedding, p=2, dim=1), seqlens
+            else:
+                embedding = custom_encode(model, prompts = text, instruction=instruction, pool = True)
+                
         if device == "cpu":
-            results.append(F.normalize(embedding, p=2, dim=1).cpu().numpy())
-            return np.concatenate(results, axis=0)
+            if cross_att:
+                return F.normalize(embedding, p=2, dim=1).cpu().numpy(), seqlens
+            else:
+                return F.normalize(embedding, p=2, dim=1).cpu().numpy()
         else:
-            results.append(F.normalize(embedding, p=2, dim=1))
-            return torch.cat(results, dim=0)
-
+            if cross_att:
+                return F.normalize(embedding, p=2, dim=1), seqlens
+            else:
+                return F.normalize(embedding, p=2, dim=1)
     else:
         raise ValueError(f"Unknown model name {model_name}")
 

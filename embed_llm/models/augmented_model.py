@@ -268,9 +268,8 @@ class EmbedAugPipeline(nn.Module):
 
     def prepare_forward(self, batch: Batch, batch_size: int, cross_att: bool = False) -> tuple:
         
-        # TODO: Add support for cross_att
-        kv_seqlens = None
-        
+
+        kv_seqlens = []
         if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
             # To avoid OOM
             with torch.no_grad():
@@ -281,25 +280,55 @@ class EmbedAugPipeline(nn.Module):
                 for i, text in enumerate(batch.texts):
                     subbatch.append(text)
                     if len(subbatch) == subbatch_size:
-                        embeddings.append(
-                            encode_text(
+                        
+                        if cross_att:
+                            embeds, seqlens = encode_text(
                                 subbatch,
                                 model_name=self.embed_model_name,
                                 model=self.embedding_model,
                                 query_embedding=False,
                                 device=self.embedding_model.device,
-                            ).type(self.pipeline_args.param_dtype)
+                                cross_att=cross_att,
+                            )
+                            kv_seqlens.extend(seqlens)
+                        else:
+                            embeds = encode_text(
+                                subbatch,
+                                model_name=self.embed_model_name,
+                                model=self.embedding_model,
+                                query_embedding=False,
+                                device=self.embedding_model.device,
+                                cross_att=cross_att,
+                            )
+                        
+                        embeddings.append(
+                            embeds.type(self.pipeline_args.param_dtype)
                         )
+                        
                         subbatch = []
                 if len(subbatch) > 0:
-                    embeddings.append(
-                        encode_text(
+                    if cross_att:
+                        embeds, seqlens = encode_text(
                             subbatch,
                             model_name=self.embed_model_name,
                             model=self.embedding_model,
                             query_embedding=False,
                             device=self.embedding_model.device,
-                        ).type(self.pipeline_args.param_dtype)
+                            cross_att=cross_att,
+                        )
+                        kv_seqlens.extend(seqlens)
+                    else:
+                        embeds = encode_text(
+                            subbatch,
+                            model_name=self.embed_model_name,
+                            model=self.embedding_model,
+                            query_embedding=False,
+                            device=self.embedding_model.device,
+                            cross_att=cross_att,
+                        )
+                    
+                    embeddings.append(
+                        embeds.type(self.pipeline_args.param_dtype)
                     )
                 embeddings = torch.concatenate(embeddings, dim=0)
 

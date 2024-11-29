@@ -7,8 +7,8 @@ data:
 continuation: false
 embedder:
   dim: 4096
-  name: Mistral7B # put '' to use trainable embedder
-  train: true # put true to train embedder
+  name: NVEmbed # put '' to use trainable embedder
+  train: false # put true to train embedder
   causal: true
   pooling_module: # see `embedders.py` for available pooling modules
     type: latent_attention # mean, cls ...
@@ -42,7 +42,7 @@ seed: 0
 seq_len: 512
 norm_wo_embeds: false # whether to normalize the output of the llm without the embeddings
 w_embeds: true # Whether to use document embeddings as preconditioning for text generation
-
+cross_att: true
 # wandb:
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
 #   offline: false

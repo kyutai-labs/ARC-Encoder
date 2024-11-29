@@ -32,6 +32,8 @@ from embed_llm.models.embedding_modules import LatentAttention
 from embed_llm.models.mistral.transformer import (
     TransformerBlock as MistralTransformerBlock,
 )
+from embed_llm.models.mistral.cross_att_transformer import Cross_AttTransformerBlock as MistralCrossAttTransformerBlock
+from embed_llm.models.mistral.cross_att_transformer import Cross_Attention
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 
 # Gemma specifics
@@ -72,7 +74,7 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     transformer_block_wrap_policy = functools.partial(
         torch_wrap.transformer_auto_wrap_policy,
         transformer_layer_cls=set(
-            [
+            [   MistralCrossAttTransformerBlock,
                 MistralTransformerBlock,
                 LlamaTransformerBlock,
                 Gemma2DecoderLayer,
@@ -138,6 +140,7 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
     for m_name, module in model.named_modules():
         if all(p.is_meta for p in module.parameters()):
             for p_name, param in module.named_parameters():
+
                 module._parameters[p_name] = torch.nn.Parameter(
                     torch.empty_like(param, device="cpu", dtype=param_dtype)
                 )
@@ -146,26 +149,22 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                     torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
                 elif m_name.split(".")[-1] == "lora_B":
                     torch.nn.init.zeros_(param)
+                elif 'cross_attention' in m_name or 'gate' in m_name or 'to_k' in m_name or 'to_v' in m_name:
+                    continue
                 else:
-                    raise ValueError("Only Lora layers should be randomly initialized.")
-
-def initialize_cross_attention(model: torch.nn.Module, param_dtype: torch.dtype):
+                    raise("Only LoRA layers should be randomly initialized if not cross-attention!!!")
+     
+def initialize_cross_att_project(model: torch.nn.Module, param_dtype: torch.dtype):
     for m_name, module in model.named_modules():
-        # Flag all the supplementary modules
-        if len(list(module.children())) == 0 and ('cross_attention' in m_name
-                                                  or 'gate' in m_name
-                                                  or 'to_k' in m_name
-                                                  or 'to_v' in m_name):
-        
-            for p_name, param in module.named_parameters():
-                module._parameters[p_name] = torch.nn.Parameter(
-                    torch.empty_like(param, device="cpu", dtype=param_dtype)
-                )
-                param = module._parameters[p_name]
-                torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-           
-    
-                    
+        if len(list(module.children())) == 0:
+            if 'cross_attention' in m_name or 'gate' in m_name or 'to_k' in m_name or 'to_v' in m_name:
+                for p_name, param in module.named_parameters():
+                    module._parameters[p_name] = torch.nn.Parameter(
+                        torch.empty_like(param, device="cpu", dtype=param_dtype)
+                    )
+                    param = module._parameters[p_name]
+                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+            
 def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
     for m_name, module in model.named_modules():
         if len(list(module.children())) == 0:
@@ -308,14 +307,18 @@ def load_training_model(
             # initialize LoRA layers
             initialize_lora_parameters(augmented_model.llm, param_dtype)
             
-            if args.cross_att:
-                main_logger_info('Initializing Cross Attention')
-                initialize_cross_attention(augmented_model.llm, param_dtype)
+            
             
             if args.embedder.train:
                 logger.info("Initializing lora layers  for Embedder ...")
                 initialize_lora_parameters(augmented_model.trainable_embedder, param_dtype)
 
+        if args.cross_att:
+            main_logger_info('Initializing Cross-Attention')
+            initialize_cross_att_project(augmented_model.llm, param_dtype)
+            augmented_model.pooling_args = None
+            augmented_model.pooling_module = None
+            
         if augmented_model.mlp_project is not None:
             main_logger_info('Initializing MLP')
             initialize_mlp_project(augmented_model.mlp_project, param_dtype)
@@ -413,6 +416,11 @@ def load_training_model(
     
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
     
+    # for name, module in augmented_model.named_modules():
+    #     if all(p.requires_grad for p in module.parameters()):   
+    #         print(name)
+        
+        
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
@@ -425,10 +433,10 @@ def load_training_model(
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
         ignored_states = ignored_state
     )
-    
+
+        
     
     main_logger_info("Model sharded!")
-
     log_train_params(wrapped_model)
     
             
