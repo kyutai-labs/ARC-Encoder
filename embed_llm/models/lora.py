@@ -72,7 +72,6 @@ class LoRALinear(nn.Module):
 
         self.register_load_state_dict_post_hook(ignore_missing_keys)
 
-
     # type: ignore[no-untyped-def]
     def _load_from_state_dict(
         self, state_dict: dict[str, object], prefix: str, *args, **kwargs

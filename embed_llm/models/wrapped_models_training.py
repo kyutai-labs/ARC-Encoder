@@ -1,10 +1,5 @@
-import functools
-import logging
-import math
 from pathlib import Path
-from typing import Callable
 import torch
-import torch.distributed.fsdp.wrap as torch_wrap
 from torch.distributed.fsdp import BackwardPrefetch
 from torch.distributed.fsdp.api import ShardingStrategy
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
@@ -26,186 +21,17 @@ from embed_llm.models.augmented_model import (
 
 from embed_llm.training.args import TrainArgs
 
-from embed_llm.models.embedding_modules import LatentAttention   
-
-# Mistral specifics
-from embed_llm.models.mistral.transformer import (
-    TransformerBlock as MistralTransformerBlock,
-)
-from embed_llm.models.mistral.cross_att_transformer import Cross_AttTransformerBlock as MistralCrossAttTransformerBlock
-from embed_llm.models.mistral.cross_att_transformer import Cross_Attention
-from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-
-# Gemma specifics
-from embed_llm.models.gemma.tokenizer import Tokenizer as GemmaTokenizer
-from embed_llm.models.gemma.model import (
-    GemmaDecoderLayer,
-    Gemma2DecoderLayer,
-
+from embed_llm.models.utils import (
+    initialize_lora_parameters,
+    initialize_mlp_project,
+    initialize_latent_attention,
+    initialize_cross_att_project,
+    is_cross_att,
+    log_train_params,
+    get_fsdp_policy,
+    main_logger_info,
 )
 
-
-# Llama specifics
-from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
-from embed_llm.models.llama.model import TransformerBlock as LlamaTransformerBlock
-
-
-Tokenizer = MistralTokenizer | LlamaTokenizer | GemmaTokenizer
-
-
-logger = logging.getLogger(__name__)
-
-
-def main_logger_info(message: str) -> None:
-    if get_rank() == 0:
-        logger.info(message)
-
-
-
-def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
-    """
-    This function instantiates the FSDP wrap policy.
-    - Each Transformers block becomes its own FSDP group so that only a single Transformer block is sharded at a time
-    - If LoRA is enabled, we additionally create separate FSDP sub-groups for every trainable and non-trainable parameter group
-      since this is a requirement for mixed requires_grad=True/False training. See: https://pytorch.org/docs/stable/fsdp.html
-    """
-
-    # Each transformer block becomes a FSDP group, each being sharded separately
-    transformer_block_wrap_policy = functools.partial(
-        torch_wrap.transformer_auto_wrap_policy,
-        transformer_layer_cls=set(
-            [   MistralCrossAttTransformerBlock,
-                MistralTransformerBlock,
-                LlamaTransformerBlock,
-                Gemma2DecoderLayer,
-                GemmaDecoderLayer,
-            ]
-        ),
-    )
-
-    if not is_lora:
-        return transformer_block_wrap_policy
-
-    def lambda_policy_fn(module):
-        if (
-            len(list(module.named_children())) == 0
-            and getattr(module, "weight", None) is not None 
-            and module.weight.requires_grad 
-        ):
-            return True
-        elif (
-            len(list(module.named_children())) == 0
-            and getattr(module, "bias", None) is not None 
-            and module.bias.requires_grad 
-        ):
-            return True
-        else:
-            return False
-
-    # For LoRA training, trainable and non-trainable parameters need to be put into
-    # different FSDP groups
-    fsdp_lora_policy = functools.partial(
-        torch_wrap.lambda_auto_wrap_policy, lambda_fn=lambda_policy_fn
-    )
-
-
-    policies = [
-        torch_wrap.ModuleWrapPolicy([LatentAttention]),
-        fsdp_lora_policy,
-        transformer_block_wrap_policy,
-    ]
-
-    return functools.partial(torch_wrap._or_policy, policies=policies)
-
-
-
-def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
-    world_size = get_world_size()
-    num_params = world_size * sum(p.numel() for p in model.parameters())
-    num_train_params = world_size * sum(
-        p.numel() for p in model.parameters() if p.requires_grad
-    )
-
-    main_logger_info(
-        f"{num_train_params:,.0f} out of {num_params:,.0f} parameters are finetuned ({num_train_params / num_params * 100:.2f}%)."
-    )
-
-
-def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype):
-    """
-    Initialize LoRA layers with Kaiming uniform and zeros.
-    See original paper for more info: https://arxiv.org/abs/2106.09685 and
-    original github repo: https://github.com/microsoft/LoRA/blob/a0a92e0f26c067cf94747bdbf1ce73793fa44d19/loralib/layers.py#L122
-    """
-    for m_name, module in model.named_modules():
-        if all(p.is_meta for p in module.parameters()):
-            for p_name, param in module.named_parameters():
-
-                module._parameters[p_name] = torch.nn.Parameter(
-                    torch.empty_like(param, device="cpu", dtype=param_dtype)
-                )
-                param = module._parameters[p_name]
-                if m_name.split(".")[-1] == "lora_A":
-                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-                elif m_name.split(".")[-1] == "lora_B":
-                    torch.nn.init.zeros_(param)
-                elif 'cross_attention' in m_name or 'gate' in m_name or 'to_k' in m_name or 'to_v' in m_name:
-                    continue
-                else:
-                    raise("Only LoRA layers should be randomly initialized if not cross-attention!!!")
-     
-def initialize_cross_att_project(model: torch.nn.Module, param_dtype: torch.dtype):
-    for m_name, module in model.named_modules():
-        if len(list(module.children())) == 0:
-            if 'cross_attention' in m_name or 'gate' in m_name or 'to_k' in m_name or 'to_v' in m_name:
-                for p_name, param in module.named_parameters():
-                    module._parameters[p_name] = torch.nn.Parameter(
-                        torch.empty_like(param, device="cpu", dtype=param_dtype)
-                    )
-                    param = module._parameters[p_name]
-                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-            
-def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
-    for m_name, module in model.named_modules():
-        if len(list(module.children())) == 0:
-            for p_name, param in module.named_parameters():
-                module._parameters[p_name] = torch.nn.Parameter(
-                    torch.empty_like(param, device="cpu", dtype=param_dtype)
-                )
-                param = module._parameters[p_name]
-                
-                if m_name.split(".")[-1] == "layer1":
-                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-                    
-                elif m_name.split(".")[-1] == "layer2":
-                    torch.nn.init.zeros_(param)
-
-                    
-def initialize_latent_attention(model: torch.nn.Module, param_dtype: torch.dtype, latents = False, device = 'cpu'):
-    for m_name, module in model.named_modules():
-        if not latents and len(list(module.children())) == 0:
-            for p_name, param in module.named_parameters():
-                module._parameters[p_name] = torch.nn.Parameter(
-                    torch.empty_like(param, device= device, dtype=param_dtype)
-                )
-                param = module._parameters[p_name]
-                    
-                if 'norm' in m_name and 'weight' in p_name:
-                    torch.nn.init.ones_(param)
-                elif 'norm' in m_name and 'bias' in p_name:
-                    torch.nn.init.zeros_(param) # For the layernorm bias
-                else:
-                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-                
-        if latents and 'process' in m_name:
-            for p_name, param in module.named_parameters():
-                if p_name == 'latents':
-                    module._parameters[p_name] = torch.nn.Parameter(
-                        torch.empty_like(param, device= device, dtype=param_dtype)
-                    )
-                    param = module._parameters[p_name]
-                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-                    
 
 def load_training_model(
     args: TrainArgs,
@@ -231,9 +57,10 @@ def load_training_model(
         w_embeds=args.w_embeds,
         param_dtype=param_dtype,
         trainable_embedder=args.embedder.train,
-        causal = args.embedder.causal,
-        continuation = args.continuation,
+        causal=args.embedder.causal,
+        continuation=args.continuation,
         cross_att=args.cross_att,
+        start_cross_att=args.start_cross_att,
     )
 
     # Load pretrained params on rank 0
@@ -248,7 +75,6 @@ def load_training_model(
         for_embedding=False,
     )
 
-        
     pipeline_args.mlp_project = args.projector
     if not args.w_embeds:
         assert args.projector.n_layers == 0, "Only no MLP if no embeddings."
@@ -276,7 +102,6 @@ def load_training_model(
         # Hidden dim of the embedder
         pipeline_args.mlp_project.in_dim = llm_embed_dim
         pipeline_args.pooling_module = args.embedder.pooling_module
-        
 
     if not args.embedder.train:
         # If using pretrained embedder
@@ -295,90 +120,98 @@ def load_training_model(
         max_seq_len=max_seq_len,
     )
 
-
-    with torch.device('meta'):  
+    with torch.device("meta"):
         augmented_model = augmented_pipeline.get_model(llm=model)
-     
-    
+
     if get_rank() == 0:
-  
         if lora.enable:
-            logger.info("Initializing lora layers  for LLM ...")
+            main_logger_info("Initializing lora layers  for LLM ...")
             # initialize LoRA layers
             initialize_lora_parameters(augmented_model.llm, param_dtype)
-            
-            
-            
+
             if args.embedder.train:
-                logger.info("Initializing lora layers  for Embedder ...")
-                initialize_lora_parameters(augmented_model.trainable_embedder, param_dtype)
+                main_logger_info("Initializing lora layers  for Embedder ...")
+                initialize_lora_parameters(
+                    augmented_model.trainable_embedder, param_dtype
+                )
 
         if args.cross_att:
-            main_logger_info('Initializing Cross-Attention')
+            main_logger_info("Initializing Cross-Attention")
             initialize_cross_att_project(augmented_model.llm, param_dtype)
             augmented_model.pooling_args = None
             augmented_model.pooling_module = None
-            
+
         if augmented_model.mlp_project is not None:
-            main_logger_info('Initializing MLP')
+            main_logger_info("Initializing MLP")
             initialize_mlp_project(augmented_model.mlp_project, param_dtype)
 
         if (
             augmented_model.pooling_args is not None
             and augmented_model.pooling_args.type == "latent_attention"
         ):
-            main_logger_info('Initializing Pooling')
+            main_logger_info("Initializing Pooling")
             initialize_latent_attention(augmented_model.pooling_module, param_dtype)
 
-            
         assert not any(
-            p.is_meta for n, p in augmented_model.named_parameters() if 'latents' not in n
+            p.is_meta
+            for n, p in augmented_model.named_parameters()
+            if "latents" not in n
         ), "All parameters should be initialized by now"
 
         assert all(
             p.dtype == param_dtype for p in augmented_model.parameters()
         ), f"All parameters should be on {param_dtype}"
 
-        logger.info("Finished initialization!")
+        main_logger_info("Finished initialization!")
         param_init_fn = None
+
     else:
 
         def param_init_fn(m):
             m.to_empty(device=torch.cuda.current_device(), recurse=False)
             m.to(param_dtype)
-            
 
         assert all(
             p.is_meta for p in augmented_model.parameters()
         ), "All parameters should be on meta"
+
+        if args.cross_att:
+            augmented_model.pooling_args = None
+            augmented_model.pooling_module = None
 
     # Since param latents not sharded, initialize on all devices
     if (
         augmented_model.pooling_args is not None
         and augmented_model.pooling_args.type == "latent_attention"
     ):
-        initialize_latent_attention(augmented_model.pooling_module, param_dtype, latents=True, device = 'cuda')
+        initialize_latent_attention(
+            augmented_model.pooling_module, param_dtype, latents=True, device="cuda"
+        )
         ignored_state = [augmented_model.pooling_module.process.latents]
     else:
         ignored_state = None
 
     torch.distributed.barrier()
-    
+
     ignored_state = None
 
     # only finetune LoRA, MLP projector and pooling parameters and freeze before wrapping
     if lora.enable:
         for name, param in augmented_model.named_parameters():
             if "lora" in name:
-                param.requires_grad = True            
+                param.requires_grad = True
             elif "mlp_project" in name:
                 param.requires_grad = True
             elif "pooling_module" in name:
                 param.requires_grad = True
-            elif "cross_attention" in name or "gate" in name or "to_k" in name or "to_v" in name:
-                param.requires_grad = True
             else:
                 param.requires_grad = False
+
+        for m_name, module in model.named_modules():
+            if len(list(module.children())) == 0:
+                if is_cross_att(m_name):
+                    for p_name, param in module.named_parameters():
+                        param.requires_grad = True
     else:
         for name, param in augmented_model.named_parameters():
             param.requires_grad = True
@@ -387,40 +220,34 @@ def load_training_model(
         assert (
             augmented_model.trainable_embedder.n_layers
             > args.embedder.pooling_module.n_truncated_layers
+            > 0
         ), "Truncated layers must be less than total layers"
         removed_layers = []
         for i in range(augmented_model.trainable_embedder.n_layers):
-            if (
-                i
-                > augmented_model.trainable_embedder.n_layers
-                - (args.embedder.pooling_module.n_truncated_layers + 1)
+            if i > augmented_model.trainable_embedder.n_layers - (
+                args.embedder.pooling_module.n_truncated_layers + 1
             ):
                 module = augmented_model.trainable_embedder.layers.pop(str(i))
                 del module
                 removed_layers.append(i)
-        
-        main_logger_info('Removed layers: ' + str(removed_layers))
+
+        main_logger_info("Removed layers: " + str(removed_layers))
         augmented_model.trainable_embedder.n_layers = (
             augmented_model.trainable_embedder.n_layers
             - args.embedder.pooling_module.n_truncated_layers
         )
-        
+
         if (
-        augmented_model.pooling_args is not None
-        and augmented_model.pooling_args.type == "latent_attention"
+            augmented_model.pooling_args is not None
+            and augmented_model.pooling_args.type == "latent_attention"
         ):
             ignored_state = [augmented_model.pooling_module.process.latents]
-
+    log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
-    
+
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
-    
-    # for name, module in augmented_model.named_modules():
-    #     if all(p.requires_grad for p in module.parameters()):   
-    #         print(name)
-        
-        
+
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
@@ -431,15 +258,11 @@ def load_training_model(
         device_id=torch.cuda.current_device(),
         sync_module_states=True,  # saves cpu memory by loading pretrained model on rank0 only, not working with False
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
-        ignored_states = ignored_state
+        ignored_states=ignored_state,
     )
 
-        
-    
     main_logger_info("Model sharded!")
-    log_train_params(wrapped_model)
-    
-            
+
     return (
         augmented_pipeline,
         wrapped_model,

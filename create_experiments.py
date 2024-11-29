@@ -38,7 +38,9 @@ def main(args):
     config["embedder"]["train"] = args.train_embedder
     if args.train_embedder:
         config["embedder"]["causal"] = not args.not_causal
-        config["embedder"]['pooling_module']["n_truncated_layers"] = args.n_truncated_layers
+        config["embedder"]["pooling_module"][
+            "n_truncated_layers"
+        ] = args.n_truncated_layers
         config["embedder"]["pooling_module"]["type"] = args.pooling
         config["embedder"]["pooling_module"]["r"] = args.latent_dim
         config["embedder"]["pooling_module"]["n_heads"] = args.n_heads
@@ -46,6 +48,10 @@ def main(args):
         del config["embedder"]["causal"]
         del config["embedder"]["pooling_module"]
 
+    if args.cross_att:
+        if args.start_cross_att is not None:
+            config["cross_att"] = args.cross_att
+            config["start_cross_att"] = args.start_cross_att
 
     config["batch_size"] = args.batch_size
     config["max_steps"] = args.max_steps
@@ -255,13 +261,24 @@ def arg_parser():
         action="store_true",
         help="Whether to use a causal embedder",
     )
-    
+
     parser.add_argument(
         "--continuation",
         action="store_true",
         help="Whether to train on continuation task rather than next token prediction for reconstruction",
     )
-    
+    parser.add_argument(
+        "--cross_att",
+        action="store_true",
+        help="Whether to use cross-attention",
+    )
+    parser.add_argument(
+        "--start_cross_att",
+        type=int,
+        default=None,
+        help="Start cross-attention at this layer",
+    )
+
     return parser.parse_args()
 
 

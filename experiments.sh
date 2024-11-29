@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-6%4
+#SBATCH --array=0-3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=4
@@ -16,16 +16,17 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID))
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/SL_16t_Mistral7B7bc7dcc2ba28873eda96.yaml  
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/continuation_1e-4_Mistral7B20ed0018b2a84fba09c4.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/latt_Mistral7B_causal.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/latt_Mistral7B_not_causal.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/mean_Mistral7B_not_causal_trunc2.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/mean_Mistral7B_not_causal_trunc6.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/mean_Mistral7B_not_causal_trunc3.yaml
-
-
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_half_last_layersMistral7Bdbbb7faebb2f32cf20e9.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_5_last_layersMistral7Bdbbb7faebb2f32cf20e9.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_0.75_last_layersMistral7Bdbbb7faebb2f32cf20e9.yaml
  )
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/SL_16t_Mistral7B7bc7dcc2ba28873eda96.yaml  
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/continuation_1e-4_Mistral7B20ed0018b2a84fba09c4.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/latt_Mistral7B_causal.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/latt_Mistral7B_not_causal.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/mean_Mistral7B_not_causal_trunc2.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/mean_Mistral7B_not_causal_trunc6.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/mean_Mistral7B_not_causal_trunc3.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/mean_Mistral7B_not_causal.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/continuation_Mistral7B20ed0018b2a84fba09c4.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/eos_Mistral7B_causal.yaml

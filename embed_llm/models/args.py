@@ -39,6 +39,7 @@ class EmbedAugArgs(Serializable):
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
     continuation: bool = False
     cross_att: bool = False
+    start_cross_att: int | None = None
 
 
 @dataclass
@@ -61,7 +62,7 @@ class MistralModelArgs(Serializable):
     sliding_window: int | list[int] | None = None
     _sliding_window: int | list[int] | None = None
     model_type: str = "transformer"
-
+    start_cross_att: int | None = None
     # vision_encoder: VisionEncoderArgs] | None = None
     """ If adding new args take care giving it to load args """
 

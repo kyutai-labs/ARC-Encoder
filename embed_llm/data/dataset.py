@@ -257,9 +257,9 @@ def sequence_iterator_for_continuation(
     n_missing = seq_len
     for sample in ds_it:
         assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
-        assert n_missing == seq_len - len(
-            x_buffer
-        ) - sum(embed_tokens_size), f"n_missing: {n_missing} | seq_len - len(x_buffer) - len(tokens as text) {seq_len - len(x_buffer) - sum(embed_tokens_size)}"
+        assert n_missing == seq_len - len(x_buffer) - sum(
+            embed_tokens_size
+        ), f"n_missing: {n_missing} | seq_len - len(x_buffer) - len(tokens as text) {seq_len - len(x_buffer) - sum(embed_tokens_size)}"
 
         tokens, mask = sample.tokens, sample.masks[1:]
         x, y = tokens[:-1], tokens[1:]
@@ -275,19 +275,22 @@ def sequence_iterator_for_continuation(
                 continue
 
             upper_bound = min(cur_pos + n_missing, len(x))
-            
-            toks = x[cur_pos + (upper_bound-cur_pos)//2: upper_bound]
+
+            toks = x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]
             x_buffer.extend(toks)
-            y_buffer.extend(y[cur_pos + (upper_bound-cur_pos)//2: upper_bound])
-            mask_buffer.extend(mask[cur_pos + (upper_bound-cur_pos)//2: upper_bound])
+            y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+            mask_buffer.extend(
+                mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]
+            )
             text_buffer.append(
-                tokenizer.decode(x[cur_pos : cur_pos + (upper_bound-cur_pos)//2])
+                tokenizer.decode(x[cur_pos : cur_pos + (upper_bound - cur_pos) // 2])
             )
 
-            
             sizes.append(len(toks))
-            embed_tokens_size.append(len(x[cur_pos : cur_pos + (upper_bound-cur_pos)//2]))
-                
+            embed_tokens_size.append(
+                len(x[cur_pos : cur_pos + (upper_bound - cur_pos) // 2])
+            )
+
             n_missing -= overall_size
             cur_pos += overall_size
 

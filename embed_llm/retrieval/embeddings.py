@@ -34,7 +34,7 @@ def get_pretrained_embedder(model_name: str, device_map: str = "auto"):
             trust_remote_code=True,
             device_map=device_map,
             torch_dtype="bfloat16",
-        ) 
+        )
         return model
     else:
         raise ValueError(f"Unknown model name {model_name}")
@@ -85,14 +85,18 @@ def encode_text(
             instruction = "Instruct: " + task_name_to_instruct["example"] + "\nQuery: "
         else:
             instruction = ""
-            
+
         with torch.no_grad():
             if cross_att:
-                embedding, seqlens = custom_encode(model, prompts = text, instruction=instruction, pool=False)
-                return  F.normalize(embedding, p=2, dim=1), seqlens
+                embedding, seqlens = custom_encode(
+                    model, prompts=text, instruction=instruction, pool=False
+                )
+                return F.normalize(embedding, p=2, dim=1), seqlens
             else:
-                embedding = custom_encode(model, prompts = text, instruction=instruction, pool = True)
-                
+                embedding = custom_encode(
+                    model, prompts=text, instruction=instruction, pool=True
+                )
+
         if device == "cpu":
             if cross_att:
                 return F.normalize(embedding, p=2, dim=1).cpu().numpy(), seqlens

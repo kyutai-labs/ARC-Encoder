@@ -1,4 +1,3 @@
-
 from typing import Literal
 from transformers import AutoConfig
 from transformers.configuration_utils import PretrainedConfig
@@ -9,6 +8,7 @@ NVEMBED_TYPE = "nvembed"
 LATENT_ATTENTION_TYPE = "latent_attention"
 BIDIR_MISTRAL_TYPE = "bidir_mistral"
 
+
 class NVEmbedConfig(PretrainedConfig):
     model_type = "nvembed"
     is_composition = False
@@ -17,25 +17,31 @@ class NVEmbedConfig(PretrainedConfig):
         self,
         latent_attention_config=None,
         text_config=None,
-        padding_side: Literal["right", "left"]="right",
-        add_pad_token: bool=True,
+        padding_side: Literal["right", "left"] = "right",
+        add_pad_token: bool = True,
         is_mask_instruction: bool = True,
-        add_eos: bool=True,
-        mask_type: str="b",
+        add_eos: bool = True,
+        mask_type: str = "b",
         **kwargs,
     ):
         if isinstance(latent_attention_config, dict):
             latent_attention_config["model_type"] = (
-                latent_attention_config["model_type"] if "model_type" in latent_attention_config else LATENT_ATTENTION_TYPE
+                latent_attention_config["model_type"]
+                if "model_type" in latent_attention_config
+                else LATENT_ATTENTION_TYPE
             )
-            latent_attention_config = CONFIG_MAPPING[latent_attention_config["model_type"]](**latent_attention_config)
+            latent_attention_config = CONFIG_MAPPING[
+                latent_attention_config["model_type"]
+            ](**latent_attention_config)
         elif latent_attention_config is None:
             latent_attention_config = CONFIG_MAPPING[LATENT_ATTENTION_TYPE]()
 
         self.latent_attention_config = latent_attention_config
 
         if isinstance(text_config, dict):
-            text_config["model_type"] = text_config["model_type"] if "model_type" in text_config else "llama"
+            text_config["model_type"] = (
+                text_config["model_type"] if "model_type" in text_config else "llama"
+            )
             text_config = CONFIG_MAPPING[text_config["model_type"]](**text_config)
         elif text_config is None:
             text_config = None
@@ -61,12 +67,12 @@ class LatentAttentionConfig(PretrainedConfig):
 
     def __init__(
         self,
-        num_latents_value: int=512,
-        num_cross_heads: int=8,
-        output_normalize: bool=True,
-        hidden_dim: int=4096,
-        latent_dim: int=4096,
-        cross_dim_head: int=4096,
+        num_latents_value: int = 512,
+        num_cross_heads: int = 8,
+        output_normalize: bool = True,
+        hidden_dim: int = 4096,
+        latent_dim: int = 4096,
+        cross_dim_head: int = 4096,
         **kwargs,
     ):
         self.num_latents_value = num_latents_value
@@ -80,6 +86,7 @@ class LatentAttentionConfig(PretrainedConfig):
 class BidirectionalMistralConfig(MistralConfig):
     model_type = BIDIR_MISTRAL_TYPE
     keys_to_ignore_at_inference = ["past_key_values"]
+
 
 AutoConfig.register(NVEMBED_TYPE, NVEmbedConfig)
 AutoConfig.register(LATENT_ATTENTION_TYPE, LatentAttentionConfig)

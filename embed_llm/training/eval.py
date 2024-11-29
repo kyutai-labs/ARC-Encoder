@@ -53,7 +53,9 @@ def evaluate(
             if not cross_att:
                 output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
             else:
-                output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens, kv_seqlens = kv_seqlens)
+                output = model.forward(
+                    x=x, embeddings=embeddings, seqlens=seqlens, kv_seqlens=kv_seqlens
+                )
 
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()

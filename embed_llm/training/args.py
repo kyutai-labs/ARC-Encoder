@@ -71,7 +71,7 @@ class TrainArgs(Serializable):
 
     # Number of steps between each checkpoint saving. If inferior to 1, only the last checkpoint will be saved.
     ckpt_freq: int = 0
-    save_adapters: bool = True # Not used argument TODO Remove
+    save_adapters: bool = True  # Not used argument TODO Remove
     # If True, no checkpoint will be saved. This is useful for development.
     no_ckpt: bool = False
     num_ckpt_keep: int = 2
@@ -104,6 +104,7 @@ class TrainArgs(Serializable):
     mixed_precision: bool = True
     continuation: bool = False
     cross_att: bool = False
+    start_cross_att: int | None = None
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None

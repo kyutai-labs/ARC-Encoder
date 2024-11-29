@@ -7,6 +7,7 @@ from pathlib import Path
 import fire
 import torch.cuda
 import torch.distributed as dist
+import torch.distributed
 from torch.optim import AdamW, lr_scheduler
 from functools import partial
 import time
@@ -109,11 +110,9 @@ def _train(
 
     if is_torchrun():
         if run_dir.exists():
-            # raise RuntimeError(
-            #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
-            # )
-            print(f"Run dir {run_dir} already exists. Removing it.")
-
+            raise RuntimeError(
+                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
+            )
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -162,6 +161,7 @@ def _train(
         embedding_model.config.max_length = (
             embedding_model.config.max_length if args.seq_len is None else args.seq_len
         )
+        embedding_model.eval()
 
     """ Load LLM and tokenizers """
 
@@ -181,8 +181,10 @@ def _train(
         variant=args.variant if hasattr(args, "variant") else None,
     )
     main_logger_info("Model loading done")
-    main_logger_info(f"PipelineArgs: {pprint.pformat(dataclasses.asdict(pipeline.pipeline_args))}")
-    
+    main_logger_info(
+        f"PipelineArgs: {pprint.pformat(dataclasses.asdict(pipeline.pipeline_args))}"
+    )
+
     """ Load  Dataloader"""
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
@@ -193,20 +195,22 @@ def _train(
         rank=get_rank(),  # DDP rank
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
-        continuation = args.continuation,
+        continuation=args.continuation,
     )
-
+    main_logger_info("Data loader done")
     if not args.no_eval:
         eval_data_loader = build_data_loader(
             tokenizer=pipeline.tokenizer,
             args=args.data,
             seq_len=args.seq_len,
-            batch_size=args.batch_size // 4,  # To avoid OOM
+            batch_size=(
+                4 if args.batch_size <= 16 else args.batch_size // 4
+            ),  # To avoid OOM
             seed=None,
             rank=get_rank(),  # DDP rank
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
-            continuation = args.continuation,
+            continuation=args.continuation,
         )
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
         eval_batches = []
@@ -229,7 +233,7 @@ def _train(
     assert (
         args.max_steps > args.optim.warm_up_steps
     ), "Max steps should be greater than 0"
-    
+
     scheduler = lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=args.optim.max_lr,
@@ -253,7 +257,11 @@ def _train(
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
-    prepare_batch_fn = partial(pipeline.prepare_forward, batch_size=args.batch_size)
+    prepare_batch_fn = partial(
+        pipeline.prepare_forward, batch_size=args.batch_size, cross_att=args.cross_att
+    )
+
+    main_logger_info("Start training")
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
@@ -279,19 +287,15 @@ def _train(
 
             # start_time = time.time()
             x, y, y_mask, seqlens, embeddings, kv_seqlens = prepare_batch_fn(batch)
-            
-
-            # if get_rank() == 0:
-            #     print('GPU MEMORY \n', get_gpu_memory())
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
             if not args.cross_att:
                 output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
             else:
-                output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens, kv_seqlens = kv_seqlens)
-
-            # print(prof.key_averages().table(sort_by="cuda_time_total"))
+                output = model.forward(
+                    x=x, embeddings=embeddings, seqlens=seqlens, kv_seqlens=kv_seqlens
+                )
 
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()
@@ -304,6 +308,7 @@ def _train(
             mb_loss = compute_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
+            # print(prof.key_averages().table(sort_by="cuda_time_total"))
 
             mb_loss.backward()
 
@@ -360,8 +365,8 @@ def _train(
                 prepare_batch_fn=prepare_batch_fn,
                 batches=eval_batches,
                 state=state,
-                cross_att=args.cross_att
-                )
+                cross_att=args.cross_att,
+            )
 
             eval_logs = get_eval_logs(
                 state.step, avg_loss, state.this_eval_perplexity, state.this_eval_loss
