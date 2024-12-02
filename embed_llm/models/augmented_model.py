@@ -26,6 +26,7 @@ from embed_llm.training.args import TrainArgs
 from embed_llm.training.distributed import (
     get_rank,
 )
+from embed_llm.models.utils import is_cross_att
 
 # Mistral specifics
 from embed_llm.models.mistral.transformer import Transformer as MistralTransformer
@@ -418,17 +419,20 @@ class EmbedAugPipeline(nn.Module):
             param_dtype=param_dtype,
             parll=False,
         )
-
+        
         if pipeline_args.cross_att:
             state_dict = safetensors.torch.load_file(Path(lora_path))
             cross_att_state_dicts = {
-                k: v.to(llm.device).to(param_dtype)
+                k: v.to(param_dtype)
                 for k, v in state_dict.items()
-                if "lora" not in k
+                if "lora" not in k and is_cross_att(k)
             }
-            llm.load_state_dict(cross_att_state_dicts, assign=True)
+            llm.load_state_dict(cross_att_state_dicts, assign=True, strict = False)
 
+    
         llm.load_lora(Path(lora_path))
+
+                    
         llm = llm.to(device)
         llm.eval()
 
@@ -444,20 +448,24 @@ class EmbedAugPipeline(nn.Module):
                 for_embedding=True,
                 parll=False,
             )
+        
             pipeline_args.pooling_module = PoolingArgs(**pipeline_args.pooling_module)
+            n_truncated_layers = pipeline_args.pooling_module.n_truncated_layers
+            
+                
             try:
                 del llm_embedder.output
             except AttributeError:
                 print("No output to delete")
             for i in range(llm_embedder.n_layers):
                 if i > llm_embedder.n_layers - (
-                    pipeline_args.pooling_module.n_truncated_layers + 1
+                    n_truncated_layers + 1
                 ):
                     module = llm_embedder.layers.pop(str(i))
                     del module
 
             llm_embedder.n_layers = (
-                llm_embedder.n_layers - pipeline_args.pooling_module.n_truncated_layers
+                llm_embedder.n_layers - n_truncated_layers
             )
 
             llm_embedder.load_lora(Path(trainable_embedder_path + "/lora.safetensors"))
@@ -476,7 +484,7 @@ class EmbedAugPipeline(nn.Module):
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
 
-        if embed_model_name == "":
+        if embed_model_name == "" and not pipeline_args.cross_att:
             if (
                 augmented_pipeline.pipeline_args.pooling_module.type
                 == "latent_attention"
@@ -520,6 +528,7 @@ class EmbedAugPipeline(nn.Module):
         device: str,
         max_tokens: int = 100,
         temperature: float = 0.6,
+        truncate_double_space: bool = False,
     ):
         if isinstance(prompts, str):
             prompts = [prompts]
@@ -527,13 +536,23 @@ class EmbedAugPipeline(nn.Module):
             text_conditioning = [text_conditioning]
 
         if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
-            embeddings = encode_text(
-                text_conditioning,
-                self.embed_model_name,
-                self.embedding_model,
-                query_embedding=False,
-                device=device,
-            )
+            if self.pipeline_args.cross_att:
+                embeddings, kv_seqlens = encode_text(
+                    text_conditioning,
+                    self.embed_model_name,
+                    self.embedding_model,
+                    query_embedding=False,
+                    device=device,
+                    cross_att=True,
+                )
+            else:
+                embeddings = encode_text(
+                    text_conditioning,
+                    self.embed_model_name,
+                    self.embedding_model,
+                    query_embedding=False,
+                    device=device,
+                )
             if self.model.mlp_project is not None:
                 embeddings = self.model.mlp_project(
                     embeddings.to(self.pipeline_args.param_dtype)
@@ -547,13 +566,15 @@ class EmbedAugPipeline(nn.Module):
             x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
                 device
             )
-            embed_output = self.model.trainable_embedder(
+            embeddings = self.model.trainable_embedder(
                 input_ids=x, embeddings=None, seqlens=seqlens
             )
-            embeddings = self.model.pooling_module(x=embed_output, seqlens=seqlens)
+            if not self.pipeline_args.cross_att:
+                embeddings = self.model.pooling_module(x=embeddings, seqlens=seqlens)
 
         else:
             embeddings = None
+            kv_seqlens = None
 
         encoded_prompts = [
             self.tokenizer.encode(prompt, bos=True, eos=False) for prompt in prompts
@@ -567,6 +588,7 @@ class EmbedAugPipeline(nn.Module):
             temperature=temperature,
             chunk_size=None,
             eos_id=eos_id,
+            kv_seqlens=None if not self.pipeline_args.cross_att else kv_seqlens,
             norm_wo_embeds=self.pipeline_args.norm_wo_embeds,
         )
         produced_text = [
@@ -574,11 +596,14 @@ class EmbedAugPipeline(nn.Module):
             for i in range(len(generated_tokens))
         ]
 
-        final_texts = []
-        for text in produced_text:
-            if "\n\n" in text:
-                text = text.split("\n\n")[0]
-            final_texts.append(text)
+        if truncate_double_space:
+            final_texts = []
+            for text in produced_text:
+                if "\n\n" in text:
+                    text = text.split("\n\n")[0]
+                final_texts.append(text)
+        else:
+            final_texts = produced_text
         return final_texts
 
     @torch.inference_mode()
@@ -678,7 +703,24 @@ def load_args(
 ) -> tuple[ModelsArgs, EmbedAugArgs]:
 
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
-
+    
+    if pipe_path is not None:
+        with open(pipe_path + "/params.json", "r") as f:
+            args = json.loads(f.read())
+        del args["training"]
+        pipeline_args = EmbedAugArgs(training=False, **args)
+    else:
+        pipeline_args = EmbedAugArgs(
+            training=True,
+            w_embeds=w_embeds,
+            norm_wo_embeds=norm_wo_embeds,
+            param_dtype=param_dtype,
+            trainable_embedder=trainable_embedder,
+            causal=causal,
+            continuation=continuation,
+            cross_att=cross_att,
+            start_cross_att=start_cross_att,
+        )
     if "mistral" in llm_name.lower():
 
         with open(folder / "params.json", "r") as f:
@@ -695,7 +737,7 @@ def load_args(
             norm_eps=args["norm_eps"],
             vocab_size=args["vocab_size"],
             max_batch_size=max_batch_size,
-            start_cross_att=start_cross_att,
+            start_cross_att=start_cross_att if start_cross_att is not None else pipeline_args.start_cross_att,
         )
 
         if args.get("rope_theta") is not None:
@@ -733,23 +775,6 @@ def load_args(
         assert variant is not None, "Variant must be provided for Gemma model."
         llm_args.quant = False
 
-    if pipe_path is not None:
-        with open(pipe_path + "/params.json", "r") as f:
-            args = json.loads(f.read())
-        del args["training"]
-        pipeline_args = EmbedAugArgs(training=False, **args)
-    else:
-        pipeline_args = EmbedAugArgs(
-            training=True,
-            w_embeds=w_embeds,
-            norm_wo_embeds=norm_wo_embeds,
-            param_dtype=param_dtype,
-            trainable_embedder=trainable_embedder,
-            causal=causal,
-            continuation=continuation,
-            cross_att=cross_att,
-            start_cross_att=start_cross_att,
-        )
     if isinstance(pipeline_args.param_dtype, str):
         pipeline_args.param_dtype = getattr(torch, pipeline_args.param_dtype)
 
@@ -826,11 +851,11 @@ def load_llm_model(
         embed_dim = model.args.dim
         if parll and get_rank() == 0:
             state_dict = load_state_dict(folder, dtype=param_dtype)
-            model.load_state_dict(state_dict, assign=True)  # type: ignore
+            model.load_state_dict(state_dict, assign=True, strict = False)  # type: ignore
             logger.info("Loaded model on cpu!")
         elif not parll:
             state_dict = load_state_dict(folder, dtype=param_dtype)
-            model.load_state_dict(state_dict, assign=True)  # type: ignore
+            model.load_state_dict(state_dict, assign=True, strict = False)  # type: ignore
             logger.info("Loaded model on cpu!")
 
         if pipeline_args.mlp_project.n_layers == 0 and args is not None:

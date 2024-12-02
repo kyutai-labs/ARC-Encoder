@@ -7,8 +7,8 @@ data:
 continuation: false
 embedder:
   dim: 4096
-  name: Mistral7B# put '' to use trainable embedder
-  train: true # put true to train embedder
+  name: NVEmbed # put '' to use trainable embedder
+  train: false # put true to train embedder
   causal: true
   pooling_module: # see `embedders.py` for available pooling modules
     type: latent_attention # mean, cls ...

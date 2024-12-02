@@ -1,6 +1,7 @@
 import operator
 from typing import Iterable
 from functools import partial, reduce
+from dataclasses import dataclass
 import torch
 from torch import nn
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
@@ -16,23 +17,30 @@ from embed_llm.models.mistral.transformer_layers import (
     RMSNorm,
     FeedForward,
     TransformerBlock,
+    repeat_kv
 )
 from embed_llm.models.mistral.rope import precompute_freqs_cis
 
 from embed_llm.models.embedding_modules import MLP_block
 from embed_llm.models.lora import maybe_lora
 from embed_llm.training.args import LoraArgs
-
-from embed_llm.models.mistral.cache import CacheView
+from embed_llm.models.mistral.cache import BufferCache, CacheInputMetadata, CacheView, CrossAttCache
 from embed_llm.models.mistral.moe import MoeArgs, MoeLayer
 
 
-def repeat_kv(
-    keys: torch.Tensor, values: torch.Tensor, repeats: int, dim: int
-) -> tuple[torch.Tensor, torch.Tensor]:
-    keys = torch.repeat_interleave(keys, repeats=repeats, dim=dim)
-    values = torch.repeat_interleave(values, repeats=repeats, dim=dim)
-    return keys, values
+
+@dataclass
+class SimpleInputMetadata:
+    # rope absolute positions
+    positions: torch.Tensor
+
+    @staticmethod
+    def from_seqlens(seqlens: list[int], device: torch.device) -> "SimpleInputMetadata":
+        return SimpleInputMetadata(
+            positions=torch.cat([torch.arange(0, seqlen) for seqlen in seqlens]).to(
+                device=device, dtype=torch.long
+            )
+        )
 
 
 class Cross_Attention(nn.Module):
@@ -136,8 +144,8 @@ class Cross_AttTransformerBlock(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-        xk: torch.Tensor,
-        xv: torch.Tensor,
+        xk: torch.Tensor | None,
+        xv: torch.Tensor | None,
         cache: CacheView | None = None,
         self_mask: BlockDiagonalMask | None = None,
         cross_att_mask: BlockDiagonalMask | None = None,
@@ -147,12 +155,13 @@ class Cross_AttTransformerBlock(nn.Module):
             self.attention_norm(x), freqs_cis, cache=cache, mask=self_mask
         )
         h = x + r
-        r = self.cross_attention.forward(
-            x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
-        )
-        h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
+        if xk is not None and xv is not None:
+            r = self.cross_attention.forward(
+                x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
+            )
+            h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
         out = self.feed_forward.forward(self.ffn_norm(h))
-        return out
+        return out + h
 
 
 class Transformer(ModelBase, LoRALoaderMixin):
@@ -170,7 +179,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.n_layers = args.n_layers
         self._precomputed_freqs_cis: torch.Tensor | None = None
         assert self.vocab_size > 0
-        self.pos_to_keep = []
         self.pipeline_rank = pipeline_rank
         self.num_pipeline_ranks = num_pipeline_ranks
         self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
@@ -257,7 +265,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self,
         input_ids: torch.Tensor,
         seqlens: list[int],
-        embeddings: torch.Tensor,
+        embeddings: torch.Tensor | None,
         kv_seqlens: list[int] | None = None,
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
@@ -280,7 +288,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
-        xk, xv = self.to_k(embeddings), self.to_v(embeddings)
+        if embeddings is not None:
+            xk, xv = self.to_k(embeddings), self.to_v(embeddings)
+        else:
+            xk, xv = None, None
 
         for i in range(self.n_layers):
             if i >= self.start_cross_att:
@@ -296,6 +307,125 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
         normalized_h = self.norm(h)
         return self.output(normalized_h).float()
+    
+    
+    # Below functions serve for inference
+    def generate_partial(
+        self,
+        input_ids: torch.Tensor,
+        seqlens: list[int],
+        embeddings: torch.Tensor | None,
+        cache: BufferCache | None,
+        cross_att_cache: CrossAttCache,
+        # images: list[torch.Tensor] | None,
+    ) -> torch.Tensor:
+        """Local forward pass.
+
+        If doing pipeline parallelism, this will return the activations of the last layer of this stage.
+        For the last stage, this will return the normalized final embeddings.
+        """
+        assert (
+            len(seqlens) <= self.args.max_batch_size
+        ), f"Max batch size is {self.args.max_batch_size}, got batch size of {len(seqlens)}"
+        (num_toks,) = input_ids.shape
+        assert sum(seqlens) == num_toks, (sum(seqlens), num_toks)
+
+        input_metadata: list[CacheInputMetadata] | list[SimpleInputMetadata]
+
+        if cache is not None:
+            input_metadata = cache.get_input_metadata(seqlens)
+        else:
+            input_metadata = [
+                SimpleInputMetadata.from_seqlens(seqlens, self.device)
+                for _ in range(len(self.layers))
+            ]
+
+        if self.pipeline_rank == 0:
+            assert self.tok_embeddings is not None
+            # if self.vision_encoder is not None and images:
+            #     h = self.embed_vision_language_features(input_ids, images)
+            # else:
+            token_embeds = self.tok_embeddings(input_ids)
+            h = token_embeds
+        else:
+            h = torch.empty(
+                num_toks, self.args.dim, device=self.device, dtype=self.dtype
+            )
+            torch.distributed.recv(h, src=self.pipeline_rank - 1)
+
+        # freqs_cis is always the same for every layer
+        freqs_cis = self.freqs_cis[input_metadata[0].positions]
+        
+        if not cross_att_cache.full:
+            if embeddings is not None:
+                xk, xv = self.to_k(embeddings), self.to_v(embeddings)
+            else:
+                xk, xv = None, None
+            cross_att_cache.fill(xk, xv)
+        else:
+            xk, xv = cross_att_cache.cache_k, cross_att_cache.cache_v
+        
+        
+        
+        for local_layer_id, layer in enumerate(self.layers.values()):
+            if cache is not None:
+                assert input_metadata is not None
+                cache_metadata = input_metadata[local_layer_id]
+                assert isinstance(cache_metadata, CacheInputMetadata)
+                cache_view = cache.get_view(local_layer_id, cache_metadata)
+            else:
+                cache_view = None
+            
+            if  local_layer_id >= self.start_cross_att:
+                h = layer(x = h, 
+                        freqs_cis = freqs_cis, 
+                        cache = cache_view, 
+                        xk = xk,
+                        xv = xv,
+                        cross_att_mask = cross_att_cache.get_mask(seqlens))
+            else:
+                h = layer(x = h,
+                        freqs_cis = freqs_cis,
+                        cache = cache_view)
+
+        if cache is not None:
+            cache.update_seqlens(seqlens)
+        if self.pipeline_rank < self.num_pipeline_ranks - 1:
+            torch.distributed.send(h, dst=self.pipeline_rank + 1)
+            return h
+        else:
+            normalized_h = self.norm(h)
+            return normalized_h
+
+    def generate(
+        self,
+        input_ids: torch.Tensor,
+        seqlens: list[int],
+        kv_seqlens: list[int],
+        embeddings: torch.Tensor | None,
+        cache: BufferCache | None,
+        # images: list[torch.Tensor | None,
+    ) -> torch.Tensor:
+        cross_att_cache = CrossAttCache(embeddings.shape[0], n_kv_heads=self.args.n_kv_heads, head_dim=self.args.head_dim, kv_seqlens = kv_seqlens)
+        h = self.generate_partial(
+            input_ids,
+            seqlens,
+            embeddings=embeddings,
+            cache=cache,
+            cross_att_cache=cross_att_cache,
+        )  # , images=images)
+        if self.pipeline_rank < self.num_pipeline_ranks - 1:
+            # ignore the intermediate activations as we'll get the final output from
+            # the last stage
+            outs = torch.empty(
+                h.shape[0], self.vocab_size, device=h.device, dtype=h.dtype
+            )
+        else:
+            assert self.output is not None
+            outs = self.output(h)
+        if self.num_pipeline_ranks > 1:
+            torch.distributed.broadcast(outs, src=self.num_pipeline_ranks - 1)
+        return outs.float()
 
 
 def positions_from_sizes(sizes: Iterable[int], device):

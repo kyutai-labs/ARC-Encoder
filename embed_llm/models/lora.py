@@ -1,13 +1,21 @@
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 from functools import partial
 import safetensors.torch
 import torch
 import torch.nn as nn
 from simple_parsing.helpers import Serializable
 
+
+def is_cross_att(module_name: str):
+    return (
+        "cross_attention" in module_name
+        or "gate" in module_name
+        or "to_k" in module_name
+        or "to_v" in module_name
+    )
 
 @dataclass
 class LoraArgs(Serializable):
@@ -127,7 +135,10 @@ class LoRALoaderMixin:
         assert (
             lora_dtype == self.dtype
         ), f"LoRA weights dtype differs from model's dtype {lora_dtype} != {self.dtype}"
-        assert all("lora" in key for key in lora_state_dict.keys())
+        if not all("lora"  in key for key in lora_state_dict.keys()):
+            print('Not only LoRA weights found in the checkpoint. Skipping other weights.')
+            lora_state_dict = {k: v for k, v in lora_state_dict.items() if "lora" in k}
+
 
         # move tensors to device
         # type: ignore[attr-defined]
@@ -136,13 +147,13 @@ class LoRALoaderMixin:
         state_dict = self.state_dict()  # type: ignore[attr-defined]
 
         if self.args.lora is None:  # type: ignore[attr-defined]
-            logging.info("Loading and merging LoRA weights...")
+            print("Loading and merging LoRA weights...")
 
             # replace every nn.Linear with a LoRALinear with 'meta' device except the output layer
             # type: ignore[attr-defined]
             named_modules = dict(self.named_modules())
             for name, module in named_modules.items():
-                if isinstance(module, nn.Linear) and name != "output":
+                if isinstance(module, nn.Linear) and name != "output" and not is_cross_att(name):
                     layer_id = name.split(".")[1]
                     # type: ignore[attr-defined]
                     if layer_id not in self.layers:
@@ -160,7 +171,7 @@ class LoRALoaderMixin:
 
                         state_dict[name + ".weight"] = weight
         else:
-            logging.info("Loading LoRA weights...")
+            print("Loading LoRA weights...")
             for k, v in lora_state_dict.items():
                 state_dict.update(lora_state_dict)
 

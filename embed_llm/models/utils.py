@@ -7,12 +7,9 @@ import torch.distributed.fsdp.wrap as torch_wrap
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 
 
-from embed_llm.models.args import LoraArgs
 from embed_llm.training.distributed import (
     get_rank,
 )
-
-from embed_llm.training.args import TrainArgs
 
 from embed_llm.models.embedding_modules import LatentAttention
 
@@ -108,7 +105,7 @@ def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
     llm_params = sum(
         p.numel()
         for n, p in model.named_parameters()
-        if not is_cross_att(n) and not "lora" in n
+        if not is_cross_att(n) and not "lora" in n and not "mlp_project" in n and not "pooling_module" in n
     )
     mlp_project_params = sum(
         p.numel() for n, p in model.named_parameters() if "mlp_project" in n
@@ -172,7 +169,10 @@ def initialize_cross_att_project(model: torch.nn.Module, param_dtype: torch.dtyp
                     )
                     # Replace the old param with the new ones
                     param = module._parameters[p_name]
-                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+                    if "gate" in p_name:
+                        torch.nn.init.zeros_(param)
+                    else:
+                        torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
 
 
 def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):

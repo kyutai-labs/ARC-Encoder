@@ -1,12 +1,13 @@
 import torch
 from embed_llm.models.mistral.cache import BufferCache
 from embed_llm.models.mistral.transformer import Transformer
+from embed_llm.models.mistral.cross_att_transformer import Transformer as CrossAttTransformer
 
 
 @torch.inference_mode()
 def generate(
     encoded_prompts: list[list[int]] | list[int],
-    model: Transformer,
+    model: Transformer | CrossAttTransformer,
     # images: list[list[np.ndarray]] = [],
     *,
     max_tokens: int,
@@ -15,6 +16,7 @@ def generate(
     chunk_size: int | None = None,
     eos_id: int | None = None,
     norm_wo_embeds: bool = False,
+    kv_seqlens: list[int] | None = None,
 ) -> tuple[list[list[int]], list[list[float]]]:
     # images_torch: list[list[torch.Tensor]] = []
     # if images:
@@ -59,14 +61,24 @@ def generate(
     for s in range(0, max_prompt_len, chunk_size):
         prompt_chunks = [p[s : s + chunk_size] for p in encoded_prompts]
         assert all(len(p) > 0 for p in prompt_chunks)
-        prelogits = model.generate(
-            torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
-            # images=flattened_images,
-            seqlens=[len(p) for p in prompt_chunks],
-            embeddings=embeddings,
-            cache=cache,
-            norm_wo_embeds=norm_wo_embeds,
-        )
+        if isinstance(model, Transformer):
+            prelogits = model.generate(
+                torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
+                # images=flattened_images,
+                seqlens=[len(p) for p in prompt_chunks],
+                embeddings=embeddings,
+                cache=cache,
+                norm_wo_embeds=norm_wo_embeds,
+            )
+        elif isinstance(model, CrossAttTransformer):
+            assert kv_seqlens is not None
+            prelogits = model.generate(
+                torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
+                seqlens=[len(p) for p in prompt_chunks],
+                embeddings=embeddings,
+                kv_seqlens = kv_seqlens,
+                cache=cache,
+            )
         logits = torch.log_softmax(prelogits, dim=-1)
 
         if last_token_prelogits is not None:
@@ -115,13 +127,26 @@ def generate(
             logprobs[i].append(last_token_logits[i, next_token[i]].item())
 
         generated_tensors.append(next_token[:, None])
-        last_token_prelogits = model.generate(
-            next_token,
-            seqlens=[1] * B,
-            embeddings=embeddings,
-            cache=cache,
-            norm_wo_embeds=norm_wo_embeds,
-        )
+        
+        if isinstance(model, Transformer):
+            last_token_prelogits = model.generate(
+                next_token,
+                seqlens=[1] * B,
+                embeddings=embeddings,
+                cache=cache,
+                norm_wo_embeds=norm_wo_embeds,
+            )
+        elif isinstance(model, CrossAttTransformer):
+            assert kv_seqlens is not None
+            last_token_prelogits = model.generate(
+                next_token,
+                seqlens=[1] * B,
+                embeddings=embeddings,
+                kv_seqlens = kv_seqlens,
+                cache=cache
+            )
+            
+
         assert last_token_prelogits.shape == (
             B,
             V,
