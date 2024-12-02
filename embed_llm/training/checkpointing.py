@@ -275,10 +275,11 @@ class Checkpointer:
     ):
         llm_dst, mlp_project_dst = self.dst_dir
         tmp_llm_dst = self._tmp(llm_dst)
-        tmp_mlp_project_dst = self._tmp(mlp_project_dst)
+        if self.mlp_project.args.n_layers > 0:
+            tmp_mlp_project_dst = self._tmp(mlp_project_dst)
 
         main_logger_info(
-            f"Dumping checkpoint in {llm_dst} and {mlp_project_dst} using tmp name: {tmp_llm_dst.name} and {tmp_mlp_project_dst.name}"
+            f"Dumping checkpoint in {llm_dst} and {mlp_project_dst} using tmp name: {tmp_llm_dst.name}"
         )
 
         assert (
@@ -286,7 +287,8 @@ class Checkpointer:
         ), f"dst exists {self.dst_dir}"
 
         tmp_llm_dst.mkdir(parents=True, exist_ok=True)
-        tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
+        if self.mlp_project.args.n_layers > 0:
+            tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
 
         if self.trainable_embedder is not None:
             tmp_trainable_embedder_dst = self._tmp(
@@ -315,15 +317,15 @@ class Checkpointer:
                     tmp_llm_dst, use_safetensors=True, save_only_lora=True
                 ),  # always use safetensors for checkpointing
             )
-
-            safetensors.torch.save_file(
-                mlp_project_states,
-                self.consolidated_path(
-                    tmp_mlp_project_dst,
-                    use_safetensors=True,
-                    save_only_lora=False,
-                ),  # always use safetensors for checkpointing
-            )
+            if self.mlp_project.args.n_layers > 0:
+                safetensors.torch.save_file(
+                    mlp_project_states,
+                    self.consolidated_path(
+                        tmp_mlp_project_dst,
+                        use_safetensors=True,
+                        save_only_lora=False,
+                    ),  # always use safetensors for checkpointing
+                )
             if self.trainable_embedder is not None:
                 safetensors.torch.save_file(
                     trainable_embedder_states,
@@ -352,7 +354,8 @@ class Checkpointer:
                 not self.dst_dir[0].exists() and not self.dst_dir[1].exists()
             ), f"should not happen! {self.dst_dir[0]} | {self.dst_dir[1]}"
             tmp_llm_dst.rename(self.dst_dir[0])
-            tmp_mlp_project_dst.rename(self.dst_dir[1])
+            if self.mlp_project.args.n_layers > 0:
+                tmp_mlp_project_dst.rename(self.dst_dir[1])
 
             if self.trainable_embedder is not None:
                 tmp_trainable_embedder_dst.rename(llm_dst.parent / "trainable_embedder")
