@@ -71,7 +71,6 @@ def generate(
                 norm_wo_embeds=norm_wo_embeds,
             )
         elif isinstance(model, CrossAttTransformer):
-            assert kv_seqlens is not None
             prelogits = model.generate(
                 torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
                 seqlens=[len(p) for p in prompt_chunks],
@@ -137,7 +136,6 @@ def generate(
                 norm_wo_embeds=norm_wo_embeds,
             )
         elif isinstance(model, CrossAttTransformer):
-            assert kv_seqlens is not None
             last_token_prelogits = model.generate(
                 next_token,
                 seqlens=[1] * B,

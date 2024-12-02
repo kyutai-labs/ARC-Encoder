@@ -316,7 +316,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         seqlens: list[int],
         embeddings: torch.Tensor | None,
         cache: BufferCache | None,
-        cross_att_cache: CrossAttCache,
+        cross_att_cache: CrossAttCache | None,
         # images: list[torch.Tensor] | None,
     ) -> torch.Tensor:
         """Local forward pass.
@@ -356,14 +356,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
         # freqs_cis is always the same for every layer
         freqs_cis = self.freqs_cis[input_metadata[0].positions]
         
-        if not cross_att_cache.full:
-            if embeddings is not None:
+      
+        if embeddings is not None:
+            if not cross_att_cache.full:
                 xk, xv = self.to_k(embeddings), self.to_v(embeddings)
+                cross_att_cache.fill(xk, xv)
             else:
-                xk, xv = None, None
-            cross_att_cache.fill(xk, xv)
+                xk, xv = cross_att_cache.cache_k, cross_att_cache.cache_v
         else:
-            xk, xv = cross_att_cache.cache_k, cross_att_cache.cache_v
+            xk, xv = None, None
         
         
         
@@ -382,7 +383,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                         cache = cache_view, 
                         xk = xk,
                         xv = xv,
-                        cross_att_mask = cross_att_cache.get_mask(seqlens))
+                        cross_att_mask = None if cross_att_cache is None else cross_att_cache.get_mask(seqlens))
             else:
                 h = layer(x = h,
                         freqs_cis = freqs_cis,
@@ -406,7 +407,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         cache: BufferCache | None,
         # images: list[torch.Tensor | None,
     ) -> torch.Tensor:
-        cross_att_cache = CrossAttCache(embeddings.shape[0], n_kv_heads=self.args.n_kv_heads, head_dim=self.args.head_dim, kv_seqlens = kv_seqlens)
+        cross_att_cache = None if kv_seqlens is None else CrossAttCache(embeddings.shape[0], n_kv_heads=self.args.n_kv_heads, head_dim=self.args.head_dim, kv_seqlens = kv_seqlens)
         h = self.generate_partial(
             input_ids,
             seqlens,
