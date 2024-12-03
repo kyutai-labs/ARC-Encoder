@@ -15,7 +15,6 @@ class PoolingArgs(Serializable):
     r: int = 512  # Hidden dim of latent if latent attention pooling
     n_heads: int = 8  # Number of heads in latent attention pooling
     n_layers: int = 1
-    n_truncated_layers: int = 4
 
 
 @dataclass
@@ -34,12 +33,16 @@ class EmbedAugArgs(Serializable):
     mlp_project: MLPProjectArgs = field(default_factory=MLPProjectArgs)
     training: bool = False
     param_dtype: torch.dtype = torch.bfloat16
+    embedder_name: str = "NVEmbed"
     trainable_embedder: bool = False
     causal: bool = True
+    do_pool: bool = False
+    n_truncated_layers: int = 4
+    normalize_embeddings: bool = False
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
     continuation: bool = False
     cross_att: bool = False
-    start_cross_att: int | None = None
+    cross_att_layers: int | None = None
 
 
 @dataclass

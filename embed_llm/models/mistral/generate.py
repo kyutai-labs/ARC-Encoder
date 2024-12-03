@@ -1,7 +1,9 @@
 import torch
 from embed_llm.models.mistral.cache import BufferCache
 from embed_llm.models.mistral.transformer import Transformer
-from embed_llm.models.mistral.cross_att_transformer import Transformer as CrossAttTransformer
+from embed_llm.models.mistral.cross_att_transformer import (
+    Transformer as CrossAttTransformer,
+)
 
 
 @torch.inference_mode()
@@ -63,7 +65,9 @@ def generate(
         assert all(len(p) > 0 for p in prompt_chunks)
         if isinstance(model, Transformer):
             prelogits = model.generate(
-                torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
+                torch.tensor(
+                    sum(prompt_chunks, []), device=model.device, dtype=torch.long
+                ),
                 # images=flattened_images,
                 seqlens=[len(p) for p in prompt_chunks],
                 embeddings=embeddings,
@@ -72,10 +76,12 @@ def generate(
             )
         elif isinstance(model, CrossAttTransformer):
             prelogits = model.generate(
-                torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
+                torch.tensor(
+                    sum(prompt_chunks, []), device=model.device, dtype=torch.long
+                ),
                 seqlens=[len(p) for p in prompt_chunks],
                 embeddings=embeddings,
-                kv_seqlens = kv_seqlens,
+                kv_seqlens=kv_seqlens,
                 cache=cache,
             )
         logits = torch.log_softmax(prelogits, dim=-1)
@@ -126,7 +132,7 @@ def generate(
             logprobs[i].append(last_token_logits[i, next_token[i]].item())
 
         generated_tensors.append(next_token[:, None])
-        
+
         if isinstance(model, Transformer):
             last_token_prelogits = model.generate(
                 next_token,
@@ -140,10 +146,9 @@ def generate(
                 next_token,
                 seqlens=[1] * B,
                 embeddings=embeddings,
-                kv_seqlens = kv_seqlens,
-                cache=cache
+                kv_seqlens=kv_seqlens,
+                cache=cache,
             )
-            
 
         assert last_token_prelogits.shape == (
             B,

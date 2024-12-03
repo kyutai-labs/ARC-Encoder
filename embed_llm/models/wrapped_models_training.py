@@ -34,7 +34,7 @@ from embed_llm.models.utils import (
 
 
 def load_training_model(
-    args: TrainArgs,
+    train_args: TrainArgs,
     folder: Path,
     lora: LoraArgs,
     llm_name: str,
@@ -46,6 +46,9 @@ def load_training_model(
     max_batch_size: int = 32,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
 
+    if not train_args.pipeline.cross_att:
+        assert train_args.pipeline.do_pool, "If not cross-attention, must do pooling"
+
     llm_args, pipeline_args = load_args(
         folder,
         lora,
@@ -53,40 +56,37 @@ def load_training_model(
         max_seq_len=max_seq_len,
         max_batch_size=max_batch_size,
         variant=variant,
-        norm_wo_embeds=args.norm_wo_embeds,
-        w_embeds=args.w_embeds,
         param_dtype=param_dtype,
-        trainable_embedder=args.embedder.train,
-        causal=args.embedder.causal,
-        continuation=args.continuation,
-        cross_att=args.cross_att,
-        start_cross_att=args.start_cross_att,
+        pipe_args=train_args.pipeline,
     )
 
-    # Load pretrained params on rank 0
+    # Load pretrained params on rank 0 for LLM
     model, tokenizer, embed_dim = load_llm_model(
         llm_name=llm_name,
         llm_args=llm_args,
         pipeline_args=pipeline_args,
-        args=args,
+        args=train_args,
         folder=folder,
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=False,
     )
 
-    pipeline_args.mlp_project = args.projector
-    if not args.w_embeds:
-        assert args.projector.n_layers == 0, "Only no MLP if no embeddings."
+    pipeline_args.mlp_project = train_args.pipeline.mlp_project
+    if not pipeline_args.w_embeds:
+        assert (
+            train_args.pipeline.mlp_project.n_layers == 0
+        ), "Only no MLP if no embeddings."
 
-    if args.embedder.train:
+    # Load model and params for embedder
+    if pipeline_args.trainable_embedder:
         main_logger_info("Loading embedder model ...")
         # Load pretrained params on rank 0
         llm_embedder, _, llm_embed_dim = load_llm_model(
-            llm_name=args.embedder.name,
+            llm_name=llm_name,
             llm_args=llm_args,
             pipeline_args=pipeline_args,
-            args=args,
+            args=train_args,
             folder=folder,
             checkpoint=checkpoint,
             param_dtype=param_dtype,
@@ -99,22 +99,23 @@ def load_training_model(
             main_logger_info("No output to delete for the LLM Embedder")
 
         embedding_model = llm_embedder
+        pipeline_args.embedder_name = llm_name
         # Hidden dim of the embedder
         pipeline_args.mlp_project.in_dim = llm_embed_dim
-        pipeline_args.pooling_module = args.embedder.pooling_module
 
-    if not args.embedder.train:
+    if not pipeline_args.trainable_embedder:
         # If using pretrained embedder
-        pipeline_args.mlp_project.in_dim = args.embedder.dim
+        pipeline_args.mlp_project.in_dim = 4096  # dim for NVEmbed
 
     # Hidden dim of the llm
     pipeline_args.mlp_project.out_dim = embed_dim
 
+    # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
         llm_name=llm_name,
         pipeline_args=pipeline_args,
         tokenizer=tokenizer,
-        embed_model_name=args.embedder.name,
+        embed_model_name=pipeline_args.embedder_name,
         embedding_model=embedding_model,
         pad_token_id=tokenizer.pad_id,
         max_seq_len=max_seq_len,
@@ -129,24 +130,23 @@ def load_training_model(
             # initialize LoRA layers
             initialize_lora_parameters(augmented_model.llm, param_dtype)
 
-            if args.embedder.train:
+            if pipeline_args.trainable_embedder:
                 main_logger_info("Initializing lora layers  for Embedder ...")
                 initialize_lora_parameters(
                     augmented_model.trainable_embedder, param_dtype
                 )
 
-        if args.cross_att:
+        if pipeline_args.cross_att:
             main_logger_info("Initializing Cross-Attention")
             initialize_cross_att_project(augmented_model.llm, param_dtype)
-            augmented_model.pooling_args = None
-            augmented_model.pooling_module = None
 
         if augmented_model.mlp_project is not None:
             main_logger_info("Initializing MLP")
             initialize_mlp_project(augmented_model.mlp_project, param_dtype)
 
         if (
-            augmented_model.pooling_args is not None
+            pipeline_args.do_pool
+            and augmented_model.pooling_args is not None
             and augmented_model.pooling_args.type == "latent_attention"
         ):
             main_logger_info("Initializing Pooling")
@@ -175,13 +175,14 @@ def load_training_model(
             p.is_meta for p in augmented_model.parameters()
         ), "All parameters should be on meta"
 
-        if args.cross_att:
-            augmented_model.pooling_args = None
-            augmented_model.pooling_module = None
+    if not pipeline_args.do_pool:
+        augmented_model.pooling_args = None
+        augmented_model.pooling_module = None
 
     # Since param latents not sharded, initialize on all devices
     if (
-        augmented_model.pooling_args is not None
+        pipeline_args.do_pool
+        and augmented_model.pooling_args is not None
         and augmented_model.pooling_args.type == "latent_attention"
     ):
         initialize_latent_attention(
@@ -216,16 +217,16 @@ def load_training_model(
         for name, param in augmented_model.named_parameters():
             param.requires_grad = True
 
-    if args.embedder.train:
+    if pipeline_args.trainable_embedder:
         assert (
             augmented_model.trainable_embedder.n_layers
-            > args.embedder.pooling_module.n_truncated_layers
+            > pipeline_args.n_truncated_layers
             > 0
         ), "Truncated layers must be less than total layers"
         removed_layers = []
         for i in range(augmented_model.trainable_embedder.n_layers):
             if i > augmented_model.trainable_embedder.n_layers - (
-                args.embedder.pooling_module.n_truncated_layers + 1
+                pipeline_args.n_truncated_layers + 1
             ):
                 module = augmented_model.trainable_embedder.layers.pop(str(i))
                 del module
@@ -234,7 +235,7 @@ def load_training_model(
         main_logger_info("Removed layers: " + str(removed_layers))
         augmented_model.trainable_embedder.n_layers = (
             augmented_model.trainable_embedder.n_layers
-            - args.embedder.pooling_module.n_truncated_layers
+            - pipeline_args.n_truncated_layers
         )
 
         if (
@@ -253,7 +254,7 @@ def load_training_model(
         sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
         auto_wrap_policy=auto_wrap_policy,
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,  # Default param
-        mixed_precision=bfSixteen_mixed if args.mixed_precision else bfSixteen,
+        mixed_precision=bfSixteen_mixed if train_args.mixed_precision else bfSixteen,
         limit_all_gathers=True,
         device_id=torch.cuda.current_device(),
         sync_module_states=True,  # saves cpu memory by loading pretrained model on rank0 only, not working with False

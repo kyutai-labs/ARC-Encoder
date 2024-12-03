@@ -4,29 +4,39 @@ model_id_or_path : /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: Mistral_concat
-w_embeds: True
-norm_wo_embeds: False
+
 lora:
   rank: 64
   scaling : 2.0
   enable: True
 
-# Projector 
-projector:
-  hidden_dim: 4096
-  n_layers: 3
-  act: relu
-  
 
-# Embedder
-embedder:
-  dim: 4096
-  name: NVEmbed # put '' to use trainable embedder
-  train: false # put true to train embedder
+
+# Embedding augmented LLM
+pipeline:
+  w_embeds: True
+  norm_wo_embeds: False
+  embedder_name: NVEmbed # put '' to use trainable embedder
+  trainable_embedder: false # put true to train embedder
+  n_truncated_layers: 4 # number of layers to truncate from the base model
+  normalize_embeddings: false
+  continuation: false
   causal: true
+  do_pool: true
+
+  cross_att: false
+  cross_att_layers: 5
+
+  # Projector 
+  mlp_project:
+    hidden_dim: 4096
+    n_layers: 0
+    act: gelu
+  
   pooling_module: # see `embedders.py` for available pooling modules
     type: mean # mean, cls ...
-    n_truncated_layers: 4 # number of layers to truncate from the base model
+
+
   
 
 # Data

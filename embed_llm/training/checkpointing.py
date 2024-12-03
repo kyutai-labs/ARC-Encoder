@@ -34,7 +34,7 @@ class Checkpointer:
         pipeline: object | None = None,
     ):
         self.llm: nn.Module = model.llm
-        self.mlp_project: nn.Module = model.mlp_project
+        self.mlp_project: nn.Module | None = model.mlp_project
         self.trainable_embedder: nn.Module | None = model.trainable_embedder
         self.pooling_module: nn.Module | None = model.pooling_module
         self.pipeline = pipeline
@@ -275,7 +275,7 @@ class Checkpointer:
     ):
         llm_dst, mlp_project_dst = self.dst_dir
         tmp_llm_dst = self._tmp(llm_dst)
-        if self.mlp_project.args.n_layers > 0:
+        if self.mlp_project is not None and self.mlp_project.args.n_layers > 0:
             tmp_mlp_project_dst = self._tmp(mlp_project_dst)
 
         main_logger_info(
@@ -287,7 +287,7 @@ class Checkpointer:
         ), f"dst exists {self.dst_dir}"
 
         tmp_llm_dst.mkdir(parents=True, exist_ok=True)
-        if self.mlp_project.args.n_layers > 0:
+        if self.mlp_project is not None and self.mlp_project.args.n_layers > 0:
             tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
 
         if self.trainable_embedder is not None:
@@ -317,7 +317,7 @@ class Checkpointer:
                     tmp_llm_dst, use_safetensors=True, save_only_lora=True
                 ),  # always use safetensors for checkpointing
             )
-            if self.mlp_project.args.n_layers > 0:
+            if self.mlp_project is not None and self.mlp_project.args.n_layers > 0:
                 safetensors.torch.save_file(
                     mlp_project_states,
                     self.consolidated_path(
@@ -354,7 +354,7 @@ class Checkpointer:
                 not self.dst_dir[0].exists() and not self.dst_dir[1].exists()
             ), f"should not happen! {self.dst_dir[0]} | {self.dst_dir[1]}"
             tmp_llm_dst.rename(self.dst_dir[0])
-            if self.mlp_project.args.n_layers > 0:
+            if self.mlp_project is not None and self.mlp_project.args.n_layers > 0:
                 tmp_mlp_project_dst.rename(self.dst_dir[1])
 
             if self.trainable_embedder is not None:

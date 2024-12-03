@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from simple_parsing.helpers import Serializable
-from embed_llm.models.args import LoraArgs, MLPProjectArgs, PoolingArgs
+from embed_llm.models.args import LoraArgs, EmbedAugArgs
 from embed_llm.data.args import DataArgs
 
 
@@ -34,15 +34,6 @@ class WandbArgs(Serializable):
 
             if len(self.project) == 0:
                 raise ValueError("`wandb.project` must not be an empty string.")
-
-
-@dataclass
-class Embedder(Serializable):
-    dim: int = 4096
-    name: str = ""
-    train: bool = False
-    pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
-    causal: bool = True
 
 
 @dataclass
@@ -93,18 +84,10 @@ class TrainArgs(Serializable):
     # LoRA
     lora: LoraArgs = field(default_factory=LoraArgs)
 
-    # mlp projector
-    projector: MLPProjectArgs = field(default_factory=MLPProjectArgs)
-
     # Pretrained embedder to use off the shelf
-    embedder: Embedder = field(default_factory=Embedder)
+    pipeline: EmbedAugArgs = field(default_factory=EmbedAugArgs)
 
-    norm_wo_embeds: bool = False
-    w_embeds: bool = True
     mixed_precision: bool = True
-    continuation: bool = False
-    cross_att: bool = False
-    start_cross_att: int | None = None
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None

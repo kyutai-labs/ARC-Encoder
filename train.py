@@ -117,11 +117,12 @@ def _train(
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
 
+    main_logger_info(f"TrainArgs: {pprint.pformat(dataclasses.asdict(args))}")
+
     args_path = run_dir / "args.yaml"
     if not args_path.exists():
+        args.pipeline.param_dtype = "float32" if args.mixed_precision else "bfloat16"
         args.save(args_path)
-
-    main_logger_info(f"TrainArgs: {pprint.pformat(dataclasses.asdict(args))}")
 
     # 3. Get loggers
     metrics_logger: MetricsLogger = MetricsLogger(
@@ -151,13 +152,15 @@ def _train(
         )
 
     """ Load embedder model or use the one from the LLM """
-    if args.embedder.train:
+    if args.pipeline.trainable_embedder:
         embedding_model = None
     else:
         assert (
-            args.embedder.name != ""
-        ), "`args.embedder.name` should be set to a valid value."
-        embedding_model = get_pretrained_embedder(args.embedder.name, device_map="cuda")
+            args.pipeline.embedder_name != ""
+        ), "`args.pipeline.embedder_name` should be set to a valid value."
+        embedding_model = get_pretrained_embedder(
+            args.pipeline.embedder_name, device_map="cuda"
+        )
         embedding_model.config.max_length = (
             embedding_model.config.max_length if args.seq_len is None else args.seq_len
         )
@@ -166,10 +169,11 @@ def _train(
     """ Load LLM and tokenizers """
 
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
+    args.pipeline.param_dtype = param_dtype
 
     assert args.lora is not None, "`args.lora` should be set to a valid value."
     pipeline, model = load_training_model(
-        args=args,
+        train_args=args,
         folder=model_folder,
         lora=args.lora,
         llm_name=args.llm_name,
@@ -195,7 +199,7 @@ def _train(
         rank=get_rank(),  # DDP rank
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
-        continuation=args.continuation,
+        continuation=args.pipeline.continuation,
     )
     main_logger_info("Data loader done")
     if not args.no_eval:
@@ -210,7 +214,7 @@ def _train(
             rank=get_rank(),  # DDP rank
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
-            continuation=args.continuation,
+            continuation=args.pipeline.continuation,
         )
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
         eval_batches = []
@@ -257,9 +261,7 @@ def _train(
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
-    prepare_batch_fn = partial(
-        pipeline.prepare_forward, batch_size=args.batch_size, cross_att=args.cross_att
-    )
+    prepare_batch_fn = partial(pipeline.prepare_forward, batch_size=args.batch_size)
 
     main_logger_info("Start training")
     model.train()
@@ -290,12 +292,10 @@ def _train(
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
-            if not args.cross_att:
-                output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
-            else:
-                output = model.forward(
-                    x=x, embeddings=embeddings, seqlens=seqlens, kv_seqlens=kv_seqlens
-                )
+
+            output = model.forward(
+                x=x, embeddings=embeddings, seqlens=seqlens, kv_seqlens=kv_seqlens
+            )
 
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()
@@ -365,7 +365,6 @@ def _train(
                 prepare_batch_fn=prepare_batch_fn,
                 batches=eval_batches,
                 state=state,
-                cross_att=args.cross_att,
             )
 
             eval_logs = get_eval_logs(

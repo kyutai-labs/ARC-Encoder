@@ -91,22 +91,18 @@ def encode_text(
                 embedding, seqlens = custom_encode(
                     model, prompts=text, instruction=instruction, pool=False
                 )
-                return F.normalize(embedding, p=2, dim=1), seqlens
             else:
                 embedding = custom_encode(
                     model, prompts=text, instruction=instruction, pool=True
                 )
-
         if device == "cpu":
-            if cross_att:
-                return F.normalize(embedding, p=2, dim=1).cpu().numpy(), seqlens
-            else:
-                return F.normalize(embedding, p=2, dim=1).cpu().numpy()
+            return (
+                (embedding.cpu().numpy(), seqlens)
+                if cross_att
+                else embedding.cpu().numpy()
+            )
         else:
-            if cross_att:
-                return F.normalize(embedding, p=2, dim=1), seqlens
-            else:
-                return F.normalize(embedding, p=2, dim=1)
+            return (embedding, seqlens) if cross_att else embedding
     else:
         raise ValueError(f"Unknown model name {model_name}")
 
@@ -147,6 +143,11 @@ def generate_embeddings(
     for ind, i in tqdm(enumerate(range(0, len(used_texts), bs))):
         passages = used_texts[i : i + bs]
         embeddings = encode_text(passages, model_name=model_name, model=model)
+        embeddings = (
+            F.normalize(embeddings, p=2, dim=1)
+            if model_name == "NVEmbed"
+            else embeddings
+        )
 
         text_passages.extend(passages)
         embeddings_array.append(embeddings)

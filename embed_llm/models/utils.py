@@ -105,7 +105,10 @@ def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
     llm_params = sum(
         p.numel()
         for n, p in model.named_parameters()
-        if not is_cross_att(n) and not "lora" in n and not "mlp_project" in n and not "pooling_module" in n
+        if not is_cross_att(n)
+        and not "lora" in n
+        and not "mlp_project" in n
+        and not "pooling_module" in n
     )
     mlp_project_params = sum(
         p.numel() for n, p in model.named_parameters() if "mlp_project" in n

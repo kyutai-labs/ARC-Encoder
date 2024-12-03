@@ -21,7 +21,6 @@ def evaluate(
     prepare_batch_fn: object,
     batches: list[Batch],
     state: TrainState,
-    cross_att: bool = False,
 ):
     # Create fake samples to make FSDP happy for unbalanced data
     num_samples = torch.tensor([len(batches)], device="cuda", dtype=torch.long)
@@ -50,12 +49,9 @@ def evaluate(
         with torch.no_grad():
             x, y, y_mask, seqlens, embeddings, kv_seqlens = prepare_batch_fn(batch)
 
-            if not cross_att:
-                output = model.forward(x=x, embeddings=embeddings, seqlens=seqlens)
-            else:
-                output = model.forward(
-                    x=x, embeddings=embeddings, seqlens=seqlens, kv_seqlens=kv_seqlens
-                )
+            output = model.forward(
+                x=x, embeddings=embeddings, seqlens=seqlens, kv_seqlens=kv_seqlens
+            )
 
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()

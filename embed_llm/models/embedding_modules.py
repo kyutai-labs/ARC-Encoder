@@ -2,8 +2,7 @@ import torch
 
 from torch import nn
 from einops import repeat
-from embed_llm.models.args import MLPProjectArgs
-from embed_llm.training.args import PoolingArgs
+from embed_llm.models.args import MLPProjectArgs, PoolingArgs
 from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 

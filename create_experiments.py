@@ -25,33 +25,32 @@ def main(args):
         raise ValueError(f"{args.llm_name} not supported yet !")
 
     config["llm_name"] = args.llm_name
-    config["w_embeds"] = not args.wo_embeds
-    config["norm_wo_embeds"] = args.norm_wo_embeds
-    config["continuation"] = args.continuation
-    config["projector"]["hidden_dim"] = args.proj_hidden_dim
-    config["projector"]["n_layers"] = args.proj_n_layers
-    config["projector"]["act"] = args.proj_act
-
-    config["embedder"]["name"] = (
-        args.embedder_name if not args.train_embedder else args.llm_name
-    )
-    config["embedder"]["train"] = args.train_embedder
+    config["pipeline"]["w_embeds"] = not args.wo_embeds
+    config["pipeline"]["norm_wo_embeds"] = args.norm_wo_embeds
+    config["pipeline"]["continuation"] = args.continuation
+    config["pipeline"]["mlp_project"]["hidden_dim"] = args.proj_hidden_dim
+    config["pipeline"]["mlp_project"]["n_layers"] = args.proj_n_layers
+    config["pipeline"]["mlp_project"]["act"] = args.proj_act
+    config["pipeline"]["n_truncated_layers"] = args.n_truncated_layers
+    assert args.embedder_name == "NVEmbed"
+    config["pipeline"]["do_pool"] = args.do_pool
+    config["pipeline"]["normalize_embeddings"] = args.norm_embeds
     if args.train_embedder:
-        config["embedder"]["causal"] = not args.not_causal
-        config["embedder"]["pooling_module"][
-            "n_truncated_layers"
-        ] = args.n_truncated_layers
-        config["embedder"]["pooling_module"]["type"] = args.pooling
-        config["embedder"]["pooling_module"]["r"] = args.latent_dim
-        config["embedder"]["pooling_module"]["n_heads"] = args.n_heads
+        config["pipeline"]["embedder_name"] = args.llm_name
+        config["pipeline"]["trainable_embedder"] = True
+        config["pipeline"]["causal"] = not args.not_causal
+        config["pipeline"]["pooling_module"]["type"] = args.pooling
+        config["pipeline"]["pooling_module"]["r"] = args.latent_dim
+        config["pipeline"]["pooling_module"]["n_heads"] = args.n_heads
     else:
-        del config["embedder"]["causal"]
-        del config["embedder"]["pooling_module"]
+        del config["pipeline"]["causal"]
+        del config["pipeline"]["pooling_module"]
 
     if args.cross_att:
-        if args.start_cross_att is not None:
-            config["cross_att"] = args.cross_att
-            config["start_cross_att"] = args.start_cross_att
+        config["pipeline"]["cross_att"] = args.cross_att
+        config["pipeline"]["cross_att_layers"] = (
+            None if args.cross_att_layers is None else args.cross_att_layers
+        )
 
     config["batch_size"] = args.batch_size
     config["max_steps"] = args.max_steps
@@ -86,45 +85,22 @@ def main(args):
         + str(args.log_freq)
         + str(args.eval_freq)
         + str(args.ckpt_freq)
+        + str(args.train_embedder)
+        + str(args.pooling)
+        + str(args.n_truncated_layers)
+        + str(args.not_causal)
+        + str(args.continuation)
+        + str(args.cross_att)
+        + str(args.cross_att_layers)
+        + str(args.do_pool)
     )
 
-    if args.prefix == "lr":
-        config["exp_name"] = args.prefix + str(args.max_lr) + args.llm_name
-        config["wandb"]["run_name"] = args.prefix + str(args.max_lr) + args.llm_name
-
-    elif args.prefix == "bs":
-        config["exp_name"] = args.prefix + str(args.batch_size) + args.llm_name
-        config["wandb"]["run_name"] = args.prefix + str(args.batch_size) + args.llm_name
-
-    elif args.prefix == "n_layers":
-        config["exp_name"] = args.prefix + str(args.proj_n_layers) + args.llm_name
-        config["wandb"]["run_name"] = (
-            args.prefix + str(args.proj_n_layers) + args.llm_name
-        )
-
-    elif args.prefix == "hidden_dim":
-        config["exp_name"] = args.prefix + str(args.proj_hidden_dim) + args.llm_name
-        config["wandb"]["run_name"] = (
-            args.prefix + str(args.proj_hidden_dim) + args.llm_name
-        )
-
-    elif args.prefix == "act":
-        config["exp_name"] = args.prefix + args.proj_act + args.llm_name
-        config["wandb"]["run_name"] = args.prefix + args.proj_act + args.llm_name
-
-    elif args.prefix == "norm_wo_embeds":
-        config["exp_name"] = args.prefix + str(args.norm_wo_embeds) + args.llm_name
-        config["wandb"]["run_name"] = (
-            args.prefix + str(args.norm_wo_embeds) + args.llm_name
-        )
-
-    else:
-        config["exp_name"] = (
-            args.prefix + args.llm_name + sha1(name.encode("utf8")).hexdigest()[:20]
-        )
-        config["wandb"]["run_name"] = (
-            args.prefix + args.llm_name + sha1(name.encode("utf8")).hexdigest()[:20]
-        )
+    config["exp_name"] = (
+        args.prefix + args.llm_name + sha1(name.encode("utf8")).hexdigest()[:20]
+    )
+    config["wandb"]["run_name"] = (
+        args.prefix + args.llm_name + sha1(name.encode("utf8")).hexdigest()[:20]
+    )
 
     if args.llm_name == "Mistral7B":
         with open(
@@ -175,7 +151,7 @@ def arg_parser():
     parser.add_argument(
         "--proj_n_layers",
         type=int,
-        default=3,
+        default=0,
         help="Number of layers of the projection MLP",
     )
     parser.add_argument(
@@ -273,10 +249,22 @@ def arg_parser():
         help="Whether to use cross-attention",
     )
     parser.add_argument(
-        "--start_cross_att",
+        "--cross_att_layers",
         type=int,
         default=None,
-        help="Start cross-attention at this layer",
+        help="Number of layers to apply cross-attention",
+    )
+
+    parser.add_argument(
+        "--do_pool",
+        action="store_true",
+        help="Whether to use pooling module",
+    )
+
+    parser.add_argument(
+        "--norm_embeds",
+        action="store_true",
+        help="Whether to normalize embeddings",
     )
 
     return parser.parse_args()

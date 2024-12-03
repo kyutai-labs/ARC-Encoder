@@ -17,16 +17,20 @@ from embed_llm.models.mistral.transformer_layers import (
     RMSNorm,
     FeedForward,
     TransformerBlock,
-    repeat_kv
+    repeat_kv,
 )
 from embed_llm.models.mistral.rope import precompute_freqs_cis
 
 from embed_llm.models.embedding_modules import MLP_block
 from embed_llm.models.lora import maybe_lora
 from embed_llm.training.args import LoraArgs
-from embed_llm.models.mistral.cache import BufferCache, CacheInputMetadata, CacheView, CrossAttCache
+from embed_llm.models.mistral.cache import (
+    BufferCache,
+    CacheInputMetadata,
+    CacheView,
+    CrossAttCache,
+)
 from embed_llm.models.mistral.moe import MoeArgs, MoeLayer
-
 
 
 @dataclass
@@ -307,8 +311,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
         normalized_h = self.norm(h)
         return self.output(normalized_h).float()
-    
-    
+
     # Below functions serve for inference
     def generate_partial(
         self,
@@ -355,8 +358,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         # freqs_cis is always the same for every layer
         freqs_cis = self.freqs_cis[input_metadata[0].positions]
-        
-      
+
         if embeddings is not None:
             if not cross_att_cache.full:
                 xk, xv = self.to_k(embeddings), self.to_v(embeddings)
@@ -365,9 +367,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 xk, xv = cross_att_cache.cache_k, cross_att_cache.cache_v
         else:
             xk, xv = None, None
-        
-        
-        
+
         for local_layer_id, layer in enumerate(self.layers.values()):
             if cache is not None:
                 assert input_metadata is not None
@@ -376,18 +376,22 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 cache_view = cache.get_view(local_layer_id, cache_metadata)
             else:
                 cache_view = None
-            
-            if  local_layer_id >= self.start_cross_att:
-                h = layer(x = h, 
-                        freqs_cis = freqs_cis, 
-                        cache = cache_view, 
-                        xk = xk,
-                        xv = xv,
-                        cross_att_mask = None if cross_att_cache is None else cross_att_cache.get_mask(seqlens))
+
+            if local_layer_id >= self.start_cross_att:
+                h = layer(
+                    x=h,
+                    freqs_cis=freqs_cis,
+                    cache=cache_view,
+                    xk=xk,
+                    xv=xv,
+                    cross_att_mask=(
+                        None
+                        if cross_att_cache is None
+                        else cross_att_cache.get_mask(seqlens)
+                    ),
+                )
             else:
-                h = layer(x = h,
-                        freqs_cis = freqs_cis,
-                        cache = cache_view)
+                h = layer(x=h, freqs_cis=freqs_cis, cache=cache_view)
 
         if cache is not None:
             cache.update_seqlens(seqlens)
@@ -407,7 +411,16 @@ class Transformer(ModelBase, LoRALoaderMixin):
         cache: BufferCache | None,
         # images: list[torch.Tensor | None,
     ) -> torch.Tensor:
-        cross_att_cache = None if kv_seqlens is None else CrossAttCache(embeddings.shape[0], n_kv_heads=self.args.n_kv_heads, head_dim=self.args.head_dim, kv_seqlens = kv_seqlens)
+        cross_att_cache = (
+            None
+            if kv_seqlens is None
+            else CrossAttCache(
+                embeddings.shape[0],
+                n_kv_heads=self.args.n_kv_heads,
+                head_dim=self.args.head_dim,
+                kv_seqlens=kv_seqlens,
+            )
+        )
         h = self.generate_partial(
             input_ids,
             seqlens,

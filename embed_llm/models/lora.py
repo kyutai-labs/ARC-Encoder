@@ -17,6 +17,7 @@ def is_cross_att(module_name: str):
         or "to_v" in module_name
     )
 
+
 @dataclass
 class LoraArgs(Serializable):
     enable: bool
@@ -112,7 +113,9 @@ class LoRALinear(nn.Module):
 
 
 class LoRALoaderMixin:
-    def load_lora(self, lora_path: Path | str, scaling: float = 2.0, cross_att: bool = False) -> None:
+    def load_lora(
+        self, lora_path: Path | str, scaling: float = 2.0, cross_att: bool = False
+    ) -> None:
         """Loads LoRA checkpoint"""
 
         lora_path = Path(lora_path)
@@ -123,7 +126,10 @@ class LoRALoaderMixin:
         self._load_lora_state_dict(state_dict, scaling=scaling, cross_att=cross_att)
 
     def _load_lora_state_dict(
-        self, lora_state_dict: dict[str, torch.Tensor], scaling: float = 2.0, cross_att: bool = False
+        self,
+        lora_state_dict: dict[str, torch.Tensor],
+        scaling: float = 2.0,
+        cross_att: bool = False,
     ) -> None:
         """Loads LoRA state_dict"""
         lora_dtypes = set([p.dtype for p in lora_state_dict.values()])
@@ -135,14 +141,19 @@ class LoRALoaderMixin:
         assert (
             lora_dtype == self.dtype
         ), f"LoRA weights dtype differs from model's dtype {lora_dtype} != {self.dtype}"
-        
-        if not all("lora"  in key for key in lora_state_dict.keys()):
-            if cross_att:
-                print('Not only LoRA weights found in the checkpoint. Skipping other weights.')
-                lora_state_dict = {k: v for k, v in lora_state_dict.items() if "lora" in k}
-            else:
-                raise ValueError("Not only LoRA weights found in the checkpoint. Skipping other weights.")  
 
+        if not all("lora" in key for key in lora_state_dict.keys()):
+            if cross_att:
+                print(
+                    "Not only LoRA weights found in the checkpoint. Skipping other weights."
+                )
+                lora_state_dict = {
+                    k: v for k, v in lora_state_dict.items() if "lora" in k
+                }
+            else:
+                raise ValueError(
+                    "Not only LoRA weights found in the checkpoint. Skipping other weights."
+                )
 
         # move tensors to device
         # type: ignore[attr-defined]
@@ -157,7 +168,11 @@ class LoRALoaderMixin:
             # type: ignore[attr-defined]
             named_modules = dict(self.named_modules())
             for name, module in named_modules.items():
-                if isinstance(module, nn.Linear) and name != "output" and not is_cross_att(name):
+                if (
+                    isinstance(module, nn.Linear)
+                    and name != "output"
+                    and not is_cross_att(name)
+                ):
                     layer_id = name.split(".")[1]
                     # type: ignore[attr-defined]
                     if layer_id not in self.layers:
@@ -186,7 +201,6 @@ class LoRALoaderMixin:
                     print("Skipping parameter", name)
         # type: ignore[attr-defined]
         self.load_state_dict(state_dict, strict=True)
-
 
 
 def maybe_lora(

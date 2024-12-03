@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-2
+#SBATCH --array=0-8%6
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=4
@@ -16,11 +16,20 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID))
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/mean_finetuned_notcausal_continuationMistral7B20ed0018b2a84fba09c4.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_finetuned_notcausal_continuationMistral7B20ed0018b2a84fba09c4.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_pretrained_continuationMistral7B20ed0018b2a84fba09c4.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/pretrained_cross_att_nonormMistral7B177b91135068aef26531.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/finetuned_cross_att_nonormMistral7Ba3519019ee9473c60ca0.yaml             
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/finetuned_cross_att_lattpooled_normMistral7B53db2205f69d04a5e0db.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/pretrained_concat_nonormMistral7B4121bfa13e7dda4f381b.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/finetuned_cross_att_meanpooled_normMistral7Bae2eaad42bbff730389a.yaml   
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/pretrained_cross_att_pooled_normMistral7Ba74a1736e10fc6a2ad4e.yaml    
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/finetuned_cross_att_lattpooled_nonormMistral7B53db2205f69d04a5e0db.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/finetuned_cross_att_meanpooled_nonormMistral7Bae2eaad42bbff730389a.yaml                                      
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/pretrained_cross_att_pooled_nonormMistral7Ba74a1736e10fc6a2ad4e.yaml
  )
- # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_fine_tuned_embedder_5_last_layersMistral7Bdbbb7faebb2f32cf20e9.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/mean_finetuned_notcausal_continuationMistral7B20ed0018b2a84fba09c4.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_finetuned_notcausal_continuationMistral7B20ed0018b2a84fba09c4.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_pretrained_continuationMistral7B20ed0018b2a84fba09c4.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_fine_tuned_embedder_5_last_layersMistral7Bdbbb7faebb2f32cf20e9.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_half_last_layersMistral7Bdbbb7faebb2f32cf20e9.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_5_last_layersMistral7Bdbbb7faebb2f32cf20e9.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/cross_att_0.75_last_layersMistral7Bdbbb7faebb2f32cf20e9.yaml
