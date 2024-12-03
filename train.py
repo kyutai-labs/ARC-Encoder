@@ -288,7 +288,9 @@ def _train(
             """ Training loop for basic reconstruction"""
 
             # start_time = time.time()
+            
             x, y, y_mask, seqlens, embeddings, kv_seqlens = prepare_batch_fn(batch)
+            
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:

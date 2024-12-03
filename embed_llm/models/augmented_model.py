@@ -286,7 +286,7 @@ class EmbedAugPipeline(nn.Module):
                     if len(subbatch) == subbatch_size:
 
                         if not self.pipeline_args.do_pool:
-                            embeds, seqlens = encode_text(
+                            embeds, emb_seqlens = encode_text(
                                 subbatch,
                                 model_name=self.embed_model_name,
                                 model=self.embedding_model,
@@ -294,7 +294,7 @@ class EmbedAugPipeline(nn.Module):
                                 device=self.embedding_model.device,
                                 cross_att=True,
                             )
-                            embed_seqlens.extend(seqlens)
+                            embed_seqlens.extend(emb_seqlens)
                         else:
                             embeds = encode_text(
                                 subbatch,
@@ -310,8 +310,8 @@ class EmbedAugPipeline(nn.Module):
 
                         subbatch = []
                 if len(subbatch) > 0:
-                    if self.pipeline_args.do_pool:
-                        embeds, seqlens = encode_text(
+                    if not self.pipeline_args.do_pool:
+                        embeds, emb_seqlens = encode_text(
                             subbatch,
                             model_name=self.embed_model_name,
                             model=self.embedding_model,
@@ -319,7 +319,7 @@ class EmbedAugPipeline(nn.Module):
                             device=self.embedding_model.device,
                             cross_att=True,
                         )
-                        embed_seqlens.extend(seqlens)
+                        embed_seqlens.extend(emb_seqlens)
                     else:
                         embeds = encode_text(
                             subbatch,
@@ -330,7 +330,6 @@ class EmbedAugPipeline(nn.Module):
                             cross_att=False,
                         )
                         embed_seqlens.extend([1] * len(subbatch))
-
                     embeddings.append(embeds.type(self.pipeline_args.param_dtype))
                 embeddings = torch.concatenate(embeddings, dim=0)
 
@@ -735,7 +734,8 @@ def load_args(
             norm_eps=args["norm_eps"],
             vocab_size=args["vocab_size"],
             max_batch_size=max_batch_size,
-            start_cross_att=max(args["n_layers"] - pipeline_args.cross_att_layers, 0),
+            start_cross_att= None if pipeline_args.cross_att_layers is None \
+                else max(args["n_layers"] - pipeline_args.cross_att_layers, 0),
         )
 
         if args.get("rope_theta") is not None:
