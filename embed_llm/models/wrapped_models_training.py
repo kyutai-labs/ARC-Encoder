@@ -120,7 +120,12 @@ def load_training_model(
         pad_token_id=tokenizer.pad_id,
         max_seq_len=max_seq_len,
     )
-
+    
+    if pipeline_args.do_both:
+        assert pipeline_args.cross_att, "If do_both, must do cross-attention"
+        assert pipeline_args.do_pool, "If do_both, must do pooling"
+        model.do_both = True
+        
     with torch.device("meta"):
         augmented_model = augmented_pipeline.get_model(llm=model)
 
@@ -243,6 +248,8 @@ def load_training_model(
             and augmented_model.pooling_args.type == "latent_attention"
         ):
             ignored_state = [augmented_model.pooling_module.process.latents]
+            
+  
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
@@ -261,6 +268,7 @@ def load_training_model(
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
         ignored_states=ignored_state,
     )
+
 
     main_logger_info("Model sharded!")
 

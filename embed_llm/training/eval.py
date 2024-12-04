@@ -47,10 +47,10 @@ def evaluate(
     main_logger_info(f"Start eval for {len(batches)} batches")
     for i, batch in enumerate(batches):
         with torch.no_grad():
-            x, y, y_mask, seqlens, embeddings, kv_seqlens = prepare_batch_fn(batch)
+            x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
 
             output = model.forward(
-                x=x, embeddings=embeddings, seqlens=seqlens, kv_seqlens=kv_seqlens
+                x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens
             )
 
             if len(output.size()) > 2:

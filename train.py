@@ -261,7 +261,7 @@ def _train(
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
-    prepare_batch_fn = partial(pipeline.prepare_forward, batch_size=args.batch_size)
+    prepare_batch_fn = partial(pipeline.prepare_forward, batch_size=args.batch_size, continuation = args.pipeline.continuation)
 
     main_logger_info("Start training")
     model.train()
@@ -289,14 +289,15 @@ def _train(
 
             # start_time = time.time()
             
-            x, y, y_mask, seqlens, embeddings, kv_seqlens = prepare_batch_fn(batch)
+            
+            x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
             
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
 
             output = model.forward(
-                x=x, embeddings=embeddings, seqlens=seqlens, kv_seqlens=kv_seqlens
+                x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens
             )
 
             if len(output.size()) > 2:

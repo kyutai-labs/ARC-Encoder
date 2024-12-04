@@ -41,8 +41,10 @@ class EmbedAugArgs(Serializable):
     normalize_embeddings: bool = False
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
     continuation: bool = False
+    shared_kv: bool = True
     cross_att: bool = False
     cross_att_layers: int | None = None
+    do_both: bool = False
 
 
 @dataclass
@@ -65,7 +67,10 @@ class MistralModelArgs(Serializable):
     sliding_window: int | list[int] | None = None
     _sliding_window: int | list[int] | None = None
     model_type: str = "transformer"
+    
+    # Parameters specific for cross-attention models
     start_cross_att: int | None = None
+    shared_kv: bool = True
     # vision_encoder: VisionEncoderArgs] | None = None
     """ If adding new args take care giving it to load args """
 

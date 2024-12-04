@@ -48,7 +48,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.n_layers = args.n_layers
         self._precomputed_freqs_cis: torch.Tensor | None = None
         assert self.vocab_size > 0
-        self.pos_to_keep = []
         self.pipeline_rank = pipeline_rank
         self.num_pipeline_ranks = num_pipeline_ranks
         self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
@@ -85,11 +84,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
         )
 
         self.softmax_fp32 = softmax_fp32
-        self.embeds_pos = []
         self.n_local_layers = self.n_layers
         self.for_embedding = False
         self.causal = causal
-
+        self.pos_to_keep = []
     @property
     def dtype(self) -> torch.dtype:
         return next(self.parameters()).dtype

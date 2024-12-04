@@ -33,12 +33,12 @@ def main(args):
     config["pipeline"]["mlp_project"]["act"] = args.proj_act
     config["pipeline"]["n_truncated_layers"] = args.n_truncated_layers
     assert args.embedder_name == "NVEmbed"
-    config["pipeline"]["do_pool"] = args.do_pool
-    config["pipeline"]["normalize_embeddings"] = args.norm_embeds
+    config["pipeline"]["do_pool"] = args.not_pool
+    config["pipeline"]["normalize_embeddings"] = args.no_norm_embeds
     if args.train_embedder:
         config["pipeline"]["embedder_name"] = args.llm_name
         config["pipeline"]["trainable_embedder"] = True
-        config["pipeline"]["causal"] = not args.not_causal
+        config["pipeline"]["causal"] = args.causal
         config["pipeline"]["pooling_module"]["type"] = args.pooling
         config["pipeline"]["pooling_module"]["r"] = args.latent_dim
         config["pipeline"]["pooling_module"]["n_heads"] = args.n_heads
@@ -47,6 +47,8 @@ def main(args):
         del config["pipeline"]["pooling_module"]
 
     if args.cross_att:
+        config["pipeline"]["do_both"] = args.do_both
+        config["pipeline"]["shared_kv"] = args.shared_kv
         config["pipeline"]["cross_att"] = args.cross_att
         config["pipeline"]["cross_att_layers"] = (
             None if args.cross_att_layers is None else args.cross_att_layers
@@ -88,11 +90,11 @@ def main(args):
         + str(args.train_embedder)
         + str(args.pooling)
         + str(args.n_truncated_layers)
-        + str(args.not_causal)
+        + str(args.causal)
         + str(args.continuation)
         + str(args.cross_att)
         + str(args.cross_att_layers)
-        + str(args.do_pool)
+        + str(args.not_pool)
     )
 
     config["exp_name"] = (
@@ -233,7 +235,7 @@ def arg_parser():
     )
 
     parser.add_argument(
-        "--not_causal",
+        "--causal",
         action="store_true",
         help="Whether to use a causal embedder",
     )
@@ -256,16 +258,27 @@ def arg_parser():
     )
 
     parser.add_argument(
-        "--do_pool",
-        action="store_true",
+        "--not_pool",
+        action="store_false",
         help="Whether to use pooling module",
     )
 
     parser.add_argument(
-        "--norm_embeds",
-        action="store_true",
+        "--no_norm_embeds",
+        action="store_false",
         help="Whether to normalize embeddings",
     )
+    
+    parser.add_argument(
+        "--shared_kv",
+        action="store_true",
+        help="Whether to share keys and values in cross-attention",
+    )
+    
+    parser.add_argument(
+        "--do_both",
+        action="store_true",
+        help="Whether to both cross-attended and concatenated embeddings")
 
     return parser.parse_args()
 

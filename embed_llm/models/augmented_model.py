@@ -165,27 +165,20 @@ class EmbedAugModel(nn.Module):
         x: torch.Tensor,
         seqlens: list[int],
         embeddings: torch.Tensor | None = None,
-        kv_seqlens: list[int] | None = None,
+        embed_seqlens: list[int] | None = None,
         norm_wo_embeds: bool = False,
     ) -> torch.Tensor:
 
         if self.trainable_embedder is not None:
             embeddings = self.trainable_embedder(
-                input_ids=x, embeddings=None, seqlens=seqlens
+                input_ids=embeddings, embeddings=None, seqlens=embed_seqlens
             )
             if self.pooling_module is not None:
-                embeddings = self.pooling_module(x=embeddings, seqlens=seqlens)
-                kv_seqlens = [1] * len(seqlens)
-            else:
-                kv_seqlens = seqlens
-
+                embeddings = self.pooling_module(x=embeddings, seqlens=embed_seqlens)
+                kv_seqlens = [1] * len(embed_seqlens)
         else:
-            assert (
-                embeddings is not None
-            ), "Embeddings must be provided if no trainable embedder."
-            assert (
-                kv_seqlens is not None
-            ), "kv_seqlens must be provided if no trainable embedder."
+            kv_seqlens = embed_seqlens
+        
 
         if self.normalize_embeddings:
             embeddings = F.normalize(embeddings, p=2, dim=-1)
@@ -219,7 +212,7 @@ class EmbedAugModel(nn.Module):
 
         if self.trainable_embedder is not None:
             embed_output = self.trainable_embedder(
-                input_ids=x, embeddings=None, training=True
+                input_ids=embeddings, embeddings=None, training=True
             )
             embeddings = self.pooling_module(x=embed_output, seqlens=seqlens)
 
@@ -271,7 +264,7 @@ class EmbedAugPipeline(nn.Module):
     def store_model(self, model: nn.Module):
         self.model = model
 
-    def prepare_forward(self, batch: Batch, batch_size: int) -> tuple:
+    def prepare_forward(self, batch: Batch, batch_size: int, continuation: bool = False) -> tuple:
 
         embed_seqlens = []
         if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
@@ -334,7 +327,13 @@ class EmbedAugPipeline(nn.Module):
                 embeddings = torch.concatenate(embeddings, dim=0)
 
         else:
-            embeddings = None
+            if continuation:
+                input_ids_for_embedder = [self.tokenizer.encode(text, bos = True, eos = False) for text in batch.texts]
+                embed_seqlens = [len(tokens) for tokens in input_ids_for_embedder]
+                embeddings = torch.from_numpy(np.array([el for sublist in input_ids_for_embedder for el in sublist])).cuda(non_blocking=True)
+            else: 
+                embeddings = torch.from_numpy(batch.x).cuda(non_blocking=True)
+                embed_seqlens = batch.sizes
 
         if "mistral" in self.llm_name:
             x = torch.from_numpy(batch.x).cuda(non_blocking=True)
@@ -358,6 +357,8 @@ class EmbedAugPipeline(nn.Module):
                 batch_size=batch_size,
             )
         seqlens = batch.sizes
+        
+        # If not pre-trained embedder, embeddings is the input_ids for the LLM Embedder and embed_seqlens is the seqlens
         return x, y, y_mask, seqlens, embeddings, embed_seqlens
 
     # TODO Gérer multi gpu + adaptative param dtype
@@ -734,8 +735,9 @@ def load_args(
             norm_eps=args["norm_eps"],
             vocab_size=args["vocab_size"],
             max_batch_size=max_batch_size,
-            start_cross_att= None if pipeline_args.cross_att_layers is None \
+            start_cross_att = None if pipeline_args.cross_att_layers is None \
                 else max(args["n_layers"] - pipeline_args.cross_att_layers, 0),
+            shared_kv = True if pipeline_args.shared_kv else False,
         )
 
         if args.get("rope_theta") is not None:
