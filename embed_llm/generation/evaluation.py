@@ -18,6 +18,7 @@ def word_overlap(ground_truth: list[str] | str, predicted: list[str] | str) -> f
             avg_word_overlap += len(gt_text.intersection(pred_text))
         return avg_word_overlap / n_words
     
+
 def get_bleu_score(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
     metric = BLEUScore(n_gram = 4)
     if isinstance(ground_truth, str) and isinstance(predicted, str):
@@ -27,7 +28,10 @@ def get_bleu_score(ground_truth: list[str] | str, predicted: list[str] | str) ->
     elif isinstance(ground_truth, list) and isinstance(predicted, list):
         for gt_text, pred_text in zip(ground_truth, predicted):
             assert len(gt_text) > 0, "Ground truth set is empty"
-            metric.update(pred_text, [gt_text])
+            try:
+                metric.update(pred_text, [gt_text])
+            except:
+                print('Error with update:', '\nGround-Truth: ',gt_text, '\nPred: ', pred_text)
         return metric.compute().item()
 
 # def get_ppl(ground_truth: torch.Tensor | list[torch.Tensor], logprobs: torch.Tensor | list[torch.Tensor]) -> torch.Tensor:

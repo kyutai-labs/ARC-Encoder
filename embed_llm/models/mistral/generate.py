@@ -35,9 +35,12 @@ def generate(
     model = model.eval()
     B, V = len(encoded_prompts), model.args.vocab_size
     seqlens = [len(x) for x in encoded_prompts]
-
+    
+    concat = (isinstance(model, Transformer) or (isinstance(model, CrossAttTransformer) and model.do_both)) and embeddings is not None
+    
     # Cache
-    cache_window = max(seqlens) + max_tokens
+    cache_window = max(seqlens) + max_tokens + 1 if  concat else max(seqlens) + max_tokens 
+        
     cache = BufferCache(
         model.n_local_layers,
         model.args.max_batch_size,
@@ -71,10 +74,15 @@ def generate(
                 ),
                 # images=flattened_images,
                 seqlens=[len(p) for p in prompt_chunks],
-                embeddings=embeddings,
+                embeddings= embeddings,
                 cache=cache,
                 norm_wo_embeds=norm_wo_embeds,
             )
+            
+            # Stop concatenating if already in cache
+            if s == 0 and concat:
+                embeddings = None
+                
         elif isinstance(model, CrossAttTransformer):
             prelogits = model.generate(
                 torch.tensor(
@@ -85,12 +93,11 @@ def generate(
                 kv_seqlens=kv_seqlens,
                 cache=cache,
             )
-        logits = torch.log_softmax(prelogits, dim=-1)
-
-        if last_token_prelogits is not None:
-            # Pass > 1
-            last_token_logits = torch.log_softmax(last_token_prelogits, dim=-1)
-    
+            
+            # Stop concatenating if already in cache
+            if s == 0 and concat:
+                model.do_both = False
+                
         last_token_prelogits = prelogits.index_select(
             0,
             torch.tensor(
@@ -99,6 +106,7 @@ def generate(
             - 1,
         )
         assert last_token_prelogits.shape == (B, V)
+        
 
     # decode
     generated_tensors = []
@@ -110,7 +118,7 @@ def generate(
         assert len(temperature) == max_tokens
     elif isinstance(temperature, float) or isinstance(temperature, int):
         temperature = [float(temperature)] * max_tokens
-        
+
     for j in range(max_tokens):
         next_token = sample(last_token_prelogits, temperature=temperature[j], top_p=0.8)
         
@@ -123,10 +131,7 @@ def generate(
         if is_finished.all():
             break
 
-        last_token_logits = torch.log_softmax(last_token_prelogits, dim=-1)
-
         generated_tensors.append(next_token[:, None])
-
         if isinstance(model, Transformer):
             last_token_prelogits = model.generate(
                 next_token,
