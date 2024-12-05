@@ -45,6 +45,7 @@ class EmbedAugArgs(Serializable):
     cross_att: bool = False
     cross_att_layers: int | None = None
     do_both: bool = False
+    dist_process: bool = False
 
 
 @dataclass

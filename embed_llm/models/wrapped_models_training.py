@@ -48,6 +48,10 @@ def load_training_model(
 
     if not train_args.pipeline.cross_att:
         assert train_args.pipeline.do_pool, "If not cross-attention, must do pooling"
+        
+    if train_args.pipeline.dist_process:
+        assert train_args.pipeline.cross_att, "If dist_process, must do cross-attention"
+        assert train_args.pipeline.do_both, "If dist_process, must do both"
 
     llm_args, pipeline_args = load_args(
         folder,

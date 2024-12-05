@@ -285,6 +285,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         seqlens: list[int],
         embeddings: torch.Tensor | None,
         kv_seqlens: list[int] | None = None,
+        dist_embeddings: torch.Tensor | None = None,
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
         assert kv_seqlens is None or sum(kv_seqlens) == embeddings.shape[0], (
@@ -296,6 +297,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
         (num_toks,) = input_ids.shape
         
         if embeddings is not None and self.do_both:
+            
+            # dist
             h = torch.zeros(
                 (num_toks + len(seqlens), self.args.dim),
                 device=self.device,

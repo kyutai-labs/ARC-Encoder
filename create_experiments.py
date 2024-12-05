@@ -32,6 +32,7 @@ def main(args):
     config["pipeline"]["mlp_project"]["n_layers"] = args.proj_n_layers
     config["pipeline"]["mlp_project"]["act"] = args.proj_act
     config["pipeline"]["n_truncated_layers"] = args.n_truncated_layers
+
     assert args.embedder_name == "NVEmbed"
     config["pipeline"]["do_pool"] = args.not_pool
     config["pipeline"]["normalize_embeddings"] = args.no_norm_embeds
@@ -53,6 +54,8 @@ def main(args):
         config["pipeline"]["cross_att_layers"] = (
             None if args.cross_att_layers is None else args.cross_att_layers
         )
+        if args.do_both:
+            config["pipeline"]["dist_process"] = args.dist_process
 
     config["batch_size"] = args.batch_size
     config["max_steps"] = args.max_steps
@@ -290,6 +293,9 @@ def arg_parser():
         "--do_both",
         action="store_true",
         help="Whether to both cross-attended and concatenated embeddings")
+    
+    parser.add_argument(
+        "--dist_process", type=str, default=None, help="Whether to distinctively process embeddings")
 
     return parser.parse_args()
 
