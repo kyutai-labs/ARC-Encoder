@@ -13,7 +13,7 @@ def generate(
     # images: list[list[np.ndarray]] = [],
     *,
     max_tokens: int,
-    temperature: float,
+    temperature: float | list[float],
     embeddings: torch.Tensor | None = None,
     chunk_size: int | None = None,
     eos_id: int | None = None,
@@ -90,21 +90,7 @@ def generate(
         if last_token_prelogits is not None:
             # Pass > 1
             last_token_logits = torch.log_softmax(last_token_prelogits, dim=-1)
-            for i_seq in range(B):
-                logprobs[i_seq].append(
-                    last_token_logits[i_seq, prompt_chunks[i_seq][0]].item()
-                )
-
-        offset = 0
-        for i_seq, sequence in enumerate(prompt_chunks):
-            logprobs[i_seq].extend(
-                [
-                    logits[offset + i, sequence[i + 1]].item()
-                    for i in range(len(sequence) - 1)
-                ]
-            )
-            offset += len(sequence)
-
+    
         last_token_prelogits = prelogits.index_select(
             0,
             torch.tensor(
@@ -119,11 +105,17 @@ def generate(
     is_finished = torch.tensor([False for _ in range(B)])
 
     assert last_token_prelogits is not None
+    
+    if isinstance(temperature, list):
+        assert len(temperature) == max_tokens
+    elif isinstance(temperature, float) or isinstance(temperature, int):
+        temperature = [float(temperature)] * max_tokens
+        
     for j in range(max_tokens):
-        next_token = sample(last_token_prelogits, temperature=temperature, top_p=0.8)
-
-        if 'random_flip' in kwargs.keys() and kwargs['random_flip'] == j:
-            next_token = sample(last_token_prelogits, temperature=10, top_p=0.8)
+        next_token = sample(last_token_prelogits, temperature=temperature[j], top_p=0.8)
+        
+        for b in range(B):
+            logprobs[b].append(last_token_prelogits[b])
             
         if eos_id is not None:
             is_finished = is_finished | (next_token == eos_id).cpu()
@@ -132,8 +124,6 @@ def generate(
             break
 
         last_token_logits = torch.log_softmax(last_token_prelogits, dim=-1)
-        for i in range(B):
-            logprobs[i].append(last_token_logits[i, next_token[i]].item())
 
         generated_tensors.append(next_token[:, None])
 
@@ -165,6 +155,11 @@ def generate(
     else:
         generated_tokens = []
 
+    if logprobs:
+        logprobs = [torch.stack(probs, dim = 0) for probs in logprobs]
+    else:
+        logprobs = []
+        
     return generated_tokens, logprobs
 
 
