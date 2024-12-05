@@ -194,7 +194,7 @@ def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
                     torch.nn.init.zeros_(param)
 
 
-def initialize_latent_attention(
+def initialize_pooling(
     model: torch.nn.Module, param_dtype: torch.dtype, latents=False, device="cpu"
 ):
     for m_name, module in model.named_modules():

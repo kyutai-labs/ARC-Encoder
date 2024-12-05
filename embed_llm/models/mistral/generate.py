@@ -19,6 +19,7 @@ def generate(
     eos_id: int | None = None,
     norm_wo_embeds: bool = False,
     kv_seqlens: list[int] | None = None,
+    **kwargs,
 ) -> tuple[list[list[int]], list[list[float]]]:
     # images_torch: list[list[torch.Tensor]] = []
     # if images:
@@ -118,9 +119,12 @@ def generate(
     is_finished = torch.tensor([False for _ in range(B)])
 
     assert last_token_prelogits is not None
-    for _ in range(max_tokens):
+    for j in range(max_tokens):
         next_token = sample(last_token_prelogits, temperature=temperature, top_p=0.8)
 
+        if 'random_flip' in kwargs.keys() and kwargs['random_flip'] == j:
+            next_token = sample(last_token_prelogits, temperature=10, top_p=0.8)
+            
         if eos_id is not None:
             is_finished = is_finished | (next_token == eos_id).cpu()
 

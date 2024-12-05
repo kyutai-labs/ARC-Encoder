@@ -24,7 +24,7 @@ from embed_llm.training.args import TrainArgs
 from embed_llm.models.utils import (
     initialize_lora_parameters,
     initialize_mlp_project,
-    initialize_latent_attention,
+    initialize_pooling,
     initialize_cross_att_project,
     is_cross_att,
     log_train_params,
@@ -152,10 +152,11 @@ def load_training_model(
         if (
             pipeline_args.do_pool
             and augmented_model.pooling_args is not None
-            and augmented_model.pooling_args.type == "latent_attention"
+            and (augmented_model.pooling_args.type == "latent_attention" or
+                augmented_model.pooling_args.type == "reversed_latent_attention")
         ):
             main_logger_info("Initializing Pooling")
-            initialize_latent_attention(augmented_model.pooling_module, param_dtype)
+            initialize_pooling(augmented_model.pooling_module, param_dtype)
 
         assert not any(
             p.is_meta
@@ -188,9 +189,10 @@ def load_training_model(
     if (
         pipeline_args.do_pool
         and augmented_model.pooling_args is not None
-        and augmented_model.pooling_args.type == "latent_attention"
+        and (augmented_model.pooling_args.type == "latent_attention" or 
+             augmented_model.pooling_args.type == "reversed_latent_attention")
     ):
-        initialize_latent_attention(
+        initialize_pooling(
             augmented_model.pooling_module, param_dtype, latents=True, device="cuda"
         )
         ignored_state = [augmented_model.pooling_module.process.latents]
@@ -245,12 +247,14 @@ def load_training_model(
 
         if (
             augmented_model.pooling_args is not None
-            and augmented_model.pooling_args.type == "latent_attention"
+            and (augmented_model.pooling_args.type == "latent_attention" or
+                 augmented_model.pooling_args.type == "reversed_latent_attention")
         ):
             ignored_state = [augmented_model.pooling_module.process.latents]
             
   
     log_train_params(augmented_model)
+    
 
     auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
 

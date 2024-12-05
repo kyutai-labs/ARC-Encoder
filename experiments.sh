@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-7%4
+#SBATCH --array=0-1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=4
@@ -15,15 +15,9 @@
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID))
 
 # Get the configuration file for this job
-CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/finetuned_mean_5_notshared_doboth_3B_MLP_Mistral7Bdf219d11eff6d12dc259.yaml  
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/pretrained_5_notshared_doboth_3B_MLP_Mistral7B4d45dee02ab4d1cfe967.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/finetuned_meanpool_crossatt_24_notshared_Mistral7Ba9fe3e5faaea0ca962d8.yaml  
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/pretrained_pooled_crossatt_24_notshared_Mistral7B61c9bdf49d2f4ae7984c.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/finetuned_mean_5_notshared_doboth_no_MLP_Mistral7Bd7789bd189ddc55d7a4e.yaml  
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/pretrained_5_notshared_doboth_no_MLP_Mistral7Bb43dd2408bcf7650e718.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/finetuned_meanpool_crossatt_8_notshared_Mistral7B694c0c8d13a121ed8718.yaml   
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/pretrained_pooled_crossatt_8_notshared_Mistral7B27dd451cc0c8f2e72df3.yaml                               
+CONFIG_FILES=(     
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truereversed_latent_attention_0_MLP_4_TRUNC_True_CA_16_CAL_False_SKV_True_DB   
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truereversed_latent_attention_3_MLP_4_TRUNC_True_CA_16_CAL_False_SKV_True_DB              
  )
 
 

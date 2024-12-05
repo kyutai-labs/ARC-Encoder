@@ -97,12 +97,23 @@ def main(args):
         + str(args.not_pool)
     )
 
-    config["exp_name"] = (
-        args.prefix + args.llm_name + sha1(name.encode("utf8")).hexdigest()[:20]
-    )
-    config["wandb"]["run_name"] = (
-        args.prefix + args.llm_name + sha1(name.encode("utf8")).hexdigest()[:20]
-    )
+    if args.prefix is not None:
+        config["exp_name"] = (
+            args.prefix + args.seq_len + 'L_' + sha1(name.encode("utf8")).hexdigest()[:10]
+        )
+        config["wandb"]["run_name"] = (
+            args.prefix + args.seq_len + 'L_' + sha1(name.encode("utf8")).hexdigest()[:10]
+        )
+    else:
+        n_trunc = str(args.n_truncated_layers) + '_TRUNC_' if args.train_embedder else ""
+        cross_att = str(args.cross_att_layers) + '_CAL_'+ str(args.shared_kv) + '_SKV_' if args.cross_att else ""
+        name =  str(args.seq_len) +'_SL_FN_' + str(args.train_embedder) + (str(args.pooling) if args.train_embedder else "") + '_' + str(args.proj_n_layers) + '_MLP_' + n_trunc \
+            + str(args.cross_att) + '_CA_' + cross_att + str(args.do_both) + '_DB'
+       
+    
+
+        config["exp_name"] = name
+        config["wandb"]["run_name"] = name
 
     if args.llm_name == "Mistral7B":
         with open(
@@ -190,9 +201,9 @@ def arg_parser():
         "--ckpt_freq", type=int, default=500, help="Checkpoint frequency"
     )
     parser.add_argument(
-        "--prefix", type=str, default="default", help="Prefix for the experiment"
+        "--prefix", type=str, default=None, help="Prefix for the experiment"
     )
-    parser.add_argument("--seq_len", type=int, default=512, help="Sequence length")
+    parser.add_argument("--seq_len", type=int, default=128, help="Sequence length")
     parser.add_argument(
         "--grad_acum_steps",
         type=int,
@@ -212,7 +223,7 @@ def arg_parser():
         type=str,
         default="mean",
         help="Pooling method",
-        choices=["mean", "eos", "latent_attention"],
+        choices=["mean", "eos", "latent_attention", "reversed_latent_attention"],
     )
     parser.add_argument(
         "--latent_dim",
@@ -294,6 +305,17 @@ if __name__ == "__main__":
     #     if filename.endswith(".yaml"):
     #         with open("config/experiments/"+filename,'r') as file:
     #             config = yaml.safe_load(file)
-    #         config['batch_size'] = 32
+    #         if 'shared_kv' in config["pipeline"].keys():
+    #             if config["pipeline"]["shared_kv"]:
+    #                 config["pipeline"]["shared_kv"] = False
+    #                 config['exp_name'] = config['exp_name'].replace('True_SKV_', 'False_SKV_')
+    #                 config['wandb']['run_name'] = config['wandb']['run_name'].replace('True_SKV_', 'False_SKV_')
+    #                 filename = filename.replace('True_SKV_', 'False_SKV_')
+    #             else:
+    #                 config["pipeline"]["shared_kv"] = True
+    #                 config['exp_name'] = config['exp_name'].replace('False_SKV_', 'True_SKV_')
+    #                 config['wandb']['run_name'] = config['wandb']['run_name'].replace('False_SKV_', 'True_SKV_')
+    #                 filename = filename.replace('False_SKV_', 'True_SKV_')
+                
     #         with open("config/experiments/"+filename, 'w') as file:
     #             yaml.dump(config, file)

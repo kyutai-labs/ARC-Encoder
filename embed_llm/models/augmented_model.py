@@ -526,6 +526,7 @@ class EmbedAugPipeline(nn.Module):
         max_tokens: int = 100,
         temperature: float = 0.6,
         truncate_double_space: bool = False,
+        **kwargs
     ):
         if isinstance(prompts, str):
             prompts = [prompts]
@@ -602,6 +603,7 @@ class EmbedAugPipeline(nn.Module):
             eos_id=eos_id,
             kv_seqlens=None if not self.pipeline_args.cross_att else kv_seqlens,
             norm_wo_embeds=self.pipeline_args.norm_wo_embeds,
+            **kwargs
         )
         produced_text = [
             self.tokenizer.decode(generated_tokens[i])
@@ -616,7 +618,7 @@ class EmbedAugPipeline(nn.Module):
                 final_texts.append(text)
         else:
             final_texts = produced_text
-        return final_texts
+        return final_texts, logprobs
 
     @torch.inference_mode()
     def generate_llama(
@@ -626,6 +628,7 @@ class EmbedAugPipeline(nn.Module):
         device: str,
         max_tokens: int = 100,
         temperature: float = 0.6,
+        **kwargs
     ):
         if self.pipeline_args.w_embeds:
             embeddings = encode_text(
@@ -652,6 +655,7 @@ class EmbedAugPipeline(nn.Module):
             temperature=temperature,
             logprobs=True,
             norm_wo_embeds=self.pipeline_args.norm_wo_embeds,
+            **kwargs
         )
         produced_text = self.tokenizer.decode_batch(out_tokens)
         final_texts = []
@@ -669,6 +673,7 @@ class EmbedAugPipeline(nn.Module):
         device: str,
         max_tokens: int = 100,
         temperature: float = 0.95,
+        **kwargs
     ):
 
         if self.pipeline_args.w_embeds:
@@ -693,6 +698,7 @@ class EmbedAugPipeline(nn.Module):
             device=device,
             output_len=max_tokens,
             temperature=temperature,
+            **kwargs
         )
 
 

@@ -21,7 +21,7 @@ pipeline:
     hidden_dim: 4096
     n_layers: 0
     act: gelu
-  shared_kv: true
+  shared_kv: 
 data:
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl

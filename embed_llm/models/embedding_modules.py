@@ -138,6 +138,65 @@ class Attention(nn.Module):
         return self.to_out(out)
 
 
+class ReversedLatentAttention(nn.Module):
+    def __init__(
+        self,
+        r: int = 512,
+        hidden_dim: int = 4096,
+        n_heads: int = 8,
+        n_layers: int = 1,
+        dtype: torch.dtype = torch.bfloat16,
+    ):
+        super().__init__()
+        self.r = r
+        self.n_layers = n_layers
+        self.n_heads = n_heads
+        latent_dim = hidden_dim
+        self.norm = torch.nn.LayerNorm(hidden_dim)
+        self.norm_context = torch.nn.LayerNorm(hidden_dim)
+        self.head_dim = hidden_dim // n_heads
+        
+    
+
+        self.latents = torch.nn.Parameter(
+            torch.randn(self.r, latent_dim), requires_grad=True
+        )  
+        
+        self.to_q = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.to_kv = nn.Linear(hidden_dim, hidden_dim * 2, bias=False)
+        self.to_out = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        
+        self.mlp_layers = nn.ModuleList()
+        for _ in range(n_layers):
+            self.mlp_layers.append(
+                PreNorm(
+                    latent_dim,
+                    MLP_block(
+                        in_dim=latent_dim, out_dim=latent_dim, act="gelu", dtype=dtype
+                    ),
+                )
+            )
+
+    def forward(self, keys: torch.Tensor, seqlens: list[int]) -> torch.Tensor:
+        b = len(seqlens)
+        seqlen_sum, _ = keys.shape
+        q = self.to_q(repeat(self.latents, "r d -> (b r) d", b=b))
+        k, v = self.to_kv(keys).chunk(2, dim=-1)
+        q, k, v = map(
+            lambda t: t.reshape(*t.shape[:-1], self.n_heads, self.head_dim)[None, ...],
+            (q, k, v),
+        )
+        mask = BlockDiagonalMask.from_seqlens(
+                    q_seqlen=[self.r] * b, kv_seqlen=seqlens
+                )
+        hiddens = memory_efficient_attention(q, k, v, mask)
+        hiddens = hiddens.view(seqlen_sum, self.head_dim * self.n_heads) + keys
+
+        for i in range(self.n_layers):
+            hiddens = self.mlp_layers[i](hiddens) + hiddens
+
+        return hiddens
+    
 class LatentAttention(nn.Module):
     def __init__(
         self,
@@ -165,7 +224,7 @@ class LatentAttention(nn.Module):
 
         self.latents = torch.nn.Parameter(
             torch.randn(self.r, latent_dim), requires_grad=True
-        )  # torch.nn.Linear(latent_dim, r, dtype=dtype, bias=False)
+        ) 
 
         self.mlp_layers = nn.ModuleList()
         for _ in range(n_layers):
@@ -207,6 +266,14 @@ class PoolingModule(nn.Module):
 
         if self.args.type == "latent_attention":
             self.process = LatentAttention(
+                r=args.r,
+                n_layers=args.n_layers,
+                n_heads=args.n_heads,
+                hidden_dim=hidden_dim,
+                dtype=dtype,
+            )
+        elif self.args.type == "reversed_latent_attention":
+            self.process = ReversedLatentAttention(
                 r=args.r,
                 n_layers=args.n_layers,
                 n_heads=args.n_heads,
