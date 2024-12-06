@@ -48,7 +48,7 @@ def load_training_model(
 
     if not train_args.pipeline.cross_att:
         assert train_args.pipeline.do_pool, "If not cross-attention, must do pooling"
-        
+
     if train_args.pipeline.dist_process:
         assert train_args.pipeline.cross_att, "If dist_process, must do cross-attention"
         assert train_args.pipeline.do_both, "If dist_process, must do both"
@@ -60,7 +60,6 @@ def load_training_model(
         max_seq_len=max_seq_len,
         max_batch_size=max_batch_size,
         variant=variant,
-        param_dtype=param_dtype,
         pipe_args=train_args.pipeline,
     )
 
@@ -125,7 +124,6 @@ def load_training_model(
         max_seq_len=max_seq_len,
     )
 
-        
     with torch.device("meta"):
         augmented_model = augmented_pipeline.get_model(llm=model)
 
@@ -152,7 +150,7 @@ def load_training_model(
         if (
             pipeline_args.do_pool
             and augmented_model.pooling_args is not None
-            and 'attention' in augmented_model.pooling_args.type
+            and "attention" in augmented_model.pooling_args.type
         ):
             main_logger_info("Initializing Pooling")
             initialize_pooling(augmented_model.pooling_module, param_dtype)
@@ -188,7 +186,7 @@ def load_training_model(
     if (
         pipeline_args.do_pool
         and augmented_model.pooling_args is not None
-        and 'attention' in augmented_model.pooling_args.type
+        and "attention" in augmented_model.pooling_args.type
     ):
         initialize_pooling(
             augmented_model.pooling_module, param_dtype, latents=True, device="cuda"
@@ -245,12 +243,11 @@ def load_training_model(
 
         if (
             augmented_model.pooling_args is not None
-            and 'attention' in augmented_model.pooling_args.type):
+            and "attention" in augmented_model.pooling_args.type
+        ):
             ignored_state = [augmented_model.pooling_module.process.latents]
-            
-  
+
     log_train_params(augmented_model)
-    
 
     auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
 
@@ -268,7 +265,6 @@ def load_training_model(
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
         ignored_states=ignored_state,
     )
-
 
     main_logger_info("Model sharded!")
 

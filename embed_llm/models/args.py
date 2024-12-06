@@ -68,7 +68,7 @@ class MistralModelArgs(Serializable):
     sliding_window: int | list[int] | None = None
     _sliding_window: int | list[int] | None = None
     model_type: str = "transformer"
-    
+
     # Parameters specific for cross-attention models
     start_cross_att: int | None = None
     shared_kv: bool = True

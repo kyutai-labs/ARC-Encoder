@@ -36,12 +36,17 @@ def generate(
     model = model.eval()
     B, V = len(encoded_prompts), model.args.vocab_size
     seqlens = [len(x) for x in encoded_prompts]
-    
-    concat = (isinstance(model, Transformer) or (isinstance(model, CrossAttTransformer) and model.do_both)) and cat_embeddings is not None
+
+    concat = (
+        isinstance(model, Transformer)
+        or (isinstance(model, CrossAttTransformer) and model.do_both)
+    ) and cat_embeddings is not None
 
     # Cache
-    cache_window = max(seqlens) + max_tokens + 1 if  concat else max(seqlens) + max_tokens 
-        
+    cache_window = (
+        max(seqlens) + max_tokens + 1 if concat else max(seqlens) + max_tokens
+    )
+
     cache = BufferCache(
         model.n_local_layers,
         model.args.max_batch_size,
@@ -75,11 +80,11 @@ def generate(
                 ),
                 # images=flattened_images,
                 seqlens=[len(p) for p in prompt_chunks],
-                embeddings = cat_embeddings,
+                embeddings=cat_embeddings,
                 cache=cache,
                 norm_wo_embeds=norm_wo_embeds,
             )
-                
+
         elif isinstance(model, CrossAttTransformer):
             prelogits = model.generate(
                 torch.tensor(
@@ -89,13 +94,13 @@ def generate(
                 embeddings=embeddings,
                 kv_seqlens=kv_seqlens,
                 cache=cache,
-                cat_embeddings = cat_embeddings
+                cat_embeddings=cat_embeddings,
             )
 
         # Stop concatenating if already in cache
         if s == 0 and concat:
             cat_embeddings = None
-            
+
         last_token_prelogits = prelogits.index_select(
             0,
             torch.tensor(
@@ -104,14 +109,13 @@ def generate(
             - 1,
         )
         assert last_token_prelogits.shape == (B, V)
-        
 
     # decode
     generated_tensors = []
     is_finished = torch.tensor([False for _ in range(B)])
 
     assert last_token_prelogits is not None
-    
+
     if isinstance(temperature, list):
         assert len(temperature) == max_tokens
     elif isinstance(temperature, float) or isinstance(temperature, int):
@@ -119,10 +123,10 @@ def generate(
 
     for j in range(max_tokens):
         next_token = sample(last_token_prelogits, temperature=temperature[j], top_p=0.8)
-        
+
         for b in range(B):
             logprobs[b].append(last_token_prelogits[b])
-            
+
         if eos_id is not None:
             is_finished = is_finished | (next_token == eos_id).cpu()
 
@@ -146,7 +150,11 @@ def generate(
                 kv_seqlens=kv_seqlens,
                 cache=cache,
             )
-
+        import subprocess as sp
+        command = "nvidia-smi"
+        memory_free_info = sp.check_output(command.split()).decode("ascii")
+        print(memory_free_info)
+        
         assert last_token_prelogits.shape == (
             B,
             V,
@@ -159,10 +167,10 @@ def generate(
         generated_tokens = []
 
     if logprobs:
-        logprobs = [torch.stack(probs, dim = 0) for probs in logprobs]
+        logprobs = [torch.stack(probs, dim=0) for probs in logprobs]
     else:
         logprobs = []
-        
+
     return generated_tokens, logprobs
 
 

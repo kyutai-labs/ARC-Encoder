@@ -103,7 +103,7 @@ def _train(
             "PyTorch environment is not correctly initialized. This message should only be displayed when testing."
         )
     main_logger_info("Process group initialized on  %d gpus" % get_world_size())
-    
+
     # 2. Init run dir
     main_logger_info(f"Run dir: {args.run_dir}")
     run_dir = (
@@ -263,7 +263,11 @@ def _train(
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
-    prepare_batch_fn = partial(pipeline.prepare_forward, batch_size=args.batch_size, continuation = args.pipeline.continuation)
+    prepare_batch_fn = partial(
+        pipeline.prepare_forward,
+        batch_size=args.batch_size,
+        continuation=args.pipeline.continuation,
+    )
 
     main_logger_info("Start training")
     model.train()
@@ -290,10 +294,8 @@ def _train(
             """ Training loop for basic reconstruction"""
 
             # start_time = time.time()
-            
-            
+
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
-            
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
@@ -386,7 +388,7 @@ def _train(
             train_logs = get_train_logs(
                 state=state,
                 loss=avg_loss,
-                ppl= train_ppl if state.step == 1 else train_ppl / args.log_freq,
+                ppl=train_ppl if state.step == 1 else train_ppl / args.log_freq,
                 avg_grad_norm=avg_aggregate(torch.mean(grad_norm).item()),
                 lr=last_lr,
                 peak_allocated_mem=torch.cuda.max_memory_allocated(),

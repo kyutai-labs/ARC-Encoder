@@ -102,18 +102,41 @@ def main(args):
 
     if args.prefix is not None:
         config["exp_name"] = (
-            args.prefix + args.seq_len + 'L_' + sha1(name.encode("utf8")).hexdigest()[:10]
+            args.prefix
+            + args.seq_len
+            + "L_"
+            + sha1(name.encode("utf8")).hexdigest()[:10]
         )
         config["wandb"]["run_name"] = (
-            args.prefix + args.seq_len + 'L_' + sha1(name.encode("utf8")).hexdigest()[:10]
+            args.prefix
+            + args.seq_len
+            + "L_"
+            + sha1(name.encode("utf8")).hexdigest()[:10]
         )
     else:
-        n_trunc = str(args.n_truncated_layers) + '_TRUNC_' if args.train_embedder else ""
-        cross_att = str(args.cross_att_layers) + '_CAL_'+ str(args.shared_kv) + '_SKV_' if args.cross_att else ""
-        name =  str(args.seq_len) +'_SL_FN_' + str(args.train_embedder) + (str(args.pooling) if args.train_embedder else "") + '_' + str(args.proj_n_layers) + '_MLP_' + n_trunc \
-            + str(args.cross_att) + '_CA_' + cross_att + str(args.do_both) + '_DB'
-       
-    
+        n_trunc = (
+            str(args.n_truncated_layers) + "_TRUNC_" if args.train_embedder else ""
+        )
+        cross_att = (
+            str(args.cross_att_layers) + "_CAL_" + str(args.shared_kv) + "_SKV_"
+            if args.cross_att
+            else ""
+        )
+        name = (
+            str(args.seq_len)
+            + "_SL_FN_"
+            + str(args.train_embedder)
+            + (str(args.pooling) if args.train_embedder else "")
+            + "_"
+            + str(args.proj_n_layers)
+            + "_MLP_"
+            + n_trunc
+            + str(args.cross_att)
+            + "_CA_"
+            + cross_att
+            + str(args.do_both)
+            + "_DB"
+        )
 
         config["exp_name"] = name
         config["wandb"]["run_name"] = name
@@ -282,20 +305,25 @@ def arg_parser():
         action="store_false",
         help="Whether to normalize embeddings",
     )
-    
+
     parser.add_argument(
         "--shared_kv",
         action="store_true",
         help="Whether to share keys and values in cross-attention",
     )
-    
+
     parser.add_argument(
         "--do_both",
         action="store_true",
-        help="Whether to both cross-attended and concatenated embeddings")
-    
+        help="Whether to both cross-attended and concatenated embeddings",
+    )
+
     parser.add_argument(
-        "--dist_process", type=str, default=None, help="Whether to distinctively process embeddings")
+        "--dist_process",
+        type=str,
+        default=None,
+        help="Whether to distinctively process embeddings",
+    )
 
     return parser.parse_args()
 
@@ -322,6 +350,6 @@ if __name__ == "__main__":
     #                 config['exp_name'] = config['exp_name'].replace('False_SKV_', 'True_SKV_')
     #                 config['wandb']['run_name'] = config['wandb']['run_name'].replace('False_SKV_', 'True_SKV_')
     #                 filename = filename.replace('False_SKV_', 'True_SKV_')
-                
+
     #         with open("config/experiments/"+filename, 'w') as file:
     #             yaml.dump(config, file)

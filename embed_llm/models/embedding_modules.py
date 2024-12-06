@@ -153,11 +153,11 @@ class ReversedLatentAttention(nn.Module):
         self.n_heads = n_heads
         latent_dim = hidden_dim
         self.head_dim = hidden_dim // n_heads
-        
+
         self.latents = torch.nn.Parameter(
             torch.randn(self.r, latent_dim), requires_grad=True
-        )  
-        
+        )
+
         # Attention as in the Perceiver IO encoder
         self.cross_attend_block_encoder = PreNorm(
             latent_dim,
@@ -169,7 +169,7 @@ class ReversedLatentAttention(nn.Module):
             ),
             context_dim=hidden_dim,
         )
-        
+
         # Attention as in the Perceiver IO decoder
         self.cross_attend_block_decoder = PreNorm(
             latent_dim,
@@ -182,7 +182,6 @@ class ReversedLatentAttention(nn.Module):
             context_dim=hidden_dim,
         )
 
-        
         self.mlp_layers = nn.ModuleList()
         for _ in range(n_layers):
             self.mlp_layers.append(
@@ -196,31 +195,35 @@ class ReversedLatentAttention(nn.Module):
 
     def forward(self, keys: torch.Tensor, seqlens: list[int]) -> torch.Tensor:
         b = len(seqlens)
-        
+
         queries = repeat(self.latents, "r d -> (b r) d", b=b)
         hiddens = self.cross_attend_block_encoder(
-                queries,
-                context=keys,
-                mask=BlockDiagonalMask.from_seqlens(
-                    q_seqlen=[self.r] * b, kv_seqlen=seqlens
-                ),
-            )
-        
+            queries,
+            context=keys,
+            mask=BlockDiagonalMask.from_seqlens(
+                q_seqlen=[self.r] * b, kv_seqlen=seqlens
+            ),
+        )
 
         hiddens = self.mlp_layers[0](hiddens) + hiddens
-        
-        hiddens = self.cross_attend_block_decoder(keys, 
-                                                  context = hiddens, 
-                                                  mask=BlockDiagonalMask.from_seqlens(
+
+        hiddens = (
+            self.cross_attend_block_decoder(
+                keys,
+                context=hiddens,
+                mask=BlockDiagonalMask.from_seqlens(
                     q_seqlen=seqlens, kv_seqlen=[self.r] * b
-                ),) + keys
-        
+                ),
+            )
+            + keys
+        )
 
         for i in range(1, self.n_layers):
             hiddens = self.mlp_layers[i](hiddens) + hiddens
 
         return hiddens
-    
+
+
 class LatentAttention(nn.Module):
     def __init__(
         self,
@@ -248,7 +251,7 @@ class LatentAttention(nn.Module):
 
         self.latents = torch.nn.Parameter(
             torch.randn(self.r, latent_dim), requires_grad=True
-        ) 
+        )
 
         self.mlp_layers = nn.ModuleList()
         for _ in range(n_layers):
@@ -315,12 +318,12 @@ class PoolingModule(nn.Module):
             seqlens = [x.shape[1]] * x.shape[0]
             x = x.view(-1, x.shape[-1])  # (B, S, D) -> (B*S, D)
 
-        if 'attention' not in self.args.type:
+        if "attention" not in self.args.type:
             out = x
         else:
             out = self.process.forward(x, seqlens=seqlens)
 
-        if 'attention' in self.args.type or self.args.type == "mean" :
+        if "attention" in self.args.type or self.args.type == "mean":
             mean_mask = torch.block_diag(*[torch.ones(l) / l for l in seqlens]).to(
                 x.device
             )
