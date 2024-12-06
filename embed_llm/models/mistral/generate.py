@@ -19,6 +19,7 @@ def generate(
     eos_id: int | None = None,
     norm_wo_embeds: bool = False,
     kv_seqlens: list[int] | None = None,
+    cat_embeddings: torch.Tensor | None = None,
     **kwargs,
 ) -> tuple[list[list[int]], list[list[float]]]:
     # images_torch: list[list[torch.Tensor]] = []
@@ -92,11 +93,12 @@ def generate(
                 embeddings=embeddings,
                 kv_seqlens=kv_seqlens,
                 cache=cache,
+                cat_embeddings=cat_embeddings
             )
             
             # Stop concatenating if already in cache
             if s == 0 and concat:
-                model.do_both = False
+                cat_embeddings = None
                 
         last_token_prelogits = prelogits.index_select(
             0,

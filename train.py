@@ -384,7 +384,7 @@ def _train(
             train_logs = get_train_logs(
                 state=state,
                 loss=avg_loss,
-                ppl=train_ppl / args.log_freq,
+                ppl= train_ppl if state.step == 1 else train_ppl / args.log_freq,
                 avg_grad_norm=avg_aggregate(torch.mean(grad_norm).item()),
                 lr=last_lr,
                 peak_allocated_mem=torch.cuda.max_memory_allocated(),

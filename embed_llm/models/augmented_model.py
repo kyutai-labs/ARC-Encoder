@@ -121,13 +121,16 @@ class EmbedAugModel(nn.Module):
         self.mlp_project_args = pipeline_args.mlp_project
         self.trainable_embedder = trainable_embedder
         self.normalize_embeddings = pipeline_args.normalize_embeddings
+
         self.pooling_args = (
             None
             if trainable_embedder is None or not pipeline_args.do_pool
             else pipeline_args.pooling_module
         )
 
+
         self.cross_att = pipeline_args.cross_att
+        self.dist_process = pipeline_args.dist_process
         if "mistral" in self.llm_name:
             self.forward = partial(
                 self.forward_seq,
@@ -169,6 +172,7 @@ class EmbedAugModel(nn.Module):
         norm_wo_embeds: bool = False,
     ) -> torch.Tensor:
 
+        cat_embeddings = None
         if self.trainable_embedder is not None:
             embeddings = self.trainable_embedder(
                 input_ids=embeddings, embeddings=None, seqlens=embed_seqlens
@@ -184,7 +188,16 @@ class EmbedAugModel(nn.Module):
             embeddings = F.normalize(embeddings, p=2, dim=-1)
 
         if self.mlp_project is not None:
-            embeddings = self.mlp_project(embeddings)
+            if self.cross_att and self.llm.do_both:
+                if self.dist_process:
+                    cat_embeddings = self.mlp_project(embeddings)
+                else:
+                    embeddings = self.mlp_project(embeddings)
+                    cat_embeddings = embeddings
+            else:
+                embeddings = self.mlp_project(embeddings)
+                    
+    
 
         if self.cross_att:
             return self.llm.forward(
@@ -192,6 +205,7 @@ class EmbedAugModel(nn.Module):
                 embeddings=embeddings,
                 seqlens=seqlens,
                 kv_seqlens=kv_seqlens,
+                cat_embeddings=cat_embeddings,
             )
         else:
             return self.llm.forward(
@@ -533,6 +547,8 @@ class EmbedAugPipeline(nn.Module):
         if isinstance(text_conditioning, str):
             text_conditioning = [text_conditioning]
 
+        cat_embeddings = None
+        
         if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
             if self.pipeline_args.cross_att and not self.pipeline_args.do_pool:
                 embeddings, kv_seqlens = encode_text(
@@ -557,9 +573,12 @@ class EmbedAugPipeline(nn.Module):
                 embeddings = F.normalize(embeddings, p=2, dim=-1)
 
             if self.model.mlp_project is not None:
-                embeddings = self.model.mlp_project(
+                cat_embeddings = self.model.mlp_project(
                     embeddings.to(self.pipeline_args.param_dtype)
                 )
+                if self.pipeline_args.do_both and not self.pipeline_args.dist_process:
+                    embeddings = cat_embeddings.to(device)
+                
         elif self.pipeline_args.w_embeds and self.pipeline_args.trainable_embedder:
             x = [
                 self.tokenizer.encode(text, bos=True, eos=True)
@@ -580,15 +599,26 @@ class EmbedAugPipeline(nn.Module):
                 embeddings = F.normalize(embeddings, p=2, dim=-1)
 
             if self.model.mlp_project is not None:
-                embeddings = self.model.mlp_project(
+                if self.pipeline_args.do_both and self.pipeline_args.dist_process:
+                    cat_embeddings = self.model.mlp_project(
                     embeddings.to(self.pipeline_args.param_dtype)
-                )
-
+                    )
+                else:
+                    embeddings = self.model.mlp_project(
+                        embeddings.to(self.pipeline_args.param_dtype)
+                    )
+                    
             kv_seqlens = seqlens
         else:
             embeddings = None
             kv_seqlens = None
-
+                
+        
+        if self.pipeline_args.do_both and not self.pipeline_args.dist_process:
+            cat_embeddings = embeddings.to(device)
+        
+        
+        
         encoded_prompts = [
             self.tokenizer.encode(prompt, bos=True, eos=False) for prompt in prompts
         ]
@@ -603,6 +633,7 @@ class EmbedAugPipeline(nn.Module):
             eos_id=eos_id,
             kv_seqlens=None if not self.pipeline_args.cross_att else kv_seqlens,
             norm_wo_embeds=self.pipeline_args.norm_wo_embeds,
+            cat_embeddings = cat_embeddings,
             **kwargs
         )
         produced_text = [

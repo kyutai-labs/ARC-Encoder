@@ -156,8 +156,7 @@ def load_training_model(
         if (
             pipeline_args.do_pool
             and augmented_model.pooling_args is not None
-            and (augmented_model.pooling_args.type == "latent_attention" or
-                augmented_model.pooling_args.type == "reversed_latent_attention")
+            and 'attention' in augmented_model.pooling_args.type
         ):
             main_logger_info("Initializing Pooling")
             initialize_pooling(augmented_model.pooling_module, param_dtype)
@@ -193,8 +192,7 @@ def load_training_model(
     if (
         pipeline_args.do_pool
         and augmented_model.pooling_args is not None
-        and (augmented_model.pooling_args.type == "latent_attention" or 
-             augmented_model.pooling_args.type == "reversed_latent_attention")
+        and 'attention' in augmented_model.pooling_args.type
     ):
         initialize_pooling(
             augmented_model.pooling_module, param_dtype, latents=True, device="cuda"
@@ -251,9 +249,7 @@ def load_training_model(
 
         if (
             augmented_model.pooling_args is not None
-            and (augmented_model.pooling_args.type == "latent_attention" or
-                 augmented_model.pooling_args.type == "reversed_latent_attention")
-        ):
+            and 'attention' in augmented_model.pooling_args.type):
             ignored_state = [augmented_model.pooling_module.process.latents]
             
   

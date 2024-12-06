@@ -285,7 +285,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         seqlens: list[int],
         embeddings: torch.Tensor | None,
         kv_seqlens: list[int] | None = None,
-        dist_embeddings: torch.Tensor | None = None,
+        cat_embeddings: torch.Tensor | None = None,
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
         assert kv_seqlens is None or sum(kv_seqlens) == embeddings.shape[0], (
@@ -296,9 +296,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
         token_embeds = self.tok_embeddings(input_ids)
         (num_toks,) = input_ids.shape
         
-        if embeddings is not None and self.do_both:
+        if cat_embeddings is not None and self.do_both:
             
-            # dist
             h = torch.zeros(
                 (num_toks + len(seqlens), self.args.dim),
                 device=self.device,
@@ -310,7 +309,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             for i, size in enumerate(seqlens):
                 assert size > 0
                 # Insert embedding at the beginning of the sequence
-                h[final_ind, :] = embeddings[i, :]
+                h[final_ind, :] = cat_embeddings[i, :]
                 self.pos_to_keep.append(False)
                 # Insert token embeddings
                 h[final_ind + 1 : final_ind + size + 1, :] = token_embeds[
@@ -356,7 +355,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
         normalized_h = self.norm(h)
         
-        if embeddings is not None and self.do_both:
+        if cat_embeddings is not None and self.do_both:
              normalized_h = normalized_h[torch.tensor(self.pos_to_keep, dtype=torch.bool)]  
              self.pos_to_keep = []
              
@@ -370,6 +369,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embeddings: torch.Tensor | None,
         cache: BufferCache | None,
         cross_att_cache: CrossAttCache | None,
+        cat_embeddings: torch.Tensor | None = None,
         # images: list[torch.Tensor] | None,
     ) -> torch.Tensor:
         """Local forward pass.
@@ -402,7 +402,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             #     h = self.embed_vision_language_features(input_ids, images)
             # else:
             token_embeds = self.tok_embeddings(input_ids)
-            if embeddings is not None and self.do_both:
+            if cat_embeddings is not None and self.do_both:
                 h = torch.zeros(
                     (num_toks + len(seqlens), self.args.dim),
                     device=self.device,
@@ -413,7 +413,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 for i, size in enumerate(seqlens):
                     assert size > 0
                     # Insert embedding at the beginning of the sequence
-                    h[final_ind, :] = embeddings[i, :]
+                    h[final_ind, :] = cat_embeddings[i, :]
                     self.pos_to_keep.append(False)
                     # Insert token embeddings
                     # Seqlen has already been updated with embeddings
@@ -478,7 +478,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         else:
             normalized_h = self.norm(h)
             
-            if embeddings is not None and self.do_both:
+            if cat_embeddings is not None and self.do_both:
                 normalized_h = normalized_h[torch.tensor(self.pos_to_keep, dtype=torch.bool)]
             return normalized_h
 
@@ -489,6 +489,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         kv_seqlens: list[int],
         embeddings: torch.Tensor | None,
         cache: BufferCache | None,
+        cat_embeddings: torch.Tensor | None = None, 
         # images: list[torch.Tensor | None,
     ) -> torch.Tensor:
         cross_att_cache = (
@@ -507,6 +508,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             embeddings=embeddings,
             cache=cache,
             cross_att_cache=cross_att_cache,
+            cat_embeddings=cat_embeddings,
         )  # , images=images)
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             # ignore the intermediate activations as we'll get the final output from
