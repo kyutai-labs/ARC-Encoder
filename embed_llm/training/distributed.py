@@ -28,6 +28,7 @@ def set_device():
     logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ['CUDA_VISIBLE_DEVICES']}")
     logger.info(f"local rank: {int(os.environ['LOCAL_RANK'])}")
 
+
     assert torch.cuda.is_available()
 
     assert len(visible_devices()) == torch.cuda.device_count()

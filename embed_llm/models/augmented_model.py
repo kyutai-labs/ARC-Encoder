@@ -188,16 +188,12 @@ class EmbedAugModel(nn.Module):
             embeddings = F.normalize(embeddings, p=2, dim=-1)
 
         if self.mlp_project is not None:
-            if self.cross_att and self.llm.do_both:
-                if self.dist_process:
-                    cat_embeddings = self.mlp_project(embeddings)
-                else:
-                    embeddings = self.mlp_project(embeddings)
-                    cat_embeddings = embeddings
+            if self.dist_process:
+                cat_embeddings = self.mlp_project(embeddings)
             else:
                 embeddings = self.mlp_project(embeddings)
-                    
-    
+                cat_embeddings = embeddings
+                     
 
         if self.cross_att:
             return self.llm.forward(
@@ -210,7 +206,7 @@ class EmbedAugModel(nn.Module):
         else:
             return self.llm.forward(
                 input_ids=x,
-                embeddings=embeddings,
+                embeddings=cat_embeddings,
                 seqlens=seqlens,
                 norm_wo_embeds=norm_wo_embeds,
             )
@@ -546,9 +542,7 @@ class EmbedAugPipeline(nn.Module):
             prompts = [prompts]
         if isinstance(text_conditioning, str):
             text_conditioning = [text_conditioning]
-
-        cat_embeddings = None
-        
+      
         if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
             if self.pipeline_args.cross_att and not self.pipeline_args.do_pool:
                 embeddings, kv_seqlens = encode_text(
@@ -569,15 +563,6 @@ class EmbedAugPipeline(nn.Module):
                 )
                 kv_seqlens = [1] * embeddings.shape[0]
 
-            if self.pipeline_args.normalize_embeddings:
-                embeddings = F.normalize(embeddings, p=2, dim=-1)
-
-            if self.model.mlp_project is not None:
-                cat_embeddings = self.model.mlp_project(
-                    embeddings.to(self.pipeline_args.param_dtype)
-                )
-                if self.pipeline_args.do_both and not self.pipeline_args.dist_process:
-                    embeddings = cat_embeddings.to(device)
                 
         elif self.pipeline_args.w_embeds and self.pipeline_args.trainable_embedder:
             x = [
@@ -594,28 +579,26 @@ class EmbedAugPipeline(nn.Module):
 
             if self.pipeline_args.do_pool:
                 embeddings = self.model.pooling_module(x=embeddings, seqlens=seqlens)
-
-            if self.pipeline_args.normalize_embeddings:
-                embeddings = F.normalize(embeddings, p=2, dim=-1)
-
-            if self.model.mlp_project is not None:
-                if self.pipeline_args.do_both and self.pipeline_args.dist_process:
-                    cat_embeddings = self.model.mlp_project(
-                    embeddings.to(self.pipeline_args.param_dtype)
-                    )
-                else:
-                    embeddings = self.model.mlp_project(
-                        embeddings.to(self.pipeline_args.param_dtype)
-                    )
                     
             kv_seqlens = seqlens
         else:
             embeddings = None
             kv_seqlens = None
+            cat_embeddings = None
+          
+        if embeddings is not None:      
+            if self.pipeline_args.normalize_embeddings:
+                embeddings = F.normalize(embeddings, p=2, dim=-1)
+
+            if self.model.mlp_project is not None:
+                cat_embeddings = self.model.mlp_project(
+                    embeddings.to(self.pipeline_args.param_dtype)
+                )
+            else:
+                cat_embeddings = embeddings
                 
-        
-        if self.pipeline_args.do_both and not self.pipeline_args.dist_process:
-            cat_embeddings = embeddings.to(device)
+            if not self.pipeline_args.dist_process:
+                embeddings = cat_embeddings
         
         
         
@@ -978,5 +961,10 @@ def load_llm_model(
             model.causal = True
         else:
             model.causal = False
+    else:
+        if pipeline_args.cross_att and pipeline_args.do_both:
+            assert pipeline_args.cross_att, "If do_both, must do cross-attention"
+            assert pipeline_args.do_pool, "If do_both, must do pooling"
+            model.do_both = True
 
     return model, tokenizer, embed_dim

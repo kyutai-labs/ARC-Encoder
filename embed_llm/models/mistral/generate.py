@@ -37,8 +37,8 @@ def generate(
     B, V = len(encoded_prompts), model.args.vocab_size
     seqlens = [len(x) for x in encoded_prompts]
     
-    concat = (isinstance(model, Transformer) or (isinstance(model, CrossAttTransformer) and model.do_both)) and embeddings is not None
-    
+    concat = (isinstance(model, Transformer) or (isinstance(model, CrossAttTransformer) and model.do_both)) and cat_embeddings is not None
+
     # Cache
     cache_window = max(seqlens) + max_tokens + 1 if  concat else max(seqlens) + max_tokens 
         
@@ -75,14 +75,10 @@ def generate(
                 ),
                 # images=flattened_images,
                 seqlens=[len(p) for p in prompt_chunks],
-                embeddings= embeddings,
+                embeddings = cat_embeddings,
                 cache=cache,
                 norm_wo_embeds=norm_wo_embeds,
             )
-            
-            # Stop concatenating if already in cache
-            if s == 0 and concat:
-                embeddings = None
                 
         elif isinstance(model, CrossAttTransformer):
             prelogits = model.generate(
@@ -93,13 +89,13 @@ def generate(
                 embeddings=embeddings,
                 kv_seqlens=kv_seqlens,
                 cache=cache,
-                cat_embeddings=cat_embeddings
+                cat_embeddings = cat_embeddings
             )
+
+        # Stop concatenating if already in cache
+        if s == 0 and concat:
+            cat_embeddings = None
             
-            # Stop concatenating if already in cache
-            if s == 0 and concat:
-                cat_embeddings = None
-                
         last_token_prelogits = prelogits.index_select(
             0,
             torch.tensor(
@@ -138,7 +134,7 @@ def generate(
             last_token_prelogits = model.generate(
                 next_token,
                 seqlens=[1] * B,
-                embeddings=embeddings,
+                embeddings=cat_embeddings,
                 cache=cache,
                 norm_wo_embeds=norm_wo_embeds,
             )

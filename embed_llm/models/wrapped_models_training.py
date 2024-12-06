@@ -124,11 +124,7 @@ def load_training_model(
         pad_token_id=tokenizer.pad_id,
         max_seq_len=max_seq_len,
     )
-    
-    if pipeline_args.do_both:
-        assert pipeline_args.cross_att, "If do_both, must do cross-attention"
-        assert pipeline_args.do_pool, "If do_both, must do pooling"
-        model.do_both = True
+
         
     with torch.device("meta"):
         augmented_model = augmented_pipeline.get_model(llm=model)

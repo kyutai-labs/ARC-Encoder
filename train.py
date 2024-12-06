@@ -102,6 +102,8 @@ def _train(
         logger.error(
             "PyTorch environment is not correctly initialized. This message should only be displayed when testing."
         )
+    main_logger_info("Process group initialized on  %d gpus" % get_world_size())
+    
     # 2. Init run dir
     main_logger_info(f"Run dir: {args.run_dir}")
     run_dir = (

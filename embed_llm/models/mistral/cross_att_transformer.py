@@ -154,11 +154,12 @@ class Cross_AttTransformerBlock(nn.Module):
         self_mask: BlockDiagonalMask | None = None,
         cross_att_mask: BlockDiagonalMask | None = None,
     ) -> torch.Tensor:
-
+        
         r = self.attention.forward(
             self.attention_norm(x), freqs_cis, cache=cache, mask=self_mask
         )
         h = x + r
+        
         if xk is not None and xv is not None:
             r = self.cross_attention.forward(
                 x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
@@ -385,7 +386,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         input_metadata: list[CacheInputMetadata] | list[SimpleInputMetadata]
 
-        if embeddings is not None and self.do_both:
+        if cat_embeddings is not None and self.do_both:
             seqlens = [size + 1 for size in seqlens]
             
         if cache is not None:
@@ -432,7 +433,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         # freqs_cis is always the same for every layer
         freqs_cis = self.freqs_cis[input_metadata[0].positions]
-
         if embeddings is not None and self.shared_kv:
             if not cross_att_cache.full:
                 xk, xv = self.to_k(embeddings), self.to_v(embeddings)
@@ -480,6 +480,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             
             if cat_embeddings is not None and self.do_both:
                 normalized_h = normalized_h[torch.tensor(self.pos_to_keep, dtype=torch.bool)]
+                self.pos_to_keep = []
             return normalized_h
 
     def generate(
