@@ -1,10 +1,10 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=7-20%10
+#SBATCH --array=0-1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx16,par2dc5-ai-prd-cl02s02dgx19,par2dc5-ai-prd-cl02s02dgx25,par2dc5-ai-prd-cl02s04dgx21,par2dc5-ai-prd-cl02s01dgx30
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx16 # ,par2dc5-ai-prd-cl02s02dgx19,par2dc5-ai-prd-cl02s02dgx25,par2dc5-ai-prd-cl02s04dgx21,par2dc5-ai-prd-cl02s01dgx30
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
@@ -17,27 +17,8 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID))
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_3_MLP_4_TRUNC_False_CA_False_DB.yaml                   
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_3_MLP_4_TRUNC_True_CA_16_CAL_False_SKV_False_DB.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_False_3_MLP_True_CA_16_CAL_False_SKV_True_DB.yaml      
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_False_3_MLP_True_CA_16_CAL_True_SKV_True_DB.yaml                          
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_3_MLP_4_TRUNC_True_CA_16_CAL_False_SKV_True_DB.yaml                      
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_3_MLP_4_TRUNC_True_CA_16_CAL_True_SKV_True_DB.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_False_3_MLP_True_CA_24_CAL_False_SKV_True_DB.yaml   
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_False_3_MLP_True_CA_5_CAL_False_SKV_True_DB.yaml                          
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_3_MLP_4_TRUNC_True_CA_24_CAL_False_SKV_True_DB.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Trueeos_0_MLP_4_TRUNC_True_CA_16_CAL_False_SKV_True_DB.yaml               
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_3_MLP_4_TRUNC_True_CA_5_CAL_False_SKV_True_DB.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Trueeos_3_MLP_4_TRUNC_True_CA_16_CAL_False_SKV_True_DB.yaml               
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_3_MLP_8_TRUNC_False_CA_False_DB.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truelatent_attention_0_MLP_4_TRUNC_True_CA_16_CAL_False_SKV_True_DB.yaml  
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_False_SKV_True_DB.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truelatent_attention_3_MLP_4_TRUNC_True_CA_16_CAL_False_SKV_True_DB.yaml  
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_0_MLP_4_TRUNC_False_CA_False_DB.yaml   
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truereversed_latent_attention_0_MLP_4_TRUNC_True_CA_16_CAL_False_SKV_True_DB.yaml   
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truereversed_latent_attention_3_MLP_4_TRUNC_True_CA_16_CAL_False_SKV_True_DB.yaml   
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_3_MLP_4_TRUNC_True_CA_16_CAL_False_SKV_True_DB_dist_process.yaml    
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_False_3_MLP_True_CA_16_CAL_False_SKV_True_DB_dist_process.yaml                
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/best_finetuned_128L_4978e57368.yaml               
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/best_pretrained_128L_3f10605432.yaml         
  )
 
 

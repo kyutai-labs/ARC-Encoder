@@ -88,6 +88,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.for_embedding = False
         self.causal = causal
         self.pos_to_keep = []
+
     @property
     def dtype(self) -> torch.dtype:
         return next(self.parameters()).dtype

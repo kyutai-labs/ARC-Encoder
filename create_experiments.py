@@ -103,13 +103,13 @@ def main(args):
     if args.prefix is not None:
         config["exp_name"] = (
             args.prefix
-            + args.seq_len
+            + str(args.seq_len)
             + "L_"
             + sha1(name.encode("utf8")).hexdigest()[:10]
         )
         config["wandb"]["run_name"] = (
             args.prefix
-            + args.seq_len
+            + str(args.seq_len)
             + "L_"
             + sha1(name.encode("utf8")).hexdigest()[:10]
         )
@@ -320,8 +320,7 @@ def arg_parser():
 
     parser.add_argument(
         "--dist_process",
-        type=str,
-        default=None,
+        action="store_true",
         help="Whether to distinctively process embeddings",
     )
 

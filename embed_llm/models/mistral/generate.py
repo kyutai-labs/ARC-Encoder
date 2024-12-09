@@ -55,6 +55,7 @@ def generate(
         model.args.head_dim,
         model.args.sliding_window,
     )
+
     cache.to(device=model.device, dtype=model.dtype)
     cache.reset()
 
@@ -150,11 +151,7 @@ def generate(
                 kv_seqlens=kv_seqlens,
                 cache=cache,
             )
-        import subprocess as sp
-        command = "nvidia-smi"
-        memory_free_info = sp.check_output(command.split()).decode("ascii")
-        print(memory_free_info)
-        
+
         assert last_token_prelogits.shape == (
             B,
             V,

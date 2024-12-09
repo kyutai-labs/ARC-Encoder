@@ -390,8 +390,7 @@ class EmbedAugPipeline(nn.Module):
         max_seq_len: int = 512,
         param_dtype: torch.dtype = torch.float32,
     ):
-        
-        
+
         lora_path = (
             ckpt_path + "/" + llm_name.lower() + "/consolidated/lora.safetensors"
         )
@@ -408,9 +407,7 @@ class EmbedAugPipeline(nn.Module):
             embedding_model = get_pretrained_embedder(
                 embed_model_name, device_map=device
             )
-                
-                
-        
+
         llm_args, pipeline_args = load_args(
             Path(llm_path),
             lora=None,
@@ -496,7 +493,7 @@ class EmbedAugPipeline(nn.Module):
 
         if pipeline_args.cross_att and not pipeline_args.do_pool:
             augmented_pipeline.pipeline_args.pooling_module = None
-    
+
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
 
         if trainable_embedder and not pipeline_args.cross_att:
@@ -511,22 +508,24 @@ class EmbedAugPipeline(nn.Module):
                 augmented_pipeline.model.pooling_module.process.load_state_dict(
                     state_dict
                 )
- 
-        
+                augmented_pipeline.model.pooling_module.process = (
+                    augmented_pipeline.model.pooling_module.process.to(device)
+                )
 
         if mlp_project_args.n_layers > 0:
             print("Loading MLP projector")
             augmented_pipeline.model.mlp_project.load_state_dict(
                 safetensors.torch.load_file(mlp_path + "/consolidated.safetensors")
             )
-            
+            augmented_pipeline.model.mlp_project = (
+                augmented_pipeline.model.mlp_project.to(device)
+            )
+
         augmented_pipeline.model = augmented_pipeline.model.to(device)
         augmented_pipeline.model.eval()
 
         if "mistral" in llm_name.lower():
-            augmented_pipeline.generate = partial(
-                augmented_pipeline.generate_mistral
-            )
+            augmented_pipeline.generate = partial(augmented_pipeline.generate_mistral)
         elif "llama" in llm_name.lower():
             augmented_pipeline.generate = partial(
                 augmented_pipeline.generate_llama,
@@ -553,13 +552,12 @@ class EmbedAugPipeline(nn.Module):
     ):
 
         device_generation = device if device_generation is None else device_generation
-        
+
         if isinstance(prompts, str):
             prompts = [prompts]
         if isinstance(text_conditioning, str):
             text_conditioning = [text_conditioning]
 
-        
         if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
             if self.pipeline_args.cross_att and not self.pipeline_args.do_pool:
                 embeddings, kv_seqlens = encode_text(
@@ -596,7 +594,7 @@ class EmbedAugPipeline(nn.Module):
             if self.pipeline_args.do_pool:
                 embeddings = self.model.pooling_module(x=embeddings, seqlens=seqlens)
 
-            kv_seqlens = seqlens
+            kv_seqlens = [1] * embeddings.shape[0]
         else:
             embeddings = None
             kv_seqlens = None
@@ -604,14 +602,15 @@ class EmbedAugPipeline(nn.Module):
 
         if embeddings is not None:
             if self.pipeline_args.normalize_embeddings:
-                embeddings = F.normalize(embeddings, p=2, dim=-1).to(device_generation)
+                embeddings = F.normalize(embeddings, p=2, dim=-1)
 
             if self.model.mlp_project is not None:
                 cat_embeddings = self.model.mlp_project(
-                    embeddings.to(self.pipeline_args.param_dtype).to(device_generation)
-                )
+                    embeddings.to(self.pipeline_args.param_dtype)
+                ).to(device_generation)
             else:
                 cat_embeddings = embeddings.to(device_generation)
+                embeddings = embeddings.to(device_generation)
 
             if not self.pipeline_args.dist_process:
                 embeddings = cat_embeddings.to(device_generation)
@@ -620,6 +619,7 @@ class EmbedAugPipeline(nn.Module):
             self.tokenizer.encode(prompt, bos=True, eos=False) for prompt in prompts
         ]
         eos_id = self.tokenizer.eos_id
+
         generated_tokens, logprobs = mistral_generate(
             encoded_prompts=encoded_prompts,
             embeddings=embeddings,
