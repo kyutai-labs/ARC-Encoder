@@ -106,10 +106,8 @@ class Attention(nn.Module):
                 attn = attn + attn_bias.materialize(attn_shape).to(attn.device)
                 
             attn = attn.softmax(-1)
-        
             output = (attn @ val).transpose(1, 2)
-            
-            output = output.view(seqlen_sum, self.n_heads * self.head_dim)
+            output = output.reshape(seqlen_sum, self.n_heads * self.head_dim)
 
             assert isinstance(output, torch.Tensor)
 
@@ -190,10 +188,10 @@ class TransformerBlock(nn.Module):
         freqs_cis: torch.Tensor,
         cache: CacheView | None = None,
         mask: BlockDiagonalMask | None = None,
-        attention: bool = False,
+        show_attention: bool = False,
     ) -> torch.Tensor:
         
-        if not attention:
+        if not show_attention:
             r = self.attention.forward(
                 self.attention_norm(x), freqs_cis, cache=cache, mask=mask
             )

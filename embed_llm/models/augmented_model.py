@@ -652,6 +652,10 @@ class EmbedAugPipeline(nn.Module):
                 final_texts.append(text)
         else:
             final_texts = produced_text
+            
+        if kwargs.get("return_embeddings", False):
+            return final_texts, attentions, embeddings
+        
         return final_texts, attentions
 
     @torch.inference_mode()

@@ -20,7 +20,6 @@ def generate(
     norm_wo_embeds: bool = False,
     kv_seqlens: list[int] | None = None,
     cat_embeddings: torch.Tensor | None = None,
-    attention: bool = False,
     **kwargs,
 ) -> tuple[list[list[int]], list[list[float]]]:
     # images_torch: list[list[torch.Tensor]] = []
@@ -31,9 +30,6 @@ def generate(
     #         for images_for_sample in images
     #     ]
     
-    if attention: 
-        attn_dict = {}
-
     if len(encoded_prompts) > 0 and not isinstance(encoded_prompts[0], list):
         encoded_prompts = [encoded_prompts]
 
@@ -140,46 +136,22 @@ def generate(
 
         generated_tensors.append(next_token[:, None])
         
-        if not attention:
-            if isinstance(model, Transformer):
-                last_token_prelogits = model.generate(
-                    next_token,
-                    seqlens=[1] * B,
-                    embeddings=cat_embeddings,
-                    cache=cache,
-                    norm_wo_embeds=norm_wo_embeds,
-                )
-            elif isinstance(model, CrossAttTransformer):
-                last_token_prelogits = model.generate(
-                    next_token,
-                    seqlens=[1] * B,
-                    embeddings=embeddings,
-                    kv_seqlens=kv_seqlens,
-                    cache=cache,
-                )
-        else:
-            if isinstance(model, Transformer):
-                last_token_prelogits, attn = model.generate(
-                    next_token,
-                    seqlens=[1] * B,
-                    embeddings=cat_embeddings,
-                    cache=cache,
-                    norm_wo_embeds=norm_wo_embeds,
-                    attention = True,
-                )
-            elif isinstance(model, CrossAttTransformer):
-                last_token_prelogits, attn = model.generate(
-                    next_token,
-                    seqlens=[1] * B,
-                    embeddings=embeddings,
-                    kv_seqlens=kv_seqlens,
-                    cache=cache,
-                    attention = True,
-                )
-    
-            attn_dict[str(j)] = {}
-            attn_dict[str(j)]['attn'] = attn
-            attn_dict[str(j)]['tokens'] = torch.cat(generated_tensors, 1).tolist()
+        if isinstance(model, Transformer):
+            last_token_prelogits = model.generate(
+                next_token,
+                seqlens=[1] * B,
+                embeddings=cat_embeddings,
+                cache=cache,
+                norm_wo_embeds=norm_wo_embeds,
+            )
+        elif isinstance(model, CrossAttTransformer):
+            last_token_prelogits = model.generate(
+                next_token,
+                seqlens=[1] * B,
+                embeddings=embeddings,
+                kv_seqlens=kv_seqlens,
+                cache=cache,
+            )
 
         assert last_token_prelogits.shape == (
             B,
@@ -197,11 +169,34 @@ def generate(
     else:
         logprobs = []
 
-    if not attention:
-        return generated_tokens, logprobs
-    else:
-        return generated_tokens,  attn_dict
+    return generated_tokens, logprobs
 
+
+def get_attention(sentence: str, embeddings: torch.Tensor, tokenizer, 
+                  model: Transformer | CrossAttTransformer, n_tokens) -> tuple[torch.Tensor, list[int]]:
+    token_ids = tokenizer.encode(sentence, bos = True, eos = True)[:n_tokens]
+    tokens = tokenizer.id_to_piece(token_ids[:n_tokens])
+    if embeddings is not None or model.do_both:
+        tokens = ['<embed>'] + tokens
+    with torch.no_grad():
+        if isinstance(model, Transformer):
+            attention_weights = model.forward(
+                torch.tensor(token_ids).to(model.device),
+                seqlens= [len(token_ids)],
+                embeddings=embeddings.to(model.device),
+                show_attention=True,
+            )
+        elif isinstance(model, CrossAttTransformer):
+            attention_weights = model.forward(
+                torch.tensor(token_ids).to(model.device),
+                seqlens= [len(token_ids)],
+                embeddings=embeddings.to(model.device),
+                kv_seqlens=[1],
+                cat_embeddings=embeddings if model.do_both else None,
+                show_attention=True,
+            )
+
+    return attention_weights, tokens
 
 def sample(logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:
     if temperature > 0:

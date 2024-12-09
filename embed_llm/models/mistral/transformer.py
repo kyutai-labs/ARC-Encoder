@@ -147,6 +147,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         seqlens: list[int],
         embeddings: torch.Tensor | None,
         norm_wo_embeds: bool = False,
+        show_attention: bool = False,
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
         assert len(seqlens) == len(embeddings) if embeddings is not None else True, (
@@ -190,8 +191,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
-        for i in range(self.n_layers):
-            h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=att_mask)
+        if not show_attention:
+            for i in range(self.n_layers):
+                h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=att_mask)
+        else:
+            attn_mtx = []
+            for i in range(self.n_layers):
+                h, attn_mat = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=att_mask, show_attention= True)
+                attn_mtx.append(attn_mat)
+            return attn_mtx
 
         assert self.norm is not None
         if embeddings is not None and norm_wo_embeds:
@@ -217,7 +225,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embeddings: torch.Tensor | None,
         cache: BufferCache | None,
         norm_wo_embeds: bool = False,
-        attention: bool = False
         # images: list[torch.Tensor] | None,
     ) -> torch.Tensor:
         """Local forward pass.
@@ -245,8 +252,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 for _ in range(len(self.layers))
             ]
             
-        if attention:
-            attn_mtx = {}
             
         if self.pipeline_rank == 0:
             assert self.tok_embeddings is not None
@@ -293,11 +298,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 cache_view = cache.get_view(local_layer_id, cache_metadata)
             else:
                 cache_view = None
-
-            if attention:
-                h, attn_mtx[local_layer_id] = layer(h, freqs_cis, cache_view, attention = attention)
-            else:
-                h = layer(h, freqs_cis, cache_view)
+            h = layer(h, freqs_cis, cache_view)
                 
         if cache is not None:
             cache.update_seqlens(seqlens)
@@ -322,10 +323,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
             self.pos_to_keep = []
             
-            if not attention:
-                return normalized_h
-            else:
-                return normalized_h, attn_mtx
+            return normalized_h
+  
 
     def generate(
         self,
@@ -334,26 +333,17 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embeddings: torch.Tensor | None,
         cache: BufferCache | None,
         norm_wo_embeds: bool = False,
-        attention: bool = False
         # images: list[torch.Tensor | None,
     ) -> torch.Tensor:
-        if not attention:
-            h = self.generate_partial(
-                input_ids,
-                seqlens,
-                embeddings=embeddings,
-                cache=cache,
-                norm_wo_embeds=norm_wo_embeds,
-            )  # , images=images)
-        else:
-            h, attn_mtx = self.generate_partial(
-                input_ids,
-                seqlens,
-                embeddings=embeddings,
-                cache=cache,
-                norm_wo_embeds=norm_wo_embeds,
-                attention = attention
-            )
+        h = self.generate_partial(
+            input_ids,
+            seqlens,
+            embeddings=embeddings,
+            cache=cache,
+            norm_wo_embeds=norm_wo_embeds,
+        )  # , images=images)
+
+            
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             # ignore the intermediate activations as we'll get the final output from
             # the last stage
@@ -366,13 +356,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
         if self.num_pipeline_ranks > 1:
             torch.distributed.broadcast(outs, src=self.num_pipeline_ranks - 1)
 
-        if not attention:
-            if self.softmax_fp32:
-                return outs.float()
-            else:
-                return outs
-        else: 
-            return outs.float(), attn_mtx
+        if self.softmax_fp32:
+            return outs.float()
+        else:
+            return outs
+
 
     # def load_state_dict_for_inference(
     #     self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False
