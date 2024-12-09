@@ -391,6 +391,7 @@ class EmbedAugPipeline(nn.Module):
         param_dtype: torch.dtype = torch.float32,
     ):
 
+        
         lora_path = (
             ckpt_path + "/" + llm_name.lower() + "/consolidated/lora.safetensors"
         )
@@ -445,8 +446,10 @@ class EmbedAugPipeline(nn.Module):
 
         llm.load_lora(Path(lora_path), cross_att=pipeline_args.cross_att)
 
+     
         llm = llm.to(device)
         llm.eval()
+        
 
         if trainable_embedder:
             llm_embedder, _, llm_embed_dim = load_llm_model(
@@ -480,7 +483,8 @@ class EmbedAugPipeline(nn.Module):
             )
             embedding_model = llm_embedder.to(device)
             embedding_model.eval()
-
+            
+ 
         augmented_pipeline = EmbedAugPipeline(
             llm_name=llm_name,
             pipeline_args=pipeline_args,
@@ -548,6 +552,7 @@ class EmbedAugPipeline(nn.Module):
         temperature: float = 0.6,
         truncate_double_space: bool = False,
         device_generation: str | None = None,
+        attention: bool = False,
         **kwargs,
     ):
 
@@ -607,22 +612,21 @@ class EmbedAugPipeline(nn.Module):
             if self.model.mlp_project is not None:
                 cat_embeddings = self.model.mlp_project(
                     embeddings.to(self.pipeline_args.param_dtype)
-                ).to(device_generation)
+                )
             else:
-                cat_embeddings = embeddings.to(device_generation)
-                embeddings = embeddings.to(device_generation)
+                cat_embeddings = embeddings
 
             if not self.pipeline_args.dist_process:
-                embeddings = cat_embeddings.to(device_generation)
+                embeddings = cat_embeddings
 
         encoded_prompts = [
             self.tokenizer.encode(prompt, bos=True, eos=False) for prompt in prompts
         ]
         eos_id = self.tokenizer.eos_id
 
-        generated_tokens, logprobs = mistral_generate(
+        generated_tokens, attentions = mistral_generate(
             encoded_prompts=encoded_prompts,
-            embeddings=embeddings,
+            embeddings=embeddings.to(device_generation),
             model=self.model.llm.to(device_generation),
             max_tokens=max_tokens,
             temperature=temperature,
@@ -630,9 +634,11 @@ class EmbedAugPipeline(nn.Module):
             eos_id=eos_id,
             kv_seqlens=None if not self.pipeline_args.cross_att else kv_seqlens,
             norm_wo_embeds=self.pipeline_args.norm_wo_embeds,
-            cat_embeddings=cat_embeddings,
+            cat_embeddings=cat_embeddings.to(device_generation),
+            attention=attention,
             **kwargs,
         )
+        
         produced_text = [
             self.tokenizer.decode(generated_tokens[i])
             for i in range(len(generated_tokens))
@@ -646,7 +652,7 @@ class EmbedAugPipeline(nn.Module):
                 final_texts.append(text)
         else:
             final_texts = produced_text
-        return final_texts, logprobs
+        return final_texts, attentions
 
     @torch.inference_mode()
     def generate_llama(

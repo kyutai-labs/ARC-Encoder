@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 
@@ -50,6 +51,7 @@ class Attention(nn.Module):
         freqs_cis: torch.Tensor,
         cache: CacheView | None = None,
         mask: BlockDiagonalMask | None = None,
+        show_attention: bool = False,
     ) -> torch.Tensor:
         assert mask is None or cache is None
         seqlen_sum, _ = x.shape
@@ -80,14 +82,40 @@ class Attention(nn.Module):
 
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
-        output = memory_efficient_attention(
-            xq, key, val, mask if cache is None else cache.mask
-        )
-        output = output.view(seqlen_sum, self.n_heads * self.head_dim)
+        
+        if not show_attention:
+            output = memory_efficient_attention(
+                xq, key, val, mask if cache is None else cache.mask
+            )
+            output = output.view(seqlen_sum, self.n_heads * self.head_dim)
 
-        assert isinstance(output, torch.Tensor)
+            assert isinstance(output, torch.Tensor)
 
-        return self.wo(output)  # type: ignore
+            return self.wo(output)  # type: ignore
+        
+        else:
+            scale = 1 / xq.shape[-1] ** 0.5
+            xq = xq * scale
+            xq = xq.transpose(1, 2)
+            key = key.transpose(1, 2)
+            val = val.transpose(1, 2)
+            attn = xq @ key.transpose(-2, -1)
+            attn_bias = mask if cache is None else cache.mask 
+            attn_shape = attn.shape
+            if attn_bias is not None:
+                attn = attn + attn_bias.materialize(attn_shape).to(attn.device)
+                
+            attn = attn.softmax(-1)
+        
+            output = (attn @ val).transpose(1, 2)
+            
+            output = output.view(seqlen_sum, self.n_heads * self.head_dim)
+
+            assert isinstance(output, torch.Tensor)
+
+            return self.wo(output), attn  # type: ignore
+            
+            
 
 
 class FeedForward(nn.Module):
@@ -162,11 +190,22 @@ class TransformerBlock(nn.Module):
         freqs_cis: torch.Tensor,
         cache: CacheView | None = None,
         mask: BlockDiagonalMask | None = None,
+        attention: bool = False,
     ) -> torch.Tensor:
-        r = self.attention.forward(
-            self.attention_norm(x), freqs_cis, cache=cache, mask=mask
-        )
-        h = x + r
-        r = self.feed_forward.forward(self.ffn_norm(h))
-        out = h + r
-        return out
+        
+        if not attention:
+            r = self.attention.forward(
+                self.attention_norm(x), freqs_cis, cache=cache, mask=mask
+            )
+            h = x + r
+            r = self.feed_forward.forward(self.ffn_norm(h))
+            out = h + r
+            return out
+        else:
+            r, attn = self.attention.forward(
+                self.attention_norm(x), freqs_cis, cache=cache, mask=mask, show_attention=True
+            )
+            h = x + r
+            r = self.feed_forward.forward(self.ffn_norm(h))
+            out = h + r
+            return out, attn

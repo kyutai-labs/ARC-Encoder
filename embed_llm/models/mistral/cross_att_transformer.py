@@ -153,20 +153,35 @@ class Cross_AttTransformerBlock(nn.Module):
         cache: CacheView | None = None,
         self_mask: BlockDiagonalMask | None = None,
         cross_att_mask: BlockDiagonalMask | None = None,
+        attention: bool = False,
     ) -> torch.Tensor:
-
-        r = self.attention.forward(
-            self.attention_norm(x), freqs_cis, cache=cache, mask=self_mask
-        )
-        h = x + r
-
-        if xk is not None and xv is not None:
-            r = self.cross_attention.forward(
-                x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
+        if not attention:
+            r = self.attention.forward(
+                self.attention_norm(x), freqs_cis, cache=cache, mask=self_mask
             )
-            h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
-        out = self.feed_forward.forward(self.ffn_norm(h))
-        return out + h
+            h = x + r
+
+            if xk is not None and xv is not None:
+                r = self.cross_attention.forward(
+                    x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
+                )
+                h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
+            out = self.feed_forward.forward(self.ffn_norm(h))
+            return out + h
+        else:
+            r, attn_mtx = self.attention.forward(
+                self.attention_norm(x), freqs_cis, cache=cache, mask=self_mask, show_attention=True
+            )
+            h = x + r
+
+            if xk is not None and xv is not None:
+                r = self.cross_attention.forward(
+                    x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
+                )
+                h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
+            out = self.feed_forward.forward(self.ffn_norm(h))
+            return out + h, attn_mtx
+            
 
 
 class Transformer(ModelBase, LoRALoaderMixin):
@@ -378,6 +393,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         cache: BufferCache | None,
         cross_att_cache: CrossAttCache | None,
         cat_embeddings: torch.Tensor | None = None,
+        attention: bool = False,
         # images: list[torch.Tensor] | None,
     ) -> torch.Tensor:
         """Local forward pass.
@@ -403,7 +419,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 SimpleInputMetadata.from_seqlens(seqlens, self.device)
                 for _ in range(len(self.layers))
             ]
-
+        attn_mtx = {}
         if self.pipeline_rank == 0:
             assert self.tok_embeddings is not None
             # if self.vision_encoder is not None and images:
@@ -463,26 +479,49 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     ](embeddings)
                 elif embeddings is None:
                     xk, xv = None, None
-                h = layer(
-                    x=h,
-                    freqs_cis=freqs_cis,
-                    cache=cache_view,
-                    xk=xk,
-                    xv=xv,
-                    cross_att_mask=(
-                        None
-                        if cross_att_cache is None
-                        else cross_att_cache.get_mask(seqlens)
-                    ),
-                )
+                if not attention:
+                    h = layer(
+                        x=h,
+                        freqs_cis=freqs_cis,
+                        cache=cache_view,
+                        xk=xk,
+                        xv=xv,
+                        cross_att_mask=(
+                            None
+                            if cross_att_cache is None
+                            else cross_att_cache.get_mask(seqlens)
+                        ),
+                    )
+                else:
+                    h, attn_mtx[local_layer_id] = layer(
+                        x=h,
+                        freqs_cis=freqs_cis,
+                        cache=cache_view,
+                        xk=xk,
+                        xv=xv,
+                        cross_att_mask=(
+                            None
+                            if cross_att_cache is None
+                            else cross_att_cache.get_mask(seqlens)
+                        ),
+                        attention=attention,
+                    )
             else:
-                h = layer(x=h, freqs_cis=freqs_cis, cache=cache_view)
+                if attention: 
+                    h, attn_mtx[local_layer_id] = layer(
+                        x=h, freqs_cis=freqs_cis, cache=cache_view, attention=attention
+                    )
+                else:
+                    h = layer(x=h, freqs_cis=freqs_cis, cache=cache_view)
 
         if cache is not None:
             cache.update_seqlens(seqlens)
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             torch.distributed.send(h, dst=self.pipeline_rank + 1)
-            return h
+            if not attention:
+                return h
+            else:
+                return h, attn_mtx
         else:
             normalized_h = self.norm(h)
 
@@ -491,7 +530,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     torch.tensor(self.pos_to_keep, dtype=torch.bool)
                 ]
                 self.pos_to_keep = []
-            return normalized_h
+            if not attention:
+                return normalized_h
+            else:
+                return normalized_h, attn_mtx
+                
 
     def generate(
         self,
@@ -501,6 +544,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embeddings: torch.Tensor | None,
         cache: BufferCache | None,
         cat_embeddings: torch.Tensor | None = None,
+        attention: bool = False,
         # images: list[torch.Tensor | None,
     ) -> torch.Tensor:
         cross_att_cache = (
@@ -513,14 +557,25 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 kv_seqlens=kv_seqlens,
             )
         )
-        h = self.generate_partial(
-            input_ids,
-            seqlens,
-            embeddings=embeddings,
-            cache=cache,
-            cross_att_cache=cross_att_cache,
-            cat_embeddings=cat_embeddings,
-        )  # , images=images)
+        if not attention:
+            h = self.generate_partial(
+                input_ids,
+                seqlens,
+                embeddings=embeddings,
+                cache=cache,
+                cross_att_cache=cross_att_cache,
+                cat_embeddings=cat_embeddings,
+            )  # , images=images)
+        else:
+            h, attn_mtx = self.generate_partial(
+                input_ids,
+                seqlens,
+                embeddings=embeddings,
+                cache=cache,
+                cross_att_cache=cross_att_cache,
+                cat_embeddings=cat_embeddings,
+                attention=attention,
+            )
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             # ignore the intermediate activations as we'll get the final output from
             # the last stage
@@ -532,8 +587,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
             outs = self.output(h)
         if self.num_pipeline_ranks > 1:
             torch.distributed.broadcast(outs, src=self.num_pipeline_ranks - 1)
-        return outs.float()
-
+            
+        if attention:
+            return outs.float(), attn_mtx
+        else:
+            return outs.float()
 
 def positions_from_sizes(sizes: Iterable[int], device):
     return torch.tensor(

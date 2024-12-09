@@ -20,6 +20,7 @@ def generate(
     norm_wo_embeds: bool = False,
     kv_seqlens: list[int] | None = None,
     cat_embeddings: torch.Tensor | None = None,
+    attention: bool = False,
     **kwargs,
 ) -> tuple[list[list[int]], list[list[float]]]:
     # images_torch: list[list[torch.Tensor]] = []
@@ -29,6 +30,9 @@ def generate(
     #         [torch.tensor(im, device=model.device, dtype=model.dtype) for im in images_for_sample]
     #         for images_for_sample in images
     #     ]
+    
+    if attention: 
+        attn_dict = {}
 
     if len(encoded_prompts) > 0 and not isinstance(encoded_prompts[0], list):
         encoded_prompts = [encoded_prompts]
@@ -135,22 +139,47 @@ def generate(
             break
 
         generated_tensors.append(next_token[:, None])
-        if isinstance(model, Transformer):
-            last_token_prelogits = model.generate(
-                next_token,
-                seqlens=[1] * B,
-                embeddings=cat_embeddings,
-                cache=cache,
-                norm_wo_embeds=norm_wo_embeds,
-            )
-        elif isinstance(model, CrossAttTransformer):
-            last_token_prelogits = model.generate(
-                next_token,
-                seqlens=[1] * B,
-                embeddings=embeddings,
-                kv_seqlens=kv_seqlens,
-                cache=cache,
-            )
+        
+        if not attention:
+            if isinstance(model, Transformer):
+                last_token_prelogits = model.generate(
+                    next_token,
+                    seqlens=[1] * B,
+                    embeddings=cat_embeddings,
+                    cache=cache,
+                    norm_wo_embeds=norm_wo_embeds,
+                )
+            elif isinstance(model, CrossAttTransformer):
+                last_token_prelogits = model.generate(
+                    next_token,
+                    seqlens=[1] * B,
+                    embeddings=embeddings,
+                    kv_seqlens=kv_seqlens,
+                    cache=cache,
+                )
+        else:
+            if isinstance(model, Transformer):
+                last_token_prelogits, attn = model.generate(
+                    next_token,
+                    seqlens=[1] * B,
+                    embeddings=cat_embeddings,
+                    cache=cache,
+                    norm_wo_embeds=norm_wo_embeds,
+                    attention = True,
+                )
+            elif isinstance(model, CrossAttTransformer):
+                last_token_prelogits, attn = model.generate(
+                    next_token,
+                    seqlens=[1] * B,
+                    embeddings=embeddings,
+                    kv_seqlens=kv_seqlens,
+                    cache=cache,
+                    attention = True,
+                )
+    
+            attn_dict[str(j)] = {}
+            attn_dict[str(j)]['attn'] = attn
+            attn_dict[str(j)]['tokens'] = torch.cat(generated_tensors, 1).tolist()
 
         assert last_token_prelogits.shape == (
             B,
@@ -168,7 +197,10 @@ def generate(
     else:
         logprobs = []
 
-    return generated_tokens, logprobs
+    if not attention:
+        return generated_tokens, logprobs
+    else:
+        return generated_tokens,  attn_dict
 
 
 def sample(logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:
