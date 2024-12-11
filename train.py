@@ -16,6 +16,7 @@ import time
 from torch.autograd.profiler import profile, record_function
 import subprocess as sp
 
+from embed_llm.generation.evaluation import evaluate_model
 from embed_llm.models.wrapped_models_training import load_training_model
 from embed_llm.retrieval.embeddings import get_pretrained_embedder
 from embed_llm.training.args import TrainArgs
@@ -406,6 +407,7 @@ def _train(
                 dtype=param_dtype,
             )
 
+    evaluate_model(args.exp_name, ckpt=state.step)
     main_logger_info("done!")
 
 

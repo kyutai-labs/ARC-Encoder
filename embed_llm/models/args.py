@@ -46,6 +46,8 @@ class EmbedAugArgs(Serializable):
     cross_att_layers: int | None = None
     do_both: bool = False
     dist_process: bool = False
+    pooled_cross_att: bool = False
+    every_cross_att: int | None = None
 
 
 @dataclass
@@ -72,6 +74,8 @@ class MistralModelArgs(Serializable):
     # Parameters specific for cross-attention models
     start_cross_att: int | None = None
     shared_kv: bool = True
+    pooled_cross_att: bool = False
+    every_cross_att: int | None = None
     # vision_encoder: VisionEncoderArgs] | None = None
     """ If adding new args take care giving it to load args """
 

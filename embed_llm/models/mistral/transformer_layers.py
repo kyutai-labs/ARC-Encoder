@@ -82,7 +82,7 @@ class Attention(nn.Module):
 
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
-        
+
         if not show_attention:
             output = memory_efficient_attention(
                 xq, key, val, mask if cache is None else cache.mask
@@ -92,7 +92,7 @@ class Attention(nn.Module):
             assert isinstance(output, torch.Tensor)
 
             return self.wo(output)  # type: ignore
-        
+
         else:
             scale = 1 / xq.shape[-1] ** 0.5
             xq = xq * scale
@@ -100,11 +100,11 @@ class Attention(nn.Module):
             key = key.transpose(1, 2)
             val = val.transpose(1, 2)
             attn = xq @ key.transpose(-2, -1)
-            attn_bias = mask if cache is None else cache.mask 
+            attn_bias = mask if cache is None else cache.mask
             attn_shape = attn.shape
             if attn_bias is not None:
                 attn = attn + attn_bias.materialize(attn_shape).to(attn.device)
-                
+
             attn = attn.softmax(-1)
             output = (attn @ val).transpose(1, 2)
             output = output.reshape(seqlen_sum, self.n_heads * self.head_dim)
@@ -112,8 +112,6 @@ class Attention(nn.Module):
             assert isinstance(output, torch.Tensor)
 
             return self.wo(output), attn  # type: ignore
-            
-            
 
 
 class FeedForward(nn.Module):
@@ -190,7 +188,7 @@ class TransformerBlock(nn.Module):
         mask: BlockDiagonalMask | None = None,
         show_attention: bool = False,
     ) -> torch.Tensor:
-        
+
         if not show_attention:
             r = self.attention.forward(
                 self.attention_norm(x), freqs_cis, cache=cache, mask=mask
@@ -201,7 +199,11 @@ class TransformerBlock(nn.Module):
             return out
         else:
             r, attn = self.attention.forward(
-                self.attention_norm(x), freqs_cis, cache=cache, mask=mask, show_attention=True
+                self.attention_norm(x),
+                freqs_cis,
+                cache=cache,
+                mask=mask,
+                show_attention=True,
             )
             h = x + r
             r = self.feed_forward.forward(self.ffn_norm(h))

@@ -391,7 +391,6 @@ class EmbedAugPipeline(nn.Module):
         param_dtype: torch.dtype = torch.float32,
     ):
 
-        
         lora_path = (
             ckpt_path + "/" + llm_name.lower() + "/consolidated/lora.safetensors"
         )
@@ -446,10 +445,8 @@ class EmbedAugPipeline(nn.Module):
 
         llm.load_lora(Path(lora_path), cross_att=pipeline_args.cross_att)
 
-     
         llm = llm.to(device)
         llm.eval()
-        
 
         if trainable_embedder:
             llm_embedder, _, llm_embed_dim = load_llm_model(
@@ -483,8 +480,7 @@ class EmbedAugPipeline(nn.Module):
             )
             embedding_model = llm_embedder.to(device)
             embedding_model.eval()
-            
- 
+
         augmented_pipeline = EmbedAugPipeline(
             llm_name=llm_name,
             pipeline_args=pipeline_args,
@@ -495,6 +491,7 @@ class EmbedAugPipeline(nn.Module):
             pad_token_id=tokenizer.pad_id,
         )
 
+        # Experiment using full cross-attention
         if pipeline_args.cross_att and not pipeline_args.do_pool:
             augmented_pipeline.pipeline_args.pooling_module = None
 
@@ -503,8 +500,7 @@ class EmbedAugPipeline(nn.Module):
         if trainable_embedder and not pipeline_args.cross_att:
             if (
                 pipeline_args.do_pool
-                and augmented_pipeline.pipeline_args.pooling_module.type
-                == "latent_attention"
+                and "attention" in augmented_pipeline.pipeline_args.pooling_module.type
             ):
                 state_dict = load_state_dict(
                     Path(pooling_module_path), dtype=param_dtype
@@ -638,7 +634,7 @@ class EmbedAugPipeline(nn.Module):
             attention=attention,
             **kwargs,
         )
-        
+
         produced_text = [
             self.tokenizer.decode(generated_tokens[i])
             for i in range(len(generated_tokens))
@@ -652,10 +648,10 @@ class EmbedAugPipeline(nn.Module):
                 final_texts.append(text)
         else:
             final_texts = produced_text
-            
+
         if kwargs.get("return_embeddings", False):
             return final_texts, attentions, embeddings
-        
+
         return final_texts, attentions
 
     @torch.inference_mode()
@@ -783,7 +779,9 @@ def load_args(
                 if pipeline_args.cross_att_layers is None
                 else max(args["n_layers"] - pipeline_args.cross_att_layers, 0)
             ),
+            every_cross_att=pipeline_args.every_cross_att,
             shared_kv=True if pipeline_args.shared_kv else False,
+            pooled_cross_att=True if pipeline_args.pooled_cross_att else False,
         )
 
         if args.get("rope_theta") is not None:

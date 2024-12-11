@@ -51,9 +51,8 @@ def main(args):
         config["pipeline"]["do_both"] = args.do_both
         config["pipeline"]["shared_kv"] = args.shared_kv
         config["pipeline"]["cross_att"] = args.cross_att
-        config["pipeline"]["cross_att_layers"] = (
-            None if args.cross_att_layers is None else args.cross_att_layers
-        )
+        config["pipeline"]["cross_att_layers"] = args.cross_att_layers
+        config["pipeline"]["every_cross_att"] = args.every_cross_att
         if args.do_both:
             config["pipeline"]["dist_process"] = args.dist_process
 
@@ -322,6 +321,13 @@ def arg_parser():
         "--dist_process",
         action="store_true",
         help="Whether to distinctively process embeddings",
+    )
+
+    parser.add_argument(
+        "--every_cross_att",
+        type=int,
+        default=None,
+        help="Every n layers to apply cross-attention",
     )
 
     return parser.parse_args()

@@ -12,3 +12,4 @@ config/experiments
 config/old
 embed_llm.egg-info
 *_experiments.sh
+tests.ipynb

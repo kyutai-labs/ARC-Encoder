@@ -4,6 +4,8 @@ from functools import partial, reduce
 from dataclasses import dataclass
 import torch
 from torch import nn
+import torch.nn.functional as F
+import numpy as np
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
@@ -45,6 +47,28 @@ class SimpleInputMetadata:
                 device=device, dtype=torch.long
             )
         )
+
+
+class Pooled_Cross_Attention(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+    ):
+        super().__init__()
+        self.up = nn.Linear(dim, dim // 4, bias=False)
+        self.down = nn.Linear(dim // 4, dim, bias=False)
+
+    def forward(
+        self,
+        embedding: torch.Tensor,
+        seqlen: list[int],
+    ) -> torch.Tensor:
+        x = self.up(embedding)
+        output = self.down(x)
+        output = torch.repeat_interleave(
+            output, repeats=torch.tensor(seqlen).to(output.device), dim=0
+        )
+        return output
 
 
 class Cross_Attention(nn.Module):
@@ -89,6 +113,7 @@ class Cross_Attention(nn.Module):
 
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
+
         output = memory_efficient_attention(xq, key, val, mask)
         output = output.view(seqlen_sum, self.n_heads * self.head_dim)
 
@@ -108,6 +133,7 @@ class Cross_AttTransformerBlock(nn.Module):
         norm_eps: float,
         lora: LoraArgs | None = None,
         moe: MoeArgs | None = None,
+        pooled_cross_att: bool = False,
     ):
         super().__init__()
         self.n_heads = n_heads
@@ -120,14 +146,22 @@ class Cross_AttTransformerBlock(nn.Module):
             lora=lora,
         )
 
-        self.cross_attention = Cross_Attention(
-            dim=dim,
-            n_heads=n_heads,
-            head_dim=head_dim,
-            n_kv_heads=n_kv_heads,
-        )
+        if not pooled_cross_att:
+            self.cross_attention = Cross_Attention(
+                dim=dim,
+                n_heads=n_heads,
+                head_dim=head_dim,
+                n_kv_heads=n_kv_heads,
+            )
+            self.gate = MLP_block(
+                in_dim=dim, out_dim=dim, act="gelu", dtype=torch.bfloat16
+            )
+        else:
+            self.cross_attention = Pooled_Cross_Attention(dim=dim)
+            self.gate = nn.Linear(dim, dim, bias=False)
 
-        self.gate = MLP_block(in_dim=dim, out_dim=dim, act="gelu", dtype=torch.bfloat16)
+        self.pooled_cross_att = pooled_cross_att
+
         self.attention_norm = RMSNorm(dim, eps=norm_eps)
         self.ffn_norm = RMSNorm(dim, eps=norm_eps)
 
@@ -148,40 +182,54 @@ class Cross_AttTransformerBlock(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
-        xk: torch.Tensor | None,
-        xv: torch.Tensor | None,
+        xk: torch.Tensor | None = None,
+        xv: torch.Tensor | None = None,
         cache: CacheView | None = None,
-        self_mask: BlockDiagonalMask | None = None,
+        self_mask: BlockDiagonalCausalMask | None = None,
         cross_att_mask: BlockDiagonalMask | None = None,
         show_attention: bool = False,
+        pool_att_embds: torch.Tensor | None = None,
     ) -> torch.Tensor:
         if not show_attention:
             r = self.attention.forward(
                 self.attention_norm(x), freqs_cis, cache=cache, mask=self_mask
             )
-            h = x + r
 
-            if xk is not None and xv is not None:
-                r = self.cross_attention.forward(
-                    x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
-                )
-                h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
-            out = self.feed_forward.forward(self.ffn_norm(h))
-            return out + h
         else:
             r, attn_mtx = self.attention.forward(
-                self.attention_norm(x), freqs_cis, cache=cache, mask=self_mask, show_attention=True
+                self.attention_norm(x),
+                freqs_cis,
+                cache=cache,
+                mask=self_mask,
+                show_attention=True,
             )
-            h = x + r
+        h = x + r
 
+        if not self.pooled_cross_att:
             if xk is not None and xv is not None:
                 r = self.cross_attention.forward(
                     x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
                 )
+
                 h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
-            out = self.feed_forward.forward(self.ffn_norm(h))
-            return out + h, attn_mtx
-            
+        else:
+            assert pool_att_embds is not None
+            r = self.cross_attention.forward(
+                embedding=pool_att_embds,
+                seqlen=(
+                    [h.shape[0]]
+                    if self_mask is None
+                    else list(np.diff(np.array(self_mask.q_seqinfo.seqstart_py)))
+                ),
+            )
+            h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
+
+        out = self.feed_forward.forward(self.ffn_norm(h))
+
+        if not show_attention:
+            return h + out
+        else:
+            return h + out, attn_mtx
 
 
 class Transformer(ModelBase, LoRALoaderMixin):
@@ -203,14 +251,21 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
         layers = []
         self.start_cross_att = (
-            self.n_layers // 2 if args.start_cross_att is None else args.start_cross_att
+            self.n_layers // 2
+            if (args.start_cross_att is None and args.every_cross_att is None)
+            else args.start_cross_att
         )
+        self.every_cross_att = args.every_cross_att
+        assert (
+            self.every_cross_att is None or self.start_cross_att is None
+        ), "Cannot have both start_cross_att and every_cross_att"
 
         self.do_both = False
 
+        self.cross_att_layers_id = []
         for i in range(args.n_layers):
 
-            if i >= self.start_cross_att:
+            if self.start_cross_att is not None and i >= self.start_cross_att:
                 block: torch.nn.Module = Cross_AttTransformerBlock(
                     dim=args.dim,
                     hidden_dim=args.hidden_dim,
@@ -220,7 +275,22 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     norm_eps=args.norm_eps,
                     lora=args.lora,
                     moe=args.moe,
+                    pooled_cross_att=args.pooled_cross_att,
                 )
+                self.cross_att_layers_id.append(i)
+            elif self.every_cross_att is not None and i % self.every_cross_att == 0:
+                block: torch.nn.Module = Cross_AttTransformerBlock(
+                    dim=args.dim,
+                    hidden_dim=args.hidden_dim,
+                    n_heads=args.n_heads,
+                    n_kv_heads=args.n_kv_heads,
+                    head_dim=args.head_dim,
+                    norm_eps=args.norm_eps,
+                    lora=args.lora,
+                    moe=args.moe,
+                    pooled_cross_att=args.pooled_cross_att,
+                )
+                self.cross_att_layers_id.append(i)
             else:
                 block = TransformerBlock(
                     dim=args.dim,
@@ -246,10 +316,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
         self.shared_kv = args.shared_kv
-        if self.shared_kv:
+        if self.shared_kv and not args.pooled_cross_att:
             self.to_k = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
             self.to_v = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
-        else:
+        elif not args.pooled_cross_att:
             k_layers = {}
             v_layers = {}
             for i in range(args.n_layers):
@@ -353,61 +423,85 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
-        if embeddings is not None and self.shared_kv:
+        if embeddings is not None and self.shared_kv and not self.args.pooled_cross_att:
             xk, xv = self.to_k(embeddings), self.to_v(embeddings)
 
         if not show_attention:
             for i in range(self.n_layers):
-                if i >= self.start_cross_att:
-                    if embeddings is not None and not self.shared_kv:
-                        xk, xv = self.to_k[str(i)](embeddings), self.to_v[str(i)](
-                            embeddings
-                        )
-                    elif embeddings is None:
-                        xk, xv = None, None
+                if i in self.cross_att_layers_id:
+                    if not self.args.pooled_cross_att:
+                        if embeddings is not None and not self.shared_kv:
+                            xk, xv = self.to_k[str(i)](embeddings), self.to_v[str(i)](
+                                embeddings
+                            )
+                        elif embeddings is None:
+                            xk, xv = None, None
 
-                    h = self.layers[str(i)](
-                        x=h,
-                        freqs_cis=freqs_cis,
-                        self_mask=self_att_mask,
-                        cross_att_mask=cross_att_mask,
-                        xk=xk,
-                        xv=xv,
-                    )
+                        h = self.layers[str(i)](
+                            x=h,
+                            freqs_cis=freqs_cis,
+                            self_mask=self_att_mask,
+                            cross_att_mask=cross_att_mask,
+                            xk=xk,
+                            xv=xv,
+                        )
+                    else:
+                        h = self.layers[str(i)](
+                            x=h,
+                            freqs_cis=freqs_cis,
+                            self_mask=self_att_mask,
+                            pool_att_embds=embeddings,
+                        )
                 else:
-                    h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
+                    h = self.layers[str(i)](
+                        x=h, freqs_cis=freqs_cis, mask=self_att_mask
+                    )
         else:
             attn_mtx = []
             for i in range(self.n_layers):
-                if i >= self.start_cross_att:
-                    if embeddings is not None and not self.shared_kv:
-                        xk, xv = self.to_k[str(i)](embeddings), self.to_v[str(i)](
-                            embeddings
-                        )
-                    elif embeddings is None:
-                        xk, xv = None, None
+                if i in self.cross_att_layers_id:
+                    if not self.args.pooled_cross_att:
+                        if embeddings is not None and not self.shared_kv:
+                            xk, xv = self.to_k[str(i)](embeddings), self.to_v[str(i)](
+                                embeddings
+                            )
+                        elif embeddings is None:
+                            xk, xv = None, None
 
+                        h = self.layers[str(i)](
+                            x=h,
+                            freqs_cis=freqs_cis,
+                            self_mask=self_att_mask,
+                            cross_att_mask=cross_att_mask,
+                            xk=xk,
+                            xv=xv,
+                        )
+                    else:
+                        h = self.layers[str(i)](
+                            x=h,
+                            freqs_cis=freqs_cis,
+                            self_mask=self_att_mask,
+                            pool_att_embds=embeddings,
+                        )
+                else:
                     h, attn_mat = self.layers[str(i)](
                         x=h,
                         freqs_cis=freqs_cis,
-                        self_mask=self_att_mask,
-                        cross_att_mask=cross_att_mask,
-                        xk=xk,
-                        xv=xv,
+                        mask=self_att_mask,
                         show_attention=True,
                     )
-                else:
-                    h, attn_mat = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask, show_attention=True)
                 attn_mtx.append(attn_mat)
+            self.pos_to_keep = []
             return attn_mtx
-        
+
         normalized_h = self.norm(h)
 
         if cat_embeddings is not None and self.do_both:
             normalized_h = normalized_h[
                 torch.tensor(self.pos_to_keep, dtype=torch.bool)
             ]
-            self.pos_to_keep = []
+
+        self.pos_to_keep = []
 
         return self.output(normalized_h).float()
 
@@ -445,7 +539,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 SimpleInputMetadata.from_seqlens(seqlens, self.device)
                 for _ in range(len(self.layers))
             ]
-        attn_mtx = {}
         if self.pipeline_rank == 0:
             assert self.tok_embeddings is not None
             # if self.vision_encoder is not None and images:
@@ -482,7 +575,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         # freqs_cis is always the same for every layer
         freqs_cis = self.freqs_cis[input_metadata[0].positions]
-        if embeddings is not None and self.shared_kv:
+        if embeddings is not None and self.shared_kv and not self.args.pooled_cross_att:
             if not cross_att_cache.full:
                 xk, xv = self.to_k(embeddings), self.to_v(embeddings)
                 cross_att_cache.fill(xk, xv)
@@ -498,26 +591,35 @@ class Transformer(ModelBase, LoRALoaderMixin):
             else:
                 cache_view = None
 
-            if local_layer_id >= self.start_cross_att:
-                if embeddings is not None and not self.shared_kv:
-                    xk, xv = self.to_k[str(local_layer_id)](embeddings), self.to_v[
-                        str(local_layer_id)
-                    ](embeddings)
-                elif embeddings is None:
-                    xk, xv = None, None
+            if local_layer_id in self.cross_att_layers_id:
+                if not self.args.pooled_cross_att:
+                    if embeddings is not None and not self.shared_kv:
+                        xk, xv = self.to_k[str(local_layer_id)](embeddings), self.to_v[
+                            str(local_layer_id)
+                        ](embeddings)
+                    elif embeddings is None:
+                        xk, xv = None, None
 
-                h = layer(
-                    x=h,
-                    freqs_cis=freqs_cis,
-                    cache=cache_view,
-                    xk=xk,
-                    xv=xv,
-                    cross_att_mask=(
-                        None
-                        if cross_att_cache is None
-                        else cross_att_cache.get_mask(seqlens)
-                    ),
-                )
+                    h = layer(
+                        x=h,
+                        freqs_cis=freqs_cis,
+                        cache=cache_view,
+                        xk=xk,
+                        xv=xv,
+                        cross_att_mask=(
+                            None
+                            if cross_att_cache is None
+                            else cross_att_cache.get_mask(seqlens)
+                        ),
+                    )
+                else:
+                    h = layer(
+                        x=h,
+                        freqs_cis=freqs_cis,
+                        cache=cache_view,
+                        pool_att_embds=embeddings,
+                    )
+
             else:
                 h = layer(x=h, freqs_cis=freqs_cis, cache=cache_view)
 
@@ -526,7 +628,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             torch.distributed.send(h, dst=self.pipeline_rank + 1)
             return h
-      
+
         else:
             normalized_h = self.norm(h)
 
@@ -534,10 +636,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 normalized_h = normalized_h[
                     torch.tensor(self.pos_to_keep, dtype=torch.bool)
                 ]
-                self.pos_to_keep = []
+            self.pos_to_keep = []
             return normalized_h
-   
-                
 
     def generate(
         self,
@@ -547,7 +647,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embeddings: torch.Tensor | None,
         cache: BufferCache | None,
         cat_embeddings: torch.Tensor | None = None,
-        # images: list[torch.Tensor | None,
     ) -> torch.Tensor:
         cross_att_cache = (
             None
@@ -566,7 +665,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             cache=cache,
             cross_att_cache=cross_att_cache,
             cat_embeddings=cat_embeddings,
-        )  # , images=images)
+        )  # , images=images
 
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             # ignore the intermediate activations as we'll get the final output from
@@ -579,8 +678,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
             outs = self.output(h)
         if self.num_pipeline_ranks > 1:
             torch.distributed.broadcast(outs, src=self.num_pipeline_ranks - 1)
-            
+
         return outs.float()
+
 
 def positions_from_sizes(sizes: Iterable[int], device):
     return torch.tensor(

@@ -197,8 +197,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
         else:
             attn_mtx = []
             for i in range(self.n_layers):
-                h, attn_mat = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=att_mask, show_attention= True)
+                h, attn_mat = self.layers[str(i)](
+                    x=h, freqs_cis=freqs_cis, mask=att_mask, show_attention=True
+                )
                 attn_mtx.append(attn_mat)
+            self.pos_to_keep = []
             return attn_mtx
 
         assert self.norm is not None
@@ -232,7 +235,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         If doing pipeline parallelism, this will return the activations of the last layer of this stage.
         For the last stage, this will return the normalized final embeddings.
         """
-        
+
         assert (
             len(seqlens) <= self.args.max_batch_size
         ), f"Max batch size is {self.args.max_batch_size}, got batch size of {len(seqlens)}"
@@ -251,8 +254,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 SimpleInputMetadata.from_seqlens(seqlens, self.device)
                 for _ in range(len(self.layers))
             ]
-            
-            
+
         if self.pipeline_rank == 0:
             assert self.tok_embeddings is not None
             # if self.vision_encoder is not None and images:
@@ -299,7 +301,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             else:
                 cache_view = None
             h = layer(h, freqs_cis, cache_view)
-                
+
         if cache is not None:
             cache.update_seqlens(seqlens)
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
@@ -322,9 +324,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 normalized_h = self.norm(h)
 
             self.pos_to_keep = []
-            
+
             return normalized_h
-  
 
     def generate(
         self,
@@ -343,7 +344,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
             norm_wo_embeds=norm_wo_embeds,
         )  # , images=images)
 
-            
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             # ignore the intermediate activations as we'll get the final output from
             # the last stage
@@ -360,7 +360,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
             return outs.float()
         else:
             return outs
-
 
     # def load_state_dict_for_inference(
     #     self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False
