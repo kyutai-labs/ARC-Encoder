@@ -267,14 +267,14 @@ class LatentAttention(nn.Module):
     def forward(self, queries: torch.Tensor, seqlens: list[int]) -> torch.Tensor:
         b = len(seqlens)
         x = repeat(self.latents, "r d -> (b r) d", b=b)
-        
-        r =  self.cross_attend_block(
-                queries,
-                context=x,
-                mask=BlockDiagonalMask.from_seqlens(
-                    q_seqlen=seqlens, kv_seqlen=[self.r] * b
-                ),
-            )
+
+        r = self.cross_attend_block(
+            queries,
+            context=x,
+            mask=BlockDiagonalMask.from_seqlens(
+                q_seqlen=seqlens, kv_seqlen=[self.r] * b
+            ),
+        )
         hiddens = r + queries
 
         for i in range(self.n_layers):

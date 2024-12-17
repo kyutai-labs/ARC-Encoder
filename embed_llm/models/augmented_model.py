@@ -256,7 +256,7 @@ class EmbedAugPipeline(nn.Module):
         self.pipeline_args = pipeline_args
         self.model = None
         self.generate = None
-        
+
     def get_model(self, llm: object) -> nn.Module:
         return EmbedAugModel(
             llm_name=self.llm_name,
@@ -272,11 +272,15 @@ class EmbedAugPipeline(nn.Module):
         self.model = model
 
     def prepare_forward(
-        self, batch: Batch, batch_size: int, continuation: bool = False, mlm: bool = False
+        self,
+        batch: Batch,
+        batch_size: int,
+        continuation: bool = False,
+        mlm: bool = False,
     ) -> tuple:
 
         embed_seqlens = []
-        
+
         if mlm:
             x = []
             y = []
@@ -284,21 +288,17 @@ class EmbedAugPipeline(nn.Module):
             y_mask = None
             seqlens = []
             cur_pos = 0
-     
-           
-            
-            if  self.pipeline_args.trainable_embedder:
+
+            if self.pipeline_args.trainable_embedder:
                 embeddings = []
                 embed_seqlens = []
 
-
-                
             for i, size in enumerate(batch.sizes):
                 new_text_tokens = []
-                
+
                 if int(size * 0.15) == 0:
                     continue
-                
+
                 start = np.random.randint(0, size - int(size * 0.15))
                 learned_ids = np.arange(start, start + int(size * 0.15))
                 # learned_ids = np.random.choice(
@@ -310,36 +310,42 @@ class EmbedAugPipeline(nn.Module):
                 random_ids = np.random.choice(
                     learned_ids, size=int(len(learned_ids) * 0.1), replace=False
                 )
-                x.extend(np.array(batch.x[cur_pos:cur_pos+size])[learned_ids])
-                y.extend(np.array(batch.y[cur_pos:cur_pos+size])[learned_ids])
+                x.extend(np.array(batch.x[cur_pos : cur_pos + size])[learned_ids])
+                y.extend(np.array(batch.y[cur_pos : cur_pos + size])[learned_ids])
                 seqlens.append(len(learned_ids))
                 cur_pos += size
-                
-                text_tokens = self.tokenizer.encode(batch.texts[i], bos=False, eos=False)
-                
+
+                text_tokens = self.tokenizer.encode(
+                    batch.texts[i], bos=False, eos=False
+                )
+
                 for i, token in enumerate(text_tokens):
                     if i in learned_ids:
                         if i in masked_ids:
                             new_text_tokens.append(0)
                         elif i in random_ids:
-                            new_text_tokens.append(np.random.randint(self.tokenizer.n_words))
+                            new_text_tokens.append(
+                                np.random.randint(self.tokenizer.n_words)
+                            )
                         else:
                             new_text_tokens.append(token)
                     else:
                         new_text_tokens.append(token)
-                if  self.pipeline_args.trainable_embedder:
+                if self.pipeline_args.trainable_embedder:
                     embeddings.extend(new_text_tokens)
                     embed_seqlens.append(len(new_text_tokens))
-                    
+
                 texts.append(self.tokenizer.decode(new_text_tokens))
             x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
             y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
-            if  self.pipeline_args.trainable_embedder:
-                embeddings = torch.from_numpy(np.array(embeddings)).cuda(non_blocking=True)
+            if self.pipeline_args.trainable_embedder:
+                embeddings = torch.from_numpy(np.array(embeddings)).cuda(
+                    non_blocking=True
+                )
 
         else:
             texts = batch.texts
-            
+
         if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
             # To avoid OOM
             with torch.no_grad():
@@ -402,8 +408,7 @@ class EmbedAugPipeline(nn.Module):
         else:
             if continuation and not mlm:
                 input_ids_for_embedder = [
-                    self.tokenizer.encode(text, bos=True, eos=False)
-                    for text in texts
+                    self.tokenizer.encode(text, bos=True, eos=False) for text in texts
                 ]
                 embed_seqlens = [len(tokens) for tokens in input_ids_for_embedder]
                 embeddings = torch.from_numpy(
@@ -426,7 +431,6 @@ class EmbedAugPipeline(nn.Module):
                 else None
             )
             seqlens = batch.sizes
-    
 
         # Cross attention not supported no need to compute kv_seqlens
         elif "llama" in self.llm_name or "gemma" in self.llm_name:
@@ -564,8 +568,7 @@ class EmbedAugPipeline(nn.Module):
             augmented_pipeline.pipeline_args.pooling_module = None
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
-     
-        
+
         if trainable_embedder and pipeline_args.do_pool:
             if (
                 pipeline_args.do_pool
@@ -691,7 +694,7 @@ class EmbedAugPipeline(nn.Module):
 
         generated_tokens, attentions = mistral_generate(
             encoded_prompts=encoded_prompts,
-            embeddings= None if embeddings is None else embeddings.to(device_generation),
+            embeddings=None if embeddings is None else embeddings.to(device_generation),
             model=self.model.llm.to(device_generation),
             max_tokens=max_tokens,
             temperature=temperature,
@@ -699,7 +702,9 @@ class EmbedAugPipeline(nn.Module):
             eos_id=eos_id,
             kv_seqlens=None if not self.pipeline_args.cross_att else kv_seqlens,
             norm_wo_embeds=self.pipeline_args.norm_wo_embeds,
-            cat_embeddings=None if cat_embeddings is None else cat_embeddings.to(device_generation),
+            cat_embeddings=(
+                None if cat_embeddings is None else cat_embeddings.to(device_generation)
+            ),
             attention=attention,
             **kwargs,
         )

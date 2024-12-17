@@ -270,7 +270,7 @@ def _train(
         pipeline.prepare_forward,
         batch_size=args.batch_size,
         continuation=args.pipeline.continuation,
-        mlm = args.pipeline.mlm,
+        mlm=args.pipeline.mlm,
     )
 
     main_logger_info("Start training")
@@ -300,15 +300,13 @@ def _train(
             # start_time = time.time()
 
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
-        
+
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
 
             output = model.forward(
                 x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens
             )
-            
-            
 
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()
@@ -361,7 +359,7 @@ def _train(
 
         last_lr = scheduler.get_last_lr()[0]
         scheduler.step()
-        
+
         # Host sync
         loss_item = loss.item()
         avg_loss = avg_aggregate(loss_item)
@@ -412,7 +410,7 @@ def _train(
                 dtype=param_dtype,
             )
 
-    evaluate_model(args.exp_name)
+    evaluate_model(args.exp_name, ckpt=args.max_steps, pipeline=pipeline)
     main_logger_info("done!")
 
 

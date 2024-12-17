@@ -120,21 +120,17 @@ def main(args):
             str(args.n_truncated_layers) + "_TRUNC_" if args.train_embedder else ""
         )
         if args.cross_att and args.cross_att_layers:
-            cross_att = (
-                str(args.cross_att_layers) + "_CAL_atend_" 
-            )
+            cross_att = str(args.cross_att_layers) + "_CAL_atend_"
         elif args.cross_att and args.every_cross_att:
-            cross_att = (
-                str(args.every_cross_att) + "_CAL_every_" 
-            )
-            
+            cross_att = str(args.every_cross_att) + "_CAL_every_"
+
         if args.mlm:
-            learn_type = 'MLM'
+            learn_type = "MLM"
         elif args.continuation:
-            learn_type = 'CONT'
+            learn_type = "CONT"
         else:
-            learn_type = ''
-            
+            learn_type = ""
+
         name = (
             "LT_FN_"
             + str(args.train_embedder)
@@ -343,10 +339,14 @@ def arg_parser():
         default=None,
         help="Every n layers to apply cross-attention",
     )
-    
-    parser.add_argument('--mlm', action='store_true', help='Whether to use MLM loss')
 
-    parser.add_argument("--pooled_cross_att", action="store_true", help="Whether to use pooled cross-attention")
+    parser.add_argument("--mlm", action="store_true", help="Whether to use MLM loss")
+
+    parser.add_argument(
+        "--pooled_cross_att",
+        action="store_true",
+        help="Whether to use pooled cross-attention",
+    )
     return parser.parse_args()
 
 

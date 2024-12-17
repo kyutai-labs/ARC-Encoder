@@ -266,12 +266,12 @@ def input_transform_func(
             instruction + input_example + tokenizer.eos_token
             for input_example in examples["input_texts"]
         ]
-    
-    if isinstance(examples['input_texts'], str):
-        examples['input_texts'] = [examples['input_texts']]
-    
-    text_examples  =  [text.replace('⁇','<unk>') for text in examples['input_texts']]
-        
+
+    if isinstance(examples["input_texts"], str):
+        examples["input_texts"] = [examples["input_texts"]]
+
+    text_examples = [text.replace("⁇", "<unk>") for text in examples["input_texts"]]
+
     batch_dict = tokenizer(
         text_examples,
         max_length=max_length,
@@ -423,7 +423,7 @@ class NVEmbedModel(PreTrainedModel):
             if config.text_config is not None
             else None
         )
-    
+
         self.padding_side = config.padding_side
         self.is_mask_instruction = config.is_mask_instruction
         self.add_eos = config.add_eos

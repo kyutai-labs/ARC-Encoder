@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-13%6
+#SBATCH --array=1-14%6
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx15,par2dc5-ai-prd-cl02s04dgx12,par2dc5-ai-prd-cl02s03dgx30 
@@ -17,6 +17,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID)) # Take care if already used
 
 # Get the configuration file for this job
 CONFIG_FILES=(
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_0_MLP_8_TRUNC_True_CA_16_CAL_False_SKV_False_DB_old_gate_more_params.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DBMLM.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_atend_True_DB.yaml
