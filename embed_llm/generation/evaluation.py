@@ -8,6 +8,8 @@ import json
 import numpy as np
 import random
 from embed_llm.models.augmented_model import EmbedAugPipeline
+import nltk
+nltk.download('wordnet')
 
 
 def set_global_seed(seed=42):
@@ -168,53 +170,23 @@ def evaluate_model(run_name: str, ckpt: int | None = None):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if ckpt is None:
-        try:
-            pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
-                llm_path=llm_path,
-                ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-                + run_name
-                + "/checkpoints/checkpoint_020000",
-                device=device,
-                llm_name="Mistral7B",
-                embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
-                max_batch_size=max_batch_size,
-            )
-            print("Evaluating checkpoint 020000")
-            ckpt = 20000
+    
+        # Get last checkpoint
+        last_ckpt = sorted(os.listdir("/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"+ run_name+ "/checkpoints/"))[-1]
+        pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
+            llm_path=llm_path,
+            ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+            + run_name
+            + "/checkpoints/"+ last_ckpt,
+            device=device,
+            llm_name="Mistral7B",
+            embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
+            max_batch_size=max_batch_size,
+        )
+        ckpt = int(last_ckpt.split('_')[-1])
+        print("Evaluating checkpoint", ckpt)
 
-        except:
-            try:
-                pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
-                    llm_path=llm_path,
-                    ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-                    + run_name
-                    + "/checkpoints/checkpoint_010000",
-                    device=device,
-                    llm_name="Mistral7B",
-                    embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
-                    max_batch_size=max_batch_size,
-                )
-                print("Evaluating checkpoint 010000")
-                ckpt = 10000
-            # If file not found
-            except FileNotFoundError:
-                try:
-                    pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
-                        llm_path=llm_path,
-                        ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-                        + run_name
-                        + "/checkpoints/checkpoint_008500",
-                        device=device,
-                        llm_name="Mistral7B",
-                        embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
-                        max_batch_size=max_batch_size,
-                    )
-                    print("Evaluating checkpoint 008500")
-                    ckpt = 8500
-                except FileNotFoundError:
-                    print("Checkpoint not found")
-                    print("Run name:", run_name)
-                    return
+
     else:
         pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
             llm_path=llm_path,
@@ -268,7 +240,6 @@ def evaluate_model(run_name: str, ckpt: int | None = None):
         "0.5": {"valid": {"word_prompt": {}, "empty_prompt": {}}},
         "0.7": {"valid": {"word_prompt": {}, "empty_prompt": {}}},
         "1": {"valid": {"word_prompt": {}, "empty_prompt": {}}},
-        "1.5": {"valid": {"word_prompt": {}, "empty_prompt": {}}},
     }
 
     n_passages = len(valid_passage)
@@ -342,8 +313,8 @@ def evaluate_model(run_name: str, ckpt: int | None = None):
     for temp in results_generation.keys():
         # for split in results_generation[temp].keys():
         for prompt_type in results_generation[temp]["valid"].keys():
-            generated_sequences = results_generation[temp]["valid"][prompt_type]["seq"]
             if prompt_type == "empty_prompt":
+                generated_sequences = results_generation[str(temp)]["valid"][prompt_type]["seq"]
                 gt_passage = valid_passage  # train_passage if split == 'train' else valid_passage
                 overlap = word_overlap(gt_passage, generated_sequences)
                 bleu_score = get_bleu_score(gt_passage, generated_sequences)
@@ -359,47 +330,47 @@ def evaluate_model(run_name: str, ckpt: int | None = None):
                         ]
                     )
                 )
-            elif prompt_type == "word_prompt":
-                gt_passage = valid_passage  # train_passage if split == 'train' else valid_passage
-                gt_passage = [" ".join(text.split(" ")[1:]) for text in gt_passage]
-                overlap = word_overlap(gt_passage, generated_sequences)
-                bleu_score = get_bleu_score(gt_passage, generated_sequences)
-                bleu_score_avg = get_bleu_score(
-                    gt_passage, generated_sequences, avg=True
+            # elif prompt_type == "word_prompt":
+            #     gt_passage = valid_passage  # train_passage if split == 'train' else valid_passage
+            #     gt_passage = [" ".join(text.split(" ")[1:]) for text in gt_passage]
+            #     overlap = word_overlap(gt_passage, generated_sequences)
+            #     bleu_score = get_bleu_score(gt_passage, generated_sequences)
+            #     bleu_score_avg = get_bleu_score(
+            #         gt_passage, generated_sequences, avg=True
+            #     )
+            #     meteor_score = get_meteor(gt_passage, generated_sequences)
+            #     em = np.mean(
+            #         np.array(
+            #             [
+            #                 get_em(gt, pred)
+            #                 for gt, pred in zip(gt_passage, generated_sequences)
+            #             ]
+            #         )
+            #     )
+                print(
+                    f"CKPT: {ckpt}, Temperature: {temp}, Split: valid, Prompt Type: {prompt_type}, Overlap: {overlap}",
+                    "Bleu Score:",
+                    bleu_score,
+                    "EM:",
+                    em,
+                    "Meteor:",
+                    meteor_score,
+                    "Bleu Score Avg:",
+                    bleu_score_avg,
                 )
-                meteor_score = get_meteor(gt_passage, generated_sequences)
-                em = np.mean(
-                    np.array(
-                        [
-                            get_em(gt, pred)
-                            for gt, pred in zip(gt_passage, generated_sequences)
-                        ]
-                    )
+                metrics.append(
+                    {
+                        "CKPT": ckpt,
+                        "temp": temp,
+                        "split": "valid",
+                        "prompt_type": prompt_type,
+                        "overlap": overlap,
+                        "bleu_score": bleu_score,
+                        "em": em,
+                        "Meteor": meteor_score,
+                        "Bleu Score Avg": bleu_score_avg,
+                    }
                 )
-            print(
-                f"CKPT: {ckpt}, Temperature: {temp}, Split: valid, Prompt Type: {prompt_type}, Overlap: {overlap}",
-                "Bleu Score:",
-                bleu_score,
-                "EM:",
-                em,
-                "Meteor:",
-                meteor_score,
-                "Bleu Score Avg:",
-                bleu_score_avg,
-            )
-            metrics.append(
-                {
-                    "CKPT": ckpt,
-                    "temp": temp,
-                    "split": "valid",
-                    "prompt_type": prompt_type,
-                    "overlap": overlap,
-                    "bleu_score": bleu_score,
-                    "em": em,
-                    "Meteor": meteor_score,
-                    "Bleu Score Avg": bleu_score_avg,
-                }
-            )
 
     with open(
         "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
@@ -426,21 +397,22 @@ if __name__ == "__main__":
 
     ensure_reproducibility(29)
 
-    run_names = os.listdir(
-        "/home/hippolytepilchen/code/embed_llm/config/experiments/mistral"
-    )
-    with open(
-        "/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/overall_results.json",
-        "r",
-    ) as f:
-        overall_results = json.load(f)
+    # run_names = os.listdir(
+    #     "/home/hippolytepilchen/code/embed_llm/config/experiments/mistral"
+    # )
+    # with open(
+    #     "/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/overall_results.json",
+    #     "r",
+    # ) as f:
+    #     overall_results = json.load(f)
 
-    for key in overall_results.keys():
-        run_names.remove(key + ".yaml")
+    # for key in overall_results.keys():
+    #     run_names.remove(key + ".yaml")
 
-    print(run_names)
-    print("Number of runs:", len(run_names))
-
+    # print(run_names)
+    # print("Number of runs:", len(run_names))
+    run_names = ['128_SL_FN_Truemean_0_MLP_8_TRUNC_True_CA_16_CAL_False_SKV_False_DB_w_zero_and_new_gate']
+     
     for run_name in run_names:
         evaluate_model(run_name)
         print("Memory:", torch.cuda.memory_allocated() / 1024**3)

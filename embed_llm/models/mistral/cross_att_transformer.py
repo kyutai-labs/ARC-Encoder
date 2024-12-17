@@ -4,7 +4,7 @@ from functools import partial, reduce
 from dataclasses import dataclass
 import torch
 from torch import nn
-import torch.nn.functional as F
+import torch.distributed as dist
 import numpy as np
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask
@@ -49,27 +49,124 @@ class SimpleInputMetadata:
         )
 
 
+# class Pooled_Cross_Attention(nn.Module):
+#     def __init__(
+#         self,
+#         dim: int,
+#         n_heads: int,
+#         head_dim: int,
+#         n_kv_heads: int,
+#     ):
+#         super().__init__()
+#         self.up = nn.Linear(dim, dim // 4, bias=False)
+#         self.down = nn.Linear(dim // 4, dim, bias=False)
+
+#     def forward(
+#         self,
+#         embedding: torch.Tensor,
+#         seqlen: list[int],
+#         mask: BlockDiagonalMask | None = None,
+#     ) -> torch.Tensor:
+#         x = self.up(embedding)
+#         output = self.down(x)
+#         output = torch.repeat_interleave(
+#             output, repeats=torch.tensor(seqlen).to(output.device), dim=0
+#         )
+#         return output
+
+
 class Pooled_Cross_Attention(nn.Module):
     def __init__(
         self,
         dim: int,
+        n_heads: int,
+        head_dim: int,
+        n_kv_heads: int,
     ):
         super().__init__()
-        self.up = nn.Linear(dim, dim // 4, bias=False)
-        self.down = nn.Linear(dim // 4, dim, bias=False)
+        self.n_heads: int = n_heads
+        self.head_dim: int = head_dim
+        self.n_kv_heads: int = n_kv_heads
+        
+        self.to_v = nn.Linear(dim, self.n_kv_heads*self.head_dim, bias=False)
+        self.repeats = self.n_heads // self.n_kv_heads
+        self.wo = nn.Linear(self.n_heads*self.head_dim, dim, bias=False)
 
     def forward(
         self,
         embedding: torch.Tensor,
-        seqlen: list[int],
+        mask : BlockDiagonalMask | None,
+        seqlen: list[int] | None,
     ) -> torch.Tensor:
-        x = self.up(embedding)
-        output = self.down(x)
-        output = torch.repeat_interleave(
-            output, repeats=torch.tensor(seqlen).to(output.device), dim=0
-        )
-        return output
+        
+        xv = self.to_v(embedding)
+        xv = xv.view(-1, self.n_kv_heads, self.head_dim)
+        xq = torch.zeros((sum(seqlen), self.n_heads, self.head_dim)).to(xv.device)
+        # Repeat keys and values to match number of query heads
+        val = torch.repeat_interleave(xv, repeats=self.repeats, dim=1)[None, ...]
+        xq = xq[None, ...]
+        output = memory_efficient_attention(xq,torch.zeros_like(val).to(val.device), val, mask)
+ 
+        output = output.view(sum(seqlen), self.n_heads * self.head_dim)
 
+        assert isinstance(output, torch.Tensor)
+
+        return self.wo(output)  # type: ignore
+    
+# class Pooled_Cross_Attention(nn.Module):
+#     def __init__(
+#         self,
+#         dim: int,
+#         dim: int,
+#         n_heads: int,
+#         head_dim: int,
+#         n_kv_heads: int,
+#     ):
+#         super().__init__()
+#         self.up = nn.Linear(dim, dim, bias=False)
+#         self.down = nn.Linear(dim, dim, bias=False)
+
+#     def forward(
+#         self,
+#         embedding: torch.Tensor,
+#         seqlen: list[int],
+#         mask : BlockDiagonalMask | None = None,
+#     ) -> torch.Tensor:
+#         x = self.up(embedding)
+#         output = self.down(x)
+#         output = torch.repeat_interleave(
+#             output, repeats=torch.tensor(seqlen).to(output.device), dim=0
+#         )
+#         return output
+
+# class Pooled_Cross_Attention(nn.Module):
+#     def __init__(
+#         self,
+#         dim: int,
+#         n_heads: int,
+#         head_dim: int,
+#         n_kv_heads: int,
+#     ):
+#         super().__init__()
+#         self.up = nn.Linear(dim, 1024, bias=False)
+#         self.down = nn.Linear(dim, dim, bias=False)
+
+#     def forward(
+#         self,
+#         embedding: torch.Tensor,
+#         seqlen: list[int],
+#         mask: BlockDiagonalMask | None = None,
+#     ) -> torch.Tensor:
+#         x = self.up(embedding)
+#         xv = x.view(-1, 8, 128)
+#         val = torch.repeat_interleave(xv, repeats=4, dim=1)
+#         val = val[None, ...]
+#         output = torch.repeat_interleave(
+#                 val, repeats=torch.tensor(seqlen).to(val.device), dim=1
+#             )
+#         output = output.view(sum(seqlen), 4096)
+#         output = self.down(output)
+#         return output
 
 class Cross_Attention(nn.Module):
     def __init__(
@@ -107,13 +204,11 @@ class Cross_Attention(nn.Module):
         xv = xv.view(-1, self.n_kv_heads, self.head_dim)
 
         key, val = xk, xv
-
         # Repeat keys and values to match number of query heads
         key, val = repeat_kv(key, val, self.repeats, dim=1)
-
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
-
+   
         output = memory_efficient_attention(xq, key, val, mask)
         output = output.view(seqlen_sum, self.n_heads * self.head_dim)
 
@@ -157,7 +252,15 @@ class Cross_AttTransformerBlock(nn.Module):
                 in_dim=dim, out_dim=dim, act="gelu", dtype=torch.bfloat16
             )
         else:
-            self.cross_attention = Pooled_Cross_Attention(dim=dim)
+            self.cross_attention = Pooled_Cross_Attention(
+                dim=dim,
+                n_heads=n_heads,
+                head_dim=head_dim,
+                n_kv_heads=n_kv_heads)
+            
+            # self.gate = MLP_block(
+            #     in_dim=dim, out_dim=dim, act="gelu", dtype=torch.bfloat16
+            # )
             self.gate = nn.Linear(dim, dim, bias=False)
 
         self.pooled_cross_att = pooled_cross_att
@@ -189,6 +292,7 @@ class Cross_AttTransformerBlock(nn.Module):
         cross_att_mask: BlockDiagonalMask | None = None,
         show_attention: bool = False,
         pool_att_embds: torch.Tensor | None = None,
+        seqlens: list[int] | None = None,
     ) -> torch.Tensor:
         if not show_attention:
             r = self.attention.forward(
@@ -210,17 +314,14 @@ class Cross_AttTransformerBlock(nn.Module):
                 r = self.cross_attention.forward(
                     x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
                 )
-
-                h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
+                h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d) # r is a replica along l 
         else:
             assert pool_att_embds is not None
+            
             r = self.cross_attention.forward(
                 embedding=pool_att_embds,
-                seqlen=(
-                    [h.shape[0]]
-                    if self_mask is None
-                    else list(np.diff(np.array(self_mask.q_seqinfo.seqstart_py)))
-                ),
+                seqlen = seqlens,
+                mask = cross_att_mask,
             )
             h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
 
@@ -451,6 +552,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             freqs_cis=freqs_cis,
                             self_mask=self_att_mask,
                             pool_att_embds=embeddings,
+                            seqlens = seqlens,
                         )
                 else:
                     h = self.layers[str(i)](
@@ -482,6 +584,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             freqs_cis=freqs_cis,
                             self_mask=self_att_mask,
                             pool_att_embds=embeddings,
+                            seqlens = seqlens,
+                            cross_att_mask=cross_att_mask,
                         )
                 else:
                     h, attn_mat = self.layers[str(i)](
@@ -618,6 +722,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
                         freqs_cis=freqs_cis,
                         cache=cache_view,
                         pool_att_embds=embeddings,
+                        seqlens=seqlens,
+                        cross_att_mask=(
+                            None
+                            if cross_att_cache is None
+                            else cross_att_cache.get_mask(seqlens)
+                        ),
                     )
 
             else:
@@ -627,6 +737,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             cache.update_seqlens(seqlens)
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             torch.distributed.send(h, dst=self.pipeline_rank + 1)
+            self.pos_to_keep = []
             return h
 
         else:

@@ -167,6 +167,7 @@ def _train(
         embedding_model.config.max_length = (
             embedding_model.config.max_length if args.seq_len is None else args.seq_len
         )
+
         embedding_model.eval()
 
     """ Load LLM and tokenizers """
@@ -224,6 +225,7 @@ def _train(
         while len(eval_batches) < 40:
             batch = next(eval_data_loader)
             if len(batch.sizes) > 70:
+                print("Too many embeddings to do, skipping batch")
                 continue
             else:
                 eval_batches.append(batch)
@@ -268,6 +270,7 @@ def _train(
         pipeline.prepare_forward,
         batch_size=args.batch_size,
         continuation=args.pipeline.continuation,
+        mlm = args.pipeline.mlm,
     )
 
     main_logger_info("Start training")
@@ -297,13 +300,15 @@ def _train(
             # start_time = time.time()
 
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
-
+        
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
 
             output = model.forward(
                 x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens
             )
+            
+            
 
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()
@@ -356,7 +361,7 @@ def _train(
 
         last_lr = scheduler.get_last_lr()[0]
         scheduler.step()
-
+        
         # Host sync
         loss_item = loss.item()
         avg_loss = avg_aggregate(loss_item)
@@ -407,7 +412,7 @@ def _train(
                 dtype=param_dtype,
             )
 
-    evaluate_model(args.exp_name, ckpt=state.step)
+    evaluate_model(args.exp_name)
     main_logger_info("done!")
 
 

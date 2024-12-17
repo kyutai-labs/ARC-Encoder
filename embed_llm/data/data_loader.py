@@ -121,7 +121,7 @@ def build_data_loader(
         world_size=world_size,
         is_eval=is_eval,
         shuffle=args.shuffle,
-        continuation=continuation,
+        continuation=continuation
     )
 
     batch_list = Batchlist()

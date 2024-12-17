@@ -1,4 +1,4 @@
-batch_size: 32
+batch_size: 4
 ckpt_freq: 500
 data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
@@ -29,7 +29,7 @@ pipeline:
   every_cross_att: 2
   do_both: true
   do_pool: true
-  embedder_name: Mistral7B
+  embedder_name: NVEmbed
   mlp_project:
     act: gelu
     hidden_dim: 4096
@@ -41,13 +41,14 @@ pipeline:
     n_heads: 8
     r: 512
     type: mean
-  pooled_cross_att: true
-  trainable_embedder: true
+  pooled_cross_att: false
+  trainable_embedder: false
   w_embeds: true
+  mlm: true
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 save_adapters: true
 seed: 0
-seq_len: 128
+seq_len: 256
 # wandb:
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
 #   offline: false

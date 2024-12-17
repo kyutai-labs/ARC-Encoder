@@ -48,6 +48,7 @@ class EmbedAugArgs(Serializable):
     dist_process: bool = False
     pooled_cross_att: bool = False
     every_cross_att: int | None = None
+    mlm: bool = False
 
 
 @dataclass

@@ -358,7 +358,7 @@ def build_dataset(
         for source in sources
     ]
 
-    if not continuation:
+    if not continuation :
         sequence_iterators = [
             sequence_iterator(
                 ds_it=it,
@@ -378,6 +378,8 @@ def build_dataset(
             )
             for it in dataset_iterators
         ]
+        
+        
 
     if is_eval:
         combined_iterator = itertools.chain.from_iterable(sequence_iterators)

@@ -53,8 +53,11 @@ def main(args):
         config["pipeline"]["cross_att"] = args.cross_att
         config["pipeline"]["cross_att_layers"] = args.cross_att_layers
         config["pipeline"]["every_cross_att"] = args.every_cross_att
+        config["pipeline"]["pooled_cross_att"] = args.pooled_cross_att
         if args.do_both:
             config["pipeline"]["dist_process"] = args.dist_process
+        if args.mlm:
+            config["pipeline"]["mlm"] = args.mlm
 
     config["batch_size"] = args.batch_size
     config["max_steps"] = args.max_steps
@@ -116,14 +119,24 @@ def main(args):
         n_trunc = (
             str(args.n_truncated_layers) + "_TRUNC_" if args.train_embedder else ""
         )
-        cross_att = (
-            str(args.cross_att_layers) + "_CAL_" + str(args.shared_kv) + "_SKV_"
-            if args.cross_att
-            else ""
-        )
+        if args.cross_att and args.cross_att_layers:
+            cross_att = (
+                str(args.cross_att_layers) + "_CAL_atend_" 
+            )
+        elif args.cross_att and args.every_cross_att:
+            cross_att = (
+                str(args.every_cross_att) + "_CAL_every_" 
+            )
+            
+        if args.mlm:
+            learn_type = 'MLM'
+        elif args.continuation:
+            learn_type = 'CONT'
+        else:
+            learn_type = ''
+            
         name = (
-            str(args.seq_len)
-            + "_SL_FN_"
+            "LT_FN_"
             + str(args.train_embedder)
             + (str(args.pooling) if args.train_embedder else "")
             + "_"
@@ -135,6 +148,7 @@ def main(args):
             + cross_att
             + str(args.do_both)
             + "_DB"
+            + learn_type
         )
 
         config["exp_name"] = name
@@ -189,7 +203,7 @@ def arg_parser():
     parser.add_argument(
         "--proj_n_layers",
         type=int,
-        default=0,
+        default=3,
         help="Number of layers of the projection MLP",
     )
     parser.add_argument(
@@ -266,7 +280,7 @@ def arg_parser():
         "-n_trunc",
         "--n_truncated_layers",
         type=int,
-        default=4,
+        default=8,
         help="Number of truncated layers to extract embedding",
     )
 
@@ -329,7 +343,10 @@ def arg_parser():
         default=None,
         help="Every n layers to apply cross-attention",
     )
+    
+    parser.add_argument('--mlm', action='store_true', help='Whether to use MLM loss')
 
+    parser.add_argument("--pooled_cross_att", action="store_true", help="Whether to use pooled cross-attention")
     return parser.parse_args()
 
 
