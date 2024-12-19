@@ -13,7 +13,7 @@ class MLP_block(nn.Module):
         in_dim: int,
         out_dim: int,
         act: str,
-        dtype: torch.dtype,
+        dtype: torch.dtype | None = None,
         hidden_dim: int | None = None,
     ):
         super().__init__()
@@ -28,9 +28,12 @@ class MLP_block(nn.Module):
         else:
             self.act = nn.Identity()
 
-        self.layer1 = nn.Linear(in_dim, hidden_dim, dtype=dtype, bias=False)
-
-        self.layer2 = nn.Linear(hidden_dim, out_dim, dtype=dtype, bias=False)
+        if dtype is not None:
+            self.layer1 = nn.Linear(in_dim, hidden_dim, dtype=dtype, bias=False)
+            self.layer2 = nn.Linear(hidden_dim, out_dim, dtype=dtype, bias=False)
+        else:
+            self.layer1 = nn.Linear(in_dim, hidden_dim, bias=False)
+            self.layer2 = nn.Linear(hidden_dim, out_dim, bias=False)
 
     def forward(self, x):
         out = self.act(self.layer1(x))
@@ -39,7 +42,7 @@ class MLP_block(nn.Module):
 
 
 class MLP_project(nn.Module):
-    def __init__(self, args: MLPProjectArgs, dtype: torch.dtype = torch.bfloat16):
+    def __init__(self, args: MLPProjectArgs, dtype: torch.dtype | None = None):
         super().__init__()
         self.layers = nn.ModuleList()
         self.n_layers = args.n_layers
@@ -145,7 +148,7 @@ class ReversedLatentAttention(nn.Module):
         hidden_dim: int = 4096,
         n_heads: int = 8,
         n_layers: int = 2,
-        dtype: torch.dtype = torch.bfloat16,
+        dtype: torch.dtype | None = None,
     ):
         super().__init__()
         self.r = r
@@ -231,7 +234,7 @@ class LatentAttention(nn.Module):
         hidden_dim: int = 4096,
         n_heads: int = 8,
         n_layers: int = 1,
-        dtype: torch.dtype = torch.bfloat16,
+        dtype: torch.dtype | None = None,
     ):
         super().__init__()
         self.r = r
@@ -267,14 +270,14 @@ class LatentAttention(nn.Module):
     def forward(self, queries: torch.Tensor, seqlens: list[int]) -> torch.Tensor:
         b = len(seqlens)
         x = repeat(self.latents, "r d -> (b r) d", b=b)
-
-        r = self.cross_attend_block(
-            queries,
-            context=x,
-            mask=BlockDiagonalMask.from_seqlens(
-                q_seqlen=seqlens, kv_seqlen=[self.r] * b
-            ),
-        )
+        
+        r =  self.cross_attend_block(
+                queries,
+                context=x,
+                mask=BlockDiagonalMask.from_seqlens(
+                    q_seqlen=seqlens, kv_seqlen=[self.r] * b
+                ),
+            )
         hiddens = r + queries
 
         for i in range(self.n_layers):
@@ -284,7 +287,7 @@ class LatentAttention(nn.Module):
 
 class PoolingModule(nn.Module):
     def __init__(
-        self, args: PoolingArgs, hidden_dim: int, dtype: torch.dtype = torch.bfloat16
+        self, args: PoolingArgs, hidden_dim: int, dtype: torch.dtype | None = None
     ):
         super().__init__()
         self.args = args

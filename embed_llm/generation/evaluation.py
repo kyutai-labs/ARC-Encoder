@@ -427,12 +427,10 @@ if __name__ == "__main__":
     # print(run_names)
     # print("Number of runs:", len(run_names))
     run_names = [
-        "128_SL_FN_Truemean_0_MLP_8_TRUNC_True_CA_16_CAL_False_SKV_False_DB_old_gate_same_n_params"
-    ]
-    # 128_SL_FN_Truemean_0_MLP_8_TRUNC_True_CA_16_CAL_False_SKV_False_DB_old_gate_more_params
+        "128_SL_FN_Truemean_0_MLP_8_TRUNC_True_CA_16_CAL_False_SKV_False_DB_old_gate_more_params"]
 
     for run_name in run_names:
-        evaluate_model(run_name)
+        evaluate_model(run_name, ckpt = 9500)
         print("Memory:", torch.cuda.memory_allocated() / 1024**3)
         print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)
         print("Max Memory Allocated:", torch.cuda.max_memory_allocated() / 1024**3)

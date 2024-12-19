@@ -289,6 +289,7 @@ def _train(
         # Number of steps to accumulate gradients before doing an optimizer step.
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
+        
 
             # Avoid OOM due to too many embeddings for the same batch
             while len(batch.sizes) > 70:
@@ -307,6 +308,7 @@ def _train(
             output = model.forward(
                 x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens
             )
+       
 
             if len(output.size()) > 2:
                 output = output.view(-1, output.size(-1)).float()
@@ -409,9 +411,10 @@ def _train(
             checkpointer.save_checkpoint(
                 dtype=param_dtype,
             )
-
-    evaluate_model(args.exp_name, ckpt=args.max_steps, pipeline=pipeline)
     main_logger_info("done!")
+    
+    dist.barrier()
+    evaluate_model(args.exp_name, ckpt=args.max_steps)
 
 
 if __name__ == "__main__":

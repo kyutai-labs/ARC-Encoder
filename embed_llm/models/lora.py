@@ -20,9 +20,9 @@ def is_cross_att(module_name: str):
 
 @dataclass
 class LoraArgs(Serializable):
-    enable: bool
-    rank: int
-    scaling: float
+    enable: bool = False
+    rank: int = 64
+    scaling: float = 2.0
 
     def __post_init__(self) -> None:
         if self.enable:

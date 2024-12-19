@@ -178,23 +178,8 @@ def initialize_cross_att_project(model: torch.nn.Module, param_dtype: torch.dtyp
                         torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
 
 
-def initialize_mlp_project(model: torch.nn.Module, param_dtype: torch.dtype):
-    for m_name, module in model.named_modules():
-        if len(list(module.children())) == 0:
-            for p_name, param in module.named_parameters():
-                module._parameters[p_name] = torch.nn.Parameter(
-                    torch.empty_like(param, device="cpu", dtype=param_dtype)
-                )
-                param = module._parameters[p_name]
 
-                if m_name.split(".")[-1] == "layer1":
-                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-
-                elif m_name.split(".")[-1] == "layer2":
-                    torch.nn.init.zeros_(param)
-
-
-def initialize_pooling(
+def initialize_proj_params(
     model: torch.nn.Module, param_dtype: torch.dtype, latents=False, device="cpu"
 ):
     for m_name, module in model.named_modules():
@@ -209,10 +194,14 @@ def initialize_pooling(
                     torch.nn.init.ones_(param)
                 elif "norm" in m_name and "bias" in p_name:
                     torch.nn.init.zeros_(param)  # For the layernorm bias
+                elif m_name.split(".")[-1] == "layer1":
+                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+                elif m_name.split(".")[-1] == "layer2":
+                    torch.nn.init.zeros_(param)
                 else:
                     torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
 
-        if latents and "process" in m_name:
+        if latents:
             for p_name, param in module.named_parameters():
                 if p_name == "latents":
                     module._parameters[p_name] = torch.nn.Parameter(
@@ -220,3 +209,5 @@ def initialize_pooling(
                     )
                     param = module._parameters[p_name]
                     torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+
+

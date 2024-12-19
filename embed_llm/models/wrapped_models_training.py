@@ -23,8 +23,7 @@ from embed_llm.training.args import TrainArgs
 
 from embed_llm.models.utils import (
     initialize_lora_parameters,
-    initialize_mlp_project,
-    initialize_pooling,
+    initialize_proj_params,
     initialize_cross_att_project,
     is_cross_att,
     log_train_params,
@@ -53,6 +52,7 @@ def load_training_model(
         assert train_args.pipeline.cross_att, "If dist_process, must do cross-attention"
         assert train_args.pipeline.do_both, "If dist_process, must do both"
 
+        
     llm_args, pipeline_args = load_args(
         folder,
         lora,
@@ -64,6 +64,9 @@ def load_training_model(
     )
 
     # Load pretrained params on rank 0 for LLM
+    if not pipeline_args.trainable_llm:
+        llm_args.lora.enable = False
+        
     model, tokenizer, embed_dim = load_llm_model(
         llm_name=llm_name,
         llm_args=llm_args,
@@ -84,6 +87,7 @@ def load_training_model(
     # Load model and params for embedder
     if pipeline_args.trainable_embedder:
         main_logger_info("Loading embedder model ...")
+        llm_args.lora.enable = True
         # Load pretrained params on rank 0
         llm_embedder, _, llm_embed_dim = load_llm_model(
             llm_name=llm_name,
@@ -128,16 +132,16 @@ def load_training_model(
         augmented_model = augmented_pipeline.get_model(llm=model)
 
     if get_rank() == 0:
-        if lora.enable:
+        if lora.enable and pipeline_args.trainable_llm:
             main_logger_info("Initializing lora layers  for LLM ...")
             # initialize LoRA layers
             initialize_lora_parameters(augmented_model.llm, param_dtype)
 
-            if pipeline_args.trainable_embedder:
-                main_logger_info("Initializing lora layers  for Embedder ...")
-                initialize_lora_parameters(
-                    augmented_model.trainable_embedder, param_dtype
-                )
+        if pipeline_args.trainable_embedder:
+            main_logger_info("Initializing lora layers  for Embedder ...")
+            initialize_lora_parameters(
+                augmented_model.trainable_embedder, param_dtype
+            )
 
         if pipeline_args.cross_att:
             main_logger_info("Initializing Cross-Attention")
@@ -145,7 +149,7 @@ def load_training_model(
 
         if augmented_model.mlp_project is not None:
             main_logger_info("Initializing MLP")
-            initialize_mlp_project(augmented_model.mlp_project, param_dtype)
+            initialize_proj_params(augmented_model.mlp_project, param_dtype)
 
         if (
             pipeline_args.do_pool
@@ -153,7 +157,7 @@ def load_training_model(
             and "attention" in augmented_model.pooling_args.type
         ):
             main_logger_info("Initializing Pooling")
-            initialize_pooling(augmented_model.pooling_module, param_dtype)
+            initialize_proj_params(augmented_model.pooling_module, param_dtype)
 
         assert not any(
             p.is_meta
@@ -188,37 +192,44 @@ def load_training_model(
         and augmented_model.pooling_args is not None
         and "attention" in augmented_model.pooling_args.type
     ):
-        initialize_pooling(
+        initialize_proj_params(
             augmented_model.pooling_module, param_dtype, latents=True, device="cuda"
         )
         ignored_state = [augmented_model.pooling_module.process.latents]
     else:
-        ignored_state = None
+        ignored_state = []
+        
+    if 'attention' in augmented_model.mlp_project_args.type:
+        initialize_proj_params(
+            augmented_model.mlp_project, param_dtype, latents=True, device="cuda"
+        )
+        ignored_state.append([augmented_model.mlp_project.latents])
+    
+    ignored_state = None if len(ignored_state) == 0 else ignored_state
 
     torch.distributed.barrier()
 
     ignored_state = None
 
     # only finetune LoRA, MLP projector and pooling parameters and freeze before wrapping
-    if lora.enable:
-        for name, param in augmented_model.named_parameters():
-            if "lora" in name:
+    for name, param in augmented_model.named_parameters():
+        if lora.enable and "lora" in name:
                 param.requires_grad = True
-            elif "mlp_project" in name:
-                param.requires_grad = True
-            elif "pooling_module" in name:
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
-
-        for m_name, module in model.named_modules():
-            if len(list(module.children())) == 0:
-                if is_cross_att(m_name):
-                    for p_name, param in module.named_parameters():
-                        param.requires_grad = True
-    else:
-        for name, param in augmented_model.named_parameters():
+        elif pipeline_args.trainable_llm and not lora.enable and "llm" in name:
             param.requires_grad = True
+        elif "mlp_project" in name:
+            param.requires_grad = True
+        elif "pooling_module" in name:
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
+
+    for m_name, module in model.named_modules():
+        if len(list(module.children())) == 0:
+            if is_cross_att(m_name):
+                for p_name, param in module.named_parameters():
+                    param.requires_grad = True
+
 
     if pipeline_args.trainable_embedder:
         assert (
@@ -241,11 +252,6 @@ def load_training_model(
             - pipeline_args.n_truncated_layers
         )
 
-        if (
-            augmented_model.pooling_args is not None
-            and "attention" in augmented_model.pooling_args.type
-        ):
-            ignored_state = [augmented_model.pooling_module.process.latents]
 
     log_train_params(augmented_model)
 
@@ -267,6 +273,7 @@ def load_training_model(
     )
 
     main_logger_info("Model sharded!")
+
 
     return (
         augmented_pipeline,

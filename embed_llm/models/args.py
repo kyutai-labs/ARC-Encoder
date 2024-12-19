@@ -24,6 +24,7 @@ class MLPProjectArgs(Serializable):
     act: str = "id"
     in_dim: int | None = None
     out_dim: int | None = None
+    type: str = "mlp"
 
 
 @dataclass
@@ -49,6 +50,7 @@ class EmbedAugArgs(Serializable):
     pooled_cross_att: bool = False
     every_cross_att: int | None = None
     mlm: bool = False
+    trainable_llm: bool = True
 
 
 @dataclass

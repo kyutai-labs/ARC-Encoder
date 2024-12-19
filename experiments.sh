@@ -1,10 +1,10 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=1-14%6
+#SBATCH --array=10-16%6
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx15,par2dc5-ai-prd-cl02s04dgx12,par2dc5-ai-prd-cl02s03dgx30 
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx15,par2dc5-ai-prd-cl02s04dgx30,par2dc5-ai-prd-cl02s04dgx31,par2dc5-ai-prd-cl02s04dgx26
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
@@ -27,6 +27,8 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_0_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DBCONT.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DB.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_1_MLP_RLatt_True_CA_2_CAL_every_True_DB.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBMLM.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_0_MLP_True_CA_2_CAL_every_True_DB.yaml

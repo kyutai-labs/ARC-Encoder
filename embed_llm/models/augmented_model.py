@@ -10,18 +10,19 @@ import logging
 import numpy as np
 import torch.nn.functional as F
 from embed_llm.training.checkpointing import Checkpointer
-from embed_llm.models.embedding_modules import MLP_project, PoolingModule
+from embed_llm.models.embedding_modules import MLP_project, PoolingModule, ReversedLatentAttention, LatentAttention
 from embed_llm.retrieval.embeddings import encode_text, get_pretrained_embedder
 from embed_llm.data.data_loader import Batch
 from embed_llm.models.args import LoraArgs
 from embed_llm.models.args import MLPProjectArgs, EmbedAugArgs, PoolingArgs
 from embed_llm.models.args import (
     MistralModelArgs,
-    LlamaModelArgs,
-    GemmaConfig,
     MLPProjectArgs,
     EmbedAugArgs,
 )
+    # LlamaModelArgs,
+    # GemmaConfig,
+
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.distributed import (
     get_rank,
@@ -38,23 +39,23 @@ from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_to
 from embed_llm.models.mistral.generate import generate as mistral_generate
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 
-# Gemma specifics
-from embed_llm.models.gemma.model import GemmaForCausalLM, set_default_tensor_type
-from embed_llm.models.gemma.generate import generate as gemma_generate
-from embed_llm.models.args import GemmaConfig
-from embed_llm.models.gemma.tokenizer import Tokenizer as GemmaTokenizer
+# # Gemma specifics
+# from embed_llm.models.gemma.model import GemmaForCausalLM, set_default_tensor_type
+# from embed_llm.models.gemma.generate import generate as gemma_generate
+# from embed_llm.models.args import GemmaConfig
+# from embed_llm.models.gemma.tokenizer import Tokenizer as GemmaTokenizer
 
-# Llama specifics
-from embed_llm.models.llama.model import Transformer as LlamaTransformer
-from embed_llm.models.llama.generation import generate as llama_generate
-from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
+# # Llama specifics
+# from embed_llm.models.llama.model import Transformer as LlamaTransformer
+# from embed_llm.models.llama.generation import generate as llama_generate
+# from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
 
 
-Models = LlamaTransformer | MistralTransformer | GemmaForCausalLM
+Models = MistralTransformer  # | LlamaTransformer | GemmaForCausalLM
 logger = logging.getLogger(__name__)
 
-ModelsArgs = MistralModelArgs | LlamaModelArgs | GemmaConfig
-Tokenizer = MistralTokenizer | LlamaTokenizer | GemmaTokenizer
+ModelsArgs = MistralModelArgs # | LlamaModelArgs | GemmaConfig
+Tokenizer = MistralTokenizer # | LlamaTokenizer | GemmaTokenizer
 
 
 def pad_and_convert_to_tensor(
@@ -136,20 +137,30 @@ class EmbedAugModel(nn.Module):
                 norm_wo_embeds=self.norm_wo_embeds,
             )
 
-        elif "gemma" in self.llm_name or "llama" in self.llm_name:
-            assert (
-                not self.cross_att
-            ), "Cross attention not supported for Gemma and Llama"
-            self.forward = partial(
-                self.forward_batch,
-                training=self.training,
-                norm_wo_embeds=self.norm_wo_embeds,
-            )
+        # elif "gemma" in self.llm_name or "llama" in self.llm_name:
+        #     assert (
+        #         not self.cross_att
+        #     ), "Cross attention not supported for Gemma and Llama"
+        #     self.forward = partial(
+        #         self.forward_batch,
+        #         training=self.training,
+        #         norm_wo_embeds=self.norm_wo_embeds,
+        #     )
 
         if self.mlp_project_args.n_layers > 0 and self.w_embeds:
-            self.mlp_project = MLP_project(
-                args=self.mlp_project_args, dtype=pipeline_args.param_dtype
-            )
+            if self.mlp_project_args.type == "mlp":
+                self.mlp_project = MLP_project(
+                    args=self.mlp_project_args, dtype=pipeline_args.param_dtype
+                )
+            elif self.mlp_project_args.type == "reversed_latent_attention":
+                self.mlp_project = ReversedLatentAttention(
+                    n_layers = self.mlp_project_args.n_layers)
+            elif self.mlp_project_args.type == "latent_attention":
+                self.mlp_project = LatentAttention(
+                    n_layers=self.mlp_project_args.n_layers)
+            else:
+                raise ValueError(
+                    f"MLP type {self.mlp_project_args.type} not supported.")
         else:
             self.mlp_project = None
 
@@ -186,12 +197,19 @@ class EmbedAugModel(nn.Module):
             embeddings = F.normalize(embeddings, p=2, dim=-1)
 
         if self.mlp_project is not None:
-            if self.dist_process:
-                cat_embeddings = self.mlp_project(embeddings)
+            if self.mlp_project_args.type == "mlp":
+                if self.dist_process:
+                    cat_embeddings = self.mlp_project(embeddings)
+                else:
+                    embeddings = self.mlp_project(embeddings)
+                    cat_embeddings = embeddings
             else:
-                embeddings = self.mlp_project(embeddings)
-                cat_embeddings = embeddings
-
+                if self.dist_process:
+                    cat_embeddings = self.mlp_project(embeddings, seqlens = kv_seqlens)
+                else:
+                    embeddings = self.mlp_project(embeddings, seqlens = kv_seqlens)
+                    cat_embeddings = embeddings
+                
         if self.cross_att:
             return self.llm.forward(
                 input_ids=x,
@@ -432,19 +450,19 @@ class EmbedAugPipeline(nn.Module):
             )
             seqlens = batch.sizes
 
-        # Cross attention not supported no need to compute kv_seqlens
-        elif "llama" in self.llm_name or "gemma" in self.llm_name:
-            x, y, embeddings, y_mask = pad_and_convert_to_tensor(
-                x=batch.x,
-                y=batch.y,
-                sizes=batch.sizes,
-                embeddings=embeddings,
-                y_mask=batch.y_mask,
-                seq_len=self.max_seq_len,
-                pad_id=self.pad_token_id,
-                batch_size=batch_size,
-            )
-            seqlens = batch.sizes
+        # # Cross attention not supported no need to compute kv_seqlens
+        # elif "llama" in self.llm_name or "gemma" in self.llm_name:
+        #     x, y, embeddings, y_mask = pad_and_convert_to_tensor(
+        #         x=batch.x,
+        #         y=batch.y,
+        #         sizes=batch.sizes,
+        #         embeddings=embeddings,
+        #         y_mask=batch.y_mask,
+        #         seq_len=self.max_seq_len,
+        #         pad_id=self.pad_token_id,
+        #         batch_size=batch_size,
+        #     )
+        #     seqlens = batch.sizes
 
         # If not pre-trained embedder, embeddings is the input_ids for the LLM Embedder and embed_seqlens is the seqlens
         return x, y, y_mask, seqlens, embeddings, embed_seqlens
@@ -513,10 +531,13 @@ class EmbedAugPipeline(nn.Module):
                 for k, v in state_dict.items()
                 if "lora" not in k and is_cross_att(k)
             }
+            
             llm.load_state_dict(cross_att_state_dicts, assign=True, strict=False)
 
-        llm.load_lora(Path(lora_path), cross_att=pipeline_args.cross_att)
+        if Path(lora_path).exists():    
+            llm.load_lora(Path(lora_path), cross_att=pipeline_args.cross_att)
 
+                
         llm = llm.to(device)
         llm.eval()
 
@@ -598,15 +619,15 @@ class EmbedAugPipeline(nn.Module):
 
         if "mistral" in llm_name.lower():
             augmented_pipeline.generate = partial(augmented_pipeline.generate_mistral)
-        elif "llama" in llm_name.lower():
-            augmented_pipeline.generate = partial(
-                augmented_pipeline.generate_llama,
-                device=device,
-            )
-        elif "gemma" in llm_name.lower():
-            augmented_pipeline.generate = partial(
-                augmented_pipeline.generate_gemma, device=device
-            )
+        # elif "llama" in llm_name.lower():
+        #     augmented_pipeline.generate = partial(
+        #         augmented_pipeline.generate_llama,
+        #         device=device,
+        #     )
+        # elif "gemma" in llm_name.lower():
+        #     augmented_pipeline.generate = partial(
+        #         augmented_pipeline.generate_gemma, device=device
+        #     )
 
         return augmented_pipeline
 
@@ -678,9 +699,14 @@ class EmbedAugPipeline(nn.Module):
                 embeddings = F.normalize(embeddings, p=2, dim=-1)
 
             if self.model.mlp_project is not None:
-                cat_embeddings = self.model.mlp_project(
-                    embeddings.to(self.pipeline_args.param_dtype)
-                )
+                if self.pipeline_args.mlp_project.type == "mlp":
+                    cat_embeddings = self.model.mlp_project(
+                        embeddings.to(self.pipeline_args.param_dtype)
+                    )
+                else:
+                    cat_embeddings = self.model.mlp_project(
+                        embeddings.to(self.pipeline_args.param_dtype), seqlens=kv_seqlens
+                    )
             else:
                 cat_embeddings = embeddings
 
@@ -728,86 +754,86 @@ class EmbedAugPipeline(nn.Module):
 
         return final_texts, attentions
 
-    @torch.inference_mode()
-    def generate_llama(
-        self,
-        prompts: str | Sequence[str],
-        text_conditioning: str | Sequence[str],
-        device: str,
-        max_tokens: int = 100,
-        temperature: float = 0.6,
-        **kwargs,
-    ):
-        if self.pipeline_args.w_embeds:
-            embeddings = encode_text(
-                text_conditioning,
-                self.embed_model_name,
-                self.embedding_model,
-                query_embedding=False,
-                device=device,
-            )
-            if self.model.mlp_project is not None:
-                embeddings = self.model.mlp_project(
-                    embeddings.to(self.pipeline_args.param_dtype)
-                )
-        else:
-            embeddings = None
+    # @torch.inference_mode()
+    # def generate_llama(
+    #     self,
+    #     prompts: str | Sequence[str],
+    #     text_conditioning: str | Sequence[str],
+    #     device: str,
+    #     max_tokens: int = 100,
+    #     temperature: float = 0.6,
+    #     **kwargs,
+    # ):
+    #     if self.pipeline_args.w_embeds:
+    #         embeddings = encode_text(
+    #             text_conditioning,
+    #             self.embed_model_name,
+    #             self.embedding_model,
+    #             query_embedding=False,
+    #             device=device,
+    #         )
+    #         if self.model.mlp_project is not None:
+    #             embeddings = self.model.mlp_project(
+    #                 embeddings.to(self.pipeline_args.param_dtype)
+    #             )
+    #     else:
+    #         embeddings = None
 
-        prompt_tokens = self.tokenizer.encode_batch(s=prompts, bos=True, eos=False)
-        out_tokens, logprobs = llama_generate(
-            model=self.model.llm,
-            tokenizer=self.tokenizer,
-            prompt_tokens=prompt_tokens,
-            embeddings=embeddings,
-            max_gen_len=max_tokens,
-            temperature=temperature,
-            logprobs=True,
-            norm_wo_embeds=self.pipeline_args.norm_wo_embeds,
-            **kwargs,
-        )
-        produced_text = self.tokenizer.decode_batch(out_tokens)
-        final_texts = []
-        for text in produced_text:
-            if "\n\n" in text:
-                text = text.split("\n\n")[0]
-            final_texts.append(text)
-        return final_texts
+    #     prompt_tokens = self.tokenizer.encode_batch(s=prompts, bos=True, eos=False)
+    #     out_tokens, logprobs = llama_generate(
+    #         model=self.model.llm,
+    #         tokenizer=self.tokenizer,
+    #         prompt_tokens=prompt_tokens,
+    #         embeddings=embeddings,
+    #         max_gen_len=max_tokens,
+    #         temperature=temperature,
+    #         logprobs=True,
+    #         norm_wo_embeds=self.pipeline_args.norm_wo_embeds,
+    #         **kwargs,
+    #     )
+    #     produced_text = self.tokenizer.decode_batch(out_tokens)
+    #     final_texts = []
+    #     for text in produced_text:
+    #         if "\n\n" in text:
+    #             text = text.split("\n\n")[0]
+    #         final_texts.append(text)
+    #     return final_texts
 
-    @torch.inference_mode()
-    def generate_gemma(
-        self,
-        prompts: str | Sequence[str],
-        text_conditioning: str | Sequence[str],
-        device: str,
-        max_tokens: int = 100,
-        temperature: float = 0.95,
-        **kwargs,
-    ):
+    # @torch.inference_mode()
+    # def generate_gemma(
+    #     self,
+    #     prompts: str | Sequence[str],
+    #     text_conditioning: str | Sequence[str],
+    #     device: str,
+    #     max_tokens: int = 100,
+    #     temperature: float = 0.95,
+    #     **kwargs,
+    # ):
 
-        if self.pipeline_args.w_embeds:
-            embeddings = encode_text(
-                text_conditioning,
-                self.embed_model_name,
-                self.embedding_model,
-                query_embedding=False,
-                device=device,
-            )
-            if self.model.mlp_project is not None:
-                embeddings = self.model.mlp_project(
-                    embeddings.to(self.pipeline_args.param_dtype)
-                )
-        else:
-            embeddings = None
-        return gemma_generate(
-            model=self.model.llm,
-            tokenizer=self.tokenizer,
-            prompts=prompts,
-            embeddings=embeddings,
-            device=device,
-            output_len=max_tokens,
-            temperature=temperature,
-            **kwargs,
-        )
+    #     if self.pipeline_args.w_embeds:
+    #         embeddings = encode_text(
+    #             text_conditioning,
+    #             self.embed_model_name,
+    #             self.embedding_model,
+    #             query_embedding=False,
+    #             device=device,
+    #         )
+    #         if self.model.mlp_project is not None:
+    #             embeddings = self.model.mlp_project(
+    #                 embeddings.to(self.pipeline_args.param_dtype)
+    #             )
+    #     else:
+    #         embeddings = None
+    #     return gemma_generate(
+    #         model=self.model.llm,
+    #         tokenizer=self.tokenizer,
+    #         prompts=prompts,
+    #         embeddings=embeddings,
+    #         device=device,
+    #         output_len=max_tokens,
+    #         temperature=temperature,
+    #         **kwargs,
+    #     )
 
 
 def load_args(
@@ -873,25 +899,25 @@ def load_args(
             llm_args.vocab_size >= 32768
         ), "Make sure to use a model with a vocab size of at least 32768"
 
-    elif "llama" in llm_name.lower():
+    # elif "llama" in llm_name.lower():
 
-        with open(folder / "params.json", "r") as f:
-            args = json.loads(f.read())
+    #     with open(folder / "params.json", "r") as f:
+    #         args = json.loads(f.read())
 
-        llm_args = LlamaModelArgs(
-            max_seq_len=max_seq_len,
-            max_batch_size=max_batch_size,
-            lora=lora,
-            **args,
-        )
+    #     llm_args = LlamaModelArgs(
+    #         max_seq_len=max_seq_len,
+    #         max_batch_size=max_batch_size,
+    #         lora=lora,
+    #         **args,
+    #     )
 
-    elif "gemma" in llm_name.lower():
-        with open(folder / "params.json", "r") as f:
-            args = json.loads(f.read())
+    # elif "gemma" in llm_name.lower():
+    #     with open(folder / "params.json", "r") as f:
+    #         args = json.loads(f.read())
 
-        llm_args = GemmaConfig(lora=lora, **args)
-        assert variant is not None, "Variant must be provided for Gemma model."
-        llm_args.quant = False
+    #     llm_args = GemmaConfig(lora=lora, **args)
+    #     assert variant is not None, "Variant must be provided for Gemma model."
+    #     llm_args.quant = False
 
     if isinstance(pipeline_args.param_dtype, str):
         pipeline_args.param_dtype = getattr(torch, pipeline_args.param_dtype)
@@ -993,62 +1019,62 @@ def load_llm_model(
             #     args.embedder.dim == model.args.dim
             # ), "Embedder dim must match model dim if no MLP projector."
 
-    elif "llama" in llm_name.lower():
-        tokenizer = LlamaTokenizer(model_path=str(folder / "tokenizer.model"))
-        with torch.device("meta"):
-            model = LlamaTransformer(args=llm_args, checkpoint=checkpoint)
-        embed_dim = model.args.dim
+    # elif "llama" in llm_name.lower():
+    #     tokenizer = LlamaTokenizer(model_path=str(folder / "tokenizer.model"))
+    #     with torch.device("meta"):
+    #         model = LlamaTransformer(args=llm_args, checkpoint=checkpoint)
+    #     embed_dim = model.args.dim
 
-        if parll and get_rank() == 0:
-            state_dict = load_state_dict(folder, dtype=param_dtype)
-            model.load_state_dict(state_dict, assign=True)  # type: ignore
-            logger.info("Loaded model on cpu!")
-        elif not parll:
-            state_dict = load_state_dict(folder, dtype=param_dtype)
-            model.load_state_dict(state_dict, assign=True)  # type: ignore
-            logger.info("Loaded model on cpu!")
+    #     if parll and get_rank() == 0:
+    #         state_dict = load_state_dict(folder, dtype=param_dtype)
+    #         model.load_state_dict(state_dict, assign=True)  # type: ignore
+    #         logger.info("Loaded model on cpu!")
+    #     elif not parll:
+    #         state_dict = load_state_dict(folder, dtype=param_dtype)
+    #         model.load_state_dict(state_dict, assign=True)  # type: ignore
+    #         logger.info("Loaded model on cpu!")
 
-        if (
-            pipeline_args.mlp_project.n_layers == 0
-            and args is not None
-            and not for_embedding
-        ):
-            logger.info("Embedder dim must match model dim if no MLP projector.")
-            # assert (
-            #     args.embedder.dim == model.args.dim
-            # ), "Embedder dim must match model dim if no MLP projector."
+    #     if (
+    #         pipeline_args.mlp_project.n_layers == 0
+    #         and args is not None
+    #         and not for_embedding
+    #     ):
+    #         logger.info("Embedder dim must match model dim if no MLP projector.")
+    #         # assert (
+    #         #     args.embedder.dim == model.args.dim
+    #         # ), "Embedder dim must match model dim if no MLP projector."
 
-    elif "gemma" in llm_name.lower():
-        embed_dim = llm_args.hidden_size
-        llm_args.tokenizer = str(folder / "tokenizer.model")
-        with set_default_tensor_type(param_dtype):
-            with torch.device("meta"):
-                model = GemmaForCausalLM(llm_args, checkpoint=checkpoint)
-            tokenizer = model.tokenizer
-            if parll and get_rank() == 0:
-                state_dict = load_state_dict(folder, dtype=param_dtype, gemma=True)
-                del state_dict["freqs_cis"]
-                model.load_state_dict(state_dict, assign=True)  # type: ignore
-                logger.info("Loaded model on cpu!")
-            elif not parll:
-                state_dict = load_state_dict(folder, dtype=param_dtype, gemma=True)
-                del state_dict["freqs_cis"]
-                model.load_state_dict(state_dict, assign=True)  # type: ignore
-                logger.info("Loaded model on cpu!")
+    # elif "gemma" in llm_name.lower():
+    #     embed_dim = llm_args.hidden_size
+    #     llm_args.tokenizer = str(folder / "tokenizer.model")
+    #     with set_default_tensor_type(param_dtype):
+    #         with torch.device("meta"):
+    #             model = GemmaForCausalLM(llm_args, checkpoint=checkpoint)
+    #         tokenizer = model.tokenizer
+    #         if parll and get_rank() == 0:
+    #             state_dict = load_state_dict(folder, dtype=param_dtype, gemma=True)
+    #             del state_dict["freqs_cis"]
+    #             model.load_state_dict(state_dict, assign=True)  # type: ignore
+    #             logger.info("Loaded model on cpu!")
+    #         elif not parll:
+    #             state_dict = load_state_dict(folder, dtype=param_dtype, gemma=True)
+    #             del state_dict["freqs_cis"]
+    #             model.load_state_dict(state_dict, assign=True)  # type: ignore
+    #             logger.info("Loaded model on cpu!")
 
-        if (
-            pipeline_args.mlp_project.n_layers == 0
-            and args is not None
-            and not for_embedding
-        ):
-            logger.info("Embedder dim must match model dim if no MLP projector.")
-            # assert (
-            #     args.embedder.dim == model.args.dim
-            # ), "Embedder dim must match model dim if no MLP projector."
-        if args is not None:
-            assert (
-                args.seq_len < llm_args.max_position_embeddings
-            ), f"Sequence length too long! Must be less than {llm_args.max_position_embeddings - 1}."
+    #     if (
+    #         pipeline_args.mlp_project.n_layers == 0
+    #         and args is not None
+    #         and not for_embedding
+    #     ):
+    #         logger.info("Embedder dim must match model dim if no MLP projector.")
+    #         # assert (
+    #         #     args.embedder.dim == model.args.dim
+    #         # ), "Embedder dim must match model dim if no MLP projector."
+    #     if args is not None:
+    #         assert (
+    #             args.seq_len < llm_args.max_position_embeddings
+    #         ), f"Sequence length too long! Must be less than {llm_args.max_position_embeddings - 1}."
 
     else:
         raise ValueError(f"Model name {llm_name} not recognized.")

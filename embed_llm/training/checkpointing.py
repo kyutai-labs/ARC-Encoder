@@ -49,16 +49,18 @@ class Checkpointer:
     def ckpt_dir(self) -> Path:
         return self.run_dir / "checkpoints"
 
-    @property
-    def dst_dir(self) -> tuple[Path, Path]:
-        return (
-            self.ckpt_dir
-            / f"checkpoint_{self.state.step:06d}"
-            / self.llm_name
-            / "consolidated",
-            self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / "MLP_projector",
-        )
-
+    def dst_dir(self, type= 'llm') -> Path:
+        if type == 'llm':
+            return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / self.llm_name
+        elif type == 'mlp_project':
+            return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / "MLP_projector"
+        elif type == 'trainable_embedder':
+            return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / self.llm_name / "trainable_embedder"
+        elif type == 'pooling_module':
+            return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / self.llm_name / "pooling_module"
+        else:
+            raise ValueError(f"Unknown type: {type}")
+    
     @staticmethod
     def consolidated_path(
         ckpt_dir: Path, use_safetensors: bool, save_only_lora: bool = False
@@ -121,9 +123,9 @@ class Checkpointer:
     @torch.no_grad()
     def retrieve_save_states(self, save_dtype: torch.dtype) -> dict[str, torch.Tensor]:
 
-        assert (
-            self.llm.args.lora.enable
-        ), "Cannot save LoRA checkpoint as LoRA training is not enabled."
+        # assert (
+        #     self.llm.args.lora.enable
+        # ), "Cannot save LoRA checkpoint as LoRA training is not enabled."
 
         # remove all potential hooks
         for module in self.llm.modules():
@@ -273,9 +275,12 @@ class Checkpointer:
         self,
         dtype: torch.dtype = torch.float16,
     ):
-        llm_dst, mlp_project_dst = self.dst_dir
+
+        llm_dst= self.dst_dir(type = 'llm')
         tmp_llm_dst = self._tmp(llm_dst)
-        if self.mlp_project is not None and self.mlp_project.args.n_layers > 0:
+            
+        if self.mlp_project is not None and self.mlp_project.n_layers > 0:
+            mlp_project_dst = self.dst_dir(type = 'mlp_project')
             tmp_mlp_project_dst = self._tmp(mlp_project_dst)
 
         main_logger_info(
@@ -283,11 +288,14 @@ class Checkpointer:
         )
 
         assert (
-            not self.dst_dir[0].exists() and not self.dst_dir[1].exists()
-        ), f"dst exists {self.dst_dir}"
+            not self.dst_dir(type='llm').exists() and not self.dst_dir(type='mlp_project').exists() \
+                and not self.dst_dir(type='trainable_embedder').exists() and not self.dst_dir(type='pooling_module').exists()
+        ), "dst exists"
 
-        tmp_llm_dst.mkdir(parents=True, exist_ok=True)
-        if self.mlp_project is not None and self.mlp_project.args.n_layers > 0:
+        if self.pipeline.pipeline_args.trainable_llm or self.trainable_embedder is not None:
+            tmp_llm_dst.mkdir(parents=True, exist_ok=True)
+            
+        if self.mlp_project is not None and self.mlp_project.n_layers > 0:
             tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
 
         if self.trainable_embedder is not None:
@@ -311,13 +319,15 @@ class Checkpointer:
 
         if self.rank == 0:
             # save checkpoint in tmp path
-            safetensors.torch.save_file(
-                llm_states,
-                self.consolidated_path(
-                    tmp_llm_dst, use_safetensors=True, save_only_lora=True
-                ),  # always use safetensors for checkpointing
-            )
-            if self.mlp_project is not None and self.mlp_project.args.n_layers > 0:
+            if self.pipeline.pipeline_args.trainable_llm:
+                safetensors.torch.save_file(
+                    llm_states,
+                    self.consolidated_path(
+                        tmp_llm_dst, use_safetensors=True, save_only_lora=True
+                    ),  # always use safetensors for checkpointing
+                )
+                
+            if self.mlp_project is not None and self.mlp_project.n_layers > 0:
                 safetensors.torch.save_file(
                     mlp_project_states,
                     self.consolidated_path(
@@ -326,6 +336,7 @@ class Checkpointer:
                         save_only_lora=False,
                     ),  # always use safetensors for checkpointing
                 )
+                
             if self.trainable_embedder is not None:
                 safetensors.torch.save_file(
                     trainable_embedder_states,
@@ -350,20 +361,18 @@ class Checkpointer:
             else:
                 self.write_pipeline_params_info(tmp_llm_dst.parent.parent)
 
-            assert (
-                not self.dst_dir[0].exists() and not self.dst_dir[1].exists()
-            ), f"should not happen! {self.dst_dir[0]} | {self.dst_dir[1]}"
-            tmp_llm_dst.rename(self.dst_dir[0])
-            if self.mlp_project is not None and self.mlp_project.args.n_layers > 0:
-                tmp_mlp_project_dst.rename(self.dst_dir[1])
+
+            tmp_llm_dst.rename(self.dst_dir(type='llm'))
+            if self.mlp_project is not None and self.mlp_project.n_layers > 0:
+                tmp_mlp_project_dst.rename(self.dst_dir(type='mlp_project'))
 
             if self.trainable_embedder is not None:
-                tmp_trainable_embedder_dst.rename(llm_dst.parent / "trainable_embedder")
+                tmp_trainable_embedder_dst.rename(self.dst_dir(type='trainable_embedder'))
                 if self.pooling_module is not None:
-                    tmp_pooling_module_dst.rename(llm_dst.parent / "pooling_module")
+                    tmp_pooling_module_dst.rename(self.dst_dir(type='pooling_module'))
 
             logger.info(
-                f"Done dumping checkpoint in {self.dst_dir[0]} and {self.dst_dir[1]} for step: {self.state.step}"
+                f"Done dumping checkpoint in {self.dst_dir(type='llm').parent} for step: {self.state.step}"
             )
 
             # delete last n checkpoints
