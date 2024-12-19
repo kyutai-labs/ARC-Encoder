@@ -283,9 +283,9 @@ class Checkpointer:
             mlp_project_dst = self.dst_dir(type = 'mlp_project')
             tmp_mlp_project_dst = self._tmp(mlp_project_dst)
 
-        main_logger_info(
-            f"Dumping checkpoint in {llm_dst} and {mlp_project_dst} using tmp name: {tmp_llm_dst.name}"
-        )
+            main_logger_info(
+                f"Dumping checkpoint in {llm_dst} and {mlp_project_dst} using tmp name: {tmp_llm_dst.name}"
+            )
 
         assert (
             not self.dst_dir(type='llm').exists() and not self.dst_dir(type='mlp_project').exists() \
