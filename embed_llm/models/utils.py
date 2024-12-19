@@ -128,7 +128,7 @@ def is_cross_att(module_name: str):
     return (
         "cross_attention" in module_name
         or "gate" in module_name
-        or ("to_k" in module_name and not 'cross_attend_block' in module_name)
+        or ("to_k" in module_name and not "cross_attend_block" in module_name)
         or "to_v" in module_name
     )
 
@@ -178,7 +178,6 @@ def initialize_cross_att_project(model: torch.nn.Module, param_dtype: torch.dtyp
                         torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
 
 
-
 def initialize_proj_params(
     model: torch.nn.Module, param_dtype: torch.dtype, latents=False, device="cpu"
 ):
@@ -209,5 +208,3 @@ def initialize_proj_params(
                     )
                     param = module._parameters[p_name]
                     torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-
-

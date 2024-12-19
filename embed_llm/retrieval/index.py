@@ -12,6 +12,7 @@ import faiss
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
+
 logger = logging.getLogger()
 
 
@@ -58,7 +59,9 @@ class Indexer(object):
         index_file = dir_path / "index.faiss"
         meta_file = dir_path / "index_meta.dpr"
         logger.info(f"Serializing index to {index_file}, meta data to {meta_file}")
-        faiss.write_index(faiss.index_gpu_to_cpu(self.index), Path(index_file).as_posix())
+        faiss.write_index(
+            faiss.index_gpu_to_cpu(self.index), Path(index_file).as_posix()
+        )
         with open(meta_file, mode="wb") as f:
             pickle.dump(self.index_id_to_db_id, f)
 

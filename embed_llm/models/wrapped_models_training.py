@@ -52,7 +52,6 @@ def load_training_model(
         assert train_args.pipeline.cross_att, "If dist_process, must do cross-attention"
         assert train_args.pipeline.do_both, "If dist_process, must do both"
 
-        
     llm_args, pipeline_args = load_args(
         folder,
         lora,
@@ -66,7 +65,7 @@ def load_training_model(
     # Load pretrained params on rank 0 for LLM
     if not pipeline_args.trainable_llm:
         llm_args.lora.enable = False
-        
+
     model, tokenizer, embed_dim = load_llm_model(
         llm_name=llm_name,
         llm_args=llm_args,
@@ -139,9 +138,7 @@ def load_training_model(
 
         if pipeline_args.trainable_embedder:
             main_logger_info("Initializing lora layers  for Embedder ...")
-            initialize_lora_parameters(
-                augmented_model.trainable_embedder, param_dtype
-            )
+            initialize_lora_parameters(augmented_model.trainable_embedder, param_dtype)
 
         if pipeline_args.cross_att:
             main_logger_info("Initializing Cross-Attention")
@@ -198,13 +195,13 @@ def load_training_model(
         ignored_state = [augmented_model.pooling_module.process.latents]
     else:
         ignored_state = []
-        
-    if 'attention' in augmented_model.mlp_project_args.type:
+
+    if "attention" in augmented_model.mlp_project_args.type:
         initialize_proj_params(
             augmented_model.mlp_project, param_dtype, latents=True, device="cuda"
         )
         ignored_state.append([augmented_model.mlp_project.latents])
-    
+
     ignored_state = None if len(ignored_state) == 0 else ignored_state
 
     torch.distributed.barrier()
@@ -214,7 +211,7 @@ def load_training_model(
     # only finetune LoRA, MLP projector and pooling parameters and freeze before wrapping
     for name, param in augmented_model.named_parameters():
         if lora.enable and "lora" in name:
-                param.requires_grad = True
+            param.requires_grad = True
         elif pipeline_args.trainable_llm and not lora.enable and "llm" in name:
             param.requires_grad = True
         elif "mlp_project" in name:
@@ -229,7 +226,6 @@ def load_training_model(
             if is_cross_att(m_name):
                 for p_name, param in module.named_parameters():
                     param.requires_grad = True
-
 
     if pipeline_args.trainable_embedder:
         assert (
@@ -252,7 +248,6 @@ def load_training_model(
             - pipeline_args.n_truncated_layers
         )
 
-
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
@@ -273,7 +268,6 @@ def load_training_model(
     )
 
     main_logger_info("Model sharded!")
-
 
     return (
         augmented_pipeline,

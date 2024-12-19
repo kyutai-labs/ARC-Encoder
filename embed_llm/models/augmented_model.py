@@ -10,7 +10,12 @@ import logging
 import numpy as np
 import torch.nn.functional as F
 from embed_llm.training.checkpointing import Checkpointer
-from embed_llm.models.embedding_modules import MLP_project, PoolingModule, ReversedLatentAttention, LatentAttention
+from embed_llm.models.embedding_modules import (
+    MLP_project,
+    PoolingModule,
+    ReversedLatentAttention,
+    LatentAttention,
+)
 from embed_llm.retrieval.embeddings import encode_text, get_pretrained_embedder
 from embed_llm.data.data_loader import Batch
 from embed_llm.models.args import LoraArgs
@@ -20,8 +25,9 @@ from embed_llm.models.args import (
     MLPProjectArgs,
     EmbedAugArgs,
 )
-    # LlamaModelArgs,
-    # GemmaConfig,
+
+# LlamaModelArgs,
+# GemmaConfig,
 
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.distributed import (
@@ -54,8 +60,8 @@ from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 Models = MistralTransformer  # | LlamaTransformer | GemmaForCausalLM
 logger = logging.getLogger(__name__)
 
-ModelsArgs = MistralModelArgs # | LlamaModelArgs | GemmaConfig
-Tokenizer = MistralTokenizer # | LlamaTokenizer | GemmaTokenizer
+ModelsArgs = MistralModelArgs  # | LlamaModelArgs | GemmaConfig
+Tokenizer = MistralTokenizer  # | LlamaTokenizer | GemmaTokenizer
 
 
 def pad_and_convert_to_tensor(
@@ -154,13 +160,16 @@ class EmbedAugModel(nn.Module):
                 )
             elif self.mlp_project_args.type == "reversed_latent_attention":
                 self.mlp_project = ReversedLatentAttention(
-                    n_layers = self.mlp_project_args.n_layers)
+                    n_layers=self.mlp_project_args.n_layers
+                )
             elif self.mlp_project_args.type == "latent_attention":
                 self.mlp_project = LatentAttention(
-                    n_layers=self.mlp_project_args.n_layers)
+                    n_layers=self.mlp_project_args.n_layers
+                )
             else:
                 raise ValueError(
-                    f"MLP type {self.mlp_project_args.type} not supported.")
+                    f"MLP type {self.mlp_project_args.type} not supported."
+                )
         else:
             self.mlp_project = None
 
@@ -205,11 +214,11 @@ class EmbedAugModel(nn.Module):
                     cat_embeddings = embeddings
             else:
                 if self.dist_process:
-                    cat_embeddings = self.mlp_project(embeddings, seqlens = kv_seqlens)
+                    cat_embeddings = self.mlp_project(embeddings, seqlens=kv_seqlens)
                 else:
-                    embeddings = self.mlp_project(embeddings, seqlens = kv_seqlens)
+                    embeddings = self.mlp_project(embeddings, seqlens=kv_seqlens)
                     cat_embeddings = embeddings
-                
+
         if self.cross_att:
             return self.llm.forward(
                 input_ids=x,
@@ -531,13 +540,12 @@ class EmbedAugPipeline(nn.Module):
                 for k, v in state_dict.items()
                 if "lora" not in k and is_cross_att(k)
             }
-            
+
             llm.load_state_dict(cross_att_state_dicts, assign=True, strict=False)
 
-        if Path(lora_path).exists():    
+        if Path(lora_path).exists():
             llm.load_lora(Path(lora_path), cross_att=pipeline_args.cross_att)
 
-                
         llm = llm.to(device)
         llm.eval()
 
@@ -705,7 +713,8 @@ class EmbedAugPipeline(nn.Module):
                     )
                 else:
                     cat_embeddings = self.model.mlp_project(
-                        embeddings.to(self.pipeline_args.param_dtype), seqlens=kv_seqlens
+                        embeddings.to(self.pipeline_args.param_dtype),
+                        seqlens=kv_seqlens,
                     )
             else:
                 cat_embeddings = embeddings

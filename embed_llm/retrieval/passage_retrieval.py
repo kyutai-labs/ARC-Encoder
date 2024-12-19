@@ -37,7 +37,9 @@ def index_encoded_data(index, embedding_files, indexing_batch_size):
         allembeddings = (
             np.vstack((allembeddings, embeddings)) if allembeddings.size else embeddings
         )
-        allpassages_ids.extend([{str(id): passage} for id, passage in zip(ids, passages)])
+        allpassages_ids.extend(
+            [{str(id): passage} for id, passage in zip(ids, passages)]
+        )
         allids.extend(ids)
         while allembeddings.shape[0] > indexing_batch_size:
             allembeddings, allids = add_embeddings(
@@ -51,6 +53,7 @@ def index_encoded_data(index, embedding_files, indexing_batch_size):
 
     logger.info("Data indexing completed.")
     return allpassages_ids
+
 
 def add_embeddings(index, embeddings, ids, indexing_batch_size):
     end_idx = min(indexing_batch_size, embeddings.shape[0])
@@ -73,7 +76,7 @@ def create_similar_passage_ds(
     pathname_embeddings=r"^/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/NVEmbed/(\d{1,3})_embeddings_(\d{1,2})\.npy$",
     save_or_load_index: bool = True,
     model_name: str = "NVEmbed",
-    split: str = "train"
+    split: str = "train",
 ):
 
     output_path = Path(output_path)
@@ -89,17 +92,16 @@ def create_similar_passage_ds(
     index_path = embeddings_dir / Path(split) / "index.faiss"
 
     if save_or_load_index and index_path.exists():
-        index.deserialize_from(embeddings_dir / Path(split) )
+        index.deserialize_from(embeddings_dir / Path(split))
     else:
         logger.info(f"Indexing passages from files {input_paths}")
         start_time_indexing = time.time()
         allpassages_ids = index_encoded_data(index, input_paths, indexing_batch_size)
         with open(embeddings_dir / Path(split) / "allpassages.jsonl", "w") as fout:
             for passage_id in allpassages_ids:
-                 json.dump(passage_id, fout) 
-                 fout.write("\n")
-        
-                
+                json.dump(passage_id, fout)
+                fout.write("\n")
+
         logger.info(f"Indexing time: {time.time()-start_time_indexing:.1f} s.")
         if save_or_load_index:
             index.serialize(embeddings_dir / Path(split))
@@ -110,9 +112,11 @@ def create_similar_passage_ds(
     with open(path_passages, "r") as file:
         for line in file:
             total_passages += 1
-    
+
     with open(path_passages, "r") as file:
-        for i, line in tqdm(enumerate(file), desc="Retrieving similar passages", total=total_passages):
+        for i, line in tqdm(
+            enumerate(file), desc="Retrieving similar passages", total=total_passages
+        ):
             data = json.loads(line)
             cur_pos = 0
             while cur_pos < len(data["text"]):
@@ -135,7 +139,9 @@ def create_similar_passage_ds(
 
                     # get top k results
                     start_time_retrieval = time.time()
-                    top_ids_and_scores = index.search_knn(embeds.cpu().numpy(), n_retrieved_doc)
+                    top_ids_and_scores = index.search_knn(
+                        embeds.cpu().numpy(), n_retrieved_doc
+                    )
                     logger.info(
                         f"Search time: {time.time()-start_time_retrieval:.1f} s."
                     )
@@ -144,15 +150,17 @@ def create_similar_passage_ds(
                     for (doc_ids, _), passage in zip(top_ids_and_scores, passages):
                         paired_passage = []
                         doc_ids = [str(doc_id) for doc_id in doc_ids]
-                        with open(embeddings_dir / Path(split) / "allpassages.jsonl", "r") as fin:
+                        with open(
+                            embeddings_dir / Path(split) / "allpassages.jsonl", "r"
+                        ) as fin:
                             for line in fin:
                                 dict_content = json.loads(line)
                                 id = str(list(dict_content.keys())[0])
-                                
+
                                 if id in doc_ids:
                                     paired_passage.append(dict_content[id])
                                     doc_ids.remove(id)
-                                    
+
                                 if len(doc_ids) == 0:
                                     break
 
@@ -179,8 +187,8 @@ if __name__ == "__main__":
         n_subquantizers=8,
         n_bits=8,
         indexing_batch_size=9984,
-        pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/NVEmbed/*_embeddings_*.pkl",     
+        pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/NVEmbed/*_embeddings_*.pkl",
         save_or_load_index=True,
         model_name="NVEmbed",
-        split = 'train'
+        split="train",
     )
