@@ -13,8 +13,7 @@ def generate(
     embeddings: torch.Tensor | None = None,
     chunk_size: int | None = None,
     eos_id: int | None = None,
-    norm_wo_embeds: bool = False,
-    kv_seqlens: list[int] | None = None,
+    embed_seqlens: list[int] | None = None,
     cat_embeddings: torch.Tensor | None = None,
     **kwargs,
 ) -> tuple[list[list[int]], list[list[float]]]:
@@ -33,11 +32,11 @@ def generate(
     B, V = len(encoded_prompts), model.args.vocab_size
     seqlens = [len(x) for x in encoded_prompts]
 
-    concat = (len(model.cross_att_layers_id)>0 and model.do_both) and cat_embeddings is not None
+    concat =  cat_embeddings is not None
 
     # Cache
     cache_window = (
-        max(seqlens) + max_tokens + 1 if concat else max(seqlens) + max_tokens
+        max(seqlens) + max_tokens + 3 if concat else max(seqlens) + max_tokens
     )
 
     cache = BufferCache(
@@ -74,7 +73,7 @@ def generate(
             ),
             seqlens=[len(p) for p in prompt_chunks],
             embeddings=embeddings,
-            kv_seqlens=kv_seqlens,
+            embed_seqlens=embed_seqlens,
             cache=cache,
             cat_embeddings=cat_embeddings,
         )
@@ -121,7 +120,7 @@ def generate(
             next_token,
             seqlens=[1] * B,
             embeddings=embeddings,
-            kv_seqlens=kv_seqlens,
+            embed_seqlens=embed_seqlens,
             cache=cache,
         )
 
@@ -148,7 +147,7 @@ def get_attention(
     sentence: str,
     embeddings: torch.Tensor,
     tokenizer,
-    model: Transformer | CrossAttTransformer,
+    model: Transformer,
     n_tokens,
     bos: bool = True,
 ) -> tuple[torch.Tensor, list[int]]:
@@ -157,24 +156,16 @@ def get_attention(
     if embeddings is not None or model.do_both:
         tokens = ["<embed>"] + tokens
     with torch.no_grad():
-        if isinstance(model, Transformer):
-            attention_weights = model.forward(
-                torch.tensor(token_ids).to(model.device),
-                seqlens=[len(token_ids)],
-                embeddings=embeddings.to(model.device),
-                show_attention=True,
-            )
-        elif isinstance(model, CrossAttTransformer):
-            attention_weights = model.forward(
-                torch.tensor(token_ids).to(model.device),
-                seqlens=[len(token_ids)],
-                embeddings=embeddings.to(model.device),
-                kv_seqlens=[1],
-                cat_embeddings=embeddings if model.do_both else None,
-                show_attention=True,
-            )
+        attention_weights, cross_att_weights = model.forward(
+            torch.tensor(token_ids).to(model.device),
+            seqlens=[len(token_ids)],
+            embeddings=embeddings.to(model.device),
+            embed_seqlens=[embeddings.shape[0]],
+            cat_embeddings=embeddings if model.do_both else None,
+            show_attention=True,
+        )
 
-        return attention_weights, tokens
+    return attention_weights, cross_att_weights, tokens
 
 
 def sample(logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:

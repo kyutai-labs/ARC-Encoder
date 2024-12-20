@@ -122,7 +122,6 @@ class EmbedAugModel(nn.Module):
         self.llm_name = llm_name.lower()
         self.max_seq_len = max_seq_len
         self.w_embeds = pipeline_args.w_embeds
-        self.norm_wo_embeds = pipeline_args.norm_wo_embeds
         self.training = pipeline_args.training
         self.mlp_project_args = pipeline_args.mlp_project
         self.trainable_embedder = trainable_embedder
@@ -137,10 +136,8 @@ class EmbedAugModel(nn.Module):
             
         self.dist_process = pipeline_args.dist_process
         if "mistral" in self.llm_name:
-            self.forward = partial(
-                self.forward_seq,
-                norm_wo_embeds=self.norm_wo_embeds,
-            )
+            self.forward = self.forward_seq
+            
 
         # elif "gemma" in self.llm_name or "llama" in self.llm_name:
         #     assert (
@@ -180,26 +177,33 @@ class EmbedAugModel(nn.Module):
             )
         else:
             self.pooling_module = None
+            
+
+        self.do_concat = pipeline_args.do_both or not pipeline_args.cross_att
 
     def forward_seq(
         self,
         x: torch.Tensor,
         seqlens: list[int],
-        embeddings: torch.Tensor | None = None,
-        embed_seqlens: list[int] | None = None,
-        norm_wo_embeds: bool = False,
+        embeddings: torch.Tensor | list[list[list[int]]] | None = None,
+        embed_seqlens: list[int] | list[list[int]] | None = None,
     ) -> torch.Tensor:
 
         cat_embeddings = None
         if self.trainable_embedder is not None:
             embeddings = self.trainable_embedder(
-                input_ids=embeddings, embeddings=None, seqlens=embed_seqlens
+                input_ids= torch.from_numpy(np.array([el for sublist in embeddings for subsublist in sublist for el in subsublist])).cuda(non_blocking=True),
+                embeddings=None, 
+                seqlens=[el for sublist in embed_seqlens for el in sublist],
             )
+
             if self.pooling_module is not None:
-                embeddings = self.pooling_module(x=embeddings, seqlens=embed_seqlens)
-                kv_seqlens = [1] * len(embed_seqlens)
+                embeddings = self.pooling_module(x=embeddings, seqlens=[el for sublist in embed_seqlens for el in sublist])
+                embed_seqlens = [len(sublist) for sublist in embed_seqlens]
+            else:
+                embed_seqlens =[el for sublist in embed_seqlens for el in sublist]
         else:
-            kv_seqlens = embed_seqlens
+            embed_seqlens = embed_seqlens
 
         if self.normalize_embeddings:
             embeddings = F.normalize(embeddings, p=2, dim=-1)
@@ -213,18 +217,19 @@ class EmbedAugModel(nn.Module):
                     cat_embeddings = embeddings
             else:
                 if self.dist_process:
-                    cat_embeddings = self.mlp_project(embeddings, seqlens=kv_seqlens)
+                    cat_embeddings = self.mlp_project(embeddings, seqlens=embed_seqlens)
                 else:
-                    embeddings = self.mlp_project(embeddings, seqlens=kv_seqlens)
+                    embeddings = self.mlp_project(embeddings, seqlens=embed_seqlens)
                     cat_embeddings = embeddings
-
+        else:
+            cat_embeddings = embeddings
 
         return self.llm.forward(
             input_ids=x,
             embeddings=embeddings,
             seqlens=seqlens,
-            embed_seqlens=kv_seqlens,
-            cat_embeddings=cat_embeddings,
+            embed_seqlens=embed_seqlens,
+            cat_embeddings=cat_embeddings if self.do_concat else None,
         )
 
 
@@ -295,7 +300,6 @@ class EmbedAugPipeline(nn.Module):
         self,
         batch: Batch,
         batch_size: int,
-        continuation: bool = False,
         mlm: bool = False,
     ) -> tuple:
 
@@ -336,7 +340,7 @@ class EmbedAugPipeline(nn.Module):
                 cur_pos += size
 
                 text_tokens = self.tokenizer.encode(
-                    batch.texts[i], bos=False, eos=False
+                    batch.to_embed[i]['text'][0], bos=False, eos=False
                 )
 
                 for i, token in enumerate(text_tokens):
@@ -363,20 +367,43 @@ class EmbedAugPipeline(nn.Module):
                     non_blocking=True
                 )
 
-        else:
-            texts = batch.texts
 
-        if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
-            # To avoid OOM
-            with torch.no_grad():
-                embeddings = []
-                subbatch = []
-                # Maximum not to cause memory errors or also unspecified launch failure
-                subbatch_size = 16 if batch_size > 16 else batch_size
-                for i, text in enumerate(texts):
-                    subbatch.append(text)
-                    if len(subbatch) == subbatch_size:
+            if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
+                # To avoid OOM
+                with torch.no_grad():
+                    embeddings = []
+                    subbatch = []
+                    # Maximum not to cause memory errors or also unspecified launch failure
+                    subbatch_size = 16 if batch_size > 16 else batch_size
+                    for i, text in enumerate(texts):
+                        subbatch.append(text)
+                        if len(subbatch) == subbatch_size:
 
+                            if not self.pipeline_args.do_pool:
+                                embeds, emb_seqlens = encode_text(
+                                    subbatch,
+                                    model_name=self.embed_model_name,
+                                    model=self.embedding_model,
+                                    query_embedding=False,
+                                    device=self.embedding_model.device,
+                                    cross_att=True,
+                                )
+                                embed_seqlens.extend(emb_seqlens)
+                            else:
+                                embeds = encode_text(
+                                    subbatch,
+                                    model_name=self.embed_model_name,
+                                    model=self.embedding_model,
+                                    query_embedding=False,
+                                    device=self.embedding_model.device,
+                                    cross_att=False,
+                                )
+                                embed_seqlens.extend([1] * len(subbatch))
+
+                            embeddings.append(embeds.type(self.pipeline_args.param_dtype))
+
+                            subbatch = []
+                    if len(subbatch) > 0:
                         if not self.pipeline_args.do_pool:
                             embeds, emb_seqlens = encode_text(
                                 subbatch,
@@ -397,50 +424,80 @@ class EmbedAugPipeline(nn.Module):
                                 cross_att=False,
                             )
                             embed_seqlens.extend([1] * len(subbatch))
-
                         embeddings.append(embeds.type(self.pipeline_args.param_dtype))
-
-                        subbatch = []
-                if len(subbatch) > 0:
-                    if not self.pipeline_args.do_pool:
-                        embeds, emb_seqlens = encode_text(
-                            subbatch,
-                            model_name=self.embed_model_name,
-                            model=self.embedding_model,
-                            query_embedding=False,
-                            device=self.embedding_model.device,
-                            cross_att=True,
-                        )
-                        embed_seqlens.extend(emb_seqlens)
-                    else:
-                        embeds = encode_text(
-                            subbatch,
-                            model_name=self.embed_model_name,
-                            model=self.embedding_model,
-                            query_embedding=False,
-                            device=self.embedding_model.device,
-                            cross_att=False,
-                        )
-                        embed_seqlens.extend([1] * len(subbatch))
-                    embeddings.append(embeds.type(self.pipeline_args.param_dtype))
-                embeddings = torch.concatenate(embeddings, dim=0)
+                    embeddings = torch.concatenate(embeddings, dim=0)   
 
         else:
-            if continuation and not mlm:
-                input_ids_for_embedder = [
-                    self.tokenizer.encode(text, bos=True, eos=False) for text in texts
-                ]
-                embed_seqlens = [len(tokens) for tokens in input_ids_for_embedder]
-                embeddings = torch.from_numpy(
-                    np.array(
-                        [el for sublist in input_ids_for_embedder for el in sublist]
-                    )
-                ).cuda(non_blocking=True)
-            elif not mlm:
-                embeddings = torch.from_numpy(batch.x).cuda(non_blocking=True)
-                embed_seqlens = batch.sizes
+            if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
+                # To avoid OOM
+                with torch.no_grad():
+                    embeddings = []
+                    subbatch = []
+                    # Maximum not to cause memory errors or also unspecified launch failure
+                    subbatch_size = 16 if batch_size > 16 else batch_size
+                    for i, to_embed in enumerate(batch.to_embed):
+                        subbatch.append(to_embed['text'])
+                        if len(subbatch) == subbatch_size:
+                            if not self.pipeline_args.do_pool:
+                                subbatch = [" ".join(sublist) for sublist in subbatch]
+                                embeds, emb_seqlens = encode_text(
+                                    subbatch,
+                                    model_name=self.embed_model_name,
+                                    model=self.embedding_model,
+                                    query_embedding=False,
+                                    device=self.embedding_model.device,
+                                    cross_att=True,
+                                )
+                                # We keep all tokens so we can concatenate embeddings into one long sequence. 
+                                embed_seqlens.extend(emb_seqlens)
+                            else:
+                                embed_seqlens.extend([len(l_text) for l_text in subbatch])
+                                subbatch = [el for sublist in subbatch for el in sublist] # Flatten list of lists
+
+                                embeds = encode_text(
+                                    subbatch,
+                                    model_name=self.embed_model_name,
+                                    model=self.embedding_model,
+                                    query_embedding=False,
+                                    device=self.embedding_model.device,
+                                    cross_att=False,
+                                )
+
+
+                            embeddings.append(embeds.type(self.pipeline_args.param_dtype))
+
+                            subbatch = []
+                    if len(subbatch) > 0:
+                        if not self.pipeline_args.do_pool:
+                                embeds, emb_seqlens = encode_text(
+                                    subbatch,
+                                    model_name=self.embed_model_name,
+                                    model=self.embedding_model,
+                                    query_embedding=False,
+                                    device=self.embedding_model.device,
+                                    cross_att=True,
+                                )
+                                # We keep all tokens so we can concatenate embeddings into one long sequence. 
+                                subbatch = [" ".join(sublist) for sublist in subbatch]
+                                embed_seqlens.extend(emb_seqlens)
+                        else:
+                            embed_seqlens.extend([len(l_text) for l_text in subbatch])
+                            subbatch = [el for sublist in subbatch for el in sublist] # Flatten list of lists
+                            embeds = encode_text(
+                                subbatch,
+                                model_name=self.embed_model_name,
+                                model=self.embedding_model,
+                                query_embedding=False,
+                                device=self.embedding_model.device,
+                                cross_att=False,
+                            )
+                        embeddings.append(embeds.type(self.pipeline_args.param_dtype))
+                    embeddings = torch.concatenate(embeddings, dim=0)
+
             else:
-                pass
+                # Trainable Embedder
+                embeddings = [to_embed['tokens'] for to_embed in batch.to_embed]
+                embed_seqlens = [[len(tokens) for tokens in to_embed['tokens']] for to_embed in batch.to_embed]
 
         if "mistral" in self.llm_name and not mlm:
             x = torch.from_numpy(batch.x).cuda(non_blocking=True)
@@ -466,7 +523,7 @@ class EmbedAugPipeline(nn.Module):
         #     )
         #     seqlens = batch.sizes
 
-        # If not pre-trained embedder, embeddings is the input_ids for the LLM Embedder and embed_seqlens is the seqlens
+
         return x, y, y_mask, seqlens, embeddings, embed_seqlens
 
     # TODO Gérer multi gpu + adaptative param dtype
@@ -524,6 +581,8 @@ class EmbedAugPipeline(nn.Module):
             param_dtype=param_dtype,
             parll=False,
         )
+        if pipeline_args.cross_att_layers == -1 and pipeline_args.every_cross_att == -1:
+            assert not pipeline_args.cross_att, "Cross attention layers not specified"
 
         if pipeline_args.cross_att:
             print("Loading cross att state dict")
@@ -643,6 +702,7 @@ class EmbedAugPipeline(nn.Module):
         truncate_double_space: bool = False,
         device_generation: str | None = None,
         attention: bool = False,
+        embed_seqlens: list[int] | None = None,
         **kwargs,
     ):
 
@@ -655,7 +715,7 @@ class EmbedAugPipeline(nn.Module):
 
         if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
             if self.pipeline_args.cross_att and not self.pipeline_args.do_pool:
-                embeddings, kv_seqlens = encode_text(
+                embeddings, embed_seqlens = encode_text(
                     text_conditioning,
                     self.embed_model_name,
                     self.embedding_model,
@@ -671,7 +731,7 @@ class EmbedAugPipeline(nn.Module):
                     query_embedding=False,
                     device=device,
                 )
-                kv_seqlens = [1] * embeddings.shape[0]
+                embed_seqlens = [1] * embeddings.shape[0] if embed_seqlens is None else embed_seqlens
 
         elif self.pipeline_args.w_embeds and self.pipeline_args.trainable_embedder:
             x = [
@@ -689,10 +749,10 @@ class EmbedAugPipeline(nn.Module):
             if self.pipeline_args.do_pool:
                 embeddings = self.model.pooling_module(x=embeddings, seqlens=seqlens)
 
-            kv_seqlens = [1] * embeddings.shape[0]
+            embed_seqlens = [1] * embeddings.shape[0] if embed_seqlens is None else embed_seqlens
         else:
             embeddings = None
-            kv_seqlens = None
+            embed_seqlens = None
             cat_embeddings = None
 
         if embeddings is not None:
@@ -707,7 +767,7 @@ class EmbedAugPipeline(nn.Module):
                 else:
                     cat_embeddings = self.model.mlp_project(
                         embeddings.to(self.pipeline_args.param_dtype),
-                        seqlens=kv_seqlens,
+                        seqlens=embed_seqlens,
                     )
             else:
                 cat_embeddings = embeddings
@@ -722,16 +782,15 @@ class EmbedAugPipeline(nn.Module):
 
         generated_tokens, attentions = mistral_generate(
             encoded_prompts=encoded_prompts,
-            embeddings=None if embeddings is None else embeddings.to(device_generation),
+            embeddings=None if embeddings is None or not self.pipeline_args.cross_att else embeddings.to(device_generation),
             model=self.model.llm.to(device_generation),
             max_tokens=max_tokens,
             temperature=temperature,
             chunk_size=None,
             eos_id=eos_id,
-            kv_seqlens=None if not self.pipeline_args.cross_att else kv_seqlens,
-            norm_wo_embeds=self.pipeline_args.norm_wo_embeds,
+            embed_seqlens=None if not self.pipeline_args.cross_att else embed_seqlens,
             cat_embeddings=(
-                None if cat_embeddings is None else cat_embeddings.to(device_generation)
+                None if cat_embeddings is None or (not self.pipeline_args.do_both and self.pipeline_args.cross_att) else cat_embeddings.to(device_generation)
             ),
             attention=attention,
             **kwargs,
@@ -866,9 +925,8 @@ def load_args(
             args = json.loads(f.read())
 
         if not pipeline_args.cross_att:
-            assert pipeline_args.cross_att_layers is None, "Cross attention not supported for Mistral"
-            assert pipeline_args.every_cross_att is None, "Cross attention not supported for Mistral"
-            
+            pipeline_args.cross_att_layers = None
+            pipeline_args.every_cross_att = None
             
         llm_args = MistralModelArgs(
             lora=lora,
@@ -992,8 +1050,8 @@ def load_llm_model(
         with torch.device("meta"):
             # Remove cross-attention if for trainable embedder
             if for_embedding:
-                llm_args.start_cross_att = 0
-                llm_args.every_cross_att = 0
+                llm_args.start_cross_att = -1
+                llm_args.every_cross_att = -1
             model = MistralTransformer(
                 args=llm_args, checkpoint=checkpoint
             )
@@ -1087,6 +1145,5 @@ def load_llm_model(
         if pipeline_args.cross_att and pipeline_args.do_both:
             assert pipeline_args.cross_att, "If do_both, must do cross-attention"
             assert pipeline_args.do_pool, "If do_both, must do pooling"
-            model.do_both = True
 
     return model, tokenizer, embed_dim

@@ -9,8 +9,8 @@ lora:
 pipeline:
   w_embeds: true
   norm_wo_embeds: false
-  embedder_name: NVEmbed
-  trainable_embedder: false
+  embedder_name: Mistral7B
+  trainable_embedder: true
   n_truncated_layers: 8
   normalize_embeddings: true
   continuation: false
@@ -21,12 +21,12 @@ pipeline:
     hidden_dim: 4096
     n_layers: 1
     act: gelu
-    type: latent_attention
+    type: latent_attention # not compatible with not do_pool
   do_both: true
   shared_kv: false
   every_cross_att: 2
-  pooled_cross_att: true
-  dist_process: false
+  pooled_cross_att: false
+  dist_process: true
 data:
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl

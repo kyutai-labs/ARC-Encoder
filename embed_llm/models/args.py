@@ -30,7 +30,7 @@ class MLPProjectArgs(Serializable):
 @dataclass
 class EmbedAugArgs(Serializable):
     w_embeds: bool = False
-    norm_wo_embeds: bool = False
+    norm_wo_embeds: bool = False # Obsolete
     mlp_project: MLPProjectArgs = field(default_factory=MLPProjectArgs)
     training: bool = False
     param_dtype: torch.dtype = torch.bfloat16

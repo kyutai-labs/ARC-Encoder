@@ -207,7 +207,6 @@ def _train(
         rank=get_rank(),  # DDP rank
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
-        continuation=args.pipeline.continuation, #TODO remove
     )
     main_logger_info("Data loader done")
     if not args.no_eval:
@@ -222,7 +221,6 @@ def _train(
             rank=get_rank(),  # DDP rank
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
-            continuation=args.pipeline.continuation, # TODO remove
         )
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
         eval_batches = []
@@ -273,9 +271,10 @@ def _train(
     prepare_batch_fn = partial(
         pipeline.prepare_forward,
         batch_size=args.batch_size,
-        continuation=args.pipeline.continuation,
         mlm=args.pipeline.mlm,
     )
+    if args.pipeline.mlm:
+        print('Using MLM on the first available embedded passage only, rest is discarded')
 
     main_logger_info("Start training")
     model.train()

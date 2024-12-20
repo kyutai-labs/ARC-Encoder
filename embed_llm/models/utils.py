@@ -14,7 +14,7 @@ from embed_llm.training.distributed import (
 from embed_llm.models.embedding_modules import LatentAttention, ReversedLatentAttention
 
 # Mistral specifics
-from embed_llm.models.mistral.transformer import (
+from embed_llm.models.mistral.transformer_layers import (
     TransformerBlock as MistralTransformerBlock,
 )
 from embed_llm.models.mistral.cross_att_transformer import (
@@ -176,6 +176,7 @@ def initialize_cross_att_project(model: torch.nn.Module, param_dtype: torch.dtyp
                         torch.nn.init.zeros_(param)
                     else:
                         torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+    
 
 
 def initialize_proj_params(

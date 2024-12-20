@@ -136,6 +136,7 @@ class Cross_Attention(nn.Module):
         xk: torch.Tensor,
         xv: torch.Tensor,
         mask: BlockDiagonalMask | None = None,
+        show_attention: bool = False,
     ) -> torch.Tensor:
         seqlen_sum, _ = x.shape
 
@@ -150,12 +151,32 @@ class Cross_Attention(nn.Module):
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
 
-        output = memory_efficient_attention(xq, key, val, mask)
-        output = output.view(seqlen_sum, self.n_heads * self.head_dim)
+        if not show_attention:
+            output = memory_efficient_attention(xq, key, val, mask)
+            output = output.view(seqlen_sum, self.n_heads * self.head_dim)
 
-        assert isinstance(output, torch.Tensor)
+            assert isinstance(output, torch.Tensor)
 
-        return self.wo(output)  # type: ignore
+            return self.wo(output)  # type: ignore
+        else:
+            scale = 1 / xq.shape[-1] ** 0.5
+            xq = xq * scale
+            xq = xq.transpose(1, 2)
+            key = key.transpose(1, 2)
+            val = val.transpose(1, 2)
+            attn = xq @ key.transpose(-2, -1)
+            attn_bias = mask 
+            attn_shape = attn.shape
+            if attn_bias is not None:
+                attn = attn + attn_bias.materialize(attn_shape).to(attn.device)
+
+            attn = attn.softmax(-1)
+            output = (attn @ val).transpose(1, 2)
+            output = output.reshape(seqlen_sum, self.n_heads * self.head_dim)
+
+            assert isinstance(output, torch.Tensor)
+
+            return self.wo(output), attn  # type: ignore
 
 
 class Cross_AttTransformerBlock(nn.Module):
@@ -245,9 +266,18 @@ class Cross_AttTransformerBlock(nn.Module):
 
         if not self.pooled_cross_att:
             if xk is not None and xv is not None:
-                r = self.cross_attention.forward(
-                    x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
-                )
+                if not show_attention:
+                    r = self.cross_attention.forward(
+                        x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
+                    )
+                else:
+                    r, cross_attn_mtx = self.cross_attention.forward(
+                        x=self.attention_norm(h),
+                        mask=cross_att_mask,
+                        xk=xk,
+                        xv=xv,
+                        show_attention=True,
+                    )
                 h = h + r * self.gate(
                     h
                 )  # (l, d) + (l, d) * (l, d) = (l, d) # r is a replica along l
@@ -260,13 +290,15 @@ class Cross_AttTransformerBlock(nn.Module):
                 mask=cross_att_mask,
             )
             h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
+            if show_attention:
+                cross_attn_mtx = None
 
         out = self.feed_forward.forward(self.ffn_norm(h))
 
         if not show_attention:
             return h + out
         else:
-            return h + out, attn_mtx
+            return h + out, attn_mtx, cross_attn_mtx
 
 
 class Transformer(ModelBase, LoRALoaderMixin):
@@ -290,7 +322,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         layers = []
         self.start_cross_att = args.start_cross_att
         self.every_cross_att = args.every_cross_att
-        
+
         
         assert (
             self.every_cross_att == -1 or self.start_cross_att == -1
@@ -300,8 +332,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.cross_att = False
         else:
             self.cross_att = True
-
-        self.do_both = False
+            
         self.cross_att_layers_id = []
         for i in range(args.n_layers):
 
@@ -363,7 +394,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             k_layers = {}
             v_layers = {}
             for i in range(args.n_layers):
-                if i >= self.start_cross_att:
+                if i in self.cross_att_layers_id:
                     k_layers[str(i)] = nn.Linear(
                         args.dim, args.n_kv_heads * args.head_dim, bias=False
                     )
@@ -422,37 +453,42 @@ class Transformer(ModelBase, LoRALoaderMixin):
         cat_embeddings: torch.Tensor | None = None,
         show_attention: bool = False,
     ) -> torch.Tensor:
+
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
-        assert embed_seqlens is None or sum(embed_seqlens) == embeddings.shape[0], (
-            sum(embed_seqlens),
-            embeddings.shape[0],
-        )
+        if embeddings is not None:
+            assert embed_seqlens is None or sum(embed_seqlens) == embeddings.shape[0], (
+                sum(embed_seqlens),
+                embeddings.shape[0],
+            )
+
 
         token_embeds = self.tok_embeddings(input_ids)
-        (num_toks,) = input_ids.shape
+        
 
-        if cat_embeddings is not None and self.do_both:
+        if cat_embeddings is not None:
+            num_supp_toks = sum(embed_seqlens) if embed_seqlens is not None else cat_embeddings.shape[0]
+
 
             h = torch.zeros(
-                (num_toks + len(seqlens), self.args.dim),
+                (num_supp_toks + len(token_embeds), self.args.dim),
                 device=self.device,
                 dtype=self.dtype,
             )
             new_seqlens = []
-
             final_ind = 0
             for i, size in enumerate(seqlens):
                 assert size > 0
                 # Insert embedding at the beginning of the sequence
-                h[final_ind, :] = cat_embeddings[i, :]
-                self.pos_to_keep.append(False)
+                size_embed = embed_seqlens[i]
+                h[final_ind:size_embed+final_ind, :] = cat_embeddings[sum(embed_seqlens[:i]):sum(embed_seqlens[:i]) + size_embed, :]
+                self.pos_to_keep.extend([False]*size_embed)
                 # Insert token embeddings
-                h[final_ind + 1 : final_ind + size + 1, :] = token_embeds[
-                    final_ind - i : final_ind - i + size, :
+                h[size_embed+final_ind : size_embed + final_ind + size, :] = token_embeds[
+                    sum(seqlens[:i]) : sum(seqlens[:i]) + size, :
                 ]
                 self.pos_to_keep.extend([True] * size)
-                final_ind += size + 1
-                new_seqlens.append(size + 1)
+                final_ind += size_embed + size 
+                new_seqlens.append(size + size_embed)
             seqlens = new_seqlens
         else:
             h = token_embeds
@@ -460,7 +496,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
         embed_seqlens = seqlens if embed_seqlens is None else embed_seqlens
         cross_att_mask = BlockDiagonalMask.from_seqlens(
-            q_seqlen=seqlens, embed_seqlen=embed_seqlens
+            q_seqlen=seqlens, kv_seqlen=embed_seqlens
         )
         if self.causal:
             self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
@@ -469,7 +505,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
-
         if self.cross_att and embeddings is not None and self.shared_kv and not self.args.pooled_cross_att:
             xk, xv = self.to_k(embeddings), self.to_v(embeddings)
 
@@ -506,6 +541,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     )
         else:
             attn_mtx = []
+            cross_att_mtx = []
             for i in range(self.n_layers):
                 if i in self.cross_att_layers_id:
                     if not self.args.pooled_cross_att:
@@ -534,19 +570,20 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             cross_att_mask=cross_att_mask,
                         )
                 else:
-                    h, attn_mat = self.layers[str(i)](
+                    h, attn_mat, cross_att_mtx = self.layers[str(i)](
                         x=h,
                         freqs_cis=freqs_cis,
                         mask=self_att_mask,
                         show_attention=True,
                     )
                 attn_mtx.append(attn_mat)
+                cross_att_mtx.append(cross_att_mtx)
             self.pos_to_keep = []
-            return attn_mtx
+            return attn_mtx, 
 
         normalized_h = self.norm(h)
 
-        if cat_embeddings is not None and self.do_both:
+        if cat_embeddings is not None:
             normalized_h = normalized_h[
                 torch.tensor(self.pos_to_keep, dtype=torch.bool)
             ]
@@ -564,6 +601,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         input_ids: torch.Tensor,
         seqlens: list[int],
         embeddings: torch.Tensor | None,
+        embed_seqlens: list[int] | None,
         cache: BufferCache | None,
         cross_att_cache: CrossAttCache | None,
         cat_embeddings: torch.Tensor | None = None,
@@ -574,16 +612,17 @@ class Transformer(ModelBase, LoRALoaderMixin):
         If doing pipeline parallelism, this will return the activations of the last layer of this stage.
         For the last stage, this will return the normalized final embeddings.
         """
-        assert (
-            len(seqlens) <= self.args.max_batch_size
-        ), f"Max batch size is {self.args.max_batch_size}, got batch size of {len(seqlens)}"
-        (num_toks,) = input_ids.shape
-        assert sum(seqlens) == num_toks, (sum(seqlens), num_toks)
+        assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
+        assert embed_seqlens is None or sum(embed_seqlens) == embeddings.shape[0], (
+            sum(embed_seqlens),
+            embeddings.shape[0],
+        )
+
+        token_embeds = self.tok_embeddings(input_ids)
+        (num_supp_toks,) = sum(embed_seqlens) if embed_seqlens is not None else embeddings.shape[0]
 
         input_metadata: list[CacheInputMetadata] | list[SimpleInputMetadata]
 
-        if cat_embeddings is not None and self.do_both:
-            seqlens = [size + 1 for size in seqlens]
 
         if cache is not None:
             input_metadata = cache.get_input_metadata(seqlens)
@@ -598,31 +637,35 @@ class Transformer(ModelBase, LoRALoaderMixin):
             #     h = self.embed_vision_language_features(input_ids, images)
             # else:
             token_embeds = self.tok_embeddings(input_ids)
-            if cat_embeddings is not None and self.do_both:
+            if cat_embeddings is not None:
                 h = torch.zeros(
-                    (num_toks + len(seqlens), self.args.dim),
+                    (num_supp_toks + len(token_embeds), self.args.dim),
                     device=self.device,
                     dtype=self.dtype,
                 )
+                new_seqlens = []
 
                 final_ind = 0
                 for i, size in enumerate(seqlens):
                     assert size > 0
                     # Insert embedding at the beginning of the sequence
-                    h[final_ind, :] = cat_embeddings[i, :]
-                    self.pos_to_keep.append(False)
+                    size_embed = embed_seqlens[i]
+                    h[final_ind:size_embed+final_ind, :] = cat_embeddings[sum(embed_seqlens[:i]):sum(embed_seqlens[:i]) + size_embed, :]
+                    self.pos_to_keep.extend([False]*size_embed)
                     # Insert token embeddings
-                    # Seqlen has already been updated with embeddings
-                    h[final_ind + 1 : final_ind + size, :] = token_embeds[
-                        final_ind - i : final_ind - i + size - 1, :
+                    h[size_embed+final_ind : size_embed + final_ind + size, :] = token_embeds[
+                        sum(seqlens[:i]) : sum(seqlens[:i]) + size, :
                     ]
-                    self.pos_to_keep.extend([True] * (size - 1))
-                    final_ind += size
+                    self.pos_to_keep.extend([True] * size)
+                    final_ind += size_embed + size 
+                    new_seqlens.append(size + size_embed)
+                seqlens = new_seqlens
             else:
                 h = token_embeds
+            
         else:
             h = torch.empty(
-                num_toks, self.args.dim, device=self.device, dtype=self.dtype
+                num_supp_toks, self.args.dim, device=self.device, dtype=self.dtype
             )
             torch.distributed.recv(h, src=self.pipeline_rank - 1)
 
@@ -692,7 +735,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         else:
             normalized_h = self.norm(h)
 
-            if cat_embeddings is not None and self.do_both:
+            if cat_embeddings is not None:
                 normalized_h = normalized_h[
                     torch.tensor(self.pos_to_keep, dtype=torch.bool)
                 ]
@@ -703,19 +746,19 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self,
         input_ids: torch.Tensor,
         seqlens: list[int],
-        kv_seqlens: list[int],
+        embed_seqlens: list[int],
         embeddings: torch.Tensor | None,
         cache: BufferCache | None,
         cat_embeddings: torch.Tensor | None = None,
     ) -> torch.Tensor:
         cross_att_cache = (
             None
-            if kv_seqlens is None
+            if embed_seqlens is None
             else CrossAttCache(
                 embeddings.shape[0],
                 n_kv_heads=self.args.n_kv_heads,
                 head_dim=self.args.head_dim,
-                kv_seqlens=kv_seqlens,
+                kv_seqlens=embed_seqlens,
             )
         )
         h = self.generate_partial(
@@ -724,6 +767,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             embeddings=embeddings,
             cache=cache,
             cross_att_cache=cross_att_cache,
+            embed_seqlens=embed_seqlens,
             cat_embeddings=cat_embeddings,
         )  # , images=images
 
