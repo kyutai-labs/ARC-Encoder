@@ -306,7 +306,8 @@ def _train(
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
-
+            if get_rank() == 0:
+                print('X:', x.shape, 'Y:', y.shape,  '\n SEQLENS:', seqlens, '\n EMBEDDINGS:', len(embeddings), '\n EMBED_SEQLENS:', embed_seqlens)
             output = model.forward(
                 x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens
             )

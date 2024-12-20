@@ -218,8 +218,13 @@ def sequence_iterator(
             cur_pos += size
 
             if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):  
-                assert len(mask_buffer) == len(x_buffer) == seq_len == len(y_buffer)
-                assert sum(sizes) == seq_len
+                assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
+                assert len(x_buffer) <= seq_len
+                
+                if not adapt_seq_len:
+                    assert sum(sizes) == seq_len
+                    assert seq_len == len(x_buffer)
+                    
                 assert len(to_embed_buffer) == len(sizes)
                 # we don't want to yield sequences with a mask filled with False
                 if any(mask_buffer):

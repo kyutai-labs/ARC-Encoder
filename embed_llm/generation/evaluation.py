@@ -427,7 +427,22 @@ if __name__ == "__main__":
     # print(run_names)
     # print("Number of runs:", len(run_names))
     run_names = [
-        "128_SL_FN_Truemean_0_MLP_8_TRUNC_True_CA_16_CAL_False_SKV_False_DB_old_gate_more_params"
+            "LT_FN_False_0_MLP_True_CA_2_CAL_every_True_DB",                                 
+            "LT_FN_Truelatent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
+            "LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB",                            
+            "LT_FN_Truemean_0_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
+            "LT_FN_False_1_MLP_RLatt_True_CA_2_CAL_every_True_DB",                           
+            "LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
+            "LT_FN_False_1_MLP_True_CA_2_CAL_every_True_DB",                                 
+            "LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_atend_True_DB",
+            "LT_FN_False_3_MLP_True_CA_16_CAL_atend_True_DB",                                
+            "LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
+            "LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DB",                                 
+            "LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT",
+            "LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DBCONT",                             
+            "LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBMLM",
+            "LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DBMLM",                              
+            "LT_FN_Truereversed_latent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
     ]
 
     for run_name in run_names:
