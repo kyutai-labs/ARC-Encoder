@@ -36,9 +36,8 @@ from embed_llm.training.distributed import (
 from embed_llm.models.utils import is_cross_att
 
 # Mistral specifics
-from embed_llm.models.mistral.transformer import Transformer as MistralTransformer
 from embed_llm.models.mistral.cross_att_transformer import (
-    Transformer as CrossAtt_MistralTransformer,
+    Transformer as MistralTransformer,
 )
 from embed_llm.models.mistral.moe import MoeArgs
 from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_tokenizer
@@ -135,7 +134,7 @@ class EmbedAugModel(nn.Module):
             else pipeline_args.pooling_module
         )
 
-        self.cross_att = pipeline_args.cross_att
+            
         self.dist_process = pipeline_args.dist_process
         if "mistral" in self.llm_name:
             self.forward = partial(
@@ -219,46 +218,40 @@ class EmbedAugModel(nn.Module):
                     embeddings = self.mlp_project(embeddings, seqlens=kv_seqlens)
                     cat_embeddings = embeddings
 
-        if self.cross_att:
-            return self.llm.forward(
-                input_ids=x,
-                embeddings=embeddings,
-                seqlens=seqlens,
-                kv_seqlens=kv_seqlens,
-                cat_embeddings=cat_embeddings,
-            )
-        else:
-            return self.llm.forward(
-                input_ids=x,
-                embeddings=cat_embeddings,
-                seqlens=seqlens,
-                norm_wo_embeds=norm_wo_embeds,
-            )
-
-    def forward_batch(
-        self,
-        x: torch.Tensor,
-        seqlens: list[int] | None = None,
-        embeddings: torch.Tensor | None = None,
-        kv_seqlens: list[int] | None = None,  # Not used
-        norm_wo_embeds: bool = False,
-    ) -> torch.Tensor:
-
-        if self.trainable_embedder is not None:
-            embed_output = self.trainable_embedder(
-                input_ids=embeddings, embeddings=None, training=True
-            )
-            embeddings = self.pooling_module(x=embed_output, seqlens=seqlens)
-
-        if self.mlp_project is not None:
-            embeddings = self.mlp_project(embeddings)
 
         return self.llm.forward(
             input_ids=x,
             embeddings=embeddings,
-            training=True,
-            norm_wo_embeds=norm_wo_embeds,
+            seqlens=seqlens,
+            embed_seqlens=kv_seqlens,
+            cat_embeddings=cat_embeddings,
         )
+
+
+    # def forward_batch(
+    #     self,
+    #     x: torch.Tensor,
+    #     seqlens: list[int] | None = None,
+    #     embeddings: torch.Tensor | None = None,
+    #     kv_seqlens: list[int] | None = None,  # Not used
+    #     norm_wo_embeds: bool = False,
+    # ) -> torch.Tensor:
+
+    #     if self.trainable_embedder is not None:
+    #         embed_output = self.trainable_embedder(
+    #             input_ids=embeddings, embeddings=None, training=True
+    #         )
+    #         embeddings = self.pooling_module(x=embed_output, seqlens=seqlens)
+
+    #     if self.mlp_project is not None:
+    #         embeddings = self.mlp_project(embeddings)
+
+    #     return self.llm.forward(
+    #         input_ids=x,
+    #         embeddings=embeddings,
+    #         training=True,
+    #         norm_wo_embeds=norm_wo_embeds,
+    #     )
 
 
 class EmbedAugPipeline(nn.Module):
@@ -872,6 +865,11 @@ def load_args(
         with open(folder / "params.json", "r") as f:
             args = json.loads(f.read())
 
+        if not pipeline_args.cross_att:
+            assert pipeline_args.cross_att_layers is None, "Cross attention not supported for Mistral"
+            assert pipeline_args.every_cross_att is None, "Cross attention not supported for Mistral"
+            
+            
         llm_args = MistralModelArgs(
             lora=lora,
             dim=args["dim"],
@@ -884,11 +882,11 @@ def load_args(
             vocab_size=args["vocab_size"],
             max_batch_size=max_batch_size,
             start_cross_att=(
-                None
+                -1
                 if pipeline_args.cross_att_layers is None
                 else max(args["n_layers"] - pipeline_args.cross_att_layers, 0)
             ),
-            every_cross_att=pipeline_args.every_cross_att,
+            every_cross_att=-1 if pipeline_args.every_cross_att is None else pipeline_args.every_cross_att,
             shared_kv=True if pipeline_args.shared_kv else False,
             pooled_cross_att=True if pipeline_args.pooled_cross_att else False,
         )
@@ -992,32 +990,23 @@ def load_llm_model(
     if "mistral" in llm_name.lower():
         tokenizer = load_mistral_tokenizer(folder).instruct_tokenizer.tokenizer
         with torch.device("meta"):
-            if not pipeline_args.cross_att:
-                model = MistralTransformer(args=llm_args, checkpoint=checkpoint)
-            elif for_embedding:
-                model = MistralTransformer(args=llm_args, checkpoint=checkpoint)
-            else:
-                model = CrossAtt_MistralTransformer(
-                    args=llm_args, checkpoint=checkpoint
-                )
+            # Remove cross-attention if for trainable embedder
+            if for_embedding:
+                llm_args.start_cross_att = 0
+                llm_args.every_cross_att = 0
+            model = MistralTransformer(
+                args=llm_args, checkpoint=checkpoint
+            )
 
         embed_dim = model.args.dim
         if parll and get_rank() == 0:
             state_dict = load_state_dict(folder, dtype=param_dtype)
-            if isinstance(model, CrossAtt_MistralTransformer):
-                model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
-            else:
-                model.load_state_dict(state_dict, assign=True)  # type: ignore
-
+            model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
             logger.info("Loaded model on cpu!")
         elif not parll:
             state_dict = load_state_dict(folder, dtype=param_dtype)
-            if isinstance(model, CrossAtt_MistralTransformer):
-                model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
-            else:
-                model.load_state_dict(state_dict, assign=True)  # type: ignore
-            logger.info("Loaded model on cpu!")
-
+            model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
+    
         if (
             pipeline_args.mlp_project.n_layers == 0
             and args is not None

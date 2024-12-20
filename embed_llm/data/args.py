@@ -22,6 +22,7 @@ class DataArgs(Serializable):
         ""  # Each line in the jsonl files inside the data source directories must be a dictionary with a "text" key. See Readme for more details. Can be left empty.
     )
     shuffle: bool = False
-
+    adapt_seq_len: bool = False
+    continuation: bool = False
     def __post_init__(self) -> None:
         pass

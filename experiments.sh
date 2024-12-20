@@ -29,7 +29,7 @@ CONFIG_FILES=(
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DB.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truereversed_latent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_1_MLP_RLatt_True_CA_2_CAL_every_True_DB.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB
+/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_0_MLP_True_CA_2_CAL_every_True_DB.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBMLM.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml

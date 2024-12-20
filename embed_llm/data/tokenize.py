@@ -14,14 +14,21 @@ Mask = list[bool]
 
 
 @dataclass()
+class EmbedPassage:
+    tokens: Sequence | list[Sequence]
+    text: str | list[str]
+    
+@dataclass()
 class TokenSample:
     tokens: Sequence
     masks: Mask
+    passage: EmbedPassage | None = None
 
 
 def encode(
     data: dict[str, object],
     tokenizer: Tokenizer | None = None,
+    continuation: bool = False,
 ) -> TokenSample | None:
     sample = get_sample(data)
     return tokenize(sample=sample, tokenizer=tokenizer)

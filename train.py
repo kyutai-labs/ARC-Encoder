@@ -193,6 +193,10 @@ def _train(
         f"PipelineArgs: {pprint.pformat(dataclasses.asdict(pipeline.pipeline_args))}"
     )
 
+    assert args.data.continuation == pipeline.pipeline_args.continuation, (
+        f"Data continuation {args.data.continuation} should match pipeline continuation {pipeline.pipeline_args.continuation}"
+    )
+    
     """ Load  Dataloader"""
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
@@ -203,7 +207,7 @@ def _train(
         rank=get_rank(),  # DDP rank
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
-        continuation=args.pipeline.continuation,
+        continuation=args.pipeline.continuation, #TODO remove
     )
     main_logger_info("Data loader done")
     if not args.no_eval:
@@ -218,7 +222,7 @@ def _train(
             rank=get_rank(),  # DDP rank
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
-            continuation=args.pipeline.continuation,
+            continuation=args.pipeline.continuation, # TODO remove
         )
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
         eval_batches = []

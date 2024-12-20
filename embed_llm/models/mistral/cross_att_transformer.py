@@ -76,70 +76,6 @@ class SimpleInputMetadata:
 #         return output
 
 
-# Attempt
-# class Pooled_Cross_Attention(nn.Module):
-#     def __init__(
-#         self,
-#         dim: int,
-#         n_heads: int,
-#         head_dim: int,
-#         n_kv_heads: int,
-#     ):
-#         super().__init__()
-#         self.n_heads: int = n_heads
-#         self.head_dim: int = head_dim
-#         self.n_kv_heads: int = n_kv_heads
-
-#         self.to_v = nn.Linear(dim, self.n_kv_heads*self.head_dim, bias=False)
-#         self.repeats = self.n_heads // self.n_kv_heads
-#         self.wo = nn.Linear(self.n_heads*self.head_dim, dim, bias=False)
-
-#     def forward(
-#         self,
-#         embedding: torch.Tensor,
-#         mask : BlockDiagonalMask | None,
-#         seqlen: list[int] | None,
-#     ) -> torch.Tensor:
-
-#         xv = self.to_v(embedding)
-#         xv = xv.view(-1, self.n_kv_heads, self.head_dim)
-#         xq = torch.zeros((sum(seqlen), self.n_heads, self.head_dim)).to(xv.device)
-#         # Repeat keys and values to match number of query heads
-#         val = torch.repeat_interleave(xv, repeats=self.repeats, dim=1)[None, ...]
-#         xq = xq[None, ...]
-#         output = memory_efficient_attention(xq,torch.zeros_like(val).to(val.device), val, mask)
-
-#         output = output.view(sum(seqlen), self.n_heads * self.head_dim)
-
-#         assert isinstance(output, torch.Tensor)
-
-#         return self.wo(output)  # type: ignore
-
-# No bottleneck
-# class Pooled_Cross_Attention(nn.Module):
-#     def __init__(
-#         self,
-#         dim: int,
-#         n_heads: int,
-#         head_dim: int,
-#         n_kv_heads: int,
-#     ):
-#         super().__init__()
-#         self.up = nn.Linear(dim, dim, bias=False)
-#         self.down = nn.Linear(dim, dim, bias=False)
-
-#     def forward(
-#         self,
-#         embedding: torch.Tensor,
-#         seqlen: list[int],
-#         mask : BlockDiagonalMask | None = None,
-#     ) -> torch.Tensor:
-#         x = self.up(embedding)
-#         output = self.down(x)
-#         output = torch.repeat_interleave(
-#             output, repeats=torch.tensor(seqlen).to(output.device), dim=0
-#         )
-#         return output
 
 
 # Same number of params, closest to the original in terms of perf
@@ -340,6 +276,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         checkpoint: bool = False,
         pipeline_rank: int = 0,
         num_pipeline_ranks: int = 1,  # Don't use pipeline parallelism for now
+        causal: bool = True,
     ):
         super().__init__()
         self.args = args
@@ -351,22 +288,24 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.num_pipeline_ranks = num_pipeline_ranks
         self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
         layers = []
-        self.start_cross_att = (
-            self.n_layers // 2
-            if (args.start_cross_att is None and args.every_cross_att is None)
-            else args.start_cross_att
-        )
+        self.start_cross_att = args.start_cross_att
         self.every_cross_att = args.every_cross_att
+        
+        
         assert (
-            self.every_cross_att is None or self.start_cross_att is None
+            self.every_cross_att == -1 or self.start_cross_att == -1
         ), "Cannot have both start_cross_att and every_cross_att"
+        
+        if self.start_cross_att == -1 and self.every_cross_att == -1:
+            self.cross_att = False
+        else:
+            self.cross_att = True
 
         self.do_both = False
-
         self.cross_att_layers_id = []
         for i in range(args.n_layers):
 
-            if self.start_cross_att is not None and i >= self.start_cross_att:
+            if self.start_cross_att != -1 and i >= self.start_cross_att:
                 block: torch.nn.Module = Cross_AttTransformerBlock(
                     dim=args.dim,
                     hidden_dim=args.hidden_dim,
@@ -379,7 +318,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     pooled_cross_att=args.pooled_cross_att,
                 )
                 self.cross_att_layers_id.append(i)
-            elif self.every_cross_att is not None and i % self.every_cross_att == 0:
+            elif self.every_cross_att != -1 and i % self.every_cross_att == 0:
                 block: torch.nn.Module = Cross_AttTransformerBlock(
                     dim=args.dim,
                     hidden_dim=args.hidden_dim,
@@ -412,15 +351,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 )
                 block = non_reentrant_wrapper(block)
             layers.append(block)
+            
         self.layers = nn.ModuleDict({str(i): layers[i] for i in range(self.n_layers)})
-
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
         self.shared_kv = args.shared_kv
-        if self.shared_kv and not args.pooled_cross_att:
+        if self.cross_att and self.shared_kv and not args.pooled_cross_att:
             self.to_k = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
             self.to_v = nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False)
-        elif not args.pooled_cross_att:
+        elif self.cross_att and not args.pooled_cross_att:
             k_layers = {}
             v_layers = {}
             for i in range(args.n_layers):
@@ -445,8 +384,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
         )
 
         self.n_local_layers = self.n_layers
+        self.causal = causal
+        self.for_embedding = False
         self.pos_to_keep = []
-
+        
+        if not self.cross_att:
+            assert len(self.cross_att_layers_id) == 0, "No cross-attention layers should be present"
     @property
     def dtype(self) -> torch.dtype:
         return next(self.parameters()).dtype
@@ -475,13 +418,13 @@ class Transformer(ModelBase, LoRALoaderMixin):
         input_ids: torch.Tensor,
         seqlens: list[int],
         embeddings: torch.Tensor | None,
-        kv_seqlens: list[int] | None = None,
+        embed_seqlens: list[int] | None = None,
         cat_embeddings: torch.Tensor | None = None,
         show_attention: bool = False,
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
-        assert kv_seqlens is None or sum(kv_seqlens) == embeddings.shape[0], (
-            sum(kv_seqlens),
+        assert embed_seqlens is None or sum(embed_seqlens) == embeddings.shape[0], (
+            sum(embed_seqlens),
             embeddings.shape[0],
         )
 
@@ -515,16 +458,19 @@ class Transformer(ModelBase, LoRALoaderMixin):
             h = token_embeds
 
         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
-        kv_seqlens = seqlens if kv_seqlens is None else kv_seqlens
+        embed_seqlens = seqlens if embed_seqlens is None else embed_seqlens
         cross_att_mask = BlockDiagonalMask.from_seqlens(
-            q_seqlen=seqlens, kv_seqlen=kv_seqlens
+            q_seqlen=seqlens, embed_seqlen=embed_seqlens
         )
+        if self.causal:
+            self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
+        else:
+            self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
 
-        self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
-        if embeddings is not None and self.shared_kv and not self.args.pooled_cross_att:
+        if self.cross_att and embeddings is not None and self.shared_kv and not self.args.pooled_cross_att:
             xk, xv = self.to_k(embeddings), self.to_v(embeddings)
 
         if not show_attention:
@@ -606,6 +552,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
             ]
 
         self.pos_to_keep = []
+        
+        if self.for_embedding:
+            return normalized_h
 
         return self.output(normalized_h).float()
 
@@ -679,7 +628,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         # freqs_cis is always the same for every layer
         freqs_cis = self.freqs_cis[input_metadata[0].positions]
-        if embeddings is not None and self.shared_kv and not self.args.pooled_cross_att:
+        if self.cross_att and embeddings is not None and self.shared_kv and not self.args.pooled_cross_att:
             if not cross_att_cache.full:
                 xk, xv = self.to_k(embeddings), self.to_v(embeddings)
                 cross_att_cache.fill(xk, xv)
