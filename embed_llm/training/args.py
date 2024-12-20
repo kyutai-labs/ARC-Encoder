@@ -86,7 +86,7 @@ class TrainArgs(Serializable):
 
     # Pretrained embedder to use off the shelf
     pipeline: EmbedAugArgs = field(default_factory=EmbedAugArgs)
-
+    paraphrase_prompt: bool = False
     mixed_precision: bool = True
 
     def __post_init__(self) -> None:

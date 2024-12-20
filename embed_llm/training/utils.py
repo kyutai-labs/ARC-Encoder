@@ -9,6 +9,24 @@ import numpy as np
 import random
 
 
+
+PARAPHRASE_PROMPT = [{'prefix': 'Background: ', 'suffix':' means the same as '},
+                     {'prefix': 'Background: ', 'suffix':' Can you put the above sentences in your own terms? '},
+                     {'prefix': '', 'suffix':'Please provide a reinterpretation of the preceding background text. '},
+                    {'prefix': 'These two expressions are equivalent in essence:(1) ', 'suffix':' (2) '},
+                    {'prefix': 'Background: ', 'suffix':' is a paraphrase of what? '},
+                    {'prefix': '', 'suffix':'Could you give me a different version of the background sentences above? '},
+                    {'prefix': 'In other words, background: ', 'suffix':' is just another way of saying: '},
+                    {'prefix': 'You’re getting across the same point whether you say background: ', 'suffix':' or '},
+                    {'prefix': '', 'suffix':'After uppacking the ideas in the background information above, we got: '},
+                    {'prefix': '', 'suffix':'Please offer a restatement of the background sentences I’ve just read. '},
+                    {'prefix': 'Background: ', 'suffix':' , which also means: '},
+                    {'prefix': 'Strip away the mystery, and you’ll find ', 'suffix':' is simply another rendition of: '},
+                    {'prefix': 'The essence of background: ', 'suffix':' is captured again in the following statement: '}]
+                     
+
+
+
 logger = logging.getLogger("utils")
 
 
@@ -85,3 +103,9 @@ def logged_closing(thing: Closable, name: str):
 
 def now_as_str() -> str:
     return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+
+
+
+    
+    

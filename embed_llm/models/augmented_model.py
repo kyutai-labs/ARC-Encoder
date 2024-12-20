@@ -132,7 +132,6 @@ class EmbedAugModel(nn.Module):
             if trainable_embedder is None or not pipeline_args.do_pool
             else pipeline_args.pooling_module
         )
-
             
         self.dist_process = pipeline_args.dist_process
         if "mistral" in self.llm_name:
@@ -178,9 +177,9 @@ class EmbedAugModel(nn.Module):
         else:
             self.pooling_module = None
             
-
         self.do_concat = pipeline_args.do_both or not pipeline_args.cross_att
-
+        self.tokenized_prompts = []
+        
     def forward_seq(
         self,
         x: torch.Tensor,
@@ -230,6 +229,7 @@ class EmbedAugModel(nn.Module):
             seqlens=seqlens,
             embed_seqlens=embed_seqlens,
             cat_embeddings=cat_embeddings if self.do_concat else None,
+            tokenized_prompts=self.tokenized_prompts,
         )
 
 

@@ -9,8 +9,8 @@ lora:
 pipeline:
   w_embeds: true
   norm_wo_embeds: false
-  embedder_name: Mistral7B
-  trainable_embedder: true
+  embedder_name: NVEmbed
+  trainable_embedder: false
   n_truncated_layers: 8
   normalize_embeddings: true
   continuation: false
@@ -28,7 +28,7 @@ pipeline:
   pooled_cross_att: false
   dist_process: true
 data:
-  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/test_multi_passage.jsonl
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
   shuffle: false
 seq_len: 128
@@ -47,6 +47,8 @@ eval_freq: 100
 no_eval: false
 ckpt_freq: 500
 save_adapters: true
+paraphrase_prompt: true
+
 
 # wandb:
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706

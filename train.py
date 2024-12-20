@@ -37,6 +37,7 @@ from embed_llm.training.utils import (
     TrainState,
     logged_closing,
     set_random_seed,
+    PARAPHRASE_PROMPT,
 )
 from embed_llm.monitoring.metrics_logger import (
     MetricsLogger,
@@ -197,6 +198,7 @@ def _train(
         f"Data continuation {args.data.continuation} should match pipeline continuation {pipeline.pipeline_args.continuation}"
     )
     
+    
     """ Load  Dataloader"""
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
@@ -274,8 +276,16 @@ def _train(
         mlm=args.pipeline.mlm,
     )
     if args.pipeline.mlm:
-        print('Using MLM on the first available embedded passage only, rest is discarded')
+        main_logger_info('Using MLM on the first available embedded passage only, rest is discarded')
 
+    if args.paraphrase_prompt:
+        main_logger_info('Using paraphrase prompt')
+        for prompt in PARAPHRASE_PROMPT:
+            prefix = pipeline.tokenizer.encode(prompt['prefix'], bos = True, eos = False)
+            suffix = pipeline.tokenizer.encode(prompt['suffix'], bos = False, eos = False)
+            model.tokenized_prompts.append({'prefix': prefix, 'suffix': suffix})
+    
+    
     main_logger_info("Start training")
     model.train()
     torch.cuda.empty_cache()
@@ -306,8 +316,7 @@ def _train(
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
-            if get_rank() == 0:
-                print('X:', x.shape, 'Y:', y.shape,  '\n SEQLENS:', seqlens, '\n EMBEDDINGS:', len(embeddings), '\n EMBED_SEQLENS:', embed_seqlens)
+
             output = model.forward(
                 x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens
             )

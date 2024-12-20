@@ -4,8 +4,7 @@ from functools import partial, reduce
 from dataclasses import dataclass
 import torch
 from torch import nn
-import torch.distributed as dist
-import numpy as np
+import random
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
@@ -449,6 +448,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         input_ids: torch.Tensor,
         seqlens: list[int],
         embeddings: torch.Tensor | None,
+        tokenized_prompts: list[dict[str, int]] = [],
         embed_seqlens: list[int] | None = None,
         cat_embeddings: torch.Tensor | None = None,
         show_attention: bool = False,
@@ -468,19 +468,44 @@ class Transformer(ModelBase, LoRALoaderMixin):
         if cat_embeddings is not None:
             num_supp_toks = sum(embed_seqlens) if embed_seqlens is not None else cat_embeddings.shape[0]
 
-
+        
+            prefixes = []
+            suffixes = []
+            
+            for _  in range(len(seqlens)):
+                if len(tokenized_prompts) > 0:
+                    tokenized_prompt = random.choice(tokenized_prompts)
+                    prefixes.append(tokenized_prompt["prefix"])
+                    suffixes.append(tokenized_prompt["suffix"])
+                    num_supp_toks += len(tokenized_prompt["prefix"]) + len(tokenized_prompt["suffix"])
+                
+                
+                
+                
             h = torch.zeros(
                 (num_supp_toks + len(token_embeds), self.args.dim),
                 device=self.device,
                 dtype=self.dtype,
             )
+            
             new_seqlens = []
             final_ind = 0
             for i, size in enumerate(seqlens):
                 assert size > 0
-                # Insert embedding at the beginning of the sequence
-                size_embed = embed_seqlens[i]
-                h[final_ind:size_embed+final_ind, :] = cat_embeddings[sum(embed_seqlens[:i]):sum(embed_seqlens[:i]) + size_embed, :]
+             
+                
+                if len(tokenized_prompts) > 0:
+                    # Insert embedding at the beginning of the sequence
+                    size_embed = len(prefixes[i]) + embed_seqlens[i] + len(suffixes[i])
+                    tok_before_embed = self.tok_embeddings(torch.tensor(prefixes[i], device=self.device))
+                    tok_after_embed = self.tok_embeddings(torch.tensor(suffixes[i], device=self.device))
+                    h[final_ind:size_embed+final_ind, :] = torch.cat([tok_before_embed, 
+                                                                      cat_embeddings[sum(embed_seqlens[:i]):sum(embed_seqlens[:i+1]), :], 
+                                                                      tok_after_embed], dim=0)
+                else:
+                    size_embed = embed_seqlens[i]
+                    h[final_ind:size_embed+final_ind, :] = cat_embeddings[sum(embed_seqlens[:i]):sum(embed_seqlens[:i+1]), :]
+                    
                 self.pos_to_keep.extend([False]*size_embed)
                 # Insert token embeddings
                 h[size_embed+final_ind : size_embed + final_ind + size, :] = token_embeds[
