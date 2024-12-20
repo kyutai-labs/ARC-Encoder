@@ -2,6 +2,7 @@ import torch
 from embed_llm.models.mistral.cache import BufferCache
 from embed_llm.models.mistral.cross_att_transformer import Transformer
 
+
 @torch.inference_mode()
 def generate(
     encoded_prompts: list[list[int]] | list[int],
@@ -32,7 +33,7 @@ def generate(
     B, V = len(encoded_prompts), model.args.vocab_size
     seqlens = [len(x) for x in encoded_prompts]
 
-    concat =  cat_embeddings is not None
+    concat = cat_embeddings is not None
 
     # Cache
     cache_window = (
@@ -68,9 +69,7 @@ def generate(
         assert all(len(p) > 0 for p in prompt_chunks)
 
         prelogits = model.generate(
-            torch.tensor(
-                sum(prompt_chunks, []), device=model.device, dtype=torch.long
-            ),
+            torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
             seqlens=[len(p) for p in prompt_chunks],
             embeddings=embeddings,
             embed_seqlens=embed_seqlens,

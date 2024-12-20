@@ -65,7 +65,7 @@ def load_training_model(
     # Load pretrained params on rank 0 for LLM
     if not pipeline_args.trainable_llm:
         llm_args.lora.enable = False
-        
+
     if not pipeline_args.cross_att:
         pipeline_args.cross_att_layers = -1
         pipeline_args.every_cross_att = -1

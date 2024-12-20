@@ -75,8 +75,6 @@ class SimpleInputMetadata:
 #         return output
 
 
-
-
 # Same number of params, closest to the original in terms of perf
 class Pooled_Cross_Attention(nn.Module):
     def __init__(
@@ -164,7 +162,7 @@ class Cross_Attention(nn.Module):
             key = key.transpose(1, 2)
             val = val.transpose(1, 2)
             attn = xq @ key.transpose(-2, -1)
-            attn_bias = mask 
+            attn_bias = mask
             attn_shape = attn.shape
             if attn_bias is not None:
                 attn = attn + attn_bias.materialize(attn_shape).to(attn.device)
@@ -322,16 +320,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.start_cross_att = args.start_cross_att
         self.every_cross_att = args.every_cross_att
 
-        
         assert (
             self.every_cross_att == -1 or self.start_cross_att == -1
         ), "Cannot have both start_cross_att and every_cross_att"
-        
+
         if self.start_cross_att == -1 and self.every_cross_att == -1:
             self.cross_att = False
         else:
             self.cross_att = True
-            
+
         self.cross_att_layers_id = []
         for i in range(args.n_layers):
 
@@ -381,7 +378,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 )
                 block = non_reentrant_wrapper(block)
             layers.append(block)
-            
+
         self.layers = nn.ModuleDict({str(i): layers[i] for i in range(self.n_layers)})
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
@@ -417,9 +414,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.causal = causal
         self.for_embedding = False
         self.pos_to_keep = []
-        
+
         if not self.cross_att:
-            assert len(self.cross_att_layers_id) == 0, "No cross-attention layers should be present"
+            assert (
+                len(self.cross_att_layers_id) == 0
+            ), "No cross-attention layers should be present"
+
     @property
     def dtype(self) -> torch.dtype:
         return next(self.parameters()).dtype
@@ -461,58 +461,70 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 embeddings.shape[0],
             )
 
-
         token_embeds = self.tok_embeddings(input_ids)
-        
 
         if cat_embeddings is not None:
-            num_supp_toks = sum(embed_seqlens) if embed_seqlens is not None else cat_embeddings.shape[0]
+            num_supp_toks = (
+                sum(embed_seqlens)
+                if embed_seqlens is not None
+                else cat_embeddings.shape[0]
+            )
 
-        
             prefixes = []
             suffixes = []
-            
-            for _  in range(len(seqlens)):
+
+            for _ in range(len(seqlens)):
                 if len(tokenized_prompts) > 0:
                     tokenized_prompt = random.choice(tokenized_prompts)
                     prefixes.append(tokenized_prompt["prefix"])
                     suffixes.append(tokenized_prompt["suffix"])
-                    num_supp_toks += len(tokenized_prompt["prefix"]) + len(tokenized_prompt["suffix"])
-                
-                
-                
-                
+                    num_supp_toks += len(tokenized_prompt["prefix"]) + len(
+                        tokenized_prompt["suffix"]
+                    )
+
             h = torch.zeros(
                 (num_supp_toks + len(token_embeds), self.args.dim),
                 device=self.device,
                 dtype=self.dtype,
             )
-            
+
             new_seqlens = []
             final_ind = 0
             for i, size in enumerate(seqlens):
                 assert size > 0
-             
-                
+
                 if len(tokenized_prompts) > 0:
                     # Insert embedding at the beginning of the sequence
                     size_embed = len(prefixes[i]) + embed_seqlens[i] + len(suffixes[i])
-                    tok_before_embed = self.tok_embeddings(torch.tensor(prefixes[i], device=self.device))
-                    tok_after_embed = self.tok_embeddings(torch.tensor(suffixes[i], device=self.device))
-                    h[final_ind:size_embed+final_ind, :] = torch.cat([tok_before_embed, 
-                                                                      cat_embeddings[sum(embed_seqlens[:i]):sum(embed_seqlens[:i+1]), :], 
-                                                                      tok_after_embed], dim=0)
+                    tok_before_embed = self.tok_embeddings(
+                        torch.tensor(prefixes[i], device=self.device)
+                    )
+                    tok_after_embed = self.tok_embeddings(
+                        torch.tensor(suffixes[i], device=self.device)
+                    )
+                    h[final_ind : size_embed + final_ind, :] = torch.cat(
+                        [
+                            tok_before_embed,
+                            cat_embeddings[
+                                sum(embed_seqlens[:i]) : sum(embed_seqlens[: i + 1]), :
+                            ],
+                            tok_after_embed,
+                        ],
+                        dim=0,
+                    )
                 else:
                     size_embed = embed_seqlens[i]
-                    h[final_ind:size_embed+final_ind, :] = cat_embeddings[sum(embed_seqlens[:i]):sum(embed_seqlens[:i+1]), :]
-                    
-                self.pos_to_keep.extend([False]*size_embed)
+                    h[final_ind : size_embed + final_ind, :] = cat_embeddings[
+                        sum(embed_seqlens[:i]) : sum(embed_seqlens[: i + 1]), :
+                    ]
+
+                self.pos_to_keep.extend([False] * size_embed)
                 # Insert token embeddings
-                h[size_embed+final_ind : size_embed + final_ind + size, :] = token_embeds[
-                    sum(seqlens[:i]) : sum(seqlens[:i]) + size, :
-                ]
+                h[size_embed + final_ind : size_embed + final_ind + size, :] = (
+                    token_embeds[sum(seqlens[:i]) : sum(seqlens[:i]) + size, :]
+                )
                 self.pos_to_keep.extend([True] * size)
-                final_ind += size_embed + size 
+                final_ind += size_embed + size
                 new_seqlens.append(size + size_embed)
             seqlens = new_seqlens
         else:
@@ -528,9 +540,13 @@ class Transformer(ModelBase, LoRALoaderMixin):
         else:
             self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
 
-
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
-        if self.cross_att and embeddings is not None and self.shared_kv and not self.args.pooled_cross_att:
+        if (
+            self.cross_att
+            and embeddings is not None
+            and self.shared_kv
+            and not self.args.pooled_cross_att
+        ):
             xk, xv = self.to_k(embeddings), self.to_v(embeddings)
 
         if not show_attention:
@@ -604,7 +620,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 attn_mtx.append(attn_mat)
                 cross_att_mtx.append(cross_att_mtx)
             self.pos_to_keep = []
-            return attn_mtx, 
+            return (attn_mtx,)
 
         normalized_h = self.norm(h)
 
@@ -614,7 +630,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             ]
 
         self.pos_to_keep = []
-        
+
         if self.for_embedding:
             return normalized_h
 
@@ -644,10 +660,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
         )
 
         token_embeds = self.tok_embeddings(input_ids)
-        (num_supp_toks,) = sum(embed_seqlens) if embed_seqlens is not None else embeddings.shape[0]
+        (num_supp_toks,) = (
+            sum(embed_seqlens) if embed_seqlens is not None else embeddings.shape[0]
+        )
 
         input_metadata: list[CacheInputMetadata] | list[SimpleInputMetadata]
-
 
         if cache is not None:
             input_metadata = cache.get_input_metadata(seqlens)
@@ -675,19 +692,21 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     assert size > 0
                     # Insert embedding at the beginning of the sequence
                     size_embed = embed_seqlens[i]
-                    h[final_ind:size_embed+final_ind, :] = cat_embeddings[sum(embed_seqlens[:i]):sum(embed_seqlens[:i]) + size_embed, :]
-                    self.pos_to_keep.extend([False]*size_embed)
-                    # Insert token embeddings
-                    h[size_embed+final_ind : size_embed + final_ind + size, :] = token_embeds[
-                        sum(seqlens[:i]) : sum(seqlens[:i]) + size, :
+                    h[final_ind : size_embed + final_ind, :] = cat_embeddings[
+                        sum(embed_seqlens[:i]) : sum(embed_seqlens[:i]) + size_embed, :
                     ]
+                    self.pos_to_keep.extend([False] * size_embed)
+                    # Insert token embeddings
+                    h[size_embed + final_ind : size_embed + final_ind + size, :] = (
+                        token_embeds[sum(seqlens[:i]) : sum(seqlens[:i]) + size, :]
+                    )
                     self.pos_to_keep.extend([True] * size)
-                    final_ind += size_embed + size 
+                    final_ind += size_embed + size
                     new_seqlens.append(size + size_embed)
                 seqlens = new_seqlens
             else:
                 h = token_embeds
-            
+
         else:
             h = torch.empty(
                 num_supp_toks, self.args.dim, device=self.device, dtype=self.dtype
@@ -696,7 +715,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         # freqs_cis is always the same for every layer
         freqs_cis = self.freqs_cis[input_metadata[0].positions]
-        if self.cross_att and embeddings is not None and self.shared_kv and not self.args.pooled_cross_att:
+        if (
+            self.cross_att
+            and embeddings is not None
+            and self.shared_kv
+            and not self.args.pooled_cross_att
+        ):
             if not cross_att_cache.full:
                 xk, xv = self.to_k(embeddings), self.to_v(embeddings)
                 cross_att_cache.fill(xk, xv)

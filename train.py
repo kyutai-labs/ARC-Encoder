@@ -194,11 +194,10 @@ def _train(
         f"PipelineArgs: {pprint.pformat(dataclasses.asdict(pipeline.pipeline_args))}"
     )
 
-    assert args.data.continuation == pipeline.pipeline_args.continuation, (
-        f"Data continuation {args.data.continuation} should match pipeline continuation {pipeline.pipeline_args.continuation}"
-    )
-    
-    
+    assert (
+        args.data.continuation == pipeline.pipeline_args.continuation
+    ), f"Data continuation {args.data.continuation} should match pipeline continuation {pipeline.pipeline_args.continuation}"
+
     """ Load  Dataloader"""
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
@@ -276,16 +275,17 @@ def _train(
         mlm=args.pipeline.mlm,
     )
     if args.pipeline.mlm:
-        main_logger_info('Using MLM on the first available embedded passage only, rest is discarded')
+        main_logger_info(
+            "Using MLM on the first available embedded passage only, rest is discarded"
+        )
 
     if args.paraphrase_prompt:
-        main_logger_info('Using paraphrase prompt')
+        main_logger_info("Using paraphrase prompt")
         for prompt in PARAPHRASE_PROMPT:
-            prefix = pipeline.tokenizer.encode(prompt['prefix'], bos = True, eos = False)
-            suffix = pipeline.tokenizer.encode(prompt['suffix'], bos = False, eos = False)
-            model.tokenized_prompts.append({'prefix': prefix, 'suffix': suffix})
-    
-    
+            prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
+            suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
+            model.tokenized_prompts.append({"prefix": prefix, "suffix": suffix})
+
     main_logger_info("Start training")
     model.train()
     torch.cuda.empty_cache()
