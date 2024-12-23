@@ -204,13 +204,11 @@ def load_training_model(
         initialize_proj_params(
             augmented_model.mlp_project, param_dtype, latents=True, device="cuda"
         )
-        ignored_state.append([augmented_model.mlp_project.latents])
+        ignored_state.append(augmented_model.mlp_project.latents)
 
     ignored_state = None if len(ignored_state) == 0 else ignored_state
 
     torch.distributed.barrier()
-
-    ignored_state = None
 
     # only finetune LoRA, MLP projector and pooling parameters and freeze before wrapping
     for name, param in augmented_model.named_parameters():

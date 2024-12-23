@@ -16,7 +16,7 @@ import time
 from torch.autograd.profiler import profile, record_function
 import subprocess as sp
 
-from embed_llm.generation.evaluation import evaluate_model
+from embed_llm.generation.evaluation import evaluate_reconstruction_model
 from embed_llm.models.wrapped_models_training import load_training_model
 from embed_llm.retrieval.embeddings import get_pretrained_embedder
 from embed_llm.training.args import TrainArgs
@@ -38,6 +38,7 @@ from embed_llm.training.utils import (
     logged_closing,
     set_random_seed,
     PARAPHRASE_PROMPT,
+    QA_PROMPT,
 )
 from embed_llm.monitoring.metrics_logger import (
     MetricsLogger,
@@ -280,11 +281,19 @@ def _train(
         )
 
     if args.paraphrase_prompt:
+        model.tokenize_prompts = {}
         main_logger_info("Using paraphrase prompt")
         for prompt in PARAPHRASE_PROMPT:
             prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
             suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
-            model.tokenized_prompts.append({"prefix": prefix, "suffix": suffix})
+            model.tokenized_prompts['reconstruction'] = {"prefix": prefix, "suffix": suffix}
+        
+        for prompt in QA_PROMPT:
+            prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
+            suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
+            model.tokenized_prompts['qa'] = {"prefix": prefix, "suffix": suffix}
+            
+        
 
     main_logger_info("Start training")
     model.train()
@@ -318,7 +327,7 @@ def _train(
             # with profile(use_cuda = True) as prof:
 
             output = model.forward(
-                x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens
+                x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens, batch_type=batch.data_type
             )
 
             if len(output.size()) > 2:
@@ -425,7 +434,7 @@ def _train(
     main_logger_info("done!")
 
     dist.barrier()
-    evaluate_model(args.exp_name, ckpt=args.max_steps)
+    evaluate_reconstruction_model(args.exp_name, ckpt=args.max_steps)
 
 
 if __name__ == "__main__":

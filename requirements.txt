@@ -17,3 +17,4 @@ gritlm
 faiss-gpu
 transformers
 einops
+rouge

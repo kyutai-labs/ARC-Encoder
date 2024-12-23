@@ -1,16 +1,21 @@
-from torcheval.metrics import BLEUScore
-from nltk.translate import meteor_score
-import re
 import os
-import string
 import torch
 import json
 import numpy as np
 import random
 from embed_llm.models.augmented_model import EmbedAugPipeline
-import nltk
+from embed_llm.generation.metrics import word_overlap, get_bleu_score, get_meteor, get_em, get_f1_score, get_rougel_score, metric_max_over_ground_truths
 
-nltk.download("wordnet")
+EVAL_DATA_PATH={
+    'NQ': '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/nq_valid.jsonl',
+    'ENWIKI': '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl',
+    'WIKI': '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/wiki_valid.jsonl',
+}
+
+METRIC_EVALUATION = {
+    'NQ': get_em,
+    'ENWIKI': get_em,
+    'WIKI': get_em}
 
 
 def set_global_seed(seed=42):
@@ -37,129 +42,74 @@ def ensure_reproducibility(seed=42):
     # Environment variables
     os.environ["PYTHONHASHSEED"] = str(seed)
 
-
-def word_overlap(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
-    if isinstance(ground_truth, str) and isinstance(predicted, str):
-        ground_truth = set(ground_truth.split(" "))
-        predicted = set(predicted.split(" "))
-        assert len(ground_truth) > 0, "Ground truth set is empty"
-        return len(ground_truth.intersection(predicted)) / len(ground_truth)
-    elif isinstance(ground_truth, list) and isinstance(predicted, list):
-        avg_word_overlap = 0
-        n_words = 0
-        for gt_text, pred_text in zip(ground_truth, predicted):
-            gt_text = set(gt_text.split(" "))
-            pred_text = set(pred_text.split(" "))
-            assert len(gt_text) > 0, "Ground truth set is empty"
-            n_words += len(gt_text)
-            avg_word_overlap += len(gt_text.intersection(pred_text))
-        return avg_word_overlap / n_words
-
-
-def get_bleu_score(
-    ground_truth: list[str] | str, predicted: list[str] | str, avg: bool = False
-) -> float:
-    if not avg:
-        metric = BLEUScore(n_gram=4)
-        if isinstance(ground_truth, str) and isinstance(predicted, str):
-            assert len(ground_truth) > 0, "Ground truth set is empty"
-            metric.update(predicted, [ground_truth])
-            return metric.compute().item()
-        elif isinstance(ground_truth, list) and isinstance(predicted, list):
-            for gt_text, pred_text in zip(ground_truth, predicted):
-                assert len(gt_text) > 0, "Ground truth set is empty"
-                try:
-                    metric.update(pred_text, [gt_text])
-                except:
-                    print(
-                        "Error with update:",
-                        "\nGround-Truth: ",
-                        gt_text,
-                        "\nPred: ",
-                        pred_text,
-                    )
-            return metric.compute().item()
-    else:
-        metrics = [BLEUScore(n_gram=i) for i in range(1, 5)]
-        if isinstance(ground_truth, str) and isinstance(predicted, str):
-            assert len(ground_truth) > 0, "Ground truth set is empty"
-            for metric in metrics:
-                metric.update(predicted, [ground_truth])
-            result = np.array([metric.compute().item() for metric in metrics])
-            return result.mean()
-        elif isinstance(ground_truth, list) and isinstance(predicted, list):
-            for gt_text, pred_text in zip(ground_truth, predicted):
-                assert len(gt_text) > 0, "Ground truth set is empty"
-                try:
-                    for metric in metrics:
-                        metric.update(pred_text, [gt_text])
-                except:
-                    print(
-                        "Error with update:",
-                        "\nGround-Truth: ",
-                        gt_text,
-                        "\nPred: ",
-                        pred_text,
-                    )
-            result = np.array([metric.compute().item() for metric in metrics])
-            return result.mean()
-
-
-def normalize_answer(s):
-    """Lower text and remove punctuation, articles and extra whitespace."""
-
-    def remove_articles(text):
-        return re.sub(r"\b(a|an|the)\b", " ", text)
-
-    def white_space_fix(text):
-        return " ".join(text.split())
-
-    def remove_punc(text):
-        exclude = set(string.punctuation)
-        return "".join(ch for ch in text if ch not in exclude)
-
-    def lower(text):
-        return text.lower()
-
-    return white_space_fix(remove_articles(remove_punc(lower(s))))
-
-
-def _metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
-    scores_for_ground_truths = []
-    for ground_truth in ground_truths:
-        score = metric_fn(prediction, ground_truth)
-        scores_for_ground_truths.append(score)
-    return max(scores_for_ground_truths)
-
-
-def get_accuracy(pred: str, ground_truth: str) -> int:
-    return int(ground_truth == pred)
-
-
-def get_em(pred: str, ground_truth: str) -> int:
-    return int(normalize_answer(ground_truth) == normalize_answer(pred))
-
-
-def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
-
-    if isinstance(ground_truth, str) and isinstance(predicted, str):
-        assert len(ground_truth) > 0, "Ground truth set is empty"
-        l_ground_truth = ground_truth.split(" ")
-        l_predicted = predicted.split(" ")
-        return meteor_score.single_meteor_score(l_ground_truth, l_predicted)
-    elif isinstance(ground_truth, list) and isinstance(predicted, list):
-        meteor_avg_score = 0
-        for gt_text, pred_text in zip(ground_truth, predicted):
-            assert len(gt_text) > 0, "Ground truth set is empty"
-            l_ground_truth = gt_text.split(" ")
-            l_predicted = pred_text.split(" ")
-            meteor_avg_score += meteor_score.single_meteor_score(
-                l_ground_truth, l_predicted
-            )
-        return meteor_avg_score / len(ground_truth)
-
-
 def evaluate_model(
+    run_name: str,  benchmarks: list[str] , ckpt: int | None = None, lim_toks: int = 128, temps: list[float] = [0, 0.5, 0.7, 1], max_bs: int = 4,
+    output_path: str = "/lustre/scwpod02/client/kyutai-interns/hippop/experiments/results_eval",
+):
+    llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    results = {benchmark: {} for benchmark in benchmarks}
+
+    pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
+        llm_path=llm_path,
+        ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+        + run_name
+        + "/checkpoints/checkpoint_"
+        + str(ckpt).zfill(6),
+        device=device,
+        llm_name="Mistral7B",
+        embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
+        max_batch_size=max_bs,
+    )
+    print("Evaluating checkpoint", str(ckpt).zfill(6))
+
+    for benchmark in benchmarks:
+        eval_data = EVAL_DATA_PATH[benchmark]
+        context = []
+        questions = []
+        answers = []
+
+        # To ADAPT
+        with open(eval_data, "r") as f:
+            for line in f:
+                data = json.loads(line)
+                questions.append(
+                    data["question"]
+                )
+                
+                answers.append(
+                    data["answers"]
+                )
+                context.append(
+                    data["text"].split("\n\n")[1]
+                )
+        for temp in temps:
+            generated_sequences = []
+            for i in range(0, len(questions), max_bs):
+                generated_sequence, logprobs = pipeline.generate(
+                    prompts=questions[i : i + max_bs],
+                    text_conditioning=context[i : i + max_bs],
+                    temperature=temp,
+                    max_tokens=lim_toks,
+                    truncate_double_space=True,
+                    device=device,
+                    device_generation=(
+                        device if torch.cuda.device_count() <= 1 else torch.device("cuda:1")
+                    ),
+                )
+
+                generated_sequences.extend(generated_sequence)
+            results[benchmark][str(temp)] = sum([metric_max_over_ground_truths(METRIC_EVALUATION[benchmark], pred, gts) for pred, gts in zip(generated_sequences, answers)]) / len(questions)
+
+    with open(
+        os.path.join(output_path, run_name + "_results_eval.json"), "w"
+    ) as f:
+        json.dump(results, f)
+    print("Results saved at", os.path.join(output_path, run_name + "_results_eval.json"))
+    
+    
+def evaluate_reconstruction_model(
     run_name: str, ckpt: int | None = None, pipeline: EmbedAugPipeline | None = None
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
@@ -427,28 +377,14 @@ if __name__ == "__main__":
     # print(run_names)
     # print("Number of runs:", len(run_names))
     run_names = [
-        "LT_FN_False_0_MLP_True_CA_2_CAL_every_True_DB",
-        "LT_FN_Truelatent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
-        "LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB",
-        "LT_FN_Truemean_0_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
         "LT_FN_False_1_MLP_RLatt_True_CA_2_CAL_every_True_DB",
-        "LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
-        "LT_FN_False_1_MLP_True_CA_2_CAL_every_True_DB",
-        "LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_atend_True_DB",
-        "LT_FN_False_3_MLP_True_CA_16_CAL_atend_True_DB",
-        "LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
-        "LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DB",
-        "LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT",
-        "LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DBCONT",
-        "LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBMLM",
-        "LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DBMLM",
-        "LT_FN_Truereversed_latent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
+        "LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB",
     ]
 
     for run_name in run_names:
-        evaluate_model(run_name, ckpt=9500)
-        print("Memory:", torch.cuda.memory_allocated() / 1024**3)
-        print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)
+        evaluate_reconstruction_model(run_name, ckpt=20000)
+        # print("Memory:", torch.cuda.memory_allocated() / 1024**3)
+        # print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)
         print("Max Memory Allocated:", torch.cuda.max_memory_allocated() / 1024**3)
-        print("Reset memory ! ")
+        # print("Reset memory ! ")
         torch.cuda.empty_cache()

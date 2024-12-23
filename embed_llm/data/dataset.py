@@ -151,6 +151,7 @@ class SequenceEmbedMaskAndSizes:
     to_embed: list[dict[str, str | int | list[int] | list[str]]]
     mask: Mask
     sizes: list[int]
+    data_type: str
 
     def __post_init__(self):
         assert sum(self.sizes) == len(self.x) == len(self.y) == len(self.mask)
@@ -164,6 +165,7 @@ def sequence_iterator(
     is_finite: bool,
     adapt_seq_len: bool = False,
     continuation: bool = False,
+    data_type: str = 'reconstruction',
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -245,6 +247,7 @@ def sequence_iterator(
                         to_embed=to_embed_buffer,
                         mask=mask_buffer,
                         sizes=sizes,
+                        data_type=data_type,
                     )
                 x_buffer, y_buffer = [], []
                 mask_buffer = []
@@ -270,6 +273,7 @@ def sequence_iterator(
                 to_embed=to_embed_buffer,
                 mask=mask_buffer,
                 sizes=sizes,
+                data_type=data_type,
             )
 
 
@@ -309,8 +313,9 @@ def build_dataset(
             tokenizer=tokenizer,
             adapt_seq_len=args.adapt_seq_len,
             continuation=args.continuation,
+            data_type = data_type,
         )
-        for it in dataset_iterators
+        for it, data_type in zip(dataset_iterators,args.data_types)
     ]
 
     if is_eval:

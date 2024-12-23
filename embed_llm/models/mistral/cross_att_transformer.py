@@ -48,7 +48,7 @@ class SimpleInputMetadata:
         )
 
 
-# # Bottleneck
+# # # Bottleneck
 # class Pooled_Cross_Attention(nn.Module):
 #     def __init__(
 #         self,
@@ -58,8 +58,8 @@ class SimpleInputMetadata:
 #         n_kv_heads: int,
 #     ):
 #         super().__init__()
-#         self.up = nn.Linear(dim, dim // 4, bias=False)
-#         self.down = nn.Linear(dim // 4, dim, bias=False)
+#         self.up = nn.Linear(dim, dim, bias=False)
+#         self.down = nn.Linear(dim, dim, bias=False)
 
 #     def forward(
 #         self,
@@ -75,7 +75,7 @@ class SimpleInputMetadata:
 #         return output
 
 
-# Same number of params, closest to the original in terms of perf
+# # Same number of params, closest to the original in terms of perf
 class Pooled_Cross_Attention(nn.Module):
     def __init__(
         self,
@@ -452,6 +452,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embed_seqlens: list[int] | None = None,
         cat_embeddings: torch.Tensor | None = None,
         show_attention: bool = False,
+        batch_type: str = "reconstruction",
     ) -> torch.Tensor:
 
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
@@ -475,7 +476,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
             for _ in range(len(seqlens)):
                 if len(tokenized_prompts) > 0:
-                    tokenized_prompt = random.choice(tokenized_prompts)
+                    tokenized_prompt = random.choice(tokenized_prompts[batch_type])
                     prefixes.append(tokenized_prompt["prefix"])
                     suffixes.append(tokenized_prompt["suffix"])
                     num_supp_toks += len(tokenized_prompt["prefix"]) + len(
@@ -654,25 +655,14 @@ class Transformer(ModelBase, LoRALoaderMixin):
         For the last stage, this will return the normalized final embeddings.
         """
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
-        assert embed_seqlens is None or sum(embed_seqlens) == embeddings.shape[0], (
-            sum(embed_seqlens),
-            embeddings.shape[0],
-        )
-
+        if embeddings is not None:
+            assert embed_seqlens is None or sum(embed_seqlens) == embeddings.shape[0], (
+                sum(embed_seqlens),
+                embeddings.shape[0],
+            )
         token_embeds = self.tok_embeddings(input_ids)
-        (num_supp_toks,) = (
-            sum(embed_seqlens) if embed_seqlens is not None else embeddings.shape[0]
-        )
 
-        input_metadata: list[CacheInputMetadata] | list[SimpleInputMetadata]
 
-        if cache is not None:
-            input_metadata = cache.get_input_metadata(seqlens)
-        else:
-            input_metadata = [
-                SimpleInputMetadata.from_seqlens(seqlens, self.device)
-                for _ in range(len(self.layers))
-            ]
         if self.pipeline_rank == 0:
             assert self.tok_embeddings is not None
             # if self.vision_encoder is not None and images:
@@ -680,21 +670,29 @@ class Transformer(ModelBase, LoRALoaderMixin):
             # else:
             token_embeds = self.tok_embeddings(input_ids)
             if cat_embeddings is not None:
+                num_supp_toks = (
+                    sum(embed_seqlens)
+                    if embed_seqlens is not None
+                    else cat_embeddings.shape[0]
+                )
+
+
                 h = torch.zeros(
                     (num_supp_toks + len(token_embeds), self.args.dim),
                     device=self.device,
                     dtype=self.dtype,
                 )
-                new_seqlens = []
 
+                new_seqlens = []
                 final_ind = 0
                 for i, size in enumerate(seqlens):
                     assert size > 0
-                    # Insert embedding at the beginning of the sequence
+                    
                     size_embed = embed_seqlens[i]
                     h[final_ind : size_embed + final_ind, :] = cat_embeddings[
-                        sum(embed_seqlens[:i]) : sum(embed_seqlens[:i]) + size_embed, :
+                        sum(embed_seqlens[:i]) : sum(embed_seqlens[: i + 1]), :
                     ]
+
                     self.pos_to_keep.extend([False] * size_embed)
                     # Insert token embeddings
                     h[size_embed + final_ind : size_embed + final_ind + size, :] = (
@@ -713,6 +711,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
             )
             torch.distributed.recv(h, src=self.pipeline_rank - 1)
 
+        input_metadata: list[CacheInputMetadata] | list[SimpleInputMetadata]
+
+        if cache is not None:
+            input_metadata = cache.get_input_metadata(seqlens)
+        else:
+            input_metadata = [
+                SimpleInputMetadata.from_seqlens(seqlens, self.device)
+                for _ in range(len(self.layers))
+            ]
         # freqs_cis is always the same for every layer
         freqs_cis = self.freqs_cis[input_metadata[0].positions]
         if (

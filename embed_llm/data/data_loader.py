@@ -15,6 +15,7 @@ class Batch:
     sizes: list[int]
     y_mask: np.ndarray | None = None
     is_pad_only: bool = False
+    data_type: str = 'reconstruction'
 
     def __post_init__(self):
         assert self.x.ndim == 1
@@ -51,13 +52,14 @@ class Batchlist:
     )
     sizes: list[list[int]] = dataclasses.field(default_factory=list)
     y_mask: list[list[bool]] = dataclasses.field(default_factory=list)
-
+    data_type: str = None
     def __post_init__(self):
         assert self.x == [], "`Batchlist` has to be empty at init."
         assert self.y == [], "`Batchlist` has to be empty at init."
         assert self.to_embed == [], "`Batchlist` has to be empty at init."
         assert self.sizes == [], "`Batchlist` has to be empty at init."
         assert self.y_mask == [], "`Batchlist` has to be empty at init."
+        
 
     def __len__(self) -> int:
         return len(self.x)
@@ -69,22 +71,27 @@ class Batchlist:
         to_embed: list[dict[str, list[list[int]] | list[str]]],
         sizes: list[int],
         y_mask: list[bool],
+        data_type: str
     ):
         self.x.append(x)
         self.y.append(y)
         self.to_embed.append(to_embed)
         self.sizes.append(sizes)
         self.y_mask.append(y_mask)
-
+        if self.data_type is None:
+            self.data_type = data_type
+        assert self.data_type == data_type
+        
     def empty(self):
         self.x = []
         self.y = []
         self.to_embed = []
         self.sizes = []
         self.y_mask = []
+        self.data_type = None
 
     @staticmethod
-    def flatten_to_numpy(list_of_lists: list[list[object]], dtype: type) -> np.ndarray:
+    def flatten_to_numpy(list_of_lists: list[list[object]], dtype) -> np.ndarray:
         return np.array(
             [el for sublist in list_of_lists for el in sublist], dtype=dtype
         )
@@ -98,7 +105,7 @@ class Batchlist:
         y_mask_flatten = self.flatten_to_numpy(self.y_mask, dtype=bool)
         y_mask_np: np.ndarray | None = None if y_mask_flatten.all() else y_mask_flatten
 
-        return Batch(x_np, y_np, to_embed, sizes, y_mask_np)
+        return Batch(x_np, y_np, to_embed, sizes, y_mask_np, data_type = self.data_type)
 
 
 def build_data_loader(
@@ -126,7 +133,7 @@ def build_data_loader(
     for sample in dataset:
         assert all(s >= 0 for s in sample.sizes)
 
-        batch_list.add(sample.x, sample.y, sample.to_embed, sample.sizes, sample.mask)
+        batch_list.add(sample.x, sample.y, sample.to_embed, sample.sizes, sample.mask, sample.data_type)
 
         if len(batch_list) == batch_size:
             batch: Batch = batch_list.create_batch()

@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from simple_parsing.helpers import Serializable
 
@@ -24,6 +24,8 @@ class DataArgs(Serializable):
     shuffle: bool = False
     adapt_seq_len: bool = False
     continuation: bool = False
+    data_types: list[str] = field(default_factory=lambda: ["reconstruction"])
 
     def __post_init__(self) -> None:
+        assert len(self.train_data.strip().split(",")) == len(self.data_types), "Number of data sources must match number of types."
         pass

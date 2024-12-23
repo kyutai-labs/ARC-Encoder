@@ -9,8 +9,8 @@ lora:
 pipeline:
   w_embeds: true
   norm_wo_embeds: false
-  embedder_name: NVEmbed
-  trainable_embedder: false
+  embedder_name: Mistral7B
+  trainable_embedder: true
   n_truncated_layers: 8
   normalize_embeddings: true
   continuation: false
@@ -21,14 +21,18 @@ pipeline:
     hidden_dim: 4096
     n_layers: 1
     act: gelu
-    type: latent_attention # not compatible with not do_pool
+    type: latent_attention
   do_both: true
   shared_kv: false
+  pooling_module:
+    type: latent_attention
+    r: 512
+    n_heads: 8
   every_cross_att: 2
-  pooled_cross_att: false
-  dist_process: true
+  pooled_cross_att: true
+  dist_process: false
 data:
-  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/test_multi_passage.jsonl
+  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
   shuffle: false
 seq_len: 128
@@ -45,13 +49,10 @@ seed: 0
 log_freq: 10
 eval_freq: 100
 no_eval: false
-ckpt_freq: 500
+ckpt_freq: 1
 save_adapters: true
-paraphrase_prompt: true
-
-
 # wandb:
+#   project: embed_llm
+#   run_name: LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
 #   offline: false
-#   project: embed_llm
-#   run_name: 128_SL_FN_Truemean_0_MLP_8_TRUNC_True_CA_16_CAL_False_SKV_False_DB_new_pooled_cross_att

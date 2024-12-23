@@ -55,6 +55,11 @@ PARAPHRASE_PROMPT = [
     },
 ]
 
+QA_PROMPT = [
+    {"prefix": "Context: ", "suffix": "Question: "},
+    {"prefix": "Based on this document", "suffix": "answer the following question: "},
+    {"prefix": "Context: ", "suffix": "Query: "}]
+    
 
 logger = logging.getLogger("utils")
 

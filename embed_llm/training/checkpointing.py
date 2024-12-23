@@ -164,14 +164,22 @@ class Checkpointer:
             k: m for k, m in self.llm.named_modules() if is_trainable_fsdp(m)
         }
 
+        mlp_attention = False
         if self.mlp_project is None:
             mlp_project_modules = {}
+        elif any([('attend' in n) for n, m in self.mlp_project.named_modules()]):
+            mlp_attention = True
+            for name, module in self.mlp_project.named_modules():
+                mlp_project_modules = {name: module}
+                break
         else:
             mlp_project_modules = {
                 k: m
                 for k, m in self.mlp_project.named_modules()
                 if is_trainable_fsdp(m)
             }
+        
+  
 
         if self.trainable_embedder is None:
             trainable_embedder_modules = {}
@@ -192,7 +200,6 @@ class Checkpointer:
                     if all(p.requires_grad is True for p in module.parameters())
                     and k == "process"
                 }
-
         llm_states = {}
         for key, module in llm_modules.items():
             assert isinstance(
@@ -222,12 +229,20 @@ class Checkpointer:
             with module.summon_full_params(
                 module, writeback=True, offload_to_cpu=offload_to_cpu
             ):
-                mlp_project_states.update(
+                if not mlp_attention:
+                        mlp_project_states.update(
                     {
-                        f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
-                        for k, v in module.state_dict().items()
-                    }
-                )
+                                    f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                                    for k, v in module.state_dict().items()
+                                }
+                        )
+                else:
+                        mlp_project_states.update(
+                    {
+                                    f"{k}": v.to(dtype=save_dtype)
+                                    for k, v in module.state_dict().items()
+                                }
+                        )
 
         trainable_embedder_states = {}
         for key, module in trainable_embedder_modules.items():
@@ -374,7 +389,7 @@ class Checkpointer:
             if self.pipeline is None:
                 self.write_llm_params_info(tmp_llm_dst.parent)
             else:
-                self.write_pipeline_params_info(tmp_llm_dst.parent.parent)
+                self.write_pipeline_params_info(tmp_llm_dst.parent)
 
             tmp_llm_dst.rename(self.dst_dir(type="llm"))
             if self.mlp_project is not None and self.mlp_project.n_layers > 0:

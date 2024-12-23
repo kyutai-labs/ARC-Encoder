@@ -185,6 +185,7 @@ class EmbedAugModel(nn.Module):
         seqlens: list[int],
         embeddings: torch.Tensor | list[list[list[int]]] | None = None,
         embed_seqlens: list[int] | list[list[int]] | None = None,
+        batch_type: str = 'reconstruction'
     ) -> torch.Tensor:
 
         cat_embeddings = None
@@ -241,6 +242,7 @@ class EmbedAugModel(nn.Module):
             embed_seqlens=embed_seqlens,
             cat_embeddings=cat_embeddings if self.do_concat else None,
             tokenized_prompts=self.tokenized_prompts,
+            batch_type=batch_type
         )
 
     # def forward_batch(
@@ -566,9 +568,17 @@ class EmbedAugPipeline(nn.Module):
         param_dtype: torch.dtype = torch.float32,
     ):
 
-        lora_path = (
-            ckpt_path + "/" + llm_name.lower() + "/consolidated/lora.safetensors"
-        )
+
+        if Path(ckpt_path + "/" + llm_name.lower() + "/lora.safetensors").exists():
+            lora_path = (
+                ckpt_path + "/" + llm_name.lower() + "/lora.safetensors"
+            )
+        else:
+            lora_path = (
+                ckpt_path + "/" + llm_name.lower() + "/consolidated/lora.safetensors"
+            )
+        
+        
         mlp_path = ckpt_path + "/" + "MLP_projector"
 
         if Path(ckpt_path + "/" + llm_name.lower() + "/trainable_embedder").exists():
