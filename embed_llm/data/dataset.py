@@ -52,7 +52,7 @@ def maybe_load_local_dataset(
         data = json.loads(line)
 
         data_sample: TokenSample = encode(
-            data, tokenizer=tokenizer, continuation=continuation
+            data, tokenizer=tokenizer, continuation=continuation, data_path=path
         )
         data_list.append(data_sample)
 
@@ -165,7 +165,7 @@ def sequence_iterator(
     is_finite: bool,
     adapt_seq_len: bool = False,
     continuation: bool = False,
-    data_type: str = 'reconstruction',
+    data_type: str = "reconstruction",
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -313,9 +313,9 @@ def build_dataset(
             tokenizer=tokenizer,
             adapt_seq_len=args.adapt_seq_len,
             continuation=args.continuation,
-            data_type = data_type,
+            data_type=data_type,
         )
-        for it, data_type in zip(dataset_iterators,args.data_types)
+        for it, data_type in zip(dataset_iterators, args.data_types)
     ]
 
     if is_eval:
@@ -428,7 +428,12 @@ def lazy_load_and_yield(
                 continue
 
             data = json.loads(line)
-            yield encode(data, tokenizer=tokenizer, continuation=continuation)
+            yield encode(
+                data,
+                tokenizer=tokenizer,
+                continuation=continuation,
+                data_path=jsonl_file,
+            )
 
 
 def interleave_iterators(iterators: list[Iterator], probabilities, rng):

@@ -207,5 +207,4 @@ def initialize_proj_params(
                         torch.empty_like(param, device=device, dtype=param_dtype)
                     )
                     param = module._parameters[p_name]
-                    torch.nn.init.zeros_(param)
-                    # torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))

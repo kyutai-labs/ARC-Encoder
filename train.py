@@ -286,14 +286,15 @@ def _train(
         for prompt in PARAPHRASE_PROMPT:
             prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
             suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
-            model.tokenized_prompts['reconstruction'] = {"prefix": prefix, "suffix": suffix}
-        
+            model.tokenized_prompts["reconstruction"] = {
+                "prefix": prefix,
+                "suffix": suffix,
+            }
+
         for prompt in QA_PROMPT:
             prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
             suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
-            model.tokenized_prompts['qa'] = {"prefix": prefix, "suffix": suffix}
-            
-        
+            model.tokenized_prompts["qa"] = {"prefix": prefix, "suffix": suffix}
 
     main_logger_info("Start training")
     model.train()
@@ -327,7 +328,11 @@ def _train(
             # with profile(use_cuda = True) as prof:
 
             output = model.forward(
-                x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens, batch_type=batch.data_type
+                x=x,
+                embeddings=embeddings,
+                seqlens=seqlens,
+                embed_seqlens=embed_seqlens,
+                batch_type=batch.data_type,
             )
 
             if len(output.size()) > 2:
@@ -401,7 +406,12 @@ def _train(
             )
 
             eval_logs = get_eval_logs(
-                state.step, avg_loss, state.this_eval_perplexity, state.this_eval_loss
+                state.step,
+                avg_loss,
+                state.this_eval_perplexity,
+                state.this_eval_loss,
+                state.this_eval_perplexity_wo_embed,
+                state.this_eval_loss_wo_embed,
             )
 
             main_logger_info(eval_log_msg(eval_logs))

@@ -167,7 +167,7 @@ class Checkpointer:
         mlp_attention = False
         if self.mlp_project is None:
             mlp_project_modules = {}
-        elif any([('attend' in n) for n, m in self.mlp_project.named_modules()]):
+        elif any([("attend" in n) for n, m in self.mlp_project.named_modules()]):
             mlp_attention = True
             for name, module in self.mlp_project.named_modules():
                 mlp_project_modules = {name: module}
@@ -178,8 +178,6 @@ class Checkpointer:
                 for k, m in self.mlp_project.named_modules()
                 if is_trainable_fsdp(m)
             }
-        
-  
 
         if self.trainable_embedder is None:
             trainable_embedder_modules = {}
@@ -230,19 +228,19 @@ class Checkpointer:
                 module, writeback=True, offload_to_cpu=offload_to_cpu
             ):
                 if not mlp_attention:
-                        mlp_project_states.update(
-                    {
-                                    f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
-                                    for k, v in module.state_dict().items()
-                                }
-                        )
+                    mlp_project_states.update(
+                        {
+                            f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                            for k, v in module.state_dict().items()
+                        }
+                    )
                 else:
-                        mlp_project_states.update(
-                    {
-                                    f"{k}": v.to(dtype=save_dtype)
-                                    for k, v in module.state_dict().items()
-                                }
-                        )
+                    mlp_project_states.update(
+                        {
+                            f"{k}": v.to(dtype=save_dtype)
+                            for k, v in module.state_dict().items()
+                        }
+                    )
 
         trainable_embedder_states = {}
         for key, module in trainable_embedder_modules.items():

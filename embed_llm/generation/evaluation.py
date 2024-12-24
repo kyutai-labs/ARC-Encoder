@@ -4,18 +4,23 @@ import json
 import numpy as np
 import random
 from embed_llm.models.augmented_model import EmbedAugPipeline
-from embed_llm.generation.metrics import word_overlap, get_bleu_score, get_meteor, get_em, get_f1_score, get_rougel_score, metric_max_over_ground_truths
+from embed_llm.generation.metrics import (
+    word_overlap,
+    get_bleu_score,
+    get_meteor,
+    get_em,
+    get_f1_score,
+    get_rougel_score,
+    metric_max_over_ground_truths,
+)
 
-EVAL_DATA_PATH={
-    'NQ': '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/nq_valid.jsonl',
-    'ENWIKI': '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl',
-    'WIKI': '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/wiki_valid.jsonl',
+
+EVAL_DATA_PATH = {
+    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA/nq_data.jsonl",
+    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA/triviaqa_data.jsonl",
 }
 
-METRIC_EVALUATION = {
-    'NQ': get_em,
-    'ENWIKI': get_em,
-    'WIKI': get_em}
+METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em}
 
 
 def set_global_seed(seed=42):
@@ -42,8 +47,14 @@ def ensure_reproducibility(seed=42):
     # Environment variables
     os.environ["PYTHONHASHSEED"] = str(seed)
 
+
 def evaluate_model(
-    run_name: str,  benchmarks: list[str] , ckpt: int | None = None, lim_toks: int = 128, temps: list[float] = [0, 0.5, 0.7, 1], max_bs: int = 4,
+    run_name: str,
+    benchmarks: list[str],
+    ckpt: int | None = None,
+    lim_toks: int = 128,
+    temps: list[float] = [0, 0.5, 0.7, 1],
+    max_bs: int = 4,
     output_path: str = "/lustre/scwpod02/client/kyutai-interns/hippop/experiments/results_eval",
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
@@ -70,20 +81,18 @@ def evaluate_model(
         questions = []
         answers = []
 
-        # To ADAPT
         with open(eval_data, "r") as f:
             for line in f:
                 data = json.loads(line)
-                questions.append(
-                    data["question"]
-                )
-                
-                answers.append(
-                    data["answers"]
-                )
-                context.append(
-                    data["text"].split("\n\n")[1]
-                )
+                questions.append(data["question"])
+
+                if isinstance(data["answer"], str):
+                    answers.append([data["answer"]])
+
+                else:
+                    answers.append(data["answer"])
+                # Take the first ranked retrieved passage
+                context.append(data["passage"][0])
         for temp in temps:
             generated_sequences = []
             for i in range(0, len(questions), max_bs):
@@ -95,20 +104,29 @@ def evaluate_model(
                     truncate_double_space=True,
                     device=device,
                     device_generation=(
-                        device if torch.cuda.device_count() <= 1 else torch.device("cuda:1")
+                        device
+                        if torch.cuda.device_count() <= 1
+                        else torch.device("cuda:1")
                     ),
                 )
 
                 generated_sequences.extend(generated_sequence)
-            results[benchmark][str(temp)] = sum([metric_max_over_ground_truths(METRIC_EVALUATION[benchmark], pred, gts) for pred, gts in zip(generated_sequences, answers)]) / len(questions)
+            results[benchmark][str(temp)] = sum(
+                [
+                    metric_max_over_ground_truths(
+                        METRIC_EVALUATION[benchmark], pred, gts
+                    )
+                    for pred, gts in zip(generated_sequences, answers)
+                ]
+            ) / len(questions)
 
-    with open(
-        os.path.join(output_path, run_name + "_results_eval.json"), "w"
-    ) as f:
+    with open(os.path.join(output_path, run_name + "_results_eval.json"), "w") as f:
         json.dump(results, f)
-    print("Results saved at", os.path.join(output_path, run_name + "_results_eval.json"))
-    
-    
+    print(
+        "Results saved at", os.path.join(output_path, run_name + "_results_eval.json")
+    )
+
+
 def evaluate_reconstruction_model(
     run_name: str, ckpt: int | None = None, pipeline: EmbedAugPipeline | None = None
 ):
@@ -168,15 +186,7 @@ def evaluate_reconstruction_model(
 
     lim_toks = 128
     eval_data = "/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl"
-    # train_data = '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl'
-    # train_passage = []
     valid_passage = []
-
-    # with open(train_data, 'r') as f:
-    #     for i, line in enumerate(f):
-    #         if i == n_passages:
-    #             break
-    #         train_passage.append(pipeline.tokenizer.decode(pipeline.tokenizer.encode(json.loads(line)['text'].split('\n\n')[1], eos = True, bos = True)[:lim_toks]))
 
     with open(eval_data, "r") as f:
         for i, line in enumerate(f):
@@ -193,11 +203,6 @@ def evaluate_reconstruction_model(
     temperatures = [0, 0.5, 0.7, 1]
     max_tokens = 128
 
-    # results_generation = {'0':{'train': {'word_prompt':{}, 'empty_prompt':{}}, 'valid': {'word_prompt':{}, 'empty_prompt':{}}},
-    #                         '0.5':{'train': {'word_prompt':{}, 'empty_prompt':{}}, 'valid': {'word_prompt':{}, 'empty_prompt':{}}},
-    #                         '0.7':{'train': {'word_prompt':{}, 'empty_prompt':{}}, 'valid': {'word_prompt':{}, 'empty_prompt':{}}},
-    #                         '1':{'train': {'word_prompt':{}, 'empty_prompt':{}}, 'valid': {'word_prompt':{}, 'empty_prompt':{}}},
-    #                         '1.5':{'train': {'word_prompt':{}, 'empty_prompt':{}}, 'valid': {'word_prompt':{}, 'empty_prompt':{}}}}
     results_generation = {
         "0": {"valid": {"word_prompt": {}, "empty_prompt": {}}},
         "0.5": {"valid": {"word_prompt": {}, "empty_prompt": {}}},
@@ -211,46 +216,6 @@ def evaluate_reconstruction_model(
     for temp in temperatures:
         print(f"Temperature: {temp}")
         generated_sequences = []
-
-        # for i in range(0, n_passages, max_batch_size):
-        #     passage = train_passage[i:i+max_batch_size]
-        #     generated_sequence, logprobs = pipeline.generate(prompts = [text.split(' ')[0] for text in passage],
-        #                                 text_conditioning = passage,
-        #                                 temperature = temp,
-        #                                 max_tokens = max_tokens,
-        #                                 truncate_double_space = False,
-        #                                 device = device,
-        #                                 device_generation = device if torch.cuda.device_count() <= 1 else torch.device('cuda:1'))
-
-        #     generated_sequences.extend(generated_sequence)
-        # results_generation[str(temp)]['train']['word_prompt'] = {'seq':generated_sequences}
-        # generated_sequences = []
-        # for i in range(0, n_passages, max_batch_size):
-        #     passage = train_passage[i:i+max_batch_size]
-        #     generated_sequence, logprobs = pipeline.generate(prompts = [''] * len(passage),
-        #                                 text_conditioning = passage,
-        #                                 temperature = temp,
-        #                                 max_tokens = max_tokens,
-        #                                 truncate_double_space = False,
-        #                                 device = device,
-        #                                 device_generation = device if torch.cuda.device_count() <= 1 else torch.device('cuda:1'))
-
-        #     generated_sequences.extend(generated_sequence)
-        # results_generation[str(temp)]['train']['empty_prompt'] = {'seq':generated_sequences}
-
-        # generated_sequences = []
-        # for i in range(0, n_passages, max_batch_size):
-        #     passage = valid_passage[i:i+max_batch_size]
-        #     generated_sequence, logprobs = pipeline.generate(prompts = [text.split(' ')[0] for text in passage],
-        #                                 text_conditioning = passage,
-        #                                 temperature = temp,
-        #                                 max_tokens = max_tokens,
-        #                                 truncate_double_space = False,
-        #                                 device = device,
-        #                                 device_generation = device if torch.cuda.device_count() <= 1 else torch.device('cuda:1'))
-
-        #     generated_sequences.extend(generated_sequence)
-        # results_generation[str(temp)]['valid']['word_prompt'] = {'seq':generated_sequences}
 
         generated_sequences = []
         for i in range(0, n_passages, max_batch_size):
@@ -295,23 +260,7 @@ def evaluate_reconstruction_model(
                         ]
                     )
                 )
-                # elif prompt_type == "word_prompt":
-                #     gt_passage = valid_passage  # train_passage if split == 'train' else valid_passage
-                #     gt_passage = [" ".join(text.split(" ")[1:]) for text in gt_passage]
-                #     overlap = word_overlap(gt_passage, generated_sequences)
-                #     bleu_score = get_bleu_score(gt_passage, generated_sequences)
-                #     bleu_score_avg = get_bleu_score(
-                #         gt_passage, generated_sequences, avg=True
-                #     )
-                #     meteor_score = get_meteor(gt_passage, generated_sequences)
-                #     em = np.mean(
-                #         np.array(
-                #             [
-                #                 get_em(gt, pred)
-                #                 for gt, pred in zip(gt_passage, generated_sequences)
-                #             ]
-                #         )
-                #     )
+
                 print(
                     f"CKPT: {ckpt}, Temperature: {temp}, Split: valid, Prompt Type: {prompt_type}, Overlap: {overlap}",
                     "Bleu Score:",

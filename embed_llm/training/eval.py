@@ -43,23 +43,31 @@ def evaluate(
     # eval mode!
     model.eval()
 
-    eval_loss = torch.tensor(0.0).cuda()
+    eval_loss_w_embed = torch.tensor(0.0).cuda()
+    eval_loss_wo_embed = torch.tensor(0.0).cuda()
     main_logger_info(f"Start eval for {len(batches)} batches")
     for i, batch in enumerate(batches):
         with torch.no_grad():
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
 
-            output = model.forward(
+            output_w_embed = model.forward(
                 x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens
             )
+            output_wo_embed = model.forward(x=x, embeddings=None, seqlens=seqlens)
 
-            if len(output.size()) > 2:
-                output = output.view(-1, output.size(-1)).float()
+            if len(output_w_embed.size()) > 2:
+                output_w_embed = output_w_embed.view(
+                    -1, output_w_embed.size(-1)
+                ).float()
+                output_wo_embed = output_wo_embed.view(
+                    -1, output_wo_embed.size(-1)
+                ).float()
                 y = y.view(-1).long()
                 y_mask = None if y_mask is None else y_mask.view(-1)
 
             if not batch.is_pad_only:
-                eval_loss += compute_loss_with_mask(output, y, y_mask)
+                eval_loss_w_embed += compute_loss_with_mask(output_w_embed, y, y_mask)
+                eval_loss_wo_embed += compute_loss_with_mask(output_wo_embed, y, y_mask)
             assert (
                 batch.is_pad_only or y.abs().sum() != 0
             ), "Pad sample is used to compute loss."
@@ -67,11 +75,15 @@ def evaluate(
     # sum loss
     main_logger_info("Eval finished!")
 
-    dist.all_reduce(eval_loss, op=dist.ReduceOp.SUM)
-    eval_loss /= total_num_samples
+    dist.all_reduce(eval_loss_w_embed, op=dist.ReduceOp.SUM)
+    dist.all_reduce(eval_loss_wo_embed, op=dist.ReduceOp.SUM)
+    eval_loss_w_embed /= total_num_samples
+    eval_loss_wo_embed /= total_num_samples
 
-    state.this_eval_loss = eval_loss.item()
-    state.this_eval_perplexity = (2**eval_loss).item()
+    state.this_eval_loss = eval_loss_w_embed.item()
+    state.this_eval_perplexity = (2**eval_loss_w_embed).item()
+    state.this_eval_loss_wo_embed = eval_loss_wo_embed.item()
+    state.this_eval_perplexity_wo_embed = (2**eval_loss_wo_embed).item()
 
     # train mode!
     model.train()

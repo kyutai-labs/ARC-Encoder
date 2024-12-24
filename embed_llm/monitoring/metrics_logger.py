@@ -46,6 +46,8 @@ def get_eval_logs(
     train_loss: float,
     perplexity: float | None = None,
     eval_loss: float | None = None,
+    perplexity_wo_embed: float | None = None,
+    eval_loss_wo_embed: float | None = None,
 ) -> dict[str, float | int]:
     eval_dict = {"step": step, "train_loss": train_loss}
 
@@ -54,6 +56,13 @@ def get_eval_logs(
 
     if eval_loss is not None:
         eval_dict["eval_loss"] = eval_loss
+
+    if perplexity_wo_embed is not None:
+        eval_dict["perplexity_wo_embed"] = perplexity_wo_embed
+
+    if eval_loss_wo_embed is not None:
+        eval_dict["eval_loss_wo_embed"] = eval_loss_wo_embed
+
     return eval_dict
 
 
@@ -96,6 +105,8 @@ def eval_log_msg(logs: dict[str, float | int]) -> str:
         ("perplexity", ".3f", "eval_perplexity"),
         ("eval_loss", ".3f", None),
         ("train_loss", ".3f", None),
+        ("perplexity_wo_embed", ".3f", "eval_perplexity_wo_embed"),
+        ("eval_loss_wo_embed", ".3f", None),
     ]:
         name = key if new_name is None else new_name
         if key in logs:

@@ -55,11 +55,13 @@ PARAPHRASE_PROMPT = [
     },
 ]
 
-QA_PROMPT = [
-    {"prefix": "Context: ", "suffix": "Question: "},
-    {"prefix": "Based on this document", "suffix": "answer the following question: "},
-    {"prefix": "Context: ", "suffix": "Query: "}]
-    
+INSTRUCT_PROMPT = [
+    {"prefix": "Context: ", "suffix": ""},
+    {"prefix": "Based on this document", "suffix": "follow the instruction below\n"},
+    {"prefix": "", "suffix": ""},
+    {"prefix": "", "suffix": ""},
+]
+
 
 logger = logging.getLogger("utils")
 
@@ -73,7 +75,9 @@ class TrainState:
     this_step_time: float = 0.0
     begin_step_time: float = 0.0
     this_eval_perplexity: float | None = None
+    this_eval_perplexity_wo_embed: float | None = None
     this_eval_loss: float | None = None
+    this_eval_loss_wo_embed: float | None = None
 
     def start_step(self):
         self.step += 1

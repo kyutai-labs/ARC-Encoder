@@ -27,5 +27,7 @@ class DataArgs(Serializable):
     data_types: list[str] = field(default_factory=lambda: ["reconstruction"])
 
     def __post_init__(self) -> None:
-        assert len(self.train_data.strip().split(",")) == len(self.data_types), "Number of data sources must match number of types."
+        assert len(self.train_data.strip().split(",")) == len(
+            self.data_types
+        ), "Number of data sources must match number of types."
         pass

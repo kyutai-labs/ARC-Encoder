@@ -662,7 +662,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
             )
         token_embeds = self.tok_embeddings(input_ids)
 
-
         if self.pipeline_rank == 0:
             assert self.tok_embeddings is not None
             # if self.vision_encoder is not None and images:
@@ -676,7 +675,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     else cat_embeddings.shape[0]
                 )
 
-
                 h = torch.zeros(
                     (num_supp_toks + len(token_embeds), self.args.dim),
                     device=self.device,
@@ -687,7 +685,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 final_ind = 0
                 for i, size in enumerate(seqlens):
                     assert size > 0
-                    
+
                     size_embed = embed_seqlens[i]
                     h[final_ind : size_embed + final_ind, :] = cat_embeddings[
                         sum(embed_seqlens[:i]) : sum(embed_seqlens[: i + 1]), :
