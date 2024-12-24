@@ -182,13 +182,11 @@ def _train(
         train_args=args,
         folder=model_folder,
         lora=args.lora,
-        llm_name=args.llm_name,
         embedding_model=embedding_model,
         checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
         param_dtype=param_dtype,
         max_seq_len=args.seq_len,
         max_batch_size=args.batch_size,
-        variant=args.variant if hasattr(args, "variant") else None,
     )
     main_logger_info("Model loading done")
     main_logger_info(

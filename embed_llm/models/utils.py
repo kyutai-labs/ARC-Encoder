@@ -21,14 +21,6 @@ from embed_llm.models.mistral.cross_att_transformer import (
     Cross_AttTransformerBlock as MistralCrossAttTransformerBlock,
 )
 
-# Gemma specifics
-from embed_llm.models.gemma.model import (
-    GemmaDecoderLayer,
-    Gemma2DecoderLayer,
-)
-
-# Llama specifics
-from embed_llm.models.llama.model import TransformerBlock as LlamaTransformerBlock
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +44,6 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
         transformer_layer_cls=set(
             [
                 MistralTransformerBlock,
-                LlamaTransformerBlock,
-                Gemma2DecoderLayer,
-                GemmaDecoderLayer,
                 MistralCrossAttTransformerBlock,
             ]
         ),

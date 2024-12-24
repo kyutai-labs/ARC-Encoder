@@ -36,9 +36,7 @@ def load_training_model(
     train_args: TrainArgs,
     folder: Path,
     lora: LoraArgs,
-    llm_name: str,
     embedding_model: object | None,
-    variant: None | str = None,
     checkpoint: bool = False,
     param_dtype: torch.dtype = torch.bfloat16,
     max_seq_len: int = 512,
@@ -55,10 +53,7 @@ def load_training_model(
     llm_args, pipeline_args = load_args(
         folder,
         lora,
-        llm_name=llm_name,
-        max_seq_len=max_seq_len,
         max_batch_size=max_batch_size,
-        variant=variant,
         pipe_args=train_args.pipeline,
     )
 
@@ -71,7 +66,6 @@ def load_training_model(
         pipeline_args.every_cross_att = -1
 
     model, tokenizer, embed_dim = load_llm_model(
-        llm_name=llm_name,
         llm_args=llm_args,
         pipeline_args=pipeline_args,
         args=train_args,
@@ -93,7 +87,6 @@ def load_training_model(
         llm_args.lora.enable = True
         # Load pretrained params on rank 0
         llm_embedder, _, llm_embed_dim = load_llm_model(
-            llm_name=llm_name,
             llm_args=llm_args,
             pipeline_args=pipeline_args,
             args=train_args,
@@ -109,7 +102,7 @@ def load_training_model(
             main_logger_info("No output to delete for the LLM Embedder")
 
         embedding_model = llm_embedder
-        pipeline_args.embedder_name = llm_name
+
         # Hidden dim of the embedder
         pipeline_args.mlp_project.in_dim = llm_embed_dim
 
@@ -122,7 +115,6 @@ def load_training_model(
 
     # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
-        llm_name=llm_name,
         pipeline_args=pipeline_args,
         tokenizer=tokenizer,
         embed_model_name=pipeline_args.embedder_name,
