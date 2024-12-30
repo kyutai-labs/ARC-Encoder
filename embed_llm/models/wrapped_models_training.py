@@ -300,6 +300,18 @@ def load_training_model(
                 augmented_model.mlp_project.load_state_dict(
                     safetensors.torch.load_file(mlp_path + "/consolidated.safetensors")
                 )
+                
+            assert not any(
+                p.is_meta
+                for n, p in augmented_model.named_parameters()
+                if "latents" not in n
+            ), "All parameters should be loaded by now"
+
+            assert all(
+                p.dtype == param_dtype for p in augmented_model.parameters()
+            ), f"All parameters should be on {param_dtype}"
+
+            main_logger_info("Finished ckpt loading!")
             param_init_fn = None
         else:
 
