@@ -47,17 +47,30 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
         else:
             answer = [data["answer"]]
 
-        assert isinstance(data["passage"], str) or isinstance(data["passage"], list)
-        if isinstance(data["passage"], list):
-            embed_passage = [random.choice(data["passage"])]
+        
+        if "passage" in data.keys():
+            assert isinstance(data["passage"], str) or isinstance(data["passage"], list)
+            if isinstance(data["passage"], list):
+                embed_passage = [random.choice(data["passage"])]
+            else:
+                embed_passage = [data["passage"]]
+                
+        elif "passages" in data.keys():
+            assert isinstance(data["passages"], str) or isinstance(data["passages"], list)
+            if isinstance(data["passages"], list):
+                embed_passage = [random.choice(data["passages"])]
+            else:
+                embed_passage = [data["passages"]]
         else:
-            embed_passage = [data["passage"]]
+            raise ValueError("No passage or passages key found in data")
 
         assert isinstance(question, str), question
 
         # Add question prompt
         if "QA" in data_path:
             question = random.choice(templates_for_qa).format(question=question)
+            
+        
 
         q_tokens = tokenizer.encode(sample, bos=True, eos=False)
         a_tokens = tokenizer.encode(answer, bos=False, eos=True)

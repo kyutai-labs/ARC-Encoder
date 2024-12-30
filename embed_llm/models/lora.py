@@ -86,25 +86,31 @@ class LoRALinear(nn.Module):
         self, state_dict: dict[str, object], prefix: str, *args, **kwargs
     ) -> None:
         key_name = prefix + "weight"
+        
+        # If lora args None does not go there
+        
+        # If loaded LoRa weights
+        if key_name in state_dict and prefix + "lora_A.weight" in state_dict:
+            lora_a = state_dict[prefix + "lora_A.weight"]
+            lora_b = state_dict[prefix + "lora_B.weight"]
+            linear = state_dict[prefix + "linear.weight"]
+            state_dict = {
+                "lora_A.weight": lora_a,
+                "lora_B.weight": lora_b,
+                "linear.weight": linear,
+            }
+            self.load_state_dict(state_dict, assign=True, strict=True)
 
-        # full checkpoint
-        if key_name in state_dict:
+        # When lora should be initialized, no ckpt
+        elif key_name in state_dict:
             w_ref = state_dict[key_name]
-
             # load frozen weights
             state_dict = {
                 "linear.weight": w_ref,
             }
             self.load_state_dict(state_dict, assign=True, strict=True)
 
-        if prefix + "lora_A.weight" in state_dict:
-            lora_a = state_dict[prefix + "lora_A.weight"]
-            lora_b = state_dict[prefix + "lora_B.weight"]
-            state_dict = {
-                "lora_A.weight": lora_a,
-                "lora_B.weight": lora_b,
-            }
-            self.load_state_dict(state_dict, assign=True, strict=True)
+
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         lora = self.lora_B(self.lora_A(x))
@@ -160,22 +166,19 @@ class LoRALoaderMixin:
         lora_state_dict = {k: v.to(self.device) for k, v in lora_state_dict.items()}
 
         state_dict = self.state_dict()  # type: ignore[attr-defined]
-
         if self.args.lora is None:  # type: ignore[attr-defined]
             print("Loading and merging LoRA weights...")
 
-            # replace every nn.Linear with a LoRALinear with 'meta' device except the output layer
             # type: ignore[attr-defined]
             named_modules = dict(self.named_modules())
             for name, module in named_modules.items():
                 if (
                     isinstance(module, nn.Linear)
-                    and name != "output"
                     and not is_cross_att(name)
                 ):
-                    layer_id = name.split(".")[1]
+    
                     # type: ignore[attr-defined]
-                    if layer_id not in self.layers:
+                    if name!= 'output' and name.split(".")[1] not in self.layers:
                         print("Skipping parameter", name)
 
                     elif (name + ".lora_B.weight") in lora_state_dict:
@@ -194,11 +197,11 @@ class LoRALoaderMixin:
             for k, v in lora_state_dict.items():
                 state_dict.update(lora_state_dict)
 
-                layer_id = k.split(".")[1]
-                if layer_id in self.layers:  # type: ignore[attr-defined]
+                if  'output' in k or k.split(".")[1] in self.layers:  # type: ignore[attr-defined]
                     state_dict[k] = v
                 else:
-                    print("Skipping parameter", name)
+                    print("Skipping parameter", k)
+   
         # type: ignore[attr-defined]
         self.load_state_dict(state_dict, strict=True)
 

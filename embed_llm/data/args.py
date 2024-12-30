@@ -28,5 +28,5 @@ class DataArgs(Serializable):
     def __post_init__(self) -> None:
         assert len(self.train_data.strip().split(",")) == len(
             self.data_types
-        ), "Number of data sources must match number of types."
+        ), f"Number of data sources {len(self.train_data.strip().split(','))} must match number of types {len(self.data_types)}."
         pass

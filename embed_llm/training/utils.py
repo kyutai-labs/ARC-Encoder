@@ -20,7 +20,7 @@ def create_data_args(params_path: str):
 
     with open(params_path, "r") as f:
         for i, line in enumerate(f):
-            params = json.load(line)
+            params = json.loads(line)
             if i == 0:
                 adapt_seq_len = params["adapt_seq_len"]
                 data_types = [params["data_types"]]
@@ -30,23 +30,21 @@ def create_data_args(params_path: str):
                 continue
 
             if "train_data" in params.keys():
+                weight =  1 if "weight" not in params["train_data"].keys() else params["train_data"]["weight"]
                 train_data += (
-                    train_data_cpp + params["train_data"]["path"] + ":" + 1
-                    if "weight" not in params["train_data"].keys()
-                    else params["train_data"]["weight"] + ","
+                    train_data_cpp + params["train_data"]["path"] + ":" + weight + ","
                 )
                 n_datasets += 1
 
             if "eval_data" in params.keys():
+                weight = 1 if "weight" not in params["eval_data"].keys() else params["eval_data"]["weight"] 
                 eval_data += (
-                    eval_data_cpp + params["eval_data"]["path"] + ":" + 1
-                    if "weight" not in params["eval_data"].keys()
-                    else params["eval_data"]["weight"] + ","
+                    eval_data_cpp + params["eval_data"]["path"] + ":" + weight + ","
                 )
 
     return DataArgs(
-        train_data=train_data,
-        eval_data=eval_data,
+        train_data=train_data[:-1], # Remove last ','
+        eval_data=eval_data[:-1],
         adapt_seq_len=adapt_seq_len,
         data_types=data_types * n_datasets,  # Useful to add prompt prefix for training
         shuffle=shuffle,

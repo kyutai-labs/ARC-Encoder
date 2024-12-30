@@ -14,6 +14,7 @@ templates_for_qa = [
     "{question}???\n",
 ]
 
+# Used to preprocess datasets
 templates_for_sum = [
     "Write a short summary for the previous text\n\nSummary:",
     "Briefly summarize this article:\nSummary:",

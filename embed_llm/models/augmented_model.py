@@ -743,6 +743,10 @@ def load_args(
         )
         mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
         pipeline_args.mlp_project = mlp_project_args
+        
+        pooling_args = PoolingArgs(**pipeline_args.pooling_module)
+        pipeline_args.pooling_module = pooling_args
+        
     else:
         pipeline_args = pipe_args
 

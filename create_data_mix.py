@@ -17,8 +17,9 @@ def main(args):
             f.write(json.dumps(header_params) + "\n")
 
     if args.train_files is not None:
-        assert args.train_weights is not None
-        assert len(args.train_files.split(",")) == len(args.train_weights.split(","))
+        assert args.train_weights is None or  len(args.train_files.split(",")) == len(args.train_weights.split(","))
+        if args.train_weights is None:
+            args.train_weights = "1," * len(args.train_files.split(","))
         with open(args.folder_path + args.output_file, "a") as f:
             for file, weight in zip(
                 args.train_files.split(","), args.train_weights.split(",")
@@ -28,8 +29,9 @@ def main(args):
                 )
 
     if args.eval_files is not None:
-        assert args.eval_weights is not None
-        assert len(args.eval_files.split(",")) == len(args.eval_weights.split(","))
+        assert args.eval_weights is None or len(args.eval_files.split(",")) == len(args.eval_weights.split(","))
+        if args.eval_weights is None:
+            args.eval_weights = "1," * len(args.eval_files.split(","))
         with open(args.folder_path + args.output_file, "a") as f:
             for file, weight in zip(
                 args.eval_files.split(","), args.eval_weights.split(",")
@@ -50,7 +52,6 @@ def arg_parser():
 
     parser.add_argument(
         "--adapt_seq_len",
-        type=float,
         action="store_true",
         help="Whether to adapt sequence length to the one of the passage (until max_seq_len)",
     )

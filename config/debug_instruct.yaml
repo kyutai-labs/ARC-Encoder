@@ -10,16 +10,19 @@ lora:
   enable: true
 
 data:
-  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/test_instruct.jsonl
+  # train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/test_instruct.jsonl
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
+  train_data:  /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
   shuffle: false
-  data_types: [instruct]
+  # data_types: [instruct]
+  adapt_seq_len: true
 
-prefix_prompt: true
+prefix_prompt: false
 seq_len: 512
 batch_size: 32
 num_microbatches: 1
 max_steps: 20000
+
 optim:
   max_lr: 5.0e-05
   weight_decay: 0.1
@@ -27,12 +30,43 @@ optim:
   initial_lr: 1.0e-20
   final_lr: 1.0e-10
 
+# instruct_tuning:
+#   do: true
+#   cross_entropy: true
+  # kl: false
+  # alpha: 0
+  # temp: 1.0
+
 seed: 0
 log_freq: 10
 eval_freq: 100
 no_eval: false
 ckpt_freq: 1
 save_adapters: true
+
+pipeline:
+  w_embeds: true
+  embedder_name: Mistral7B
+  trainable_embedder: True
+  n_truncated_layers: 8
+  normalize_embeddings: true
+  do_pool: true
+  cross_att: true
+  cross_att_layers: null
+  mlp_project:
+    hidden_dim: 4096
+    n_layers: 1
+    act: gelu
+    type: latent_attention
+  do_both: true
+  shared_kv: false
+  pooling_module:
+    type: latent_attention
+    r: 512
+    n_heads: 8
+  every_cross_att: 2
+  pooled_cross_att: true
+  dist_process: false
 
 # wandb:
 #   project: embed_llm

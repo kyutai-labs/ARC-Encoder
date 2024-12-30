@@ -300,13 +300,13 @@ def evaluate_reconstruction_model(
         json.dump(metrics, f)
 
     with open(
-        "/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/overall_results.json",
+        "/home/hippolytepilchen/code/embed_llm/config/experiments/overall_results_w_output.json",
         "r",
     ) as f:
         overall_results = json.load(f)
     overall_results[run_name] = metrics
     with open(
-        "/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/overall_results.json",
+        "/home/hippolytepilchen/code/embed_llm/config/experiments/overall_results_w_output.json",
         "w",
     ) as f:
         json.dump(overall_results, f)
@@ -317,29 +317,13 @@ if __name__ == "__main__":
     ensure_reproducibility(29)
     # evaluate_model("LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB", ckpt=20000, benchmarks = ['NQ'])
 
-    # run_names = os.listdir(
-    #     "/home/hippolytepilchen/code/embed_llm/config/experiments/mistral"
-    # )
-    # with open(
-    #     "/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/overall_results.json",
-    #     "r",
-    # ) as f:
-    #     overall_results = json.load(f)
 
-    # for key in overall_results.keys():
-    #     run_names.remove(key + ".yaml")
-
-    # print(run_names)
-    # print("Number of runs:", len(run_names))
-    # run_names = [
-    #     "LT_FN_False_1_MLP_RLatt_True_CA_2_CAL_every_True_DB",
-    #     "LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB",
-    # ]
-
-    # for run_name in run_names:
-    #     evaluate_reconstruction_model(run_name, ckpt=20000)
-    #     # print("Memory:", torch.cuda.memory_allocated() / 1024**3)
-    #     # print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)
-    #     print("Max Memory Allocated:", torch.cuda.max_memory_allocated() / 1024**3)
-    #     # print("Reset memory ! ")
-    #     torch.cuda.empty_cache()
+    run_names = [file_name for file_name in os.listdir('/lustre/scwpod02/client/kyutai-interns/hippop/tmp/') if 'LT_FN' in file_name]
+    print("Number of runs:", len(run_names))
+    for run_name in sorted(run_names):
+        evaluate_reconstruction_model(run_name, ckpt=20000)
+        # print("Memory:", torch.cuda.memory_allocated() / 1024**3)
+        # print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)
+        print("Max Memory Allocated:", torch.cuda.max_memory_allocated() / 1024**3)
+        # print("Reset memory ! ")
+        torch.cuda.empty_cache()

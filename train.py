@@ -23,7 +23,8 @@ from embed_llm.generation.evaluation import (
 )
 from embed_llm.models.wrapped_models_training import load_training_model
 from embed_llm.retrieval.embeddings import get_pretrained_embedder
-from embed_llm.training.args import TrainArgs
+from embed_llm.training.args import TrainArgs,OptimArgs, WandbArgs,InstructionTuningArgs
+from embed_llm.models.args import LoraArgs, EmbedAugArgs
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.data.data_loader import build_data_loader
 from embed_llm.training.distributed import (
@@ -45,6 +46,7 @@ from embed_llm.training.utils import (
     INSTRUCT_PROMPT,
     create_data_args,
 )
+
 from embed_llm.monitoring.metrics_logger import (
     MetricsLogger,
     eval_log_msg,
@@ -79,16 +81,24 @@ def get_gpu_memory():
     return memory_free_info
 
 
-def train(config: str | dict | tuple):
-    if isinstance(config, str):
-        args: TrainArgs = TrainArgs.load(config, drop_extra_fields=False)
-    elif isinstance(config, dict):
-        args: TrainArgs = TrainArgs.from_dict(**config)
-    elif isinstance(config, tuple):
-        train_params = json.load(config[0])
-        data_args = create_data_args(config[1])
+def train(train_config: str | dict, data_config: str = None):
+    if isinstance(train_config, str) and data_config is None:
+        args: TrainArgs = TrainArgs.load(train_config, drop_extra_fields=False)
+    elif isinstance(train_config, dict) and data_config is None:
+        args: TrainArgs = TrainArgs.from_dict(**train_config)
+    elif data_config is not None:
+        import yaml
+        assert isinstance(train_config, str) and isinstance(data_config, str)
+        with open(train_config, 'r') as f:
+            train_params = yaml.safe_load(f)
+        data_args = create_data_args(data_config)
         train_params["data"] = data_args
-        args: TrainArgs = TrainArgs.from_dict(**train_params)
+        args: TrainArgs = TrainArgs(**train_params)
+        args.optim = OptimArgs(**args.optim)
+        args.lora = LoraArgs(**args.lora)
+        args.pipeline = EmbedAugArgs(**args.pipeline)
+        args.instruct_tuning = InstructionTuningArgs(**args.instruct_tuning)
+        
     else:
         raise ValueError("Config should be a string or a dictionary")
 

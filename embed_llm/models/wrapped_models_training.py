@@ -261,23 +261,22 @@ def load_training_model(
                     for k, v in state_dict.items()
                     if "lora" not in k and is_cross_att(k)
                 }
-
                 augmented_model.llm.load_state_dict(
                     cross_att_state_dicts, assign=True, strict=False
                 )
 
             if Path(lora_path).exists():
+                print('Loading LLM LoRA state dict')           
                 augmented_model.llm.load_lora(
                     Path(lora_path), cross_att=pipeline_args.cross_att
                 )
 
             if trained_embedder:
-                pipeline_args.pooling_module = PoolingArgs(
-                    **pipeline_args.pooling_module
-                )
+                print("Loading trainable embedder")
                 augmented_model.trainable_embedder.load_lora(
                     Path(trained_embedder_path + "/lora.safetensors"), cross_att=False
                 )
+
 
             # Experiment using full cross-attention
             if pipeline_args.cross_att and not pipeline_args.do_pool:
@@ -298,10 +297,10 @@ def load_training_model(
 
             if pipeline_args.mlp_project.n_layers > 0:
                 print("Loading MLP projector")
-                augmented_pipeline.model.mlp_project.load_state_dict(
+                augmented_model.mlp_project.load_state_dict(
                     safetensors.torch.load_file(mlp_path + "/consolidated.safetensors")
                 )
-
+            param_init_fn = None
         else:
 
             def param_init_fn(m):
