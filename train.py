@@ -328,6 +328,8 @@ def _train(
 
     while state.step < args.max_steps:
         state.start_step()
+
+            
         is_last_step = state.step == args.max_steps
 
         optimizer.zero_grad()
@@ -336,6 +338,7 @@ def _train(
         kl_loss = torch.tensor([0.0], device="cuda")
         n_batch_tokens: int = 0
 
+            
         # Number of steps to accumulate gradients before doing an optimizer step.
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)

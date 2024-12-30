@@ -129,7 +129,9 @@ def load_training_model(
         augmented_model = augmented_pipeline.get_model(llm=model)
 
     if train_args.start_from_ckpt_path is None:
+        
         if get_rank() == 0:
+                    
             if lora.enable and pipeline_args.trainable_llm:
                 main_logger_info("Initializing lora layers  for LLM ...")
                 # initialize LoRA layers
@@ -156,6 +158,7 @@ def load_training_model(
             ):
                 main_logger_info("Initializing Pooling")
                 initialize_proj_params(augmented_model.pooling_module, param_dtype)
+                
 
             assert not any(
                 p.is_meta
@@ -253,6 +256,9 @@ def load_training_model(
         )
 
         if get_rank() == 0:
+
+                    
+            
             if pipeline_args.cross_att:
                 print("Loading cross att state dict")
                 state_dict = safetensors.torch.load_file(Path(lora_path))
@@ -265,6 +271,7 @@ def load_training_model(
                     cross_att_state_dicts, assign=True, strict=False
                 )
 
+  
             if Path(lora_path).exists():
                 print('Loading LLM LoRA state dict')           
                 augmented_model.llm.load_lora(
@@ -292,15 +299,19 @@ def load_training_model(
                         Path(pooling_module_path), dtype=param_dtype
                     )
                     augmented_pipeline.model.pooling_module.process.load_state_dict(
-                        state_dict
+                        state_dict, assign=True, strict=True
                     )
 
             if pipeline_args.mlp_project.n_layers > 0:
                 print("Loading MLP projector")
                 augmented_model.mlp_project.load_state_dict(
-                    safetensors.torch.load_file(mlp_path + "/consolidated.safetensors")
+                    safetensors.torch.load_file(mlp_path + "/consolidated.safetensors"), assign=True, strict=True
                 )
                 
+            for name, param in augmented_model.named_parameters():
+                if param.is_meta:
+                    print('Still meta after lora', name)
+                    
             assert not any(
                 p.is_meta
                 for n, p in augmented_model.named_parameters()

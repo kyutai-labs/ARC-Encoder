@@ -4,6 +4,7 @@ import json
 import numpy as np
 import random
 from tqdm import tqdm, trange
+from pathlib import Path
 from embed_llm.models.augmented_model import EmbedAugPipeline
 from embed_llm.generation.metrics import (
     word_overlap,
@@ -148,13 +149,15 @@ def evaluate_reconstruction_model(
     if ckpt is None and pipeline is None:
 
         # Get last checkpoint
-        last_ckpt = sorted(
+        last_ckpt = sorted([ckpt_name for ckpt_name in
             os.listdir(
                 "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
                 + run_name
                 + "/checkpoints/"
-            )
-        )[-1]
+            ) if (Path("/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                + run_name
+                + "/checkpoints/") / ckpt_name / 'params.json').exists()])[-1]
+    
         pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
             llm_path=llm_path,
             ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
@@ -321,7 +324,7 @@ if __name__ == "__main__":
     run_names = [file_name for file_name in os.listdir('/lustre/scwpod02/client/kyutai-interns/hippop/tmp/') if 'LT_FN' in file_name]
     print("Number of runs:", len(run_names))
     for run_name in sorted(run_names):
-        evaluate_reconstruction_model(run_name, ckpt=20000)
+        evaluate_reconstruction_model(run_name)
         # print("Memory:", torch.cuda.memory_allocated() / 1024**3)
         # print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)
         print("Max Memory Allocated:", torch.cuda.max_memory_allocated() / 1024**3)

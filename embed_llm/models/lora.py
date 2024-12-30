@@ -89,27 +89,26 @@ class LoRALinear(nn.Module):
         
         # If lora args None does not go there
         
-        # If loaded LoRa weights
-        if key_name in state_dict and prefix + "lora_A.weight" in state_dict:
-            lora_a = state_dict[prefix + "lora_A.weight"]
-            lora_b = state_dict[prefix + "lora_B.weight"]
-            linear = state_dict[prefix + "linear.weight"]
+
+        if key_name in state_dict and "lora_A.weight" in state_dict:
+            w_ref = state_dict[key_name]
+
+            # load frozen weights
             state_dict = {
-                "lora_A.weight": lora_a,
-                "lora_B.weight": lora_b,
-                "linear.weight": linear,
+                "linear.weight": w_ref,
+                "lora_A.weight": self.lora_A.weight,
+                "lora_B.weight": self.lora_B.weight,
             }
             self.load_state_dict(state_dict, assign=True, strict=True)
-
-        # When lora should be initialized, no ckpt
-        elif key_name in state_dict:
+            
+        elif key_name in state_dict :
             w_ref = state_dict[key_name]
+
             # load frozen weights
             state_dict = {
                 "linear.weight": w_ref,
             }
             self.load_state_dict(state_dict, assign=True, strict=True)
-
 
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -192,18 +191,21 @@ class LoRALoaderMixin:
                         )
 
                         state_dict[name + ".weight"] = weight
+            # type: ignore[attr-defined]
+            self.load_state_dict(state_dict, strict=True)
         else:
             print("Loading LoRA weights...")
             for k, v in lora_state_dict.items():
                 state_dict.update(lora_state_dict)
 
                 if  'output' in k or k.split(".")[1] in self.layers:  # type: ignore[attr-defined]
-                    state_dict[k] = v
+                    state_dict[k] = v.to(self.device)
                 else:
                     print("Skipping parameter", k)
+            # type: ignore[attr-defined]
+            self.load_state_dict(state_dict, strict=True, assign = True)
    
-        # type: ignore[attr-defined]
-        self.load_state_dict(state_dict, strict=True)
+
 
 
 def maybe_lora(
