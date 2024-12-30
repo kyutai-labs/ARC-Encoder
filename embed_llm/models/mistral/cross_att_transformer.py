@@ -474,8 +474,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
             suffixes = []
 
             for _ in range(len(seqlens)):
-                
-                if tokenized_prompts.get(batch_type, False) and len(tokenized_prompts[batch_type]) > 0:
+
+                if (
+                    tokenized_prompts.get(batch_type, False)
+                    and len(tokenized_prompts[batch_type]) > 0
+                ):
                     tokenized_prompt = random.choice(tokenized_prompts[batch_type])
                     prefixes.append(tokenized_prompt["prefix"])
                     suffixes.append(tokenized_prompt["suffix"])

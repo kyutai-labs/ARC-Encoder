@@ -51,7 +51,7 @@ def maybe_load_local_dataset(
         data = json.loads(line)
 
         data_sample: TokenSample = encode(
-            data, tokenizer=tokenizer,  data_path=str(path)
+            data, tokenizer=tokenizer, data_path=str(path)
         )
         data_list.append(data_sample)
 
@@ -274,6 +274,7 @@ def sequence_iterator(
                 data_type=data_type,
             )
 
+
 def sequence_iterator_continuation(
     ds_it: Iterator[TokenSample],
     seq_len: int,
@@ -291,7 +292,7 @@ def sequence_iterator_continuation(
     mask_buffer: Mask = []
     sizes: list[int] = []
     n_missing = seq_len
-    
+
     for sample in ds_it:
         assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
         tokens, mask = sample.tokens, sample.masks[1:]
@@ -299,10 +300,12 @@ def sequence_iterator_continuation(
         embed_tokens = sample.passages.tokens
         embed_text = sample.passages.text
 
-        assert len(embed_tokens) == 1, "Continuation training only supports one passage per sample"
+        assert (
+            len(embed_tokens) == 1
+        ), "Continuation training only supports one passage per sample"
 
         cur_pos = 0
-        
+
         while cur_pos < len(x):
 
             overall_size = len(x[cur_pos : cur_pos + n_missing])
@@ -313,10 +316,12 @@ def sequence_iterator_continuation(
                 # we have a sequence with a mask filled with False
                 continue
 
-
             if overall_size < 4:
                 assert len(mask_buffer) == len(x_buffer) == sum(sizes) == len(y_buffer)
-                assert len(to_embed_buffer) == len(sizes), (len(to_embed_buffer), len(sizes))
+                assert len(to_embed_buffer) == len(sizes), (
+                    len(to_embed_buffer),
+                    len(sizes),
+                )
 
                 # we don't want to yield sequences with a mask filled with False
                 if any(mask_buffer):
@@ -333,22 +338,27 @@ def sequence_iterator_continuation(
                 to_embed_buffer = []
                 sizes = []
                 n_missing = seq_len
-                
+
             upper_bound = min(cur_pos + n_missing, len(x))
             x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
             y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
-            
+
             to_embed_buffer.append(
                 {
                     "text": [
                         tokenizer.decode(
-                            embed_tokens[0][cur_pos : cur_pos + (upper_bound - cur_pos) // 2]
+                            embed_tokens[0][
+                                cur_pos : cur_pos + (upper_bound - cur_pos) // 2
+                            ]
                         )
                     ],
-                    "tokens": [embed_tokens[0][cur_pos : cur_pos + (upper_bound - cur_pos) // 2]],
+                    "tokens": [
+                        embed_tokens[0][
+                            cur_pos : cur_pos + (upper_bound - cur_pos) // 2
+                        ]
+                    ],
                 }
             )
-
 
             mask_buffer.extend(
                 mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]
@@ -358,13 +368,12 @@ def sequence_iterator_continuation(
             sizes.append(len(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]))
 
             cur_pos += overall_size
-            
-            
+
             if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
                 assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
                 assert len(x_buffer) <= seq_len
                 assert len(to_embed_buffer) == len(sizes)
-                
+
                 # we don't want to yield sequences with a mask filled with False
                 if any(mask_buffer):
                     yield SequenceEmbedMaskAndSizes(
@@ -402,6 +411,7 @@ def sequence_iterator_continuation(
                 data_type=data_type,
             )
 
+
 def build_dataset(
     args: DataArgs,
     tokenizer: Tokenizer,
@@ -431,7 +441,6 @@ def build_dataset(
         for source in sources
     ]
 
- 
     if not is_eval:
         if not continuation:
             sequence_iterators = [
@@ -444,7 +453,7 @@ def build_dataset(
                     data_type=data_type,
                 )
                 for it, data_type in zip(dataset_iterators, args.data_types)
-        ]
+            ]
         else:
             sequence_iterators = [
                 sequence_iterator_continuation(
@@ -476,7 +485,7 @@ def build_dataset(
                 )
                 for it in dataset_iterators
             ]
-            
+
         else:
             sequence_iterators = [
                 sequence_iterator_continuation(
@@ -488,9 +497,8 @@ def build_dataset(
                 )
                 for it in dataset_iterators
             ]
-            
+
         combined_iterator = itertools.chain.from_iterable(sequence_iterators)
-    
 
     return combined_iterator
 

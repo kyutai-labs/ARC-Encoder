@@ -116,12 +116,16 @@ class EmbedAugModel(nn.Module):
             embeddings = self.trainable_embedder(
                 input_ids=embeddings,
                 embeddings=None,
-                seqlens=[size for batch_seqlen in embed_seqlens for size  in batch_seqlen],
+                seqlens=[
+                    size for batch_seqlen in embed_seqlens for size in batch_seqlen
+                ],
             )
             if self.pooling_module is not None:
                 embeddings = self.pooling_module(
                     x=embeddings,
-                    seqlens=[size for batch_seqlen in embed_seqlens for size  in batch_seqlen],
+                    seqlens=[
+                        size for batch_seqlen in embed_seqlens for size in batch_seqlen
+                    ],
                 )
                 embed_seqlens = [len(batch_seqlen) for batch_seqlen in embed_seqlens]
             else:
@@ -415,10 +419,12 @@ class EmbedAugPipeline(nn.Module):
                 ).cuda(non_blocking=True)
                 embed_seqlens = []
                 for to_embed in batch.to_embed:
-                    assert not any([len(l_tokens)<=1 for  l_tokens in to_embed["tokens"]])
-                    embed_seqlens.append([len(l_tokens) for  l_tokens in to_embed["tokens"]])
-                   
-      
+                    assert not any(
+                        [len(l_tokens) <= 1 for l_tokens in to_embed["tokens"]]
+                    )
+                    embed_seqlens.append(
+                        [len(l_tokens) for l_tokens in to_embed["tokens"]]
+                    )
 
         if not mlm:
             x = torch.from_numpy(batch.x).cuda(non_blocking=True)
@@ -438,7 +444,7 @@ class EmbedAugPipeline(nn.Module):
         llm_path: str,
         ckpt_path: str,
         device: str,
-        llm_name: str = 'mistral7B',
+        llm_name: str = "mistral7B",
         embed_model_name: str | None = None,
         max_batch_size: int = 4,
         param_dtype: torch.dtype = torch.float32,
@@ -471,8 +477,6 @@ class EmbedAugPipeline(nn.Module):
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
         )
-
-
 
         llm, tokenizer, embed_dim = load_llm_model(
             llm_args=llm_args,
@@ -730,7 +734,13 @@ def load_args(
     if pipe_path is not None:
         with open(pipe_path + "/params.json", "r") as f:
             args = json.loads(f.read())
-        pipeline_args = EmbedAugArgs(**{k: args.get(k) for k in EmbedAugArgs.__dataclass_fields__.keys() if k in args})
+        pipeline_args = EmbedAugArgs(
+            **{
+                k: args.get(k)
+                for k in EmbedAugArgs.__dataclass_fields__.keys()
+                if k in args
+            }
+        )
         mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
         pipeline_args.mlp_project = mlp_project_args
     else:

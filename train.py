@@ -17,7 +17,10 @@ import time
 from torch.autograd.profiler import profile, record_function
 import subprocess as sp
 
-from embed_llm.generation.evaluation import evaluate_reconstruction_model, evaluate_model
+from embed_llm.generation.evaluation import (
+    evaluate_reconstruction_model,
+    evaluate_model,
+)
 from embed_llm.models.wrapped_models_training import load_training_model
 from embed_llm.retrieval.embeddings import get_pretrained_embedder
 from embed_llm.training.args import TrainArgs
@@ -126,7 +129,9 @@ def _train(
             # raise RuntimeError(
             #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
             # )
-            print(f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}.")
+            print(
+                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
+            )
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -140,7 +145,7 @@ def _train(
 
     if args.instruct_tuning.do:
         assert args.data.adapt_seq_len, "Adapt seq len should be set to True"
-        
+
     # 3. Get loggers
     metrics_logger: MetricsLogger = MetricsLogger(
         run_dir,
@@ -204,8 +209,6 @@ def _train(
         f"PipelineArgs: {pprint.pformat(dataclasses.asdict(pipeline.pipeline_args))}"
     )
 
-  
-
     """ Load  Dataloader"""
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
@@ -216,7 +219,7 @@ def _train(
         rank=get_rank(),  # DDP rank
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
-        continuation = args.continuation,
+        continuation=args.continuation,
     )
     main_logger_info("Data loader done")
     if not args.no_eval:
@@ -231,7 +234,7 @@ def _train(
             rank=get_rank(),  # DDP rank
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
-            continuation =  args.continuation,
+            continuation=args.continuation,
         )
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
         eval_batches = []
@@ -293,20 +296,20 @@ def _train(
     if args.prefix_prompt:
         model.tokenize_prompts = {}
         main_logger_info("Using paraphrase prompt")
-        model.tokenized_prompts['reconstruction'] = []
+        model.tokenized_prompts["reconstruction"] = []
         for prompt in PARAPHRASE_PROMPT:
             prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
             suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
-            model.tokenized_prompts["reconstruction"].append({
-                "prefix": prefix,
-                "suffix": suffix
-                }
+            model.tokenized_prompts["reconstruction"].append(
+                {"prefix": prefix, "suffix": suffix}
             )
         model.tokenized_prompts["instruct"] = []
         for prompt in INSTRUCT_PROMPT:
             prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
             suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
-            model.tokenized_prompts["instruct"].append({"prefix": prefix, "suffix": suffix})
+            model.tokenized_prompts["instruct"].append(
+                {"prefix": prefix, "suffix": suffix}
+            )
 
     main_logger_info("Start training")
     model.train()
@@ -356,60 +359,67 @@ def _train(
                 mb_loss.backward()
                 loss += mb_loss.item()
                 train_ppl += 2 ** (mb_loss.item())
-                
+
             else:
-                
+
                 instruct_cross_entropy = compute_ce_loss_with_mask(
-                        logits=output, target=y, target_mask=y_mask
-                    )
+                    logits=output, target=y, target_mask=y_mask
+                )
                 train_ppl += 2 ** (instruct_cross_entropy.item())
                 cross_entropy_loss += instruct_cross_entropy.item()
-                
+
                 if args.instruct_tuning.cross_entropy:
                     mb_loss = instruct_cross_entropy
-                    
+
                 if args.instruct_tuning.kl:
                     contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
                     x_rag = []
                     y_mask_rag = []
                     seqlens_rag = []
-                    
+
                     ind = 0
-                    assert len(contexts) == len(batch.sizes), "Contexts and batch sizes should be the same"
-                    
+                    assert len(contexts) == len(
+                        batch.sizes
+                    ), "Contexts and batch sizes should be the same"
+
                     for i, size in enumerate(batch.sizes):
-                        x_rag.extend(contexts[i] + batch.x[ind:ind+size])
+                        x_rag.extend(contexts[i] + batch.x[ind : ind + size])
                         seqlens_rag.append(size + len(contexts[i]))
-                        y_mask_rag.extend([False]*len(contexts[i]) + batch.y_mask[ind:ind+size])
+                        y_mask_rag.extend(
+                            [False] * len(contexts[i]) + batch.y_mask[ind : ind + size]
+                        )
                         ind += size
-                        
+
                     x_rag = torch.from_numpy(x_rag).cuda(non_blocking=True)
                     y_mask_rag = torch.from_numpy(y_mask_rag).cuda(non_blocking=True)
                     rag_output = model.forward(
-                                    x=x_rag,
-                                    embeddings=embeddings,
-                                    seqlens=seqlens_rag,
-                                    embed_seqlens=embed_seqlens,
-                                    batch_type=batch.data_type,
-                                )
-                    kl_dv_loss = compute_kl_loss_with_mask(
-                        rag_logits = rag_output, pred_logits = output, rag_mask = y_mask_rag, pred_mask = y_mask, temp = args.instruct_tuning.temp
+                        x=x_rag,
+                        embeddings=embeddings,
+                        seqlens=seqlens_rag,
+                        embed_seqlens=embed_seqlens,
+                        batch_type=batch.data_type,
                     )
-                    
+                    kl_dv_loss = compute_kl_loss_with_mask(
+                        rag_logits=rag_output,
+                        pred_logits=output,
+                        rag_mask=y_mask_rag,
+                        pred_mask=y_mask,
+                        temp=args.instruct_tuning.temp,
+                    )
+
                     kl_loss += kl_dv_loss.item()
-                    mb_loss = mb_loss + args.instruct_tuning.alpha*kl_dv_loss
-                            
+                    mb_loss = mb_loss + args.instruct_tuning.alpha * kl_dv_loss
+
                 mb_loss.backward()
-                loss += mb_loss.item()  
+                loss += mb_loss.item()
                 # print(prof.key_averages().table(sort_by="cuda_time_total"))
-            
+
             n_batch_tokens += x.numel()
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward
                 assert args.num_microbatches > 1  # should not happen
                 torch.cuda.synchronize()
 
-                        
         if args.num_microbatches > 1:
             loss /= args.num_microbatches
             train_ppl /= args.num_microbatches
@@ -425,7 +435,6 @@ def _train(
                 if torch.any(torch.isnan(p.grad)).item():
                     print(f"Grad contains NaN for this param {name}")
                 grad_norm += torch.norm(p.grad).item() ** 2
-
 
         if torch.any(torch.isnan(grad_norm)).item():
             raise ValueError(
@@ -445,22 +454,28 @@ def _train(
         loss_item = loss.item()
         avg_loss = avg_aggregate(loss_item)
         train_ppl = avg_aggregate(train_ppl)
-        
-    
-        cross_entropy_loss_item = cross_entropy_loss.item() if args.num_microbatches<=1 else cross_entropy_loss/(args.num_microbatches).item()
+
+        cross_entropy_loss_item = (
+            cross_entropy_loss.item()
+            if args.num_microbatches <= 1
+            else cross_entropy_loss / (args.num_microbatches).item()
+        )
         cross_entropy_loss_avg = avg_aggregate(cross_entropy_loss_item)
-        kl_loss_item = kl_loss.item() if args.num_microbatches<=1 else kl_loss/(args.num_microbatches).item()
+        kl_loss_item = (
+            kl_loss.item()
+            if args.num_microbatches <= 1
+            else kl_loss / (args.num_microbatches).item()
+        )
         kl_loss_avg = avg_aggregate(kl_loss_item)
-   
+
         if not args.instruct_tuning.do:
-                kl_loss_avg = None
-                cross_entropy_loss_avg = None
+            kl_loss_avg = None
+            cross_entropy_loss_avg = None
         else:
             if not args.instruct_tuning.cross_entropy:
                 cross_entropy_loss_avg = None
             if not args.instruct_tuning.kl:
                 kl_loss_avg = None
-            
 
         if not args.no_eval and (
             (args.eval_freq > 0 and state.step % args.eval_freq == 0)
@@ -473,7 +488,7 @@ def _train(
                 prepare_batch_fn=prepare_batch_fn,
                 batches=eval_batches,
                 state=state,
-                continuation = args.continuation,
+                continuation=args.continuation,
             )
 
             eval_logs = get_eval_logs(
@@ -481,10 +496,10 @@ def _train(
                 avg_loss,
                 state.this_eval_perplexity,
                 state.this_eval_loss,
-                perplexity_wo_embed = state.this_eval_perplexity_wo_embed,
-                eval_loss_wo_embed = state.this_eval_loss_wo_embed,
-                instruct_cross_entropy = cross_entropy_loss_avg,
-                instruct_kl = kl_loss_avg,
+                perplexity_wo_embed=state.this_eval_perplexity_wo_embed,
+                eval_loss_wo_embed=state.this_eval_loss_wo_embed,
+                instruct_cross_entropy=cross_entropy_loss_avg,
+                instruct_kl=kl_loss_avg,
             )
 
             main_logger_info(eval_log_msg(eval_logs))
@@ -519,11 +534,13 @@ def _train(
     main_logger_info("done!")
 
     dist.barrier()
-    
+
     if not args.instruct_tuning.do:
         evaluate_reconstruction_model(args.exp_name, ckpt=args.max_steps)
     else:
-        evaluate_model(args.exp_name, ckpt=args.max_steps, benchmarks = ['NQ', 'TRIVIAQA'])
+        evaluate_model(
+            args.exp_name, ckpt=args.max_steps, benchmarks=["NQ", "TRIVIAQA"]
+        )
 
 
 if __name__ == "__main__":

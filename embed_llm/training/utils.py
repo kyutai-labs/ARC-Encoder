@@ -12,39 +12,46 @@ from embed_llm.data.args import DataArgs
 
 
 def create_data_args(params_path: str):
-    
-    train_data = ''
-    eval_data = ''
+
+    train_data = ""
+    eval_data = ""
     adapt_seq_len = False
     n_datasets = 0
-    
-    with open(params_path, 'r') as f:
-        for i, line in enumerate(f): 
+
+    with open(params_path, "r") as f:
+        for i, line in enumerate(f):
             params = json.load(line)
             if i == 0:
-                adapt_seq_len = params['adapt_seq_len']
-                data_types = [params['data_types']]
-                eval_data_cpp = params['eval_data_common_path_prefix']
-                train_data_cpp = params['train_data_common_path_prefix']
-                shuffle = params['shuffle']
+                adapt_seq_len = params["adapt_seq_len"]
+                data_types = [params["data_types"]]
+                eval_data_cpp = params["eval_data_common_path_prefix"]
+                train_data_cpp = params["train_data_common_path_prefix"]
+                shuffle = params["shuffle"]
                 continue
-            
-            if 'train_data' in params.keys():
-                train_data += (train_data_cpp + params['train_data']['path'] + ':' 
-                            + 1 if  'weight' not in params['train_data'].keys() else params['train_data']['weight'] 
-                            + ',')
+
+            if "train_data" in params.keys():
+                train_data += (
+                    train_data_cpp + params["train_data"]["path"] + ":" + 1
+                    if "weight" not in params["train_data"].keys()
+                    else params["train_data"]["weight"] + ","
+                )
                 n_datasets += 1
-                
-            if 'eval_data' in params.keys():
-                eval_data += (eval_data_cpp + params['eval_data']['path'] + ':'
-                                + 1 if  'weight' not in params['eval_data'].keys() else params['eval_data']['weight']
-                                + ',')
-    
-    return DataArgs(train_data = train_data, 
-                    eval_data = eval_data, 
-                    adapt_seq_len = adapt_seq_len,
-                    data_types = data_types*n_datasets, # Useful to add prompt prefix for training
-                    shuffle = shuffle)
+
+            if "eval_data" in params.keys():
+                eval_data += (
+                    eval_data_cpp + params["eval_data"]["path"] + ":" + 1
+                    if "weight" not in params["eval_data"].keys()
+                    else params["eval_data"]["weight"] + ","
+                )
+
+    return DataArgs(
+        train_data=train_data,
+        eval_data=eval_data,
+        adapt_seq_len=adapt_seq_len,
+        data_types=data_types * n_datasets,  # Useful to add prompt prefix for training
+        shuffle=shuffle,
+    )
+
 
 PARAPHRASE_PROMPT = [
     {"prefix": "Background: ", "suffix": " means the same as "},

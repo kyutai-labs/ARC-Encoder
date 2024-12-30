@@ -15,20 +15,20 @@ def main(args):
     #     raise ValueError(f"{args.llm_name} not supported yet !")
     config = {}
     config["continuation"] = args.continuation
-    config['prefix_prompt'] = args.prefix_prompt
+    config["prefix_prompt"] = args.prefix_prompt
     config["llm_name"] = args.llm_name
-    
+
     config["pipeline"]["w_embeds"] = not args.wo_embeds
     config["pipeline"]["mlp_project"]["n_layers"] = args.proj_n_layers
     config["pipeline"]["n_truncated_layers"] = args.n_truncated_layers
 
     assert args.embedder_name == "NVEmbed"
     config["pipeline"]["do_pool"] = args.not_pool
-    
+
     if args.no_data:
-        if 'data' in config.keys():
-            del config['data']
-        
+        if "data" in config.keys():
+            del config["data"]
+
     if args.train_embedder:
         config["pipeline"]["embedder_name"] = args.llm_name
         config["pipeline"]["trainable_embedder"] = True
@@ -53,16 +53,13 @@ def main(args):
             config["pipeline"]["mlm"] = args.mlm
 
     if args.instruct_tune:
-        config['instruct_tuning']
+        config["instruct_tuning"]
         config["instruct_tuning"]["do"] = args.instruct_tune
         config["instruct_tuning"]["cross_entropy"] = args.cross_entropy
         config["instruct_tuning"]["kl"] = args.kl
         config["instruct_tuning"]["alpha"] = args.alpha
         config["instruct_tuning"]["temp"] = args.temp
-        
-        
-        
-        
+
     config["batch_size"] = args.batch_size
     config["max_steps"] = args.max_steps
     config["seq_len"] = args.seq_len
@@ -93,21 +90,17 @@ def main(args):
         + str(args.every_cross_att)
         + str(args.mlm)
         + str(args.continuation)
-        +str(args.instruct_tune)
-        +str(args.cross_entropy)
-        +str(args.kl)
-        +str(args.alpha)
-        +str(args.temp)    
+        + str(args.instruct_tune)
+        + str(args.cross_entropy)
+        + str(args.kl)
+        + str(args.alpha)
+        + str(args.temp)
     )
 
     if args.prefix:
-        config["exp_name"] = (
-            args.prefix
-            + sha1(name.encode("utf8")).hexdigest()[:8]
-        )
+        config["exp_name"] = args.prefix + sha1(name.encode("utf8")).hexdigest()[:8]
         config["wandb"]["run_name"] = (
-            args.prefix
-            + sha1(name.encode("utf8")).hexdigest()[:8]
+            args.prefix + sha1(name.encode("utf8")).hexdigest()[:8]
         )
     else:
         n_trunc = (
@@ -300,45 +293,45 @@ def arg_parser():
         action="store_true",
         help="Whether to use a prefix prompt",
     )
-    
+
     parser.add_argument(
         "--instruct_tune",
         action="store_true",
         help="Whether to perform instruction tuning",
     )
-    
+
     parser.add_argument(
         "--cross_entropy",
         action="store_true",
         help="Whether to use cross entropy loss",
     )
-    
+
     parser.add_argument(
         "--kl",
         action="store_true",
         help="Whether to use KL loss",
     )
-    
+
     parser.add_argument(
         "--alpha",
         type=float,
         default=2.0,
         help="Alpha parameter for KL loss",
     )
-    
+
     parser.add_argument(
         "--temp",
         type=float,
         default=1.0,
         help="Temperature parameter for KL loss",
     )
-    
+
     parser.add_argument(
         "--no_data",
         action="store_true",
         help="Whether to not use data params inside config file",
     )
-    
+
     return parser.parse_args()
 
 

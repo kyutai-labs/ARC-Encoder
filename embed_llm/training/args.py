@@ -7,9 +7,6 @@ from embed_llm.models.args import LoraArgs, EmbedAugArgs
 from embed_llm.data.args import DataArgs
 
 
-
-
-
 @dataclass
 class OptimArgs(Serializable):
     max_lr: float = 1e-4
@@ -38,6 +35,7 @@ class WandbArgs(Serializable):
             if len(self.project) == 0:
                 raise ValueError("`wandb.project` must not be an empty string.")
 
+
 @dataclass
 class InstructionTuningArgs(Serializable):
     do: bool = False
@@ -45,8 +43,7 @@ class InstructionTuningArgs(Serializable):
     kl: bool = False
     alpha: float = 2.0
     temp: float = 1.0
-    
-    
+
 
 @dataclass
 class TrainArgs(Serializable):
@@ -97,12 +94,15 @@ class TrainArgs(Serializable):
 
     # Pretrained embedder to use off the shelf
     pipeline: EmbedAugArgs = field(default_factory=EmbedAugArgs)
-    instruct_tuning: InstructionTuningArgs = field(default_factory=InstructionTuningArgs)
+    instruct_tuning: InstructionTuningArgs = field(
+        default_factory=InstructionTuningArgs
+    )
     prefix_prompt: bool = False
     mixed_precision: bool = True
-    
+
     # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
     continuation: bool = False
+
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None
         self.world_size = int(os.environ.get("WORLD_SIZE", -1))

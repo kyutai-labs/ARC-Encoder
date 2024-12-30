@@ -68,10 +68,10 @@ def get_eval_logs(
 
     if eval_loss_wo_embed is not None:
         eval_dict["eval_loss_wo_embed"] = eval_loss_wo_embed
-        
+
     if instruct_cross_entropy is not None:
         eval_dict["instruct_cross_entropy"] = instruct_cross_entropy
-    
+
     if instruct_kl is not None:
         eval_dict["instruct_kl"] = instruct_kl
 
@@ -130,7 +130,6 @@ def eval_log_msg(logs: dict[str, float | int]) -> str:
         if key in logs:
             if logs[key] is not None:
                 parts.append(f"{name}: {logs[key]:>{fmt}}")
-            
 
     return " - ".join(parts)
 

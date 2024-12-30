@@ -134,13 +134,17 @@ def build_data_loader(
     batch_list = Batchlist()
     for sample in dataset:
         assert all(s >= 0 for s in sample.sizes)
-        
+
         # Avoid empty samples
-        if any([len(l_tokens)<=1 for embed in sample.to_embed 
-                for l_tokens in embed['tokens']]):
+        if any(
+            [
+                len(l_tokens) <= 1
+                for embed in sample.to_embed
+                for l_tokens in embed["tokens"]
+            ]
+        ):
             continue
-        
-      
+
         batch_list.add(
             sample.x,
             sample.y,

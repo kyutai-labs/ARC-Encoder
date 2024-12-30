@@ -76,7 +76,9 @@ def evaluate_model(
     )
     print("Evaluating checkpoint", str(ckpt).zfill(6))
 
-    for benchmark in tqdm(benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)):
+    for benchmark in tqdm(
+        benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
+    ):
         eval_data = EVAL_DATA_PATH[benchmark]
         context = []
         questions = []
