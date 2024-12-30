@@ -37,7 +37,6 @@ def maybe_load_local_dataset(
     rank: int,
     world_size: int,
     tokenizer: Tokenizer | None = None,
-    continuation: bool = False,
 ) -> list[TokenSample]:
     global _LOADED_DATASETS
 
@@ -52,7 +51,7 @@ def maybe_load_local_dataset(
         data = json.loads(line)
 
         data_sample: TokenSample = encode(
-            data, tokenizer=tokenizer, continuation=continuation, data_path=path
+            data, tokenizer=tokenizer,  data_path=str(path)
         )
         data_list.append(data_sample)
 
@@ -164,7 +163,6 @@ def sequence_iterator(
     tokenizer: Tokenizer,
     is_finite: bool,
     adapt_seq_len: bool = False,
-    continuation: bool = False,
     data_type: str = "reconstruction",
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
@@ -207,7 +205,7 @@ def sequence_iterator(
             y_buffer.extend(y[cur_pos : cur_pos + n_missing])
 
             # Because regeneration
-            if len(embed_tokens) == 1 and not continuation:
+            if len(embed_tokens) == 1 and data_type == "reconstruction":
                 to_embed_buffer.append(
                     {
                         "text": [
@@ -276,6 +274,133 @@ def sequence_iterator(
                 data_type=data_type,
             )
 
+def sequence_iterator_continuation(
+    ds_it: Iterator[TokenSample],
+    seq_len: int,
+    tokenizer: Tokenizer,
+    is_finite: bool,
+    adapt_seq_len: bool = False,
+    data_type: str = "continuation",
+) -> Iterator[SequenceEmbedMaskAndSizes]:
+    """
+    Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
+    """
+    x_buffer: list[int] = []
+    y_buffer: list[int] = []
+    to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]] = []
+    mask_buffer: Mask = []
+    sizes: list[int] = []
+    n_missing = seq_len
+    
+    for sample in ds_it:
+        assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
+        tokens, mask = sample.tokens, sample.masks[1:]
+        x, y = tokens[:-1], tokens[1:]
+        embed_tokens = sample.passages.tokens
+        embed_text = sample.passages.text
+
+        assert len(embed_tokens) == 1, "Continuation training only supports one passage per sample"
+
+        cur_pos = 0
+        
+        while cur_pos < len(x):
+
+            overall_size = len(x[cur_pos : cur_pos + n_missing])
+
+            curr_mask = mask[cur_pos : cur_pos + n_missing]
+            if not any(curr_mask):
+                cur_pos += overall_size
+                # we have a sequence with a mask filled with False
+                continue
+
+
+            if overall_size < 4:
+                assert len(mask_buffer) == len(x_buffer) == sum(sizes) == len(y_buffer)
+                assert len(to_embed_buffer) == len(sizes), (len(to_embed_buffer), len(sizes))
+
+                # we don't want to yield sequences with a mask filled with False
+                if any(mask_buffer):
+                    yield SequenceEmbedMaskAndSizes(
+                        x=x_buffer,
+                        y=y_buffer,
+                        to_embed=to_embed_buffer,
+                        mask=mask_buffer,
+                        sizes=sizes,
+                        data_type=data_type,
+                    )
+                x_buffer, y_buffer = [], []
+                mask_buffer = []
+                to_embed_buffer = []
+                sizes = []
+                n_missing = seq_len
+                
+            upper_bound = min(cur_pos + n_missing, len(x))
+            x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+            y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+            
+            to_embed_buffer.append(
+                {
+                    "text": [
+                        tokenizer.decode(
+                            embed_tokens[0][cur_pos : cur_pos + (upper_bound - cur_pos) // 2]
+                        )
+                    ],
+                    "tokens": [embed_tokens[0][cur_pos : cur_pos + (upper_bound - cur_pos) // 2]],
+                }
+            )
+
+
+            mask_buffer.extend(
+                mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]
+            )
+            n_missing -= overall_size
+
+            sizes.append(len(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]))
+
+            cur_pos += overall_size
+            
+            
+            if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
+                assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
+                assert len(x_buffer) <= seq_len
+                assert len(to_embed_buffer) == len(sizes)
+                
+                # we don't want to yield sequences with a mask filled with False
+                if any(mask_buffer):
+                    yield SequenceEmbedMaskAndSizes(
+                        x=x_buffer,
+                        y=y_buffer,
+                        to_embed=to_embed_buffer,
+                        mask=mask_buffer,
+                        sizes=sizes,
+                        data_type=data_type,
+                    )
+                x_buffer, y_buffer = [], []
+                mask_buffer = []
+                to_embed_buffer = []
+                sizes = []
+                n_missing = seq_len
+
+                if adapt_seq_len:
+                    break
+
+    if is_finite:
+        # if dataloader is in eval, pad to seq length
+        if any(mask_buffer):
+            mask_buffer.extend(n_missing * [False])
+            x_buffer.extend(n_missing * [0])
+            y_buffer.extend(n_missing * [0])
+            sizes.append(n_missing)
+            to_embed_buffer.append({"text": "", "tokens": []})
+
+            yield SequenceEmbedMaskAndSizes(
+                x=x_buffer,
+                y=y_buffer,
+                to_embed=to_embed_buffer,
+                mask=mask_buffer,
+                sizes=sizes,
+                data_type=data_type,
+            )
 
 def build_dataset(
     args: DataArgs,
@@ -286,6 +411,7 @@ def build_dataset(
     is_eval: bool,
     seed: int | None = None,
     shuffle: bool = False,
+    continuation: bool = False,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
 
     data = args.train_data if not is_eval else args.eval_data
@@ -305,28 +431,66 @@ def build_dataset(
         for source in sources
     ]
 
-    sequence_iterators = [
-        sequence_iterator(
-            ds_it=it,
-            seq_len=seq_len,
-            is_finite=is_eval,
-            tokenizer=tokenizer,
-            adapt_seq_len=args.adapt_seq_len,
-            continuation=args.continuation,
-            data_type=data_type,
-        )
-        for it, data_type in zip(dataset_iterators, args.data_types)
-    ]
+ 
+    if not is_eval:
+        if not continuation:
+            sequence_iterators = [
+                sequence_iterator(
+                    ds_it=it,
+                    seq_len=seq_len,
+                    is_finite=is_eval,
+                    tokenizer=tokenizer,
+                    adapt_seq_len=args.adapt_seq_len,
+                    data_type=data_type,
+                )
+                for it, data_type in zip(dataset_iterators, args.data_types)
+        ]
+        else:
+            sequence_iterators = [
+                sequence_iterator_continuation(
+                    ds_it=it,
+                    seq_len=seq_len,
+                    is_finite=is_eval,
+                    tokenizer=tokenizer,
+                    adapt_seq_len=args.adapt_seq_len,
+                )
+                for it in dataset_iterators
+            ]
 
-    if is_eval:
-        combined_iterator = itertools.chain.from_iterable(sequence_iterators)
-    else:
         # make sure random_seed is different per rank and original seed
         random_seed = np.array((seed, rank))
         rng = np.random.RandomState(seed=random_seed)
         combined_iterator = interleave_iterators(
             sequence_iterators, probabilities=probabilities, rng=rng
         )
+
+    else:
+        if not continuation:
+            sequence_iterators = [
+                sequence_iterator(
+                    ds_it=it,
+                    seq_len=seq_len,
+                    is_finite=is_eval,
+                    tokenizer=tokenizer,
+                    adapt_seq_len=args.adapt_seq_len,
+                )
+                for it in dataset_iterators
+            ]
+            
+        else:
+            sequence_iterators = [
+                sequence_iterator_continuation(
+                    ds_it=it,
+                    seq_len=seq_len,
+                    is_finite=is_eval,
+                    tokenizer=tokenizer,
+                    adapt_seq_len=args.adapt_seq_len,
+                )
+                for it in dataset_iterators
+            ]
+            
+        combined_iterator = itertools.chain.from_iterable(sequence_iterators)
+    
 
     return combined_iterator
 
@@ -365,7 +529,6 @@ def get_dataset_iterator(
                         world_size=world_size,
                         rng=rng,
                         tokenizer=tokenizer,
-                        continuation=args.continuation,
                     )
                 else:
                     # will read data on-the-fly and yield
@@ -375,7 +538,6 @@ def get_dataset_iterator(
                         rank=rank,
                         world_size=world_size,
                         tokenizer=tokenizer,
-                        continuation=args.continuation,
                     )
     else:
         # eval mode
@@ -386,7 +548,6 @@ def get_dataset_iterator(
                 rank=rank,
                 world_size=world_size,
                 tokenizer=tokenizer,
-                continuation=args.continuation,
             )
 
 
@@ -396,7 +557,6 @@ def preload_and_yield(
     world_size: int,
     rng: np.random.RandomState,
     tokenizer: Tokenizer | None = None,
-    continuation: bool = False,
 ) -> Iterator[TokenSample] | Iterator[str]:
     # only instruct data has to be chunked
     # load dataset if not already loaded. Make sure to only load 1/world_size dataset
@@ -405,7 +565,6 @@ def preload_and_yield(
         rank=rank,
         world_size=world_size,
         tokenizer=tokenizer,
-        continuation=continuation,
     )
 
     main_logger_info(f"Shuffling {jsonl_file} ...")
@@ -420,7 +579,6 @@ def lazy_load_and_yield(
     rank: int,
     world_size: int,
     tokenizer: Tokenizer | None = None,
-    continuation: bool = False,
 ):
     with jsonl_file.open() as file_handle:
         for idx, line in enumerate(file_handle):
@@ -431,8 +589,7 @@ def lazy_load_and_yield(
             yield encode(
                 data,
                 tokenizer=tokenizer,
-                continuation=continuation,
-                data_path=jsonl_file,
+                data_path=str(jsonl_file),
             )
 
 

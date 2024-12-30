@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from pathlib import Path
 from typing import Sequence
-from functools import partial
 import safetensors.torch
 import json
 import safetensors
@@ -52,16 +51,13 @@ logger = logging.getLogger(__name__)
 class EmbedAugModel(nn.Module):
     def __init__(
         self,
-        llm_name: str,
         pipeline_args: EmbedAugArgs,
         llm: Models,
         trainable_embedder: Models | None = None,
     ):
         super().__init__()
         self.add_module("llm", llm)
-        self.llm_name = llm_name.lower()
         self.w_embeds = pipeline_args.w_embeds
-        self.training = pipeline_args.training
         self.mlp_project_args = pipeline_args.mlp_project
         self.trainable_embedder = trainable_embedder
         self.normalize_embeddings = pipeline_args.normalize_embeddings
@@ -104,7 +100,7 @@ class EmbedAugModel(nn.Module):
             self.pooling_module = None
 
         self.do_concat = pipeline_args.do_both or not pipeline_args.cross_att
-        self.tokenized_prompts = []
+        self.tokenized_prompts = {}
 
     def forward(
         self,
@@ -116,37 +112,27 @@ class EmbedAugModel(nn.Module):
     ) -> torch.Tensor:
 
         cat_embeddings = None
-        if self.trainable_embedder is not None:
+        if self.trainable_embedder is not None and embeddings is not None:
             embeddings = self.trainable_embedder(
-                input_ids=torch.from_numpy(
-                    np.array(
-                        [
-                            el
-                            for sublist in embeddings
-                            for subsublist in sublist
-                            for el in subsublist
-                        ]
-                    )
-                ).cuda(non_blocking=True),
+                input_ids=embeddings,
                 embeddings=None,
-                seqlens=[el for sublist in embed_seqlens for el in sublist],
+                seqlens=[size for batch_seqlen in embed_seqlens for size  in batch_seqlen],
             )
-
             if self.pooling_module is not None:
                 embeddings = self.pooling_module(
                     x=embeddings,
-                    seqlens=[el for sublist in embed_seqlens for el in sublist],
+                    seqlens=[size for batch_seqlen in embed_seqlens for size  in batch_seqlen],
                 )
-                embed_seqlens = [len(sublist) for sublist in embed_seqlens]
+                embed_seqlens = [len(batch_seqlen) for batch_seqlen in embed_seqlens]
             else:
-                embed_seqlens = [el for sublist in embed_seqlens for el in sublist]
+                embed_seqlens = [sum(batch_seqlen) for batch_seqlen in embed_seqlens]
         else:
             embed_seqlens = embed_seqlens
 
-        if self.normalize_embeddings:
+        if self.normalize_embeddings and embeddings is not None:
             embeddings = F.normalize(embeddings, p=2, dim=-1)
 
-        if self.mlp_project is not None:
+        if self.mlp_project is not None and embeddings is not None:
             if self.mlp_project_args.type == "mlp":
                 if self.dist_process:
                     cat_embeddings = self.mlp_project(embeddings)
@@ -417,10 +403,22 @@ class EmbedAugPipeline(nn.Module):
             else:
                 # Trainable Embedder
                 embeddings = [to_embed["tokens"] for to_embed in batch.to_embed]
-                embed_seqlens = [
-                    [len(tokens) for tokens in to_embed["tokens"]]
-                    for to_embed in batch.to_embed
-                ]
+                embeddings = torch.from_numpy(
+                    np.array(
+                        [
+                            el
+                            for sublist in embeddings
+                            for subsublist in sublist
+                            for el in subsublist
+                        ]
+                    )
+                ).cuda(non_blocking=True)
+                embed_seqlens = []
+                for to_embed in batch.to_embed:
+                    assert not any([len(l_tokens)<=1 for  l_tokens in to_embed["tokens"]])
+                    embed_seqlens.append([len(l_tokens) for  l_tokens in to_embed["tokens"]])
+                   
+      
 
         if not mlm:
             x = torch.from_numpy(batch.x).cuda(non_blocking=True)
@@ -440,7 +438,7 @@ class EmbedAugPipeline(nn.Module):
         llm_path: str,
         ckpt_path: str,
         device: str,
-        llm_name: str,
+        llm_name: str = 'mistral7B',
         embed_model_name: str | None = None,
         max_batch_size: int = 4,
         param_dtype: torch.dtype = torch.float32,
@@ -473,10 +471,8 @@ class EmbedAugPipeline(nn.Module):
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
         )
-        pipeline_args.training = False
 
-        mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
-        pipeline_args.mlp_project = mlp_project_args
+
 
         llm, tokenizer, embed_dim = load_llm_model(
             llm_args=llm_args,
@@ -567,7 +563,7 @@ class EmbedAugPipeline(nn.Module):
                     augmented_pipeline.model.pooling_module.process.to(device)
                 )
 
-        if mlp_project_args.n_layers > 0:
+        if pipeline_args.mlp_project.n_layers > 0:
             print("Loading MLP projector")
             augmented_pipeline.model.mlp_project.load_state_dict(
                 safetensors.torch.load_file(mlp_path + "/consolidated.safetensors")
@@ -734,10 +730,10 @@ def load_args(
     if pipe_path is not None:
         with open(pipe_path + "/params.json", "r") as f:
             args = json.loads(f.read())
-        args["training"] = False
-        pipeline_args = EmbedAugArgs(**args)
+        pipeline_args = EmbedAugArgs(**{k: args.get(k) for k in EmbedAugArgs.__dataclass_fields__.keys() if k in args})
+        mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
+        pipeline_args.mlp_project = mlp_project_args
     else:
-        pipe_args.training = True
         pipeline_args = pipe_args
 
     with open(folder / "params.json", "r") as f:

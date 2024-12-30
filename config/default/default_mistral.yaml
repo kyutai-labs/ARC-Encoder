@@ -15,12 +15,9 @@ lora:
 # Embedding augmented LLM
 pipeline:
   w_embeds: True
-  norm_wo_embeds: False
   embedder_name: NVEmbed # put '' to use trainable embedder
   trainable_embedder: false # put true to train embedder
   n_truncated_layers: 4 # number of layers to truncate from the base model
-  normalize_embeddings: false
-  continuation: false
   causal: true
   do_pool: true
 

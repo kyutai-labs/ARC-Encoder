@@ -3,6 +3,7 @@ import torch
 import json
 import numpy as np
 import random
+from tqdm import tqdm, trange
 from embed_llm.models.augmented_model import EmbedAugPipeline
 from embed_llm.generation.metrics import (
     word_overlap,
@@ -75,7 +76,7 @@ def evaluate_model(
     )
     print("Evaluating checkpoint", str(ckpt).zfill(6))
 
-    for benchmark in benchmarks:
+    for benchmark in tqdm(benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)):
         eval_data = EVAL_DATA_PATH[benchmark]
         context = []
         questions = []
@@ -92,10 +93,11 @@ def evaluate_model(
                 else:
                     answers.append(data["answer"])
                 # Take the first ranked retrieved passage
-                context.append(data["passage"][0])
+                context.append(data["passages"][0])
+        print("Evaluation dataset loaded for", benchmark)
         for temp in temps:
             generated_sequences = []
-            for i in range(0, len(questions), max_bs):
+            for i in trange(0, len(questions), max_bs):
                 generated_sequence, logprobs = pipeline.generate(
                     prompts=questions[i : i + max_bs],
                     text_conditioning=context[i : i + max_bs],
@@ -111,6 +113,7 @@ def evaluate_model(
                 )
 
                 generated_sequences.extend(generated_sequence)
+
             results[benchmark][str(temp)] = sum(
                 [
                     metric_max_over_ground_truths(
@@ -310,6 +313,7 @@ def evaluate_reconstruction_model(
 if __name__ == "__main__":
 
     ensure_reproducibility(29)
+    # evaluate_model("LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB", ckpt=20000, benchmarks = ['NQ'])
 
     # run_names = os.listdir(
     #     "/home/hippolytepilchen/code/embed_llm/config/experiments/mistral"
@@ -325,15 +329,15 @@ if __name__ == "__main__":
 
     # print(run_names)
     # print("Number of runs:", len(run_names))
-    run_names = [
-        "LT_FN_False_1_MLP_RLatt_True_CA_2_CAL_every_True_DB",
-        "LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB",
-    ]
+    # run_names = [
+    #     "LT_FN_False_1_MLP_RLatt_True_CA_2_CAL_every_True_DB",
+    #     "LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB",
+    # ]
 
-    for run_name in run_names:
-        evaluate_reconstruction_model(run_name, ckpt=20000)
-        # print("Memory:", torch.cuda.memory_allocated() / 1024**3)
-        # print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)
-        print("Max Memory Allocated:", torch.cuda.max_memory_allocated() / 1024**3)
-        # print("Reset memory ! ")
-        torch.cuda.empty_cache()
+    # for run_name in run_names:
+    #     evaluate_reconstruction_model(run_name, ckpt=20000)
+    #     # print("Memory:", torch.cuda.memory_allocated() / 1024**3)
+    #     # print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)
+    #     print("Max Memory Allocated:", torch.cuda.max_memory_allocated() / 1024**3)
+    #     # print("Reset memory ! ")
+    #     torch.cuda.empty_cache()

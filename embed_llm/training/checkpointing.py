@@ -29,6 +29,7 @@ class Checkpointer:
         model: FullyShardedDataParallel,
         state: TrainState,
         run_dir: Path | str,
+        llm_name: str,
         optimizer: torch.optim.Optimizer | None = None,
         num_ckpt_keep: int | None = None,
         pipeline: object | None = None,
@@ -38,8 +39,8 @@ class Checkpointer:
         self.trainable_embedder: nn.Module | None = model.trainable_embedder
         self.pooling_module: nn.Module | None = model.pooling_module
         self.pipeline = pipeline
-        self.llm_name = model.llm_name
         self.optimizer = optimizer
+        self.llm_name = llm_name
         self.state = state
         self.run_dir = Path(run_dir)
         self.rank = get_rank()

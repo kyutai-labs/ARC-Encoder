@@ -23,6 +23,8 @@ def get_train_logs(
     peak_allocated_mem: float,
     allocated_mem: float,
     train_args: TrainArgs,
+    instruct_cross_entropy: float | None = None,
+    instruct_kl: float | None = None,
 ) -> dict[str, float | int]:
     metrics = {
         "lr": lr,
@@ -36,6 +38,8 @@ def get_train_logs(
         "wps": state.wps,
         "avg_wps": state.avg_wps,
         "eta_in_seconds": state.eta,
+        "instruct_cross_entropy": instruct_cross_entropy,
+        "instruct_kl": instruct_kl,
     }
 
     return metrics
@@ -48,6 +52,8 @@ def get_eval_logs(
     eval_loss: float | None = None,
     perplexity_wo_embed: float | None = None,
     eval_loss_wo_embed: float | None = None,
+    instruct_cross_entropy: float | None = None,
+    instruct_kl: float | None = None,
 ) -> dict[str, float | int]:
     eval_dict = {"step": step, "train_loss": train_loss}
 
@@ -62,6 +68,12 @@ def get_eval_logs(
 
     if eval_loss_wo_embed is not None:
         eval_dict["eval_loss_wo_embed"] = eval_loss_wo_embed
+        
+    if instruct_cross_entropy is not None:
+        eval_dict["instruct_cross_entropy"] = instruct_cross_entropy
+    
+    if instruct_kl is not None:
+        eval_dict["instruct_kl"] = instruct_kl
 
     return eval_dict
 
@@ -87,8 +99,12 @@ def train_log_msg(state: TrainState, logs: dict[str, float | int], loss: float) 
         ("wps", ".1f", "words_per_second"),
         ("avg_wps", ".1f", "avg_words_per_second"),
         ("eta", "%Y-%m-%d %H:%M:%S", "ETA"),
+        ("instruct_cross_entropy", ".3f", "instruct_cross_entropy"),
+        ("instruct_kl", ".3f", "instruct_kl"),
     ]:
         name = key if new_name is None else new_name
+        if metrics[key] is None:
+            continue
         try:
             parts.append(f"{name}: {metrics[key]:>{fmt}}")
         except KeyError:
@@ -107,10 +123,14 @@ def eval_log_msg(logs: dict[str, float | int]) -> str:
         ("train_loss", ".3f", None),
         ("perplexity_wo_embed", ".3f", "eval_perplexity_wo_embed"),
         ("eval_loss_wo_embed", ".3f", None),
+        ("instruct_cross_entropy", ".3f", "instruct_cross_entropy"),
+        ("instruct_kl", ".3f", "instruct_kl"),
     ]:
         name = key if new_name is None else new_name
         if key in logs:
-            parts.append(f"{name}: {logs[key]:>{fmt}}")
+            if logs[key] is not None:
+                parts.append(f"{name}: {logs[key]:>{fmt}}")
+            
 
     return " - ".join(parts)
 
@@ -170,7 +190,7 @@ class MetricsLogger:
         metrics_to_ignore = {"step"}
         assert self.summary_writer is not None
         for key, value in metrics.items():
-            if key in metrics_to_ignore:
+            if key in metrics_to_ignore or value is None:
                 continue
             assert isinstance(value, (int, float)), (key, value)
             self.summary_writer.add_scalar(

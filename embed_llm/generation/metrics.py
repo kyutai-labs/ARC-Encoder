@@ -36,13 +36,12 @@ class SimpleTokenizer(object):
 
 def check_answer(example, tokenizer) -> list[bool]:
     """Search through all the top docs to see if they have any of the answers."""
-    answers = example["answers"]
-    ctxs = example["ctxs"]
+    answers = example["answer"]
+    ctxs = example["passage"]
 
     hits = []
 
-    for _, doc in enumerate(ctxs):
-        text = doc["text"]
+    for _, text in enumerate(ctxs):
 
         if text is None:  # cannot find the document for some reason
             hits.append(False)

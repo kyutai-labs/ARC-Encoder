@@ -279,16 +279,15 @@ class Cross_AttTransformerBlock(nn.Module):
                     h
                 )  # (l, d) + (l, d) * (l, d) = (l, d) # r is a replica along l
         else:
-            assert pool_att_embds is not None
-
-            r = self.cross_attention.forward(
-                embedding=pool_att_embds,
-                seqlen=seqlens,
-                mask=cross_att_mask,
-            )
-            h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
-            if show_attention:
-                cross_attn_mtx = None
+            if pool_att_embds is not None:
+                r = self.cross_attention.forward(
+                    embedding=pool_att_embds,
+                    seqlen=seqlens,
+                    mask=cross_att_mask,
+                )
+                h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
+                if show_attention:
+                    cross_attn_mtx = None
 
         out = self.feed_forward.forward(self.ffn_norm(h))
 
@@ -448,7 +447,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         input_ids: torch.Tensor,
         seqlens: list[int],
         embeddings: torch.Tensor | None,
-        tokenized_prompts: list[dict[str, int]] = [],
+        tokenized_prompts: dict = {},
         embed_seqlens: list[int] | None = None,
         cat_embeddings: torch.Tensor | None = None,
         show_attention: bool = False,
@@ -475,7 +474,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
             suffixes = []
 
             for _ in range(len(seqlens)):
-                if len(tokenized_prompts) > 0:
+                
+                if tokenized_prompts.get(batch_type, False) and len(tokenized_prompts[batch_type]) > 0:
                     tokenized_prompt = random.choice(tokenized_prompts[batch_type])
                     prefixes.append(tokenized_prompt["prefix"])
                     suffixes.append(tokenized_prompt["suffix"])

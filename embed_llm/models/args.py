@@ -19,7 +19,7 @@ class PoolingArgs(Serializable):
 class MLPProjectArgs(Serializable):
     hidden_dim: int = 4096
     n_layers: int = 0
-    act: str = "id"
+    act: str = "gelu"
     in_dim: int | None = None
     out_dim: int | None = None
     type: str = "mlp"
@@ -28,18 +28,15 @@ class MLPProjectArgs(Serializable):
 @dataclass
 class EmbedAugArgs(Serializable):
     w_embeds: bool = False
-    norm_wo_embeds: bool = False  # Obsolete
     mlp_project: MLPProjectArgs = field(default_factory=MLPProjectArgs)
-    training: bool = False
     param_dtype: torch.dtype = torch.bfloat16
     embedder_name: str = "NVEmbed"
     trainable_embedder: bool = False
     causal: bool = True
     do_pool: bool = False
     n_truncated_layers: int = 4
-    normalize_embeddings: bool = False
+    normalize_embeddings: bool = True
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
-    continuation: bool = False
     shared_kv: bool = True
     cross_att: bool = False
     cross_att_layers: int | None = None

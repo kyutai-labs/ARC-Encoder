@@ -23,7 +23,6 @@ class DataArgs(Serializable):
     )
     shuffle: bool = False
     adapt_seq_len: bool = False
-    continuation: bool = False
     data_types: list[str] = field(default_factory=lambda: ["reconstruction"])
 
     def __post_init__(self) -> None:

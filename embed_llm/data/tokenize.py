@@ -30,13 +30,8 @@ class TokenSample:
 def encode(
     data: dict[str, object],
     tokenizer: Tokenizer | None = None,
-    continuation: bool = False,
     data_path: str | None = None,
 ) -> TokenSample | None:
-    if continuation:
-        assert (
-            data.get("passages") is not None
-        ), f"Must have 'passages' in data for continuation. Got {data.keys()}"
 
     return get_sample(data, data_path, tokenizer)
 
@@ -48,15 +43,15 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
 
         assert isinstance(data["answer"], str) or isinstance(data["answer"], list)
         if isinstance(data["answer"], list):
-            answer = random.choice(data["answer"])
+            answer = [random.choice(data["answer"])]
         else:
-            answer = data["answer"]
+            answer = [data["answer"]]
 
         assert isinstance(data["passage"], str) or isinstance(data["passage"], list)
         if isinstance(data["passage"], list):
-            answer = random.choice(data["passage"])
+            embed_passage = [random.choice(data["passage"])]
         else:
-            answer = data["passage"]
+            embed_passage = [data["passage"]]
 
         assert isinstance(question, str), question
 
@@ -82,8 +77,8 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
     else:
         sample = data["text"]
 
-        if data.get("passages") is not None:
-            passages = data["passages"]
+        if data.get("passage") is not None:
+            passages = data["passage"]
             embed_passage = passages if isinstance(passages, list) else [passages]
         else:
             embed_passage = [sample]

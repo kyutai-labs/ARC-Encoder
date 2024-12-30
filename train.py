@@ -10,13 +10,14 @@ import torch.distributed as dist
 import torch.distributed
 from torch.optim import AdamW, lr_scheduler
 from functools import partial
-import time
+import json
 
 # Debugging
+import time
 from torch.autograd.profiler import profile, record_function
 import subprocess as sp
 
-from embed_llm.generation.evaluation import evaluate_reconstruction_model
+from embed_llm.generation.evaluation import evaluate_reconstruction_model, evaluate_model
 from embed_llm.models.wrapped_models_training import load_training_model
 from embed_llm.retrieval.embeddings import get_pretrained_embedder
 from embed_llm.training.args import TrainArgs
@@ -31,14 +32,15 @@ from embed_llm.training.distributed import (
     set_device,
 )
 from embed_llm.training.eval import evaluate
-from embed_llm.training.loss import compute_loss_with_mask
+from embed_llm.training.loss import compute_ce_loss_with_mask, compute_kl_loss_with_mask
 
 from embed_llm.training.utils import (
     TrainState,
     logged_closing,
     set_random_seed,
     PARAPHRASE_PROMPT,
-    QA_PROMPT,
+    INSTRUCT_PROMPT,
+    create_data_args,
 )
 from embed_llm.monitoring.metrics_logger import (
     MetricsLogger,
@@ -47,6 +49,7 @@ from embed_llm.monitoring.metrics_logger import (
     get_train_logs,
     train_log_msg,
 )
+
 from embed_llm.monitoring.utils import set_logger
 import os
 
@@ -73,11 +76,16 @@ def get_gpu_memory():
     return memory_free_info
 
 
-def train(config: str | dict):
+def train(config: str | dict | tuple):
     if isinstance(config, str):
         args: TrainArgs = TrainArgs.load(config, drop_extra_fields=False)
     elif isinstance(config, dict):
         args: TrainArgs = TrainArgs.from_dict(**config)
+    elif isinstance(config, tuple):
+        train_params = json.load(config[0])
+        data_args = create_data_args(config[1])
+        train_params["data"] = data_args
+        args: TrainArgs = TrainArgs.from_dict(**train_params)
     else:
         raise ValueError("Config should be a string or a dictionary")
 
@@ -115,9 +123,10 @@ def _train(
 
     if is_torchrun():
         if run_dir.exists():
-            raise RuntimeError(
-                f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
-            )
+            # raise RuntimeError(
+            #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
+            # )
+            print(f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}.")
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -129,6 +138,9 @@ def _train(
         args.pipeline.param_dtype = "float32" if args.mixed_precision else "bfloat16"
         args.save(args_path)
 
+    if args.instruct_tuning.do:
+        assert args.data.adapt_seq_len, "Adapt seq len should be set to True"
+        
     # 3. Get loggers
     metrics_logger: MetricsLogger = MetricsLogger(
         run_dir,
@@ -185,7 +197,6 @@ def _train(
         embedding_model=embedding_model,
         checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
         param_dtype=param_dtype,
-        max_seq_len=args.seq_len,
         max_batch_size=args.batch_size,
     )
     main_logger_info("Model loading done")
@@ -193,9 +204,7 @@ def _train(
         f"PipelineArgs: {pprint.pformat(dataclasses.asdict(pipeline.pipeline_args))}"
     )
 
-    assert (
-        args.data.continuation == pipeline.pipeline_args.continuation
-    ), f"Data continuation {args.data.continuation} should match pipeline continuation {pipeline.pipeline_args.continuation}"
+  
 
     """ Load  Dataloader"""
     train_data_loader = build_data_loader(
@@ -207,6 +216,7 @@ def _train(
         rank=get_rank(),  # DDP rank
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
+        continuation = args.continuation,
     )
     main_logger_info("Data loader done")
     if not args.no_eval:
@@ -221,6 +231,7 @@ def _train(
             rank=get_rank(),  # DDP rank
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
+            continuation =  args.continuation,
         )
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
         eval_batches = []
@@ -265,6 +276,7 @@ def _train(
         optimizer=optimizer,
         num_ckpt_keep=args.num_ckpt_keep,
         pipeline=pipeline,
+        llm_name=args.llm_name,
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
@@ -278,21 +290,23 @@ def _train(
             "Using MLM on the first available embedded passage only, rest is discarded"
         )
 
-    if args.paraphrase_prompt:
+    if args.prefix_prompt:
         model.tokenize_prompts = {}
         main_logger_info("Using paraphrase prompt")
+        model.tokenized_prompts['reconstruction'] = []
         for prompt in PARAPHRASE_PROMPT:
             prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
             suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
-            model.tokenized_prompts["reconstruction"] = {
+            model.tokenized_prompts["reconstruction"].append({
                 "prefix": prefix,
-                "suffix": suffix,
-            }
-
-        for prompt in QA_PROMPT:
+                "suffix": suffix
+                }
+            )
+        model.tokenized_prompts["instruct"] = []
+        for prompt in INSTRUCT_PROMPT:
             prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
             suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
-            model.tokenized_prompts["qa"] = {"prefix": prefix, "suffix": suffix}
+            model.tokenized_prompts["instruct"].append({"prefix": prefix, "suffix": suffix})
 
     main_logger_info("Start training")
     model.train()
@@ -305,6 +319,8 @@ def _train(
 
         optimizer.zero_grad()
         loss = torch.tensor([0.0], device="cuda")
+        cross_entropy_loss = torch.tensor([0.0], device="cuda")
+        kl_loss = torch.tensor([0.0], device="cuda")
         n_batch_tokens: int = 0
 
         # Number of steps to accumulate gradients before doing an optimizer step.
@@ -333,30 +349,67 @@ def _train(
                 batch_type=batch.data_type,
             )
 
-            if len(output.size()) > 2:
-                output = output.view(-1, output.size(-1)).float()
-                y = y.view(-1).long()
-                y_mask = None if y_mask is None else y_mask.view(-1)
-                assert output.size(0) == y.size(
-                    0
-                ), f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}"
-
-            mb_loss = compute_loss_with_mask(
-                logits=output, target=y, target_mask=y_mask
-            )
-            # print(prof.key_averages().table(sort_by="cuda_time_total"))
-
-            mb_loss.backward()
-
-            loss += mb_loss.item()
+            if not args.instruct_tuning.do:
+                mb_loss = compute_ce_loss_with_mask(
+                    logits=output, target=y, target_mask=y_mask
+                )
+                mb_loss.backward()
+                loss += mb_loss.item()
+                train_ppl += 2 ** (mb_loss.item())
+                
+            else:
+                
+                instruct_cross_entropy = compute_ce_loss_with_mask(
+                        logits=output, target=y, target_mask=y_mask
+                    )
+                train_ppl += 2 ** (instruct_cross_entropy.item())
+                cross_entropy_loss += instruct_cross_entropy.item()
+                
+                if args.instruct_tuning.cross_entropy:
+                    mb_loss = instruct_cross_entropy
+                    
+                if args.instruct_tuning.kl:
+                    contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
+                    x_rag = []
+                    y_mask_rag = []
+                    seqlens_rag = []
+                    
+                    ind = 0
+                    assert len(contexts) == len(batch.sizes), "Contexts and batch sizes should be the same"
+                    
+                    for i, size in enumerate(batch.sizes):
+                        x_rag.extend(contexts[i] + batch.x[ind:ind+size])
+                        seqlens_rag.append(size + len(contexts[i]))
+                        y_mask_rag.extend([False]*len(contexts[i]) + batch.y_mask[ind:ind+size])
+                        ind += size
+                        
+                    x_rag = torch.from_numpy(x_rag).cuda(non_blocking=True)
+                    y_mask_rag = torch.from_numpy(y_mask_rag).cuda(non_blocking=True)
+                    rag_output = model.forward(
+                                    x=x_rag,
+                                    embeddings=embeddings,
+                                    seqlens=seqlens_rag,
+                                    embed_seqlens=embed_seqlens,
+                                    batch_type=batch.data_type,
+                                )
+                    kl_dv_loss = compute_kl_loss_with_mask(
+                        rag_logits = rag_output, pred_logits = output, rag_mask = y_mask_rag, pred_mask = y_mask, temp = args.instruct_tuning.temp
+                    )
+                    
+                    kl_loss += kl_dv_loss.item()
+                    mb_loss = mb_loss + args.instruct_tuning.alpha*kl_dv_loss
+                            
+                mb_loss.backward()
+                loss += mb_loss.item()  
+                # print(prof.key_averages().table(sort_by="cuda_time_total"))
+            
             n_batch_tokens += x.numel()
-            train_ppl += 2 ** (mb_loss.item())
-
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward
                 assert args.num_microbatches > 1  # should not happen
                 torch.cuda.synchronize()
 
+                        
         if args.num_microbatches > 1:
             loss /= args.num_microbatches
             train_ppl /= args.num_microbatches
@@ -369,7 +422,10 @@ def _train(
         for name, p in model.named_parameters():
             if p.requires_grad:
                 assert p.grad is not None, f"None grad for this param {name}"
+                if torch.any(torch.isnan(p.grad)).item():
+                    print(f"Grad contains NaN for this param {name}")
                 grad_norm += torch.norm(p.grad).item() ** 2
+
 
         if torch.any(torch.isnan(grad_norm)).item():
             raise ValueError(
@@ -389,6 +445,22 @@ def _train(
         loss_item = loss.item()
         avg_loss = avg_aggregate(loss_item)
         train_ppl = avg_aggregate(train_ppl)
+        
+    
+        cross_entropy_loss_item = cross_entropy_loss.item() if args.num_microbatches<=1 else cross_entropy_loss/(args.num_microbatches).item()
+        cross_entropy_loss_avg = avg_aggregate(cross_entropy_loss_item)
+        kl_loss_item = kl_loss.item() if args.num_microbatches<=1 else kl_loss/(args.num_microbatches).item()
+        kl_loss_avg = avg_aggregate(kl_loss_item)
+   
+        if not args.instruct_tuning.do:
+                kl_loss_avg = None
+                cross_entropy_loss_avg = None
+        else:
+            if not args.instruct_tuning.cross_entropy:
+                cross_entropy_loss_avg = None
+            if not args.instruct_tuning.kl:
+                kl_loss_avg = None
+            
 
         if not args.no_eval and (
             (args.eval_freq > 0 and state.step % args.eval_freq == 0)
@@ -401,6 +473,7 @@ def _train(
                 prepare_batch_fn=prepare_batch_fn,
                 batches=eval_batches,
                 state=state,
+                continuation = args.continuation,
             )
 
             eval_logs = get_eval_logs(
@@ -408,8 +481,10 @@ def _train(
                 avg_loss,
                 state.this_eval_perplexity,
                 state.this_eval_loss,
-                state.this_eval_perplexity_wo_embed,
-                state.this_eval_loss_wo_embed,
+                perplexity_wo_embed = state.this_eval_perplexity_wo_embed,
+                eval_loss_wo_embed = state.this_eval_loss_wo_embed,
+                instruct_cross_entropy = cross_entropy_loss_avg,
+                instruct_kl = kl_loss_avg,
             )
 
             main_logger_info(eval_log_msg(eval_logs))
@@ -428,6 +503,8 @@ def _train(
                 peak_allocated_mem=torch.cuda.max_memory_allocated(),
                 allocated_mem=torch.cuda.memory_allocated(),
                 train_args=args,
+                instruct_cross_entropy=cross_entropy_loss_avg,
+                instruct_kl=kl_loss_avg,
             )
             main_logger_info(train_log_msg(state, logs=train_logs, loss=avg_loss))
             metrics_logger.log(train_logs, step=state.step)
@@ -442,7 +519,11 @@ def _train(
     main_logger_info("done!")
 
     dist.barrier()
-    evaluate_reconstruction_model(args.exp_name, ckpt=args.max_steps)
+    
+    if not args.instruct_tuning.do:
+        evaluate_reconstruction_model(args.exp_name, ckpt=args.max_steps)
+    else:
+        evaluate_model(args.exp_name, ckpt=args.max_steps, benchmarks = ['NQ', 'TRIVIAQA'])
 
 
 if __name__ == "__main__":

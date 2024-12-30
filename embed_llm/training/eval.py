@@ -5,7 +5,7 @@ import torch.distributed as dist
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 from embed_llm.data.data_loader import Batch
 from embed_llm.training.distributed import get_rank, get_world_size
-from embed_llm.training.loss import compute_loss_with_mask
+from embed_llm.training.loss import compute_ce_loss_with_mask
 from embed_llm.training.utils import TrainState
 
 logger = logging.getLogger("eval")
@@ -21,6 +21,7 @@ def evaluate(
     prepare_batch_fn: object,
     batches: list[Batch],
     state: TrainState,
+    continuation: bool = False,
 ):
     # Create fake samples to make FSDP happy for unbalanced data
     num_samples = torch.tensor([len(batches)], device="cuda", dtype=torch.long)
@@ -53,21 +54,35 @@ def evaluate(
             output_w_embed = model.forward(
                 x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens
             )
-            output_wo_embed = model.forward(x=x, embeddings=None, seqlens=seqlens)
-
-            if len(output_w_embed.size()) > 2:
-                output_w_embed = output_w_embed.view(
-                    -1, output_w_embed.size(-1)
-                ).float()
-                output_wo_embed = output_wo_embed.view(
-                    -1, output_wo_embed.size(-1)
-                ).float()
-                y = y.view(-1).long()
-                y_mask = None if y_mask is None else y_mask.view(-1)
-
+     
             if not batch.is_pad_only:
-                eval_loss_w_embed += compute_loss_with_mask(output_w_embed, y, y_mask)
-                eval_loss_wo_embed += compute_loss_with_mask(output_wo_embed, y, y_mask)
+                eval_loss_w_embed += compute_ce_loss_with_mask(output_w_embed, y, y_mask)
+                if continuation:
+                                # Mettre batch.to_embed.x plutot et voir ppl si texte dans le contexte sur continuation seulement. 
+
+
+                    input_ids = []
+                    ground_truth = []
+                    seqlens = []
+                    mask = []
+                    ind = 0
+                    for to_embed, size in zip(batch.to_embed, batch.sizes):
+                        input_ids.extend(to_embed["tokens"][0])
+                        input_ids.extend(batch.x[ind:ind+size])
+                        ground_truth.extend(to_embed["tokens"][0])
+                        ground_truth.extend(batch.y[ind:ind+size])
+                        seqlens.append(len(to_embed["tokens"][0])+size)
+                        ind += size
+                        mask.extend([False]*len(to_embed["tokens"][0]))
+                        mask.extend([True]*size)
+                                        # Trainable Embedder
+ 
+                    input_ids = torch.from_numpy(np.array(input_ids)).cuda(non_blocking=True)
+                    mask = torch.tensor(mask).cuda(non_blocking=True)
+                    ground_truth = torch.from_numpy(np.array(ground_truth)).cuda(non_blocking=True)
+                    output_wo_embed = model.forward(x=input_ids, embeddings=None, seqlens=seqlens)
+                    eval_loss_wo_embed += compute_ce_loss_with_mask(output_wo_embed, ground_truth, mask)
+                        
             assert (
                 batch.is_pad_only or y.abs().sum() != 0
             ), "Pad sample is used to compute loss."
@@ -76,14 +91,24 @@ def evaluate(
     main_logger_info("Eval finished!")
 
     dist.all_reduce(eval_loss_w_embed, op=dist.ReduceOp.SUM)
-    dist.all_reduce(eval_loss_wo_embed, op=dist.ReduceOp.SUM)
+    
+    if continuation:
+        dist.all_reduce(eval_loss_wo_embed, op=dist.ReduceOp.SUM)
+        eval_loss_wo_embed /= total_num_samples
+        state.this_eval_loss_wo_embed = eval_loss_wo_embed.item()
+        state.this_eval_perplexity_wo_embed = (2**eval_loss_wo_embed).item()
+    else:
+        state.this_eval_loss_wo_embed = None
+        state.this_eval_perplexity_wo_embed = None
+        
     eval_loss_w_embed /= total_num_samples
-    eval_loss_wo_embed /= total_num_samples
+
 
     state.this_eval_loss = eval_loss_w_embed.item()
     state.this_eval_perplexity = (2**eval_loss_w_embed).item()
-    state.this_eval_loss_wo_embed = eval_loss_wo_embed.item()
-    state.this_eval_perplexity_wo_embed = (2**eval_loss_wo_embed).item()
+    
+    
+
 
     # train mode!
     model.train()

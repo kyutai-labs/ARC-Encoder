@@ -7,6 +7,9 @@ from embed_llm.models.args import LoraArgs, EmbedAugArgs
 from embed_llm.data.args import DataArgs
 
 
+
+
+
 @dataclass
 class OptimArgs(Serializable):
     max_lr: float = 1e-4
@@ -35,6 +38,15 @@ class WandbArgs(Serializable):
             if len(self.project) == 0:
                 raise ValueError("`wandb.project` must not be an empty string.")
 
+@dataclass
+class InstructionTuningArgs(Serializable):
+    do: bool = False
+    cross_entropy: bool = True
+    kl: bool = False
+    alpha: float = 2.0
+    temp: float = 1.0
+    
+    
 
 @dataclass
 class TrainArgs(Serializable):
@@ -65,6 +77,7 @@ class TrainArgs(Serializable):
     save_adapters: bool = True  # Not used argument TODO Remove
     # If True, no checkpoint will be saved. This is useful for development.
     no_ckpt: bool = False
+    start_from_ckpt_path: str | None = None
     num_ckpt_keep: int = 2
     eval_freq: int = 0
     no_eval: bool = True
@@ -74,8 +87,6 @@ class TrainArgs(Serializable):
     checkpoint: bool = True
 
     world_size: int = field(init=False, default=None)
-
-    variant: str | None = None  # '7b', "2b", "2b-v2", "7b", "9b", "27b"
     quant: bool = False  # False
 
     # logging
@@ -86,9 +97,12 @@ class TrainArgs(Serializable):
 
     # Pretrained embedder to use off the shelf
     pipeline: EmbedAugArgs = field(default_factory=EmbedAugArgs)
-    paraphrase_prompt: bool = False
+    instruct_tuning: InstructionTuningArgs = field(default_factory=InstructionTuningArgs)
+    prefix_prompt: bool = False
     mixed_precision: bool = True
-
+    
+    # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
+    continuation: bool = False
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None
         self.world_size = int(os.environ.get("WORLD_SIZE", -1))
