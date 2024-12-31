@@ -322,8 +322,18 @@ if __name__ == "__main__":
 
 
     run_names = [file_name for file_name in os.listdir('/lustre/scwpod02/client/kyutai-interns/hippop/tmp/') if 'LT_FN' in file_name]
+    
+    to_skip = True
     print("Number of runs:", len(run_names))
+    run_names = ['LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT']
     for run_name in sorted(run_names):
+        # if run_name != 'LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT' and to_skip:
+        #     continue
+        # elif run_name == 'LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT':
+        #     to_skip = False
+        #     continue
+        # else:
+        #     to_skip = False
         evaluate_reconstruction_model(run_name)
         # print("Memory:", torch.cuda.memory_allocated() / 1024**3)
         # print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)

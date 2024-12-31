@@ -88,9 +88,9 @@ class LoRALinear(nn.Module):
         key_name = prefix + "weight"
         
         # If lora args None does not go there
-        
-
-        if key_name in state_dict and "lora_A.weight" in state_dict:
+  
+            
+        if key_name in state_dict :
             w_ref = state_dict[key_name]
 
             # load frozen weights
@@ -99,15 +99,10 @@ class LoRALinear(nn.Module):
                 "lora_A.weight": self.lora_A.weight,
                 "lora_B.weight": self.lora_B.weight,
             }
-            self.load_state_dict(state_dict, assign=True, strict=True)
+            # print('Key name', key_name)
+            # print('Self Lora A', self.lora_A.weight)
+            # print('Self Lora B', self.lora_B.weight)
             
-        elif key_name in state_dict :
-            w_ref = state_dict[key_name]
-
-            # load frozen weights
-            state_dict = {
-                "linear.weight": w_ref,
-            }
             self.load_state_dict(state_dict, assign=True, strict=True)
 
 
@@ -159,15 +154,14 @@ class LoRALoaderMixin:
                 raise ValueError(
                     "Not only LoRA weights found in the checkpoint. Skipping other weights."
                 )
-
         # move tensors to device
         # type: ignore[attr-defined]
         lora_state_dict = {k: v.to(self.device) for k, v in lora_state_dict.items()}
-
+        
         state_dict = self.state_dict()  # type: ignore[attr-defined]
         if self.args.lora is None:  # type: ignore[attr-defined]
             print("Loading and merging LoRA weights...")
-
+            
             # type: ignore[attr-defined]
             named_modules = dict(self.named_modules())
             for name, module in named_modules.items():
@@ -199,7 +193,7 @@ class LoRALoaderMixin:
                 state_dict.update(lora_state_dict)
 
                 if  'output' in k or k.split(".")[1] in self.layers:  # type: ignore[attr-defined]
-                    state_dict[k] = v.to(self.device)
+                    state_dict[k] = v
                 else:
                     print("Skipping parameter", k)
             # type: ignore[attr-defined]
@@ -215,3 +209,4 @@ def maybe_lora(
         return nn.Linear
     else:
         return partial(LoRALinear, rank=lora_args.rank, scaling=lora_args.scaling)
+

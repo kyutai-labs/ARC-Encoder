@@ -52,21 +52,21 @@ class Checkpointer:
 
     def dst_dir(self, type="llm") -> Path:
         if type == "llm":
-            return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / self.llm_name
+            return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / self.llm_name.lower()
         elif type == "mlp_project":
             return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / "MLP_projector"
         elif type == "trainable_embedder":
             return (
                 self.ckpt_dir
                 / f"checkpoint_{self.state.step:06d}"
-                / self.llm_name
+                / self.llm_name.lower()
                 / "trainable_embedder"
             )
         elif type == "pooling_module":
             return (
                 self.ckpt_dir
                 / f"checkpoint_{self.state.step:06d}"
-                / self.llm_name
+                / self.llm_name.lower()
                 / "pooling_module"
             )
         else:
@@ -93,6 +93,12 @@ class Checkpointer:
                 -1
             ]
             f.write(json.dumps(pipeline_args, indent=4))
+            if self.pipeline.instruct_pipeline_args is not None:
+                instruct_pipeline_args = self.pipeline.instruct_pipeline_args.to_dict()
+                instruct_pipeline_args["param_dtype"] = str(
+                    instruct_pipeline_args["param_dtype"]
+                ).split(".")[-1]
+                f.write('\n' + json.dumps(instruct_pipeline_args, indent=4))
 
     def write_llm_params_info(self, tmp_dst: Path):
         params_path = tmp_dst / "params.json"
@@ -323,6 +329,7 @@ class Checkpointer:
             or self.trainable_embedder is not None
         ):
             tmp_llm_dst.mkdir(parents=True, exist_ok=True)
+            Path(tmp_llm_dst / "consolidated").mkdir(parents=True, exist_ok=True)
 
         if self.mlp_project is not None and self.mlp_project.n_layers > 0:
             tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
@@ -350,9 +357,9 @@ class Checkpointer:
             # save checkpoint in tmp path
             if self.pipeline.pipeline_args.trainable_llm:
                 safetensors.torch.save_file(
-                    llm_states,
+                    llm_states ,
                     self.consolidated_path(
-                        tmp_llm_dst, use_safetensors=True, save_only_lora=True
+                        tmp_llm_dst / 'consolidated', use_safetensors=True, save_only_lora=True
                     ),  # always use safetensors for checkpointing
                 )
 
@@ -391,6 +398,8 @@ class Checkpointer:
                 self.write_pipeline_params_info(tmp_llm_dst.parent)
 
             tmp_llm_dst.rename(self.dst_dir(type="llm"))
+            
+                
             if self.mlp_project is not None and self.mlp_project.n_layers > 0:
                 tmp_mlp_project_dst.rename(self.dst_dir(type="mlp_project"))
 

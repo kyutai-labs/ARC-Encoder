@@ -2,7 +2,7 @@ model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_instruct
-start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB/checkpoints/checkpoint_020000
+start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/128_SL_FN_False_0_MLP_False_CA_False_DB/checkpoints/checkpoint_010000
 
 lora:
   rank: 64
@@ -10,9 +10,9 @@ lora:
   enable: true
 
 data:
-  # train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/test_instruct.jsonl
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/test_instruct.jsonl
   eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
-  train_data:  /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
+  # train_data:  /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
   shuffle: false
   # data_types: [instruct]
   adapt_seq_len: true
@@ -30,24 +30,24 @@ optim:
   initial_lr: 1.0e-20
   final_lr: 1.0e-10
 
-# instruct_tuning:
-#   do: true
-#   cross_entropy: true
-  # kl: false
-  # alpha: 0
-  # temp: 1.0
+instruct_tuning:
+  do: true
+  cross_entropy: true
+  kl: false
+  alpha: 0
+  temp: 1.0
 
 seed: 0
 log_freq: 10
 eval_freq: 100
-no_eval: false
+no_eval: true
 ckpt_freq: 1
 save_adapters: true
 
 pipeline:
   w_embeds: true
-  embedder_name: Mistral7B
-  trainable_embedder: True
+  embedder_name: NVEmbed
+  trainable_embedder: False
   n_truncated_layers: 8
   normalize_embeddings: true
   do_pool: true

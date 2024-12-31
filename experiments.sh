@@ -4,7 +4,7 @@
 #SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx10
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s01dgx08
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
@@ -13,7 +13,7 @@
 
 
 # Set up environment
-export MASTER_PORT=$((29500 + 2 + $SLURM_ARRAY_TASK_ID)) # Take care if already used
+export MASTER_PORT=$((29500 + 10 + $SLURM_ARRAY_TASK_ID)) # Take care if already used
 
 # Get the configuration file for this job
 CONFIG_FILES=(
@@ -23,7 +23,8 @@ CONFIG_FILES=(
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DBMLM.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_atend_True_DB.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_3_MLP_True_CA_16_CAL_atend_True_DB.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT.yaml # A REFAIRE CAR NAN
+/home/hippolytepilchen/code/embed_llm/config/experiments/LT_FN_False_1_MLP_True_CA_2_CAL_every_True_DB_lr1e-4.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT.yaml # A REFAIRE CAR NAN
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truelatent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_0_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DBCONT.yaml
