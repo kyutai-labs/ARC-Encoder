@@ -2,7 +2,7 @@ model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_instruct
-start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_atend_True_DB/checkpoints/checkpoint_019500
+start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/experiments/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_atend_True_DB/checkpoints/checkpoint_019500
 
 lora:
   rank: 64
@@ -22,7 +22,7 @@ instruct_tuning:
 
 data:
   # train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
-  eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/test_instruct.jsonl
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/test_instruct.jsonl
   data_types: [instruct]

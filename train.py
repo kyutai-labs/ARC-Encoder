@@ -108,7 +108,6 @@ def train(train_config: str | dict, data_config: str = None):
         _train(args, exit_stack)
     logger.info("Closed everything!")
 
-
 def _train(
     args: TrainArgs,
     exit_stack: ExitStack,
@@ -146,6 +145,7 @@ def _train(
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
 
+  
     main_logger_info(f"TrainArgs: {pprint.pformat(dataclasses.asdict(args))}")
 
     args_path = run_dir / "args.yaml"
@@ -186,6 +186,8 @@ def _train(
     """ Load embedder model or use the one from the LLM """
     if args.start_from_ckpt_path is not None:
         trainable_embedder =  Path(args.start_from_ckpt_path + "/" + args.llm_name.lower() + "/trainable_embedder").exists()
+    else:
+        trainable_embedder = args.pipeline.trainable_embedder
         
     if args.pipeline.trainable_embedder or trainable_embedder:
         embedding_model = None
@@ -288,7 +290,7 @@ def _train(
 
     assert (
         args.max_steps > args.optim.warm_up_steps
-    ), "Max steps should be greater than 0"
+    ), "Max steps should be greater than warm up steps"
 
     scheduler = lr_scheduler.OneCycleLR(
         optimizer,
@@ -613,14 +615,13 @@ def _train(
 
     main_logger_info("done!")
 
-    dist.barrier()
-
-    if not args.instruct_tuning.do:
-        evaluate_reconstruction_model(args.exp_name, ckpt=args.max_steps)
-    else:
-        evaluate_model(
-            args.exp_name, ckpt=args.max_steps, benchmarks=["NQ", "TRIVIAQA"]
-        )
+    # OOM error must find a way to flush memory
+    # if not args.instruct_tuning.do:
+    #     evaluate_reconstruction_model(args.exp_name, ckpt=args.max_steps)
+    # else:
+    #     evaluate_model(
+    #         args.exp_name, ckpt=args.max_steps, benchmarks=["NQ", "TRIVIAQA"]
+    # )
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import numpy as np
 import random
 from tqdm import tqdm, trange
 from pathlib import Path
+import torch.distributed as dist
 from embed_llm.models.augmented_model import EmbedAugPipeline
 from embed_llm.generation.metrics import (
     word_overlap,
@@ -60,23 +61,32 @@ def evaluate_model(
     output_path: str = "/lustre/scwpod02/client/kyutai-interns/hippop/experiments/results_eval",
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+
 
     results = {benchmark: {} for benchmark in benchmarks}
+    device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
+   
 
-    pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
-        llm_path=llm_path,
-        ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-        + run_name
-        + "/checkpoints/checkpoint_"
-        + str(ckpt).zfill(6),
-        device=device,
-        llm_name="Mistral7B",
-        embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
-        max_batch_size=max_bs,
-    )
-    print("Evaluating checkpoint", str(ckpt).zfill(6))
+    if not parll or dist.get_rank() == 0:
 
+        pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
+            llm_path=llm_path,
+            ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+            + run_name
+            + "/checkpoints/checkpoint_"
+            + str(ckpt).zfill(6),
+            device=device,
+            llm_name="Mistral7B",
+            embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
+            max_batch_size=max_bs,
+        )
+        print("Evaluating checkpoint", str(ckpt).zfill(6))
+
+
+    device_count = torch.cuda.device_count() 
+    other_device = torch.device("cuda:1") if device_count > 1 else device
+
+        
     for benchmark in tqdm(
         benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
     ):
@@ -108,11 +118,7 @@ def evaluate_model(
                     max_tokens=lim_toks,
                     truncate_double_space=True,
                     device=device,
-                    device_generation=(
-                        device
-                        if torch.cuda.device_count() <= 1
-                        else torch.device("cuda:1")
-                    ),
+                    device_generation=other_device,
                 )
 
                 generated_sequences.extend(generated_sequence)
@@ -144,7 +150,8 @@ def evaluate_reconstruction_model(
 
     print("RUN NAME => ", run_name)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
+
 
     if ckpt is None and pipeline is None:
 
@@ -220,6 +227,9 @@ def evaluate_reconstruction_model(
 
     n_passages = len(valid_passage)
     assert n_passages == len(valid_passage)
+    
+    device_count = torch.cuda.device_count() 
+    other_device = device if device_count <=1 else torch.device("cuda:1")
 
     for temp in temperatures:
         print(f"Temperature: {temp}")
@@ -235,9 +245,7 @@ def evaluate_reconstruction_model(
                 max_tokens=max_tokens,
                 truncate_double_space=False,
                 device=device,
-                device_generation=(
-                    device if torch.cuda.device_count() <= 1 else torch.device("cuda:1")
-                ),
+                device_generation=other_device,
             )
 
             generated_sequences.extend(generated_sequence)

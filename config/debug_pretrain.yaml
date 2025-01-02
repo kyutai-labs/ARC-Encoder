@@ -11,7 +11,7 @@ continuation: true
 pipeline:
   w_embeds: true
   embedder_name: Mistral7B
-  trainable_embedder: True
+  trainable_embedder: true
   n_truncated_layers: 8
   normalize_embeddings: true
   do_pool: true
@@ -29,12 +29,15 @@ pipeline:
     r: 512
     n_heads: 8
   every_cross_att: 2
-  pooled_cross_att: true
-  dist_process: false
+  pooled_cross_att: false
+
 data:
-  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
-  eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
+  # train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/train_atlas_enwiki-dec2021_50_30_20.jsonl
+  # eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_50_30_20.jsonl
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/train_atlas_enwiki-dec2021_standard.jsonl
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl
   shuffle: false
+  adapt_seq_len: true
 seq_len: 128
 batch_size: 32
 num_microbatches: 1
