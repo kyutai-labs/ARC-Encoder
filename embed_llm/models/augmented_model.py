@@ -19,11 +19,7 @@ import os
 from embed_llm.retrieval.embeddings import encode_text, get_pretrained_embedder
 from embed_llm.data.data_loader import Batch
 from embed_llm.models.loading import load_args, load_llm_model, load_state_dict
-from embed_llm.models.args import (
-    MistralModelArgs,
-    EmbedAugArgs,
-    LoraArgs
-)
+from embed_llm.models.args import MistralModelArgs, EmbedAugArgs, LoraArgs
 
 from embed_llm.training.args import InstructionTuningArgs
 
@@ -178,7 +174,7 @@ class EmbedAugPipeline(nn.Module):
         self.model = None
         self.generate = None
         self.instruct_args = instruct_args
-        
+
     def get_model(self, llm: object) -> nn.Module:
         return EmbedAugModel(
             pipeline_args=self.pipeline_args,
@@ -448,7 +444,6 @@ class EmbedAugPipeline(nn.Module):
         param_dtype: torch.dtype = torch.float32,
     ):
 
-
         lora_path = (
             ckpt_path + "/" + llm_name.lower() + "/consolidated/lora.safetensors"
         )
@@ -467,10 +462,10 @@ class EmbedAugPipeline(nn.Module):
                 embed_model_name, device_map=device
             )
 
-        with open(os.path.join(ckpt_path,'../../args.yaml'), 'r') as f:
+        with open(os.path.join(ckpt_path, "../../args.yaml"), "r") as f:
             train_args = yaml.safe_load(f)
-        lora = LoraArgs(train_args['lora'])
-        
+        lora = LoraArgs(train_args["lora"])
+
         llm_args, pipeline_args = load_args(
             Path(llm_path),
             lora=lora,
@@ -716,4 +711,3 @@ class EmbedAugPipeline(nn.Module):
             return final_texts, attentions, embeddings
 
         return final_texts, attentions
-

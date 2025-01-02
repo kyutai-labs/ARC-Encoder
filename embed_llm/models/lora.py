@@ -86,11 +86,10 @@ class LoRALinear(nn.Module):
         self, state_dict: dict[str, object], prefix: str, *args, **kwargs
     ) -> None:
         key_name = prefix + "weight"
-        
+
         # If lora args None does not go there
-  
-            
-        if key_name in state_dict :
+
+        if key_name in state_dict:
             w_ref = state_dict[key_name]
 
             # load frozen weights
@@ -102,9 +101,8 @@ class LoRALinear(nn.Module):
             # print('Key name', key_name)
             # print('Self Lora A', self.lora_A.weight)
             # print('Self Lora B', self.lora_B.weight)
-            
-            self.load_state_dict(state_dict, assign=True, strict=True)
 
+            self.load_state_dict(state_dict, assign=True, strict=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         lora = self.lora_B(self.lora_A(x))
@@ -157,21 +155,18 @@ class LoRALoaderMixin:
         # move tensors to device
         # type: ignore[attr-defined]
         lora_state_dict = {k: v.to(self.device) for k, v in lora_state_dict.items()}
-        
+
         state_dict = self.state_dict()  # type: ignore[attr-defined]
         if self.args.lora is None:  # type: ignore[attr-defined]
             print("Loading and merging LoRA weights...")
-            
+
             # type: ignore[attr-defined]
             named_modules = dict(self.named_modules())
             for name, module in named_modules.items():
-                if (
-                    isinstance(module, nn.Linear)
-                    and not is_cross_att(name)
-                ):
-    
+                if isinstance(module, nn.Linear) and not is_cross_att(name):
+
                     # type: ignore[attr-defined]
-                    if 'output' not in name and name.split(".")[1] not in self.layers:
+                    if "output" not in name and name.split(".")[1] not in self.layers:
                         print("Skipping parameter", name)
 
                     elif (name + ".lora_B.weight") in lora_state_dict:
@@ -192,14 +187,12 @@ class LoRALoaderMixin:
             for k, v in lora_state_dict.items():
                 state_dict.update(lora_state_dict)
 
-                if  'output' in k or k.split(".")[1] in self.layers:  # type: ignore[attr-defined]
+                if "output" in k or k.split(".")[1] in self.layers:  # type: ignore[attr-defined]
                     state_dict[k] = v
                 else:
                     print("Skipping parameter", k)
             # type: ignore[attr-defined]
-            self.load_state_dict(state_dict, strict=True, assign = True)
-   
-
+            self.load_state_dict(state_dict, strict=True, assign=True)
 
 
 def maybe_lora(
@@ -209,4 +202,3 @@ def maybe_lora(
         return nn.Linear
     else:
         return partial(LoRALinear, rank=lora_args.rank, scaling=lora_args.scaling)
-

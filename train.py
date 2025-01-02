@@ -21,9 +21,12 @@ from embed_llm.generation.evaluation import (
     evaluate_reconstruction_model,
     evaluate_model,
 )
-from embed_llm.models.wrapped_models_training import load_training_model, load_training_model_from_ckpt
+from embed_llm.models.wrapped_models_training import (
+    load_training_model,
+    load_training_model_from_ckpt,
+)
 from embed_llm.retrieval.embeddings import get_pretrained_embedder
-from embed_llm.training.args import TrainArgs,OptimArgs,InstructionTuningArgs
+from embed_llm.training.args import TrainArgs, OptimArgs, InstructionTuningArgs
 from embed_llm.models.args import LoraArgs, EmbedAugArgs
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.data.data_loader import build_data_loader
@@ -88,8 +91,9 @@ def train(train_config: str | dict, data_config: str = None):
         args: TrainArgs = TrainArgs.from_dict(**train_config)
     elif data_config is not None:
         import yaml
+
         assert isinstance(train_config, str) and isinstance(data_config, str)
-        with open(train_config, 'r') as f:
+        with open(train_config, "r") as f:
             train_params = yaml.safe_load(f)
         data_args = create_data_args(data_config)
         train_params["data"] = data_args
@@ -98,7 +102,7 @@ def train(train_config: str | dict, data_config: str = None):
         args.lora = LoraArgs(**args.lora)
         args.pipeline = EmbedAugArgs(**args.pipeline)
         args.instruct_tuning = InstructionTuningArgs(**args.instruct_tuning)
-        
+
     else:
         raise ValueError("Config should be a string or a dictionary")
 
@@ -107,6 +111,7 @@ def train(train_config: str | dict, data_config: str = None):
     with ExitStack() as exit_stack:
         _train(args, exit_stack)
     logger.info("Closed everything!")
+
 
 def _train(
     args: TrainArgs,
@@ -145,7 +150,6 @@ def _train(
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
 
-  
     main_logger_info(f"TrainArgs: {pprint.pformat(dataclasses.asdict(args))}")
 
     args_path = run_dir / "args.yaml"
@@ -185,10 +189,15 @@ def _train(
 
     """ Load embedder model or use the one from the LLM """
     if args.start_from_ckpt_path is not None:
-        trainable_embedder =  Path(args.start_from_ckpt_path + "/" + args.llm_name.lower() + "/trainable_embedder").exists()
+        trainable_embedder = Path(
+            args.start_from_ckpt_path
+            + "/"
+            + args.llm_name.lower()
+            + "/trainable_embedder"
+        ).exists()
     else:
         trainable_embedder = args.pipeline.trainable_embedder
-        
+
     if args.pipeline.trainable_embedder or trainable_embedder:
         embedding_model = None
     else:
@@ -209,8 +218,8 @@ def _train(
     args.pipeline.param_dtype = param_dtype
 
     assert args.lora is not None, "`args.lora` should be set to a valid value."
-    
-    if args.start_from_ckpt_path is None :
+
+    if args.start_from_ckpt_path is None:
         pipeline, model = load_training_model(
             train_args=args,
             folder=model_folder,
@@ -230,12 +239,16 @@ def _train(
             param_dtype=param_dtype,
             ckpt_path=args.start_from_ckpt_path,
             max_batch_size=args.batch_size,
-            tune_embedder = ((args.instruct_tuning.do and args.instruct_tuning.tune_embedder) or 
-                             (args.pipeline.trainable_embedder and not args.instruct_tuning.do)),
-            tune_llm = ((args.instruct_tuning.do and args.instruct_tuning.tune_llm) or 
-                        (args.pipeline.trainable_llm and not args.instruct_tuning.do)),
+            tune_embedder=(
+                (args.instruct_tuning.do and args.instruct_tuning.tune_embedder)
+                or (args.pipeline.trainable_embedder and not args.instruct_tuning.do)
+            ),
+            tune_llm=(
+                (args.instruct_tuning.do and args.instruct_tuning.tune_llm)
+                or (args.pipeline.trainable_llm and not args.instruct_tuning.do)
+            ),
         )
-        
+
     main_logger_info("Model loading done")
     main_logger_info(
         f"PipelineArgs: {pprint.pformat(dataclasses.asdict(pipeline.pipeline_args))}"
@@ -278,7 +291,6 @@ def _train(
             else:
                 eval_batches.append(batch)
 
-    
     # 9. Load optimizer
     optimizer = AdamW(
         model.parameters(),
@@ -352,7 +364,6 @@ def _train(
     while state.step < args.max_steps:
         state.start_step()
 
-            
         is_last_step = state.step == args.max_steps
 
         optimizer.zero_grad()
@@ -361,7 +372,6 @@ def _train(
         kl_loss = torch.tensor([0.0], device="cuda")
         n_batch_tokens: int = 0
 
-            
         # Number of steps to accumulate gradients before doing an optimizer step.
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
@@ -419,17 +429,24 @@ def _train(
                     ), "Contexts and batch sizes should be the same"
 
                     for i, size in enumerate(batch.sizes):
-                        x_rag.extend(contexts[i][0] + batch.x[ind : ind + size].tolist())
+                        x_rag.extend(
+                            contexts[i][0] + batch.x[ind : ind + size].tolist()
+                        )
                         seqlens_rag.append(size + len(contexts[i][0]))
                         y_mask_rag.extend(
-                            [False] * len(contexts[i][0]) + batch.y_mask[ind : ind + size].tolist()
+                            [False] * len(contexts[i][0])
+                            + batch.y_mask[ind : ind + size].tolist()
                         )
                         ind += size
 
                     x_rag = torch.from_numpy(np.array(x_rag)).cuda(non_blocking=True)
-                    y_mask_rag = torch.from_numpy(np.array(y_mask_rag)).cuda(non_blocking=True)
+                    y_mask_rag = torch.from_numpy(np.array(y_mask_rag)).cuda(
+                        non_blocking=True
+                    )
 
-                    assert len(x_rag) == len(y_mask_rag), "x_rag and y_mask_rag should be the same length"
+                    assert len(x_rag) == len(
+                        y_mask_rag
+                    ), "x_rag and y_mask_rag should be the same length"
                     rag_output = model.forward(
                         x=x_rag,
                         embeddings=embeddings,
@@ -572,12 +589,11 @@ def _train(
             checkpointer.save_checkpoint(
                 dtype=param_dtype,
             )
-            
 
             # for name, param in model.named_parameters():
             #     if 'lora' not in name:
             #         assert not param.requires_grad, f"Param {name} should not be trainable"
-                
+
             # lora_path = (
             #     args.start_from_ckpt_path + "/" + args.llm_name.lower() + "/consolidated/lora.safetensors"
             # )
@@ -606,7 +622,7 @@ def _train(
             #                 all_equals = False
             #                 print('Not equal', k)
             #     print('ALL EQUAL ???', all_equals)
-            
+
             # for k, v in lora_state_dict.items():
             #     are_close = torch.allclose(v.cpu(), llm_states[k].cpu())
             #     if not are_close:

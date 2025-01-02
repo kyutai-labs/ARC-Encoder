@@ -52,7 +52,11 @@ class Checkpointer:
 
     def dst_dir(self, type="llm") -> Path:
         if type == "llm":
-            return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / self.llm_name.lower()
+            return (
+                self.ckpt_dir
+                / f"checkpoint_{self.state.step:06d}"
+                / self.llm_name.lower()
+            )
         elif type == "mlp_project":
             return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / "MLP_projector"
         elif type == "trainable_embedder":
@@ -95,7 +99,7 @@ class Checkpointer:
             f.write(json.dumps(pipeline_args, indent=4))
             if self.pipeline.instruct_args is not None:
                 instruct_pipeline_args = self.pipeline.instruct_args.to_dict()
-                f.write('\n' + json.dumps(instruct_pipeline_args, indent=4))
+                f.write("\n" + json.dumps(instruct_pipeline_args, indent=4))
 
     def write_llm_params_info(self, tmp_dst: Path):
         params_path = tmp_dst / "params.json"
@@ -354,9 +358,11 @@ class Checkpointer:
             # save checkpoint in tmp path
             if self.pipeline.pipeline_args.trainable_llm:
                 safetensors.torch.save_file(
-                    llm_states ,
+                    llm_states,
                     self.consolidated_path(
-                        tmp_llm_dst / 'consolidated', use_safetensors=True, save_only_lora=True
+                        tmp_llm_dst / "consolidated",
+                        use_safetensors=True,
+                        save_only_lora=True,
                     ),  # always use safetensors for checkpointing
                 )
 
@@ -395,8 +401,7 @@ class Checkpointer:
                 self.write_pipeline_params_info(tmp_llm_dst.parent)
 
             tmp_llm_dst.rename(self.dst_dir(type="llm"))
-            
-                
+
             if self.mlp_project is not None and self.mlp_project.n_layers > 0:
                 tmp_mlp_project_dst.rename(self.dst_dir(type="mlp_project"))
 

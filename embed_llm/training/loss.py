@@ -27,15 +27,23 @@ def compute_kl_loss_with_mask(
         pred_mask.int()
     ), "Mask should be the same for both logits."
 
-    assert rag_logits.size(-1) == pred_logits.size(-1), "Logits should have the same size."
+    assert rag_logits.size(-1) == pred_logits.size(
+        -1
+    ), "Logits should have the same size."
     n_vocab = rag_logits.size(-1)
 
     # Select logits only for the tokens that are not masked.
-    rag_l= torch.masked_select(rag_logits, torch.repeat_interleave(rag_mask, n_vocab, dim=0).reshape(-1, n_vocab))
-    pred_l = torch.masked_select(pred_logits, torch.repeat_interleave(pred_mask, n_vocab, dim=0).reshape(-1, n_vocab))
+    rag_l = torch.masked_select(
+        rag_logits,
+        torch.repeat_interleave(rag_mask, n_vocab, dim=0).reshape(-1, n_vocab),
+    )
+    pred_l = torch.masked_select(
+        pred_logits,
+        torch.repeat_interleave(pred_mask, n_vocab, dim=0).reshape(-1, n_vocab),
+    )
 
-    loss_func = torch.nn.KLDivLoss(reduction = "none")
+    loss_func = torch.nn.KLDivLoss(reduction="none")
     mb_loss = loss_func(
         F.log_softmax(pred_l / temp, dim=-1), F.softmax(rag_l / temp, dim=-1)
-    ).sum() 
+    ).sum()
     return mb_loss

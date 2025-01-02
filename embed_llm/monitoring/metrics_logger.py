@@ -78,7 +78,7 @@ def get_eval_logs(
 
     if eval_kl_loss is not None:
         eval_dict["eval_kl_loss"] = eval_kl_loss
-        
+
     return eval_dict
 
 
@@ -105,7 +105,6 @@ def train_log_msg(state: TrainState, logs: dict[str, float | int], loss: float) 
         ("eta", "%Y-%m-%d %H:%M:%S", "ETA"),
         ("instruct_cross_entropy", ".3f", "instruct_cross_entropy"),
         ("instruct_kl", ".3f", "instruct_kl"),
-
     ]:
         name = key if new_name is None else new_name
         if metrics[key] is None:

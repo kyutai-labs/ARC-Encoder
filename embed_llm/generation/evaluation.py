@@ -62,10 +62,8 @@ def evaluate_model(
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
-
     results = {benchmark: {} for benchmark in benchmarks}
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
-   
 
     if not parll or dist.get_rank() == 0:
 
@@ -82,11 +80,9 @@ def evaluate_model(
         )
         print("Evaluating checkpoint", str(ckpt).zfill(6))
 
-
-    device_count = torch.cuda.device_count() 
+    device_count = torch.cuda.device_count()
     other_device = torch.device("cuda:1") if device_count > 1 else device
 
-        
     for benchmark in tqdm(
         benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
     ):
@@ -152,19 +148,29 @@ def evaluate_reconstruction_model(
 
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
 
-
     if ckpt is None and pipeline is None:
 
         # Get last checkpoint
-        last_ckpt = sorted([ckpt_name for ckpt_name in
-            os.listdir(
-                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-                + run_name
-                + "/checkpoints/"
-            ) if (Path("/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-                + run_name
-                + "/checkpoints/") / ckpt_name / 'params.json').exists()])[-1]
-    
+        last_ckpt = sorted(
+            [
+                ckpt_name
+                for ckpt_name in os.listdir(
+                    "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                    + run_name
+                    + "/checkpoints/"
+                )
+                if (
+                    Path(
+                        "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                        + run_name
+                        + "/checkpoints/"
+                    )
+                    / ckpt_name
+                    / "params.json"
+                ).exists()
+            ]
+        )[-1]
+
         pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
             llm_path=llm_path,
             ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
@@ -227,9 +233,9 @@ def evaluate_reconstruction_model(
 
     n_passages = len(valid_passage)
     assert n_passages == len(valid_passage)
-    
-    device_count = torch.cuda.device_count() 
-    other_device = device if device_count <=1 else torch.device("cuda:1")
+
+    device_count = torch.cuda.device_count()
+    other_device = device if device_count <= 1 else torch.device("cuda:1")
 
     for temp in temperatures:
         print(f"Temperature: {temp}")
@@ -328,13 +334,19 @@ if __name__ == "__main__":
     ensure_reproducibility(29)
     # evaluate_model("LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB", ckpt=20000, benchmarks = ['NQ'])
 
+    run_names = [
+        file_name
+        for file_name in os.listdir(
+            "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+        )
+        if "LT_FN" in file_name
+    ]
 
-    run_names = [file_name for file_name in os.listdir('/lustre/scwpod02/client/kyutai-interns/hippop/tmp/') if 'LT_FN' in file_name]
-    
     to_skip = True
     print("Number of runs:", len(run_names))
-    run_names = ['LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
-                 ]
+    run_names = [
+        "LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
+    ]
 
     for run_name in sorted(run_names):
         # if run_name != 'LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT' and to_skip:

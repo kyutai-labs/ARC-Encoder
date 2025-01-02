@@ -17,7 +17,9 @@ def main(args):
             f.write(json.dumps(header_params) + "\n")
 
     if args.train_files is not None:
-        assert args.train_weights is None or  len(args.train_files.split(",")) == len(args.train_weights.split(","))
+        assert args.train_weights is None or len(args.train_files.split(",")) == len(
+            args.train_weights.split(",")
+        )
         if args.train_weights is None:
             args.train_weights = "1," * len(args.train_files.split(","))
         with open(args.folder_path + args.output_file, "a") as f:
@@ -29,7 +31,9 @@ def main(args):
                 )
 
     if args.eval_files is not None:
-        assert args.eval_weights is None or len(args.eval_files.split(",")) == len(args.eval_weights.split(","))
+        assert args.eval_weights is None or len(args.eval_files.split(",")) == len(
+            args.eval_weights.split(",")
+        )
         if args.eval_weights is None:
             args.eval_weights = "1," * len(args.eval_files.split(","))
         with open(args.folder_path + args.output_file, "a") as f:

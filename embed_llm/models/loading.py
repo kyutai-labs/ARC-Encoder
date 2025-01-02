@@ -35,8 +35,6 @@ ModelsArgs = MistralModelArgs
 Tokenizer = MistralTokenizer
 
 
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -62,10 +60,10 @@ def load_args(
         )
         mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
         pipeline_args.mlp_project = mlp_project_args
-        
+
         pooling_args = PoolingArgs(**pipeline_args.pooling_module)
         pipeline_args.pooling_module = pooling_args
-        
+
     else:
         pipeline_args = pipe_args
 
@@ -178,10 +176,7 @@ def load_llm_model(
         state_dict = load_state_dict(folder, dtype=param_dtype)
         model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
 
-    if (
-        pipeline_args.mlp_project.n_layers == 0
-        and not for_embedding
-    ):
+    if pipeline_args.mlp_project.n_layers == 0 and not for_embedding:
         logger.info("Embedder dim must match model dim if no MLP projector.")
 
     if for_embedding:

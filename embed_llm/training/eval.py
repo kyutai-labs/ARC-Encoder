@@ -94,7 +94,7 @@ def evaluate(
                         output_wo_embed, ground_truth, mask
                     )
                 elif instruction_tuning.do:
-    
+
                     if instruction_tuning.kl:
                         contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
                         x_rag = []
@@ -107,17 +107,26 @@ def evaluate(
                         ), "Contexts and batch sizes should be the same"
 
                         for i, size in enumerate(batch.sizes):
-                            x_rag.extend(contexts[i][0] + batch.x[ind : ind + size].tolist())
+                            x_rag.extend(
+                                contexts[i][0] + batch.x[ind : ind + size].tolist()
+                            )
                             seqlens_rag.append(size + len(contexts[i][0]))
                             y_mask_rag.extend(
-                                [False] * len(contexts[i][0]) + batch.y_mask[ind : ind + size].tolist()
+                                [False] * len(contexts[i][0])
+                                + batch.y_mask[ind : ind + size].tolist()
                             )
                             ind += size
 
-                        x_rag = torch.from_numpy(np.array(x_rag)).cuda(non_blocking=True)
-                        y_mask_rag = torch.from_numpy(np.array(y_mask_rag)).cuda(non_blocking=True)
+                        x_rag = torch.from_numpy(np.array(x_rag)).cuda(
+                            non_blocking=True
+                        )
+                        y_mask_rag = torch.from_numpy(np.array(y_mask_rag)).cuda(
+                            non_blocking=True
+                        )
 
-                        assert len(x_rag) == len(y_mask_rag), "x_rag and y_mask_rag should be the same length"
+                        assert len(x_rag) == len(
+                            y_mask_rag
+                        ), "x_rag and y_mask_rag should be the same length"
                         rag_output = model.forward(
                             x=x_rag,
                             embeddings=embeddings,
@@ -135,7 +144,6 @@ def evaluate(
                         )
 
                         eval_kl_loss += kl_dv_loss
-           
 
             assert (
                 batch.is_pad_only or y.abs().sum() != 0
@@ -145,7 +153,6 @@ def evaluate(
     main_logger_info("Eval finished!")
 
     dist.all_reduce(eval_loss_w_embed, op=dist.ReduceOp.SUM)
-    
 
     if continuation:
         dist.all_reduce(eval_loss_wo_embed, op=dist.ReduceOp.SUM)
