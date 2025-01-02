@@ -69,7 +69,6 @@ def load_training_model(
     model, tokenizer, embed_dim = load_llm_model(
         llm_args=llm_args,
         pipeline_args=pipeline_args,
-        args=train_args,
         folder=folder,
         checkpoint=checkpoint,
         param_dtype=param_dtype,
@@ -89,7 +88,6 @@ def load_training_model(
         llm_embedder, _, llm_embed_dim = load_llm_model(
             llm_args=llm_args,
             pipeline_args=pipeline_args,
-            args=train_args,
             folder=folder,
             checkpoint=checkpoint,
             param_dtype=param_dtype,
@@ -278,6 +276,8 @@ def load_training_model_from_ckpt(
     param_dtype: torch.dtype,
     embedding_model: object | None,
     ckpt_path: str,
+    tune_embedder: bool,
+    tune_llm: bool,
     checkpoint: bool = False,
     max_batch_size: int = 32,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
@@ -297,28 +297,20 @@ def load_training_model_from_ckpt(
   
     llm_args, old_pipeline_args = load_args(
         folder = folder,
-        lora = None,
+        lora = lora,
         max_batch_size=max_batch_size,
         pipe_path=ckpt_path,
     )
     
-    new_pipeline_args =  train_args.pipeline
     if not old_pipeline_args.trainable_embedder:
-        assert new_pipeline_args.trainable_embedder == False, "If no trainable embedder, embedder model can't be instruct tuned"
+        assert not tune_embedder, "If no trainable embedder, embedder model can't be instruct tuned"
     if not old_pipeline_args.trainable_llm:
-        assert new_pipeline_args.trainable_llm == False, "If no trainable llm, llm model can't be instruct tuned"
+        assert not tune_llm, "If no trainable llm, llm model can't be instruct tuned"
 
-    # Load pretrained params on rank 0 for LLM
-    if not new_pipeline_args.trainable_llm:
-        print('Setting lora to None')
-        llm_args.lora = None
-    else:
-        llm_args.lora = lora
 
     model, tokenizer, embed_dim = load_llm_model(
         llm_args=llm_args,
         pipeline_args=old_pipeline_args,
-        args=train_args,
         folder=folder,
         checkpoint=checkpoint,
         param_dtype=param_dtype,
@@ -326,25 +318,14 @@ def load_training_model_from_ckpt(
         parll=False,
     )
     
-    if not old_pipeline_args.w_embeds:
-        assert (
-            train_args.pipeline.mlp_project.n_layers == 0
-        ), "Only no MLP if no embeddings."
-
     # Load model and params for embedder
     if old_pipeline_args.trainable_embedder:
         main_logger_info("Loading embedder model ...")
-        
-        if not new_pipeline_args.trainable_embedder:
-            llm_args.lora = None
-        else:
-            llm_args.lora = lora
             
         # Load pretrained params on rank 0
         llm_embedder, _, llm_embed_dim = load_llm_model(
             llm_args=llm_args,
             pipeline_args=old_pipeline_args,
-            args=train_args,
             folder=folder,
             checkpoint=checkpoint,
             param_dtype=param_dtype,
@@ -368,8 +349,8 @@ def load_training_model_from_ckpt(
                 Path(trainable_embedder_path + "/lora.safetensors"), cross_att=False
             )
         
-        llm_embedder = llm_embedder.to(torch.cuda.current_device())
-        embedding_model = llm_embedder
+        embedding_model = llm_embedder.to(torch.cuda.current_device())
+
 
 
 
@@ -379,7 +360,7 @@ def load_training_model_from_ckpt(
         tokenizer=tokenizer,
         embed_model_name=old_pipeline_args.embedder_name,
         embedding_model=embedding_model,
-        instruct_pipeline_args=new_pipeline_args,
+        instruct_args=train_args.instruct_tuning,
     )
 
     augmented_model = augmented_pipeline.get_model(llm=model)
@@ -395,7 +376,7 @@ def load_training_model_from_ckpt(
             if "lora" not in k and is_cross_att(k)
         }
         augmented_model.llm.load_state_dict(
-            cross_att_state_dicts, assign=True, strict=True
+            cross_att_state_dicts, assign=True, strict=False
         )
 
     if Path(lora_path).exists():
@@ -404,6 +385,7 @@ def load_training_model_from_ckpt(
             Path(lora_path), cross_att=old_pipeline_args.cross_att
         )
                         
+            
     augmented_model.llm = augmented_model.llm.to(torch.cuda.current_device())
 
     if old_pipeline_args.trainable_embedder and old_pipeline_args.do_pool:
@@ -455,10 +437,12 @@ def load_training_model_from_ckpt(
     
     # If lora not enable weights have already been merged
     for name, param in augmented_model.named_parameters():
-        if lora.enable and "lora" in name: 
+        if tune_llm and 'llm' in name and lora.enable and "lora" in name: 
+            param.requires_grad = True
+        elif tune_embedder and 'trainable' in name and lora.enable and "lora" in name:
             param.requires_grad = True
         # Full fine-tuning
-        elif new_pipeline_args.trainable_llm and not lora.enable and "llm" in name:
+        elif tune_llm and not lora.enable and "llm" in name:
             param.requires_grad = True
         elif "mlp_project" in name:
             param.requires_grad = True
@@ -475,23 +459,7 @@ def load_training_model_from_ckpt(
 
     log_train_params(augmented_model)
 
-    auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
-
-    # if get_rank() == 0:
-    #     pretrain_state_dict = safetensors.torch.load_file(folder / "consolidated.safetensors")
-    #     lora_state_dict = safetensors.torch.load_file(lora_path)
-    #     all_equal = True
-    #     for name, param in augmented_model.llm.named_parameters():
-    #         if "lora" in name:
-    #             are_close = torch.allclose(param.cpu(), lora_state_dict[name].cpu())
-    #             print(name, are_close)
-    #             all_equal = all_equal and are_close
-    #         else:
-    #             name = name.replace("linear.", "")
-    #             are_close =  torch.allclose(param.cpu(), pretrain_state_dict[name].to(param_dtype).cpu())
-    #             print(name, are_close)
-    #             all_equal = all_equal and are_close
-    #     print("ALL EQUAL ??",all_equal)
+    auto_wrap_policy = get_fsdp_policy(is_lora = True)
         
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 

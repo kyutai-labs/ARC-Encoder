@@ -154,7 +154,6 @@ def load_state_dict(path: Path, dtype: torch.dtype) -> dict[str, torch.Tensor]:
 def load_llm_model(
     llm_args: ModelsArgs,
     pipeline_args: EmbedAugArgs,
-    args: TrainArgs | None,
     folder: Path,
     checkpoint: bool,
     param_dtype: torch.dtype,
@@ -181,7 +180,6 @@ def load_llm_model(
 
     if (
         pipeline_args.mlp_project.n_layers == 0
-        and args is not None
         and not for_embedding
     ):
         logger.info("Embedder dim must match model dim if no MLP projector.")

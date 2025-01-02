@@ -10,6 +10,7 @@ import torch.distributed as dist
 import torch.distributed
 from torch.optim import AdamW, lr_scheduler
 from functools import partial
+import numpy as np
 
 # Debugging
 import time
@@ -152,8 +153,8 @@ def _train(
         args.pipeline.param_dtype = "float32" if args.mixed_precision else "bfloat16"
         args.save(args_path)
 
-    if args.instruct_tuning.do:
-        assert args.data.adapt_seq_len, "Adapt seq len should be set to True"
+    # if args.instruct_tuning.do:
+    #     assert args.data.adapt_seq_len, "Adapt seq len should be set to True"
 
     # 3. Get loggers
     metrics_logger: MetricsLogger = MetricsLogger(
@@ -183,7 +184,10 @@ def _train(
         )
 
     """ Load embedder model or use the one from the LLM """
-    if args.pipeline.trainable_embedder:
+    if args.start_from_ckpt_path is not None:
+        trainable_embedder =  Path(args.start_from_ckpt_path + "/" + args.llm_name.lower() + "/trainable_embedder").exists()
+        
+    if args.pipeline.trainable_embedder or trainable_embedder:
         embedding_model = None
     else:
         assert (
@@ -197,7 +201,6 @@ def _train(
         )
 
         embedding_model.eval()
-
     """ Load LLM and tokenizers """
 
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
@@ -225,6 +228,10 @@ def _train(
             param_dtype=param_dtype,
             ckpt_path=args.start_from_ckpt_path,
             max_batch_size=args.batch_size,
+            tune_embedder = ((args.instruct_tuning.do and args.instruct_tuning.tune_embedder) or 
+                             (args.pipeline.trainable_embedder and not args.instruct_tuning.do)),
+            tune_llm = ((args.instruct_tuning.do and args.instruct_tuning.tune_llm) or 
+                        (args.pipeline.trainable_llm and not args.instruct_tuning.do)),
         )
         
     main_logger_info("Model loading done")
@@ -410,15 +417,17 @@ def _train(
                     ), "Contexts and batch sizes should be the same"
 
                     for i, size in enumerate(batch.sizes):
-                        x_rag.extend(contexts[i] + batch.x[ind : ind + size])
-                        seqlens_rag.append(size + len(contexts[i]))
+                        x_rag.extend(contexts[i][0] + batch.x[ind : ind + size].tolist())
+                        seqlens_rag.append(size + len(contexts[i][0]))
                         y_mask_rag.extend(
-                            [False] * len(contexts[i]) + batch.y_mask[ind : ind + size]
+                            [False] * len(contexts[i][0]) + batch.y_mask[ind : ind + size].tolist()
                         )
                         ind += size
 
-                    x_rag = torch.from_numpy(x_rag).cuda(non_blocking=True)
-                    y_mask_rag = torch.from_numpy(y_mask_rag).cuda(non_blocking=True)
+                    x_rag = torch.from_numpy(np.array(x_rag)).cuda(non_blocking=True)
+                    y_mask_rag = torch.from_numpy(np.array(y_mask_rag)).cuda(non_blocking=True)
+
+                    assert len(x_rag) == len(y_mask_rag), "x_rag and y_mask_rag should be the same length"
                     rag_output = model.forward(
                         x=x_rag,
                         embeddings=embeddings,
@@ -426,6 +435,7 @@ def _train(
                         embed_seqlens=embed_seqlens,
                         batch_type=batch.data_type,
                     )
+
                     kl_dv_loss = compute_kl_loss_with_mask(
                         rag_logits=rag_output,
                         pred_logits=output,
@@ -516,6 +526,7 @@ def _train(
                 batches=eval_batches,
                 state=state,
                 continuation=args.continuation,
+                instruction_tuning=args.instruct_tuning,
             )
 
             eval_logs = get_eval_logs(
@@ -525,6 +536,7 @@ def _train(
                 state.this_eval_loss,
                 perplexity_wo_embed=state.this_eval_perplexity_wo_embed,
                 eval_loss_wo_embed=state.this_eval_loss_wo_embed,
+                eval_kl_loss=state.this_eval_kl_loss,
                 instruct_cross_entropy=cross_entropy_loss_avg,
                 instruct_kl=kl_loss_avg,
             )

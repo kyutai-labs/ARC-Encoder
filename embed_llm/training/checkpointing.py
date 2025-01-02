@@ -93,11 +93,8 @@ class Checkpointer:
                 -1
             ]
             f.write(json.dumps(pipeline_args, indent=4))
-            if self.pipeline.instruct_pipeline_args is not None:
-                instruct_pipeline_args = self.pipeline.instruct_pipeline_args.to_dict()
-                instruct_pipeline_args["param_dtype"] = str(
-                    instruct_pipeline_args["param_dtype"]
-                ).split(".")[-1]
+            if self.pipeline.instruct_args is not None:
+                instruct_pipeline_args = self.pipeline.instruct_args.to_dict()
                 f.write('\n' + json.dumps(instruct_pipeline_args, indent=4))
 
     def write_llm_params_info(self, tmp_dst: Path):

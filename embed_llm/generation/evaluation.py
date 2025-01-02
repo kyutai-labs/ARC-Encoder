@@ -303,13 +303,13 @@ def evaluate_reconstruction_model(
         json.dump(metrics, f)
 
     with open(
-        "/home/hippolytepilchen/code/embed_llm/config/experiments/overall_results_w_output.json",
+        "/home/hippolytepilchen/code/embed_llm/config/experiments/overall_results_new.json",
         "r",
     ) as f:
         overall_results = json.load(f)
     overall_results[run_name] = metrics
     with open(
-        "/home/hippolytepilchen/code/embed_llm/config/experiments/overall_results_w_output.json",
+        "/home/hippolytepilchen/code/embed_llm/config/experiments/overall_results_new.json",
         "w",
     ) as f:
         json.dump(overall_results, f)
@@ -325,7 +325,9 @@ if __name__ == "__main__":
     
     to_skip = True
     print("Number of runs:", len(run_names))
-    run_names = ['LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT']
+    run_names = ['LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
+                 ]
+
     for run_name in sorted(run_names):
         # if run_name != 'LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT' and to_skip:
         #     continue

@@ -5,8 +5,9 @@ import torch.distributed as dist
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 from embed_llm.data.data_loader import Batch
 from embed_llm.training.distributed import get_rank, get_world_size
-from embed_llm.training.loss import compute_ce_loss_with_mask
+from embed_llm.training.loss import compute_ce_loss_with_mask, compute_kl_loss_with_mask
 from embed_llm.training.utils import TrainState
+from embed_llm.training.args import InstructionTuningArgs
 
 logger = logging.getLogger("eval")
 
@@ -22,6 +23,7 @@ def evaluate(
     batches: list[Batch],
     state: TrainState,
     continuation: bool = False,
+    instruction_tuning: InstructionTuningArgs | None = None,
 ):
     # Create fake samples to make FSDP happy for unbalanced data
     num_samples = torch.tensor([len(batches)], device="cuda", dtype=torch.long)
@@ -46,6 +48,7 @@ def evaluate(
 
     eval_loss_w_embed = torch.tensor(0.0).cuda()
     eval_loss_wo_embed = torch.tensor(0.0).cuda()
+    eval_kl_loss = torch.tensor([0.0], device="cuda")
     main_logger_info(f"Start eval for {len(batches)} batches")
     for i, batch in enumerate(batches):
         with torch.no_grad():
@@ -60,7 +63,6 @@ def evaluate(
                     output_w_embed, y, y_mask
                 )
                 if continuation:
-                    # Mettre batch.to_embed.x plutot et voir ppl si texte dans le contexte sur continuation seulement.
 
                     input_ids = []
                     ground_truth = []
@@ -91,6 +93,49 @@ def evaluate(
                     eval_loss_wo_embed += compute_ce_loss_with_mask(
                         output_wo_embed, ground_truth, mask
                     )
+                elif instruction_tuning.do:
+    
+                    if instruction_tuning.kl:
+                        contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
+                        x_rag = []
+                        y_mask_rag = []
+                        seqlens_rag = []
+
+                        ind = 0
+                        assert len(contexts) == len(
+                            batch.sizes
+                        ), "Contexts and batch sizes should be the same"
+
+                        for i, size in enumerate(batch.sizes):
+                            x_rag.extend(contexts[i][0] + batch.x[ind : ind + size].tolist())
+                            seqlens_rag.append(size + len(contexts[i][0]))
+                            y_mask_rag.extend(
+                                [False] * len(contexts[i][0]) + batch.y_mask[ind : ind + size].tolist()
+                            )
+                            ind += size
+
+                        x_rag = torch.from_numpy(np.array(x_rag)).cuda(non_blocking=True)
+                        y_mask_rag = torch.from_numpy(np.array(y_mask_rag)).cuda(non_blocking=True)
+
+                        assert len(x_rag) == len(y_mask_rag), "x_rag and y_mask_rag should be the same length"
+                        rag_output = model.forward(
+                            x=x_rag,
+                            embeddings=embeddings,
+                            seqlens=seqlens_rag,
+                            embed_seqlens=embed_seqlens,
+                            batch_type=batch.data_type,
+                        )
+
+                        kl_dv_loss = compute_kl_loss_with_mask(
+                            rag_logits=rag_output,
+                            pred_logits=output_w_embed,
+                            rag_mask=y_mask_rag,
+                            pred_mask=y_mask,
+                            temp=instruction_tuning.temp,
+                        )
+
+                        eval_kl_loss += kl_dv_loss
+           
 
             assert (
                 batch.is_pad_only or y.abs().sum() != 0
@@ -100,15 +145,24 @@ def evaluate(
     main_logger_info("Eval finished!")
 
     dist.all_reduce(eval_loss_w_embed, op=dist.ReduceOp.SUM)
+    
 
     if continuation:
         dist.all_reduce(eval_loss_wo_embed, op=dist.ReduceOp.SUM)
         eval_loss_wo_embed /= total_num_samples
         state.this_eval_loss_wo_embed = eval_loss_wo_embed.item()
         state.this_eval_perplexity_wo_embed = (2**eval_loss_wo_embed).item()
+        state.this_eval_kl_loss = None
+    elif instruction_tuning.do and instruction_tuning.kl:
+        dist.all_reduce(eval_kl_loss, op=dist.ReduceOp.SUM)
+        eval_kl_loss /= total_num_samples
+        state.this_eval_kl_loss = eval_kl_loss.item()
+        state.this_eval_loss_wo_embed = None
+        state.this_eval_perplexity_wo_embed = None
     else:
         state.this_eval_loss_wo_embed = None
         state.this_eval_perplexity_wo_embed = None
+        state.this_eval_kl_loss = None
 
     eval_loss_w_embed /= total_num_samples
 

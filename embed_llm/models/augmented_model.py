@@ -3,7 +3,7 @@ import torch.nn as nn
 from pathlib import Path
 from typing import Sequence
 import safetensors.torch
-import json
+
 import safetensors
 import logging
 import numpy as np
@@ -14,14 +14,18 @@ from embed_llm.models.embedding_modules import (
     ReversedLatentAttention,
     LatentAttention,
 )
+import yaml
+import os
 from embed_llm.retrieval.embeddings import encode_text, get_pretrained_embedder
 from embed_llm.data.data_loader import Batch
 from embed_llm.models.loading import load_args, load_llm_model, load_state_dict
 from embed_llm.models.args import (
     MistralModelArgs,
     EmbedAugArgs,
-    PoolingArgs
+    LoraArgs
 )
+
+from embed_llm.training.args import InstructionTuningArgs
 
 from embed_llm.models.utils import is_cross_att
 
@@ -163,7 +167,7 @@ class EmbedAugPipeline(nn.Module):
         embed_model_name: str,
         embedding_model: object,
         tokenizer: object = None,
-        instruct_pipeline_args: EmbedAugArgs | None = None,
+        instruct_args: InstructionTuningArgs | None = None,
     ):
         super().__init__()
 
@@ -173,7 +177,7 @@ class EmbedAugPipeline(nn.Module):
         self.pipeline_args = pipeline_args
         self.model = None
         self.generate = None
-        self.instruct_pipeline_args = instruct_pipeline_args
+        self.instruct_args = instruct_args
         
     def get_model(self, llm: object) -> nn.Module:
         return EmbedAugModel(
@@ -463,9 +467,13 @@ class EmbedAugPipeline(nn.Module):
                 embed_model_name, device_map=device
             )
 
+        with open(os.path.join(ckpt_path,'../../args.yaml'), 'r') as f:
+            train_args = yaml.safe_load(f)
+        lora = LoraArgs(train_args['lora'])
+        
         llm_args, pipeline_args = load_args(
             Path(llm_path),
-            lora=None,
+            lora=lora,
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
         )
@@ -473,7 +481,6 @@ class EmbedAugPipeline(nn.Module):
         llm, tokenizer, embed_dim = load_llm_model(
             llm_args=llm_args,
             pipeline_args=pipeline_args,
-            args=None,
             folder=Path(llm_path),
             checkpoint=False,
             param_dtype=param_dtype,
@@ -503,7 +510,6 @@ class EmbedAugPipeline(nn.Module):
             llm_embedder, _, llm_embed_dim = load_llm_model(
                 llm_args=llm_args,
                 pipeline_args=pipeline_args,
-                args=None,
                 folder=Path(llm_path),
                 checkpoint=False,
                 param_dtype=param_dtype,

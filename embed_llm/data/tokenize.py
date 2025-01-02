@@ -43,9 +43,9 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
 
         assert isinstance(data["answer"], str) or isinstance(data["answer"], list)
         if isinstance(data["answer"], list):
-            answer = [random.choice(data["answer"])]
+            answer = random.choice(data["answer"])
         else:
-            answer = [data["answer"]]
+            answer = data["answer"]
 
         
         if "passage" in data.keys():
@@ -72,8 +72,8 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
             
         
 
-        q_tokens = tokenizer.encode(sample, bos=True, eos=False)
-        a_tokens = tokenizer.encode(answer, bos=False, eos=True)
+        q_tokens = tokenizer.encode(question, bos=True, eos=False)
+        a_tokens = tokenizer.encode(answer, bos=False, eos=True) 
 
         masks = [False] * len(q_tokens) + [True] * len(a_tokens)
 
@@ -85,7 +85,7 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
             embed_passage,
         )
 
-        return TokenSample(tokens, masks, passages)
+        return TokenSample(q_tokens + a_tokens, masks, passages)
 
     else:
         sample = data["text"]

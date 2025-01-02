@@ -43,6 +43,8 @@ class InstructionTuningArgs(Serializable):
     kl: bool = False
     alpha: float = 2.0
     temp: float = 1.0
+    tune_llm: bool = False
+    tune_embedder: bool = False
 
 
 @dataclass

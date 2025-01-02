@@ -171,7 +171,7 @@ class LoRALoaderMixin:
                 ):
     
                     # type: ignore[attr-defined]
-                    if name!= 'output' and name.split(".")[1] not in self.layers:
+                    if 'output' not in name and name.split(".")[1] not in self.layers:
                         print("Skipping parameter", name)
 
                     elif (name + ".lora_B.weight") in lora_state_dict:
