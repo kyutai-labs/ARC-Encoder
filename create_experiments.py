@@ -6,14 +6,15 @@ import yaml
 
 def main(args):
 
-    # if args.llm_name == "Mistral7B":
-    #     with open(
-    #         "/home/hippolytepilchen/code/embed_llm/config/default/default_mistral.yaml"
-    #     ) as file:
-    #         config = yaml.safe_load(file)
-    # else:
-    #     raise ValueError(f"{args.llm_name} not supported yet !")
-    config = {}
+    if args.llm_name == "Mistral7B":
+        with open(
+            "/home/hippolytepilchen/code/embed_llm/config/default/default_mistral.yaml"
+        ) as file:
+            config = yaml.safe_load(file)
+    else:
+        raise ValueError(f"{args.llm_name} not supported yet !")
+    
+
     config["continuation"] = args.continuation
     config["prefix_prompt"] = args.prefix_prompt
     config["llm_name"] = args.llm_name
@@ -24,6 +25,7 @@ def main(args):
 
     assert args.embedder_name == "NVEmbed"
     config["pipeline"]["do_pool"] = args.not_pool
+    config["pipeline"]["trainable_llm"] = not args.not_train_llm
 
     if args.no_data:
         if "data" in config.keys():
@@ -34,26 +36,25 @@ def main(args):
         config["pipeline"]["trainable_embedder"] = True
         config["pipeline"]["causal"] = args.causal
         config["pipeline"]["pooling_module"]["type"] = args.pooling
-        config["pipeline"]["pooling_module"]["r"] = args.latent_dim
-        config["pipeline"]["pooling_module"]["n_heads"] = args.n_heads
+
     else:
-        del config["pipeline"]["causal"]
+        # del config["pipeline"]["causal"]
         del config["pipeline"]["pooling_module"]
 
-    if args.cross_att:
-        config["pipeline"]["do_both"] = args.do_both
+    if not args.not_cross_att:
+        config["pipeline"]["do_both"] = not args.not_do_both
         config["pipeline"]["shared_kv"] = args.shared_kv
-        config["pipeline"]["cross_att"] = args.cross_att
+        config["pipeline"]["cross_att"] = not args.not_cross_att
         config["pipeline"]["cross_att_layers"] = args.cross_att_layers
         config["pipeline"]["every_cross_att"] = args.every_cross_att
-        config["pipeline"]["pooled_cross_att"] = args.pooled_cross_att
-        if args.do_both:
+        config["pipeline"]["pooled_cross_att"] = not args.not_pooled_cross_att
+        if not args.not_do_both:
             config["pipeline"]["dist_process"] = args.dist_process
         if args.mlm:
             config["pipeline"]["mlm"] = args.mlm
 
     if args.instruct_tune:
-        config["instruct_tuning"]
+        config["instruct_tuning"] = {}
         config["instruct_tuning"]["do"] = args.instruct_tune
         config["instruct_tuning"]["cross_entropy"] = args.cross_entropy
         config["instruct_tuning"]["kl"] = args.kl
@@ -82,10 +83,10 @@ def main(args):
         + str(args.proj_n_layers)
         + str(args.n_truncated_layers)
         + str(args.causal)
-        + str(args.cross_att)
+        + str(args.not_cross_att)
         + str(args.cross_att_layers)
         + str(args.shared_kv)
-        + str(args.do_both)
+        + str(args.not_do_both)
         + str(args.dist_process)
         + str(args.every_cross_att)
         + str(args.mlm)
@@ -106,9 +107,9 @@ def main(args):
         n_trunc = (
             str(args.n_truncated_layers) + "_TRUNC_" if args.train_embedder else ""
         )
-        if args.cross_att and args.cross_att_layers:
+        if not args.not_cross_att and args.cross_att_layers:
             cross_att = str(args.cross_att_layers) + "_CAL_atend_"
-        elif args.cross_att and args.every_cross_att:
+        elif not args.not_cross_att and args.every_cross_att:
             cross_att = str(args.every_cross_att) + "_CAL_every_"
 
         if args.mlm:
@@ -126,10 +127,10 @@ def main(args):
             + str(args.proj_n_layers)
             + "_MLP_"
             + n_trunc
-            + str(args.cross_att)
+            + str(args.not_cross_att)
             + "_CA_"
             + cross_att
-            + str(args.do_both)
+            + str(args.not_do_both)
             + "_DB"
             + learn_type
         )
@@ -139,7 +140,7 @@ def main(args):
 
     if args.llm_name == "Mistral7B":
         with open(
-            f'/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/{config["exp_name"]}.yaml',
+            f'/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/{config["exp_name"]}.yaml',
             "w",
         ) as file:
             yaml.dump(config, file, sort_keys=False)
@@ -164,7 +165,7 @@ def arg_parser():
     parser.add_argument(
         "--proj_n_layers",
         type=int,
-        default=3,
+        default=1,
         help="Number of layers of the projection MLP",
     )
 
@@ -239,14 +240,14 @@ def arg_parser():
         help="Whether to train on continuation task rather than next token prediction for reconstruction",
     )
     parser.add_argument(
-        "--cross_att",
+        "--not_cross_att",
         action="store_true",
         help="Whether to use cross-attention",
     )
     parser.add_argument(
         "--cross_att_layers",
         type=int,
-        default=None,
+        default=16,
         help="Number of layers to apply cross-attention",
     )
 
@@ -263,7 +264,7 @@ def arg_parser():
     )
 
     parser.add_argument(
-        "--do_both",
+        "--not_do_both",
         action="store_true",
         help="Whether to both cross-attended and concatenated embeddings",
     )
@@ -284,7 +285,7 @@ def arg_parser():
     parser.add_argument("--mlm", action="store_true", help="Whether to use MLM loss")
 
     parser.add_argument(
-        "--pooled_cross_att",
+        "--not_pooled_cross_att",
         action="store_true",
         help="Whether to use pooled cross-attention",
     )
@@ -332,6 +333,11 @@ def arg_parser():
         help="Whether to not use data params inside config file",
     )
 
+    parser.add_argument(
+        "--not_train_llm",
+        action="store_true",
+        help="Whether to train the llm",
+    )
     return parser.parse_args()
 
 

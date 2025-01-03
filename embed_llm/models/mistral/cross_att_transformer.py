@@ -496,7 +496,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             for i, size in enumerate(seqlens):
                 assert size > 0
 
-                if len(tokenized_prompts) > 0:
+                if len(prefixes) > 0:
                     # Insert embedding at the beginning of the sequence
                     size_embed = len(prefixes[i]) + embed_seqlens[i] + len(suffixes[i])
                     tok_before_embed = self.tok_embeddings(

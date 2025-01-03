@@ -55,7 +55,7 @@ def evaluate(
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
 
             output_w_embed = model.forward(
-                x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens
+                x=x, embeddings=embeddings, seqlens=seqlens, embed_seqlens=embed_seqlens, batch_type=batch.data_type
             )
 
             if not batch.is_pad_only:

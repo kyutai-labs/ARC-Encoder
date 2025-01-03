@@ -6,8 +6,7 @@ lora:
   rank: 64
   scaling: 2.0
   enable: true
-
-continuation: true
+continuation: 0.
 pipeline:
   w_embeds: true
   embedder_name: Mistral7B
@@ -16,29 +15,28 @@ pipeline:
   normalize_embeddings: true
   do_pool: true
   cross_att: true
-  cross_att_layers: null
+  cross_att_layers: 16
   mlp_project:
     hidden_dim: 4096
     n_layers: 1
     act: gelu
-    type: latent_attention
+    type: mlp
   do_both: true
   shared_kv: false
   pooling_module:
     type: latent_attention
     r: 512
     n_heads: 8
-  every_cross_att: 2
-  pooled_cross_att: false
-
+  every_cross_att: null
+  pooled_cross_att: true
+  causal: false
+  dist_process: false
 data:
-  # train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/train_atlas_enwiki-dec2021_50_30_20.jsonl
-  # eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_50_30_20.jsonl
   train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/train_atlas_enwiki-dec2021_standard.jsonl
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl
   shuffle: false
   adapt_seq_len: true
-seq_len: 128
+seq_len: 256
 batch_size: 32
 num_microbatches: 1
 max_steps: 20000
@@ -52,10 +50,13 @@ seed: 0
 log_freq: 10
 eval_freq: 100
 no_eval: false
-ckpt_freq: 2
+ckpt_freq: 10
 save_adapters: true
+prefix_prompt: true
 # wandb:
 #   project: embed_llm
 #   run_name: LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
 #   offline: false
+
+

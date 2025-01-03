@@ -117,7 +117,7 @@ def build_data_loader(
     world_size: int,
     is_eval: bool,
     seed: int | None = None,
-    continuation: bool = False,
+    continuation: bool = 0.,
 ) -> Iterator[Batch]:
 
     dataset = build_dataset(
@@ -132,6 +132,7 @@ def build_data_loader(
     )
 
     batch_list = Batchlist()
+    batch_list_other_type = Batchlist()
     for sample in dataset:
         assert all(s >= 0 for s in sample.sizes)
 
@@ -145,17 +146,35 @@ def build_data_loader(
         ):
             continue
 
-        batch_list.add(
-            sample.x,
-            sample.y,
-            sample.to_embed,
-            sample.sizes,
-            sample.mask,
-            sample.data_type,
-        )
+        if (batch_list.data_type is None and 
+            (batch_list_other_type.data_type is None or batch_list_other_type.data_type  != sample.data_type)) \
+                or batch_list.data_type == sample.data_type:
+                    
+            batch_list.add(
+                sample.x,
+                sample.y,
+                sample.to_embed,
+                sample.sizes,
+                sample.mask,
+                sample.data_type,
+            )
+        else:
+            batch_list_other_type.add(
+                sample.x,
+                sample.y,
+                sample.to_embed,
+                sample.sizes,
+                sample.mask,
+                sample.data_type,
+            )
 
         if len(batch_list) == batch_size:
             batch: Batch = batch_list.create_batch()
             yield batch
 
             batch_list.empty()
+        
+        elif len(batch_list_other_type) == batch_size:
+            batch: Batch = batch_list_other_type.create_batch()
+            yield batch
+            batch_list_other_type.empty()

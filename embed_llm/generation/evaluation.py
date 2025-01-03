@@ -65,20 +65,20 @@ def evaluate_model(
     results = {benchmark: {} for benchmark in benchmarks}
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
 
-    if not parll or dist.get_rank() == 0:
 
-        pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
-            llm_path=llm_path,
-            ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-            + run_name
-            + "/checkpoints/checkpoint_"
-            + str(ckpt).zfill(6),
-            device=device,
-            llm_name="Mistral7B",
-            embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
-            max_batch_size=max_bs,
-        )
-        print("Evaluating checkpoint", str(ckpt).zfill(6))
+
+    pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
+        llm_path=llm_path,
+        ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+        + run_name
+        + "/checkpoints/checkpoint_"
+        + str(ckpt).zfill(6),
+        device=device,
+        llm_name="Mistral7B",
+        embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
+        max_batch_size=max_bs,
+    )
+    print("Evaluating checkpoint", str(ckpt).zfill(6))
 
     device_count = torch.cuda.device_count()
     other_device = torch.device("cuda:1") if device_count > 1 else device

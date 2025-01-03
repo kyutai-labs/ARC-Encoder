@@ -46,6 +46,7 @@ from embed_llm.training.utils import (
     logged_closing,
     set_random_seed,
     PARAPHRASE_PROMPT,
+    CONTINUATION_PROMPT,
     INSTRUCT_PROMPT,
     create_data_args,
 )
@@ -140,12 +141,10 @@ def _train(
 
     if is_torchrun():
         if run_dir.exists():
-            # raise RuntimeError(
-            #     f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
-            # )
-            print(
+            raise RuntimeError(
                 f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
             )
+   
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -255,6 +254,7 @@ def _train(
     )
 
     """ Load  Dataloader"""
+    main_logger_info('If multi-passage, pooled cross-attention should be deactivated')
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
         args=args.data,
@@ -282,6 +282,7 @@ def _train(
             continuation=args.continuation,
         )
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
+
         eval_batches = []
         while len(eval_batches) < 40:
             batch = next(eval_data_loader)
@@ -355,7 +356,15 @@ def _train(
             model.tokenized_prompts["instruct"].append(
                 {"prefix": prefix, "suffix": suffix}
             )
-
+        
+        model.tokenize_prompts["continuation"] = []
+        for prompt in CONTINUATION_PROMPT:
+            prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
+            suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
+            model.tokenize_prompts["continuation"].append(
+                {"prefix": prefix, "suffix": suffix}
+            )
+        
     main_logger_info("Start training")
     model.train()
     torch.cuda.empty_cache()
@@ -389,7 +398,6 @@ def _train(
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
-
             output = model.forward(
                 x=x,
                 embeddings=embeddings,
@@ -544,7 +552,7 @@ def _train(
                 prepare_batch_fn=prepare_batch_fn,
                 batches=eval_batches,
                 state=state,
-                continuation=args.continuation,
+                continuation= (args.continuation > 0.),
                 instruction_tuning=args.instruct_tuning,
             )
 

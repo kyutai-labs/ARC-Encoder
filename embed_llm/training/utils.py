@@ -112,6 +112,28 @@ INSTRUCT_PROMPT = [
     {"prefix": "", "suffix": ""},
 ]
 
+CONTINUATION_PROMPT = [
+    {
+        "prefix": "Here's the first part: ",
+        "suffix": " Complete this thought by adding what logically follows: "
+    },
+    {
+        "prefix": "Starting with: ",
+        "suffix": " provide the natural continuation of this statement. "
+    },
+    {
+        "prefix": "Given this beginning: ",
+        "suffix": " what would be the most appropriate way to complete this? "
+    },
+    {
+        "prefix": "The initial portion states: ",
+        "suffix": " extend this statement to its full meaning. "
+    },
+    {
+        "prefix": "Based on this opening: ",
+        "suffix": " finish expressing the complete idea. "
+    }
+]
 
 logger = logging.getLogger("utils")
 

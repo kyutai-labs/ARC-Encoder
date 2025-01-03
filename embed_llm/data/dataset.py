@@ -1,3 +1,4 @@
+
 import dataclasses
 import itertools
 import json
@@ -157,131 +158,212 @@ class SequenceEmbedMaskAndSizes:
         assert len(self.to_embed) == len(self.sizes)
 
 
+def sequence_iterator_reconstruction(
+    x_buffer: list[int],
+    y_buffer: list[int],
+    to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]],
+    mask_buffer: Mask,
+    n_missing: int,
+    sizes: list[int],
+    sample: TokenSample,
+    seq_len: int,
+    tokenizer: Tokenizer,
+    adapt_seq_len: bool = False,
+) -> SequenceEmbedMaskAndSizes:
+    """
+    Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
+    """
+
+    assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
+    if not adapt_seq_len:
+        assert n_missing == seq_len - len(
+            x_buffer
+        ), f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
+
+    tokens, mask = sample.tokens, sample.masks[1:]
+    x, y = tokens[:-1], tokens[1:]
+    embed_tokens = sample.passages.tokens
+    embed_text = sample.passages.text
+    data_type = sample.data_type
+    cur_pos = 0
+
+    while cur_pos < len(x):
+        size = len(x[cur_pos : cur_pos + n_missing])
+
+        curr_mask = mask[cur_pos : cur_pos + n_missing]
+        if not any(curr_mask):
+            cur_pos += size
+            # we have a sequence with a mask filled with False
+            continue
+
+        x_buffer.extend(x[cur_pos : cur_pos + n_missing])
+        y_buffer.extend(y[cur_pos : cur_pos + n_missing])
+
+        # Because regeneration
+        if len(embed_tokens) == 1 and data_type == "reconstruction":
+            to_embed_buffer.append(
+                {
+                    "text": [
+                        tokenizer.decode(
+                            embed_tokens[0][cur_pos : cur_pos + n_missing]
+                        )
+                    ],
+                    "tokens": [embed_tokens[0][cur_pos : cur_pos + n_missing]],
+                }
+            )
+        else:
+            # If we want to reconstruct from several chunks of embedded text, we need to be able to reconstruct the full passage
+            assert adapt_seq_len
+            to_embed_buffer.append({"text": embed_text, "tokens": embed_tokens})
+
+        mask_buffer.extend(curr_mask)
+        n_missing -= size
+
+        sizes.append(size)
+
+        cur_pos += size
+
+        if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
+            assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
+            assert len(x_buffer) <= seq_len
+
+            if not adapt_seq_len:
+                assert sum(sizes) == seq_len
+                assert seq_len == len(x_buffer)
+
+            assert len(to_embed_buffer) == len(sizes)
+            # we don't want to yield sequences with a mask filled with False
+            if any(mask_buffer):
+                return SequenceEmbedMaskAndSizes(
+                    x=x_buffer,
+                    y=y_buffer,
+                    to_embed=to_embed_buffer,
+                    mask=mask_buffer,
+                    sizes=sizes,
+                    data_type=data_type,
+                )
+            x_buffer, y_buffer = [], []
+            mask_buffer = []
+            to_embed_buffer = []
+            sizes = []
+            n_missing = seq_len
+
+            if adapt_seq_len:
+                break
+
+
+def sequence_iterator_continuation(
+    x_buffer: list[int],
+    y_buffer: list[int],
+    to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]],
+    n_missing: int,
+    mask_buffer: Mask,
+    sizes: list[int],
+    sample: TokenSample,
+    seq_len: int,
+    tokenizer: Tokenizer,
+    adapt_seq_len: bool = False,
+    data_type: str = "continuation",
+) -> SequenceEmbedMaskAndSizes:
+
+    assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
+    tokens, mask = sample.tokens, sample.masks[1:]
+    x, y = tokens[:-1], tokens[1:]
+    embed_tokens = sample.passages.tokens
+
+    assert (
+        len(embed_tokens) == 1
+    ), "Continuation training only supports one passage per sample"
+
+    cur_pos = 0
+
+    while cur_pos < len(x):
+
+        overall_size = len(x[cur_pos : cur_pos + n_missing])
+
+        curr_mask = mask[cur_pos : cur_pos + n_missing]
+        if not any(curr_mask):
+            cur_pos += overall_size
+            # we have a sequence with a mask filled with False
+            continue
+
+        if overall_size < 4:
+            assert len(mask_buffer) == len(x_buffer) == sum(sizes) == len(y_buffer)
+            assert len(to_embed_buffer) == len(sizes), (
+                len(to_embed_buffer),
+                len(sizes),
+            )
+
+            # we don't want to yield sequences with a mask filled with False
+            if any(mask_buffer):
+                return SequenceEmbedMaskAndSizes(
+                    x=x_buffer,
+                    y=y_buffer,
+                    to_embed=to_embed_buffer,
+                    mask=mask_buffer,
+                    sizes=sizes,
+                    data_type=data_type,
+                )
+
+        upper_bound = min(cur_pos + n_missing, len(x))
+        x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+        y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+
+        to_embed_buffer.append(
+            {
+                "text": [
+                    tokenizer.decode(
+                        embed_tokens[0][
+                            cur_pos : cur_pos + (upper_bound - cur_pos) // 2
+                        ]
+                    )
+                ],
+                "tokens": [
+                    embed_tokens[0][
+                        cur_pos : cur_pos + (upper_bound - cur_pos) // 2
+                    ]
+                ],
+            }
+        )
+
+        mask_buffer.extend(
+            mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]
+        )
+        n_missing -= overall_size
+
+        sizes.append(len(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]))
+
+        cur_pos += overall_size
+
+        if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
+            assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
+            assert len(x_buffer) <= seq_len
+            assert len(to_embed_buffer) == len(sizes)
+
+            # we don't want to yield sequences with a mask filled with False
+            if any(mask_buffer):
+                return SequenceEmbedMaskAndSizes(
+                    x=x_buffer,
+                    y=y_buffer,
+                    to_embed=to_embed_buffer,
+                    mask=mask_buffer,
+                    sizes=sizes,
+                    data_type=data_type,
+                )
+   
+
+            if adapt_seq_len:
+                break
+
+
+
 def sequence_iterator(
     ds_it: Iterator[TokenSample],
     seq_len: int,
     tokenizer: Tokenizer,
     is_finite: bool,
     adapt_seq_len: bool = False,
-    data_type: str = "reconstruction",
-) -> Iterator[SequenceEmbedMaskAndSizes]:
-    """
-    Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
-    """
-    x_buffer: list[int] = []
-    y_buffer: list[int] = []
-    to_embed_buffer: list[dict[str, list[list[int]] | list[str]]] = []
-    mask_buffer: Mask = []
-
-    sizes: list[int] = []
-    n_missing = seq_len
-    for i, sample in enumerate(ds_it):
-        assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
-        if not adapt_seq_len:
-            assert n_missing == seq_len - len(
-                x_buffer
-            ), f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
-
-        tokens, mask = sample.tokens, sample.masks[1:]
-        x, y = tokens[:-1], tokens[1:]
-        embed_tokens = sample.passages.tokens
-        embed_text = sample.passages.text
-
-        if i == 0 and len(embed_tokens) > 1:
-            adapt_seq_len = True
-
-        cur_pos = 0
-
-        while cur_pos < len(x):
-            size = len(x[cur_pos : cur_pos + n_missing])
-
-            curr_mask = mask[cur_pos : cur_pos + n_missing]
-            if not any(curr_mask):
-                cur_pos += size
-                # we have a sequence with a mask filled with False
-                continue
-
-            x_buffer.extend(x[cur_pos : cur_pos + n_missing])
-            y_buffer.extend(y[cur_pos : cur_pos + n_missing])
-
-            # Because regeneration
-            if len(embed_tokens) == 1 and data_type == "reconstruction":
-                to_embed_buffer.append(
-                    {
-                        "text": [
-                            tokenizer.decode(
-                                embed_tokens[0][cur_pos : cur_pos + n_missing]
-                            )
-                        ],
-                        "tokens": [embed_tokens[0][cur_pos : cur_pos + n_missing]],
-                    }
-                )
-            else:
-                # If we want to reconstruct from several chunks of embedded text, we need to be able to reconstruct the full passage
-                assert adapt_seq_len
-                to_embed_buffer.append({"text": embed_text, "tokens": embed_tokens})
-
-            mask_buffer.extend(curr_mask)
-            n_missing -= size
-
-            sizes.append(size)
-
-            cur_pos += size
-
-            if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
-                assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
-                assert len(x_buffer) <= seq_len
-
-                if not adapt_seq_len:
-                    assert sum(sizes) == seq_len
-                    assert seq_len == len(x_buffer)
-
-                assert len(to_embed_buffer) == len(sizes)
-                # we don't want to yield sequences with a mask filled with False
-                if any(mask_buffer):
-                    yield SequenceEmbedMaskAndSizes(
-                        x=x_buffer,
-                        y=y_buffer,
-                        to_embed=to_embed_buffer,
-                        mask=mask_buffer,
-                        sizes=sizes,
-                        data_type=data_type,
-                    )
-                x_buffer, y_buffer = [], []
-                mask_buffer = []
-                to_embed_buffer = []
-                sizes = []
-                n_missing = seq_len
-
-                if adapt_seq_len:
-                    break
-
-    if is_finite:
-        # if dataloader is in eval, pad to seq length
-        if any(mask_buffer):
-            mask_buffer.extend(n_missing * [False])
-            x_buffer.extend(n_missing * [0])
-            y_buffer.extend(n_missing * [0])
-            sizes.append(n_missing)
-            to_embed_buffer.append({"text": "", "tokens": []})
-
-            yield SequenceEmbedMaskAndSizes(
-                x=x_buffer,
-                y=y_buffer,
-                to_embed=to_embed_buffer,
-                mask=mask_buffer,
-                sizes=sizes,
-                data_type=data_type,
-            )
-
-
-def sequence_iterator_continuation(
-    ds_it: Iterator[TokenSample],
-    seq_len: int,
-    tokenizer: Tokenizer,
-    is_finite: bool,
-    adapt_seq_len: bool = False,
-    data_type: str = "continuation",
+    continuation: float = 0.,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -293,105 +375,48 @@ def sequence_iterator_continuation(
     sizes: list[int] = []
     n_missing = seq_len
 
+        
     for sample in ds_it:
-        assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
-        tokens, mask = sample.tokens, sample.masks[1:]
-        x, y = tokens[:-1], tokens[1:]
-        embed_tokens = sample.passages.tokens
-        embed_text = sample.passages.text
-
-        assert (
-            len(embed_tokens) == 1
-        ), "Continuation training only supports one passage per sample"
-
-        cur_pos = 0
-
-        while cur_pos < len(x):
-
-            overall_size = len(x[cur_pos : cur_pos + n_missing])
-
-            curr_mask = mask[cur_pos : cur_pos + n_missing]
-            if not any(curr_mask):
-                cur_pos += overall_size
-                # we have a sequence with a mask filled with False
-                continue
-
-            if overall_size < 4:
-                assert len(mask_buffer) == len(x_buffer) == sum(sizes) == len(y_buffer)
-                assert len(to_embed_buffer) == len(sizes), (
-                    len(to_embed_buffer),
-                    len(sizes),
+    
+        if np.random.rand() < continuation or (is_finite and continuation > 0):
+            yield sequence_iterator_continuation(
+                sample = sample,
+                x_buffer=x_buffer,
+                y_buffer=y_buffer,
+                mask_buffer=mask_buffer,
+                to_embed_buffer=to_embed_buffer,
+                sizes=sizes,
+                seq_len=seq_len,
+                tokenizer=tokenizer,
+                adapt_seq_len=adapt_seq_len,
+                n_missing=n_missing,
+                data_type='continuation',
                 )
-
-                # we don't want to yield sequences with a mask filled with False
-                if any(mask_buffer):
-                    yield SequenceEmbedMaskAndSizes(
-                        x=x_buffer,
-                        y=y_buffer,
-                        to_embed=to_embed_buffer,
-                        mask=mask_buffer,
-                        sizes=sizes,
-                        data_type=data_type,
-                    )
-                x_buffer, y_buffer = [], []
-                mask_buffer = []
-                to_embed_buffer = []
-                sizes = []
-                n_missing = seq_len
-
-            upper_bound = min(cur_pos + n_missing, len(x))
-            x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
-            y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
-
-            to_embed_buffer.append(
-                {
-                    "text": [
-                        tokenizer.decode(
-                            embed_tokens[0][
-                                cur_pos : cur_pos + (upper_bound - cur_pos) // 2
-                            ]
-                        )
-                    ],
-                    "tokens": [
-                        embed_tokens[0][
-                            cur_pos : cur_pos + (upper_bound - cur_pos) // 2
-                        ]
-                    ],
-                }
+            x_buffer, y_buffer = [], []
+            mask_buffer = []
+            to_embed_buffer = []
+            sizes = []
+            n_missing = seq_len
+        else:
+            yield sequence_iterator_reconstruction(
+                sample = sample,
+                x_buffer=x_buffer,
+                y_buffer=y_buffer,
+                mask_buffer=mask_buffer,
+                to_embed_buffer=to_embed_buffer,
+                sizes=sizes,
+                seq_len=seq_len,
+                tokenizer=tokenizer,
+                adapt_seq_len=adapt_seq_len,
+                n_missing=n_missing,
             )
+            x_buffer, y_buffer = [], []
+            mask_buffer = []
+            to_embed_buffer = []
+            sizes = []
+            n_missing = seq_len
+        
 
-            mask_buffer.extend(
-                mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]
-            )
-            n_missing -= overall_size
-
-            sizes.append(len(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]))
-
-            cur_pos += overall_size
-
-            if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
-                assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
-                assert len(x_buffer) <= seq_len
-                assert len(to_embed_buffer) == len(sizes)
-
-                # we don't want to yield sequences with a mask filled with False
-                if any(mask_buffer):
-                    yield SequenceEmbedMaskAndSizes(
-                        x=x_buffer,
-                        y=y_buffer,
-                        to_embed=to_embed_buffer,
-                        mask=mask_buffer,
-                        sizes=sizes,
-                        data_type=data_type,
-                    )
-                x_buffer, y_buffer = [], []
-                mask_buffer = []
-                to_embed_buffer = []
-                sizes = []
-                n_missing = seq_len
-
-                if adapt_seq_len:
-                    break
 
     if is_finite:
         # if dataloader is in eval, pad to seq length
@@ -408,8 +433,9 @@ def sequence_iterator_continuation(
                 to_embed=to_embed_buffer,
                 mask=mask_buffer,
                 sizes=sizes,
-                data_type=data_type,
+                data_type= 'continuation' if int(continuation) == 1 or isinstance(continuation, float) else 'reconstruction',
             )
+
 
 
 def build_dataset(
@@ -421,7 +447,7 @@ def build_dataset(
     is_eval: bool,
     seed: int | None = None,
     shuffle: bool = False,
-    continuation: bool = False,
+    continuation: bool | float = False,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
 
     data = args.train_data if not is_eval else args.eval_data
@@ -441,63 +467,27 @@ def build_dataset(
         for source in sources
     ]
 
-    if not is_eval:
-        if not continuation:
-            sequence_iterators = [
-                sequence_iterator(
-                    ds_it=it,
-                    seq_len=seq_len,
-                    is_finite=is_eval,
-                    tokenizer=tokenizer,
-                    adapt_seq_len=args.adapt_seq_len,
-                    data_type=data_type,
-                )
-                for it, data_type in zip(dataset_iterators, args.data_types)
-            ]
-        else:
-            sequence_iterators = [
-                sequence_iterator_continuation(
-                    ds_it=it,
-                    seq_len=seq_len,
-                    is_finite=is_eval,
-                    tokenizer=tokenizer,
-                    adapt_seq_len=args.adapt_seq_len,
-                )
-                for it in dataset_iterators
-            ]
+    # Possible to iterate on zip(...,args.data_types) to force data types from config
+    sequence_iterators = [
+        sequence_iterator(
+            ds_it=it,
+            seq_len=seq_len,
+            is_finite=is_eval,
+            tokenizer=tokenizer,
+            adapt_seq_len=args.adapt_seq_len,
+            continuation=continuation,
+        )
+        for it in dataset_iterators
+    ]
 
-        # make sure random_seed is different per rank and original seed
+    # make sure random_seed is different per rank and original seed
+    if not is_eval:
         random_seed = np.array((seed, rank))
         rng = np.random.RandomState(seed=random_seed)
         combined_iterator = interleave_iterators(
             sequence_iterators, probabilities=probabilities, rng=rng
         )
-
-    else:
-        if not continuation:
-            sequence_iterators = [
-                sequence_iterator(
-                    ds_it=it,
-                    seq_len=seq_len,
-                    is_finite=is_eval,
-                    tokenizer=tokenizer,
-                    adapt_seq_len=args.adapt_seq_len,
-                )
-                for it in dataset_iterators
-            ]
-
-        else:
-            sequence_iterators = [
-                sequence_iterator_continuation(
-                    ds_it=it,
-                    seq_len=seq_len,
-                    is_finite=is_eval,
-                    tokenizer=tokenizer,
-                    adapt_seq_len=args.adapt_seq_len,
-                )
-                for it in dataset_iterators
-            ]
-
+    else: 
         combined_iterator = itertools.chain.from_iterable(sequence_iterators)
 
     return combined_iterator

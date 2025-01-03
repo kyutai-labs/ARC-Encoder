@@ -1,10 +1,10 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0
+#SBATCH --array=0-6
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s01dgx08
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx22,par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s03dgx21
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
@@ -17,24 +17,13 @@ export MASTER_PORT=$((29500 + 10 + $SLURM_ARRAY_TASK_ID)) # Take care if already
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/128_SL_FN_Truemean_0_MLP_8_TRUNC_True_CA_16_CAL_False_SKV_False_DB_old_gate_more_params.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DBMLM.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_atend_True_DB.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_3_MLP_True_CA_16_CAL_atend_True_DB.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/LT_FN_False_1_MLP_True_CA_2_CAL_every_True_DB_lr1e-4.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT.yaml # A REFAIRE CAR NAN
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truelatent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_0_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DBCONT.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_3_MLP_True_CA_2_CAL_every_True_DB.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truereversed_latent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_1_MLP_RLatt_True_CA_2_CAL_every_True_DB.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_False_0_MLP_True_CA_2_CAL_every_True_DB.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBMLM.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/mistral/LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_no_trained_rec_multipassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_02_singpassage_0f6f2a1a.yaml    
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_llm_trained_02_singpassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_05_singpassage_0f6f2a1a.yaml    
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_llm_trained_05_singpassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_07_singpassage_0f6f2a1a.yaml    
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_llm_trained_07_singpassage_054f63f8.yaml 
 )
 
 

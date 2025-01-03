@@ -61,7 +61,7 @@ def load_training_model(
 
     # Load pretrained params on rank 0 for LLM
     if not pipeline_args.trainable_llm:
-        llm_args.lora.enable = False
+        llm_args.lora = None
 
     if not pipeline_args.cross_att:
         pipeline_args.cross_att_layers = -1
@@ -241,7 +241,7 @@ def load_training_model(
 
     log_train_params(augmented_model)
 
-    auto_wrap_policy = get_fsdp_policy(llm_args.lora.enable)
+    auto_wrap_policy = get_fsdp_policy(is_lora=True)
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
@@ -308,6 +308,7 @@ def load_training_model_from_ckpt(
         ), "If no trainable embedder, embedder model can't be instruct tuned"
     if not old_pipeline_args.trainable_llm:
         assert not tune_llm, "If no trainable llm, llm model can't be instruct tuned"
+        llm_args.lora = None
 
     model, tokenizer, embed_dim = load_llm_model(
         llm_args=llm_args,
@@ -448,6 +449,7 @@ def load_training_model_from_ckpt(
                 for p_name, param in module.named_parameters():
                     param.requires_grad = True
 
+  
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)

@@ -25,6 +25,7 @@ class TokenSample:
     tokens: Sequence
     masks: Mask
     passages: EmbedPassage
+    data_type: str | None = None
 
 
 def encode(
@@ -84,7 +85,7 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
             embed_passage,
         )
 
-        return TokenSample(q_tokens + a_tokens, masks, passages)
+        return TokenSample(q_tokens + a_tokens, masks, passages, data_type = 'instruct')
 
     else:
         sample = data["text"]
@@ -109,4 +110,4 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
             embed_passage,
         )
 
-        return TokenSample(tokens, masks, passages)
+        return TokenSample(tokens, masks, passages, data_type = 'reconstruction')
