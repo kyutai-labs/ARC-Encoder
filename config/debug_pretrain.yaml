@@ -33,17 +33,17 @@ pipeline:
   dist_process: false
 data:
   train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/train_atlas_enwiki-dec2021_standard.jsonl
-  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_p ssages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl
   shuffle: false
   adapt_seq_len: true
 seq_len: 256
 batch_size: 32
 num_microbatches: 1
-max_steps: 20000
+max_steps: 3
 optim:
   max_lr: 5.0e-05
   weight_decay: 0.1
-  warm_up_steps: 500
+  warm_up_steps: 1
   initial_lr: 1.0e-20
   final_lr: 1.0e-10
 seed: 0

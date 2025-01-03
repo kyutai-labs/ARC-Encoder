@@ -598,44 +598,6 @@ def _train(
                 dtype=param_dtype,
             )
 
-            # for name, param in model.named_parameters():
-            #     if 'lora' not in name:
-            #         assert not param.requires_grad, f"Param {name} should not be trainable"
-
-            # lora_path = (
-            #     args.start_from_ckpt_path + "/" + args.llm_name.lower() + "/consolidated/lora.safetensors"
-            # )
-            # import safetensors.torch
-            # lora_state_dict = safetensors.torch.load_file(lora_path)
-
-            # with torch.no_grad():
-            #     pipeline.embedding_model = None
-            #     torch.cuda.empty_cache()
-            #     (
-            #         llm_states,
-            #         mlp_project_states,
-            #         trainable_embedder_states,
-            #         pooling_module_states,
-            #     ) = checkpointer.retrieve_save_states(save_dtype = param_dtype)
-            #     assert len(list(mlp_project_states.keys())) == 0
-            #     assert len(list(trainable_embedder_states.keys())) == 0
-            #     assert len(list(pooling_module_states.keys())) == 0
-            #     state_dict = model.llm.state_dict()
-            #     all_equals = True
-            #     for k, v in state_dict.items():
-            #         if 'lora' in k:
-            #             are_close = torch.allclose(v.cpu(), llm_states[k].cpu())
-            #             print(k,are_close)
-            #             if not are_close:
-            #                 all_equals = False
-            #                 print('Not equal', k)
-            #     print('ALL EQUAL ???', all_equals)
-
-            # for k, v in lora_state_dict.items():
-            #     are_close = torch.allclose(v.cpu(), llm_states[k].cpu())
-            #     if not are_close:
-            #         print('Not equal lora', k)
-            # print('ALL EQUAL with loaded lora???', all_equals)
 
     main_logger_info("done!")
 
