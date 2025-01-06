@@ -58,7 +58,8 @@ def evaluate_model(
     lim_toks: int = 128,
     temps: list[float] = [0, 0.5, 0.7, 1],
     max_bs: int = 4,
-    output_path: str = "/lustre/scwpod02/client/kyutai-interns/hippop/experiments/results_eval",
+    output_file: str = None,
+    n_samples: int | None = 1000,
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
@@ -67,22 +68,44 @@ def evaluate_model(
 
 
 
+    # Get last checkpoint
+    last_ckpt = sorted(
+        [
+            ckpt_name
+            for ckpt_name in os.listdir(
+                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                + run_name
+                + "/checkpoints/"
+            )
+            if (
+                Path(
+                    "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                    + run_name
+                    + "/checkpoints/"
+                )
+                / ckpt_name
+                / "params.json"
+            ).exists()
+        ]
+    )[-1]
+
     pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
         llm_path=llm_path,
         ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
         + run_name
-        + "/checkpoints/checkpoint_"
-        + str(ckpt).zfill(6),
+        + "/checkpoints/"
+        + last_ckpt,
         device=device,
         llm_name="Mistral7B",
         embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
         max_batch_size=max_bs,
     )
-    print("Evaluating checkpoint", str(ckpt).zfill(6))
+    ckpt = int(last_ckpt.split("_")[-1])
+    print("Evaluating checkpoint", ckpt)
 
     device_count = torch.cuda.device_count()
     other_device = torch.device("cuda:1") if device_count > 1 else device
-
+    metrics = []
     for benchmark in tqdm(
         benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
     ):
@@ -106,7 +129,8 @@ def evaluate_model(
         print("Evaluation dataset loaded for", benchmark)
         for temp in temps:
             generated_sequences = []
-            for i in trange(0, len(questions), max_bs):
+            n_samples = len(questions) if n_samples is None else n_samples
+            for i in trange(0, n_samples, max_bs):
                 generated_sequence, logprobs = pipeline.generate(
                     prompts=questions[i : i + max_bs],
                     text_conditioning=context[i : i + max_bs],
@@ -119,7 +143,7 @@ def evaluate_model(
 
                 generated_sequences.extend(generated_sequence)
 
-            results[benchmark][str(temp)] = sum(
+            value = sum(
                 [
                     metric_max_over_ground_truths(
                         METRIC_EVALUATION[benchmark], pred, gts
@@ -127,16 +151,47 @@ def evaluate_model(
                     for pred, gts in zip(generated_sequences, answers)
                 ]
             ) / len(questions)
+            
+            metrics.append(
+                    {
+                        "CKPT": ckpt,
+                        "temp": temp,
+                        "split": "valid",
+                        "n_samples": n_samples,
+                        benchmark: value,
+                    }
+                )
 
-    with open(os.path.join(output_path, run_name + "_results_eval.json"), "w") as f:
+
+    with open(
+        "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+        + run_name
+        + "/results_generation.json",
+        "a",
+    ) as f:
         json.dump(results, f)
-    print(
-        "Results saved at", os.path.join(output_path, run_name + "_results_eval.json")
-    )
+
+    with open(
+        output_file,
+        "r",
+    ) as f:
+        overall_results = json.load(f)
+    
+    if run_name not in overall_results:
+        overall_results[run_name] = metrics
+    else:
+        overall_results[run_name].append(metrics)
+    with open(
+        output_file,
+        "w",
+    ) as f:
+        json.dump(overall_results, f)
+        
+   
 
 
 def evaluate_reconstruction_model(
-    run_name: str, ckpt: int | None = None, pipeline: EmbedAugPipeline | None = None
+    run_name: str, ckpt: int | None = None, pipeline: EmbedAugPipeline | None = None, output_file: str = None
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
     max_batch_size = 4
@@ -206,20 +261,22 @@ def evaluate_reconstruction_model(
     n_passages = 100
 
     lim_toks = 128
-    eval_data = "/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl"
+    eval_data = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl"
     valid_passage = []
 
     with open(eval_data, "r") as f:
         for i, line in enumerate(f):
             if i == n_passages:
                 break
-            valid_passage.append(
-                pipeline.tokenizer.decode(
-                    pipeline.tokenizer.encode(
-                        json.loads(line)["text"].split("\n\n")[1], eos=True, bos=True
-                    )[:lim_toks]
-                )
-            )
+            # If not preprocessed dump
+            # valid_passage.append(
+            #     pipeline.tokenizer.decode(
+            #         pipeline.tokenizer.encode(
+            #             json.loads(line)["text"].split("\n\n")[1], eos=True, bos=True
+            #         )[:lim_toks]
+            #     )
+            # )
+            valid_passage.append(json.loads(line)["text"])
 
     temperatures = [0, 0.5, 0.7, 1]
     max_tokens = 128
@@ -312,18 +369,23 @@ def evaluate_reconstruction_model(
         "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
         + run_name
         + "/results_generation.json",
-        "w",
+        "a",
     ) as f:
         json.dump(metrics, f)
 
     with open(
-        "/home/hippolytepilchen/code/embed_llm/config/experiments/overall_results_new.json",
+        output_file,
         "r",
     ) as f:
         overall_results = json.load(f)
-    overall_results[run_name] = metrics
+        
+    if run_name not in overall_results:
+        overall_results[run_name] = metrics
+    else:
+        overall_results[run_name].extend(metrics)
+        
     with open(
-        "/home/hippolytepilchen/code/embed_llm/config/experiments/overall_results_new.json",
+        output_file,
         "w",
     ) as f:
         json.dump(overall_results, f)
@@ -332,31 +394,25 @@ def evaluate_reconstruction_model(
 if __name__ == "__main__":
 
     ensure_reproducibility(29)
-    # evaluate_model("LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB", ckpt=20000, benchmarks = ['NQ'])
-
+    output_file = "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretraining.jsonl"
     run_names = [
-        file_name
-        for file_name in os.listdir(
-            "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+        "pretrain_both_trained_cont_singpassage_17c38ada","pretrain_llm_trained_cont_singpassage_5daaa6bc", \
+        "pretrain_llm_trained_rec_singpassage_054f63f8","pretrain_no_trained_cont_singpassage_5daaa6bc","pretrain_no_trained_rec_singpassage_054f63f8", \
+            "pretrain_no_trained_rec_multipassage_054f63f8"
+    ]
+
+    for i, run_name in enumerate(sorted(run_names)):
+
+        evaluate_reconstruction_model(run_name, output_file=output_file)    
+        evaluate_model(
+            run_name,
+            ["NQ", "TRIVIAQA"],
+            lim_toks=256,
+            temps=[0, 0.5, 0.7],
+            max_bs=4,
+            output_file=output_file,
+            n_samples = 100
         )
-        if "LT_FN" in file_name
-    ]
-
-    to_skip = True
-    print("Number of runs:", len(run_names))
-    run_names = [
-        "LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB",
-    ]
-
-    for run_name in sorted(run_names):
-        # if run_name != 'LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT' and to_skip:
-        #     continue
-        # elif run_name == 'LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DBCONT':
-        #     to_skip = False
-        #     continue
-        # else:
-        #     to_skip = False
-        evaluate_reconstruction_model(run_name)
         # print("Memory:", torch.cuda.memory_allocated() / 1024**3)
         # print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)
         print("Max Memory Allocated:", torch.cuda.max_memory_allocated() / 1024**3)

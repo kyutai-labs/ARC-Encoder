@@ -3,6 +3,7 @@ import dataclasses
 import itertools
 import json
 import logging
+import torch
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -306,7 +307,11 @@ def sequence_iterator_continuation(
                 )
 
         upper_bound = min(cur_pos + n_missing, len(x))
+        
+ 
         x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+        
+            
         y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
 
         to_embed_buffer.append(
@@ -326,12 +331,15 @@ def sequence_iterator_continuation(
             }
         )
 
+  
         mask_buffer.extend(
             mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]
         )
         n_missing -= overall_size
 
-        sizes.append(len(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]))
+        size = len(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+                       
+        sizes.append(size)
 
         cur_pos += overall_size
 
@@ -375,10 +383,20 @@ def sequence_iterator(
     sizes: list[int] = []
     n_missing = seq_len
 
-        
-    for sample in ds_it:
     
-        if np.random.rand() < continuation or (is_finite and continuation > 0):
+    
+    for sample in ds_it:
+        # Ensure that all batches have the same type to avoid gradient gathering errors
+        rand_continue = np.random.rand()
+        if (is_finite and continuation > 0) or continuation  >= 1.0:
+            do_continuation = True
+        elif continuation == 0.:
+            do_continuation = False
+        else:
+            do_continuation = rand_continue < continuation
+
+    
+        if do_continuation:
             yield sequence_iterator_continuation(
                 sample = sample,
                 x_buffer=x_buffer,
@@ -392,6 +410,7 @@ def sequence_iterator(
                 n_missing=n_missing,
                 data_type='continuation',
                 )
+            
             x_buffer, y_buffer = [], []
             mask_buffer = []
             to_embed_buffer = []
@@ -447,7 +466,7 @@ def build_dataset(
     is_eval: bool,
     seed: int | None = None,
     shuffle: bool = False,
-    continuation: bool | float = False,
+    continuation: float = 0.,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
 
     data = args.train_data if not is_eval else args.eval_data

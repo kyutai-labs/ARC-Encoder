@@ -52,6 +52,13 @@ def load_training_model(
         assert train_args.pipeline.cross_att, "If dist_process, must do cross-attention"
         assert train_args.pipeline.do_both, "If dist_process, must do both"
 
+    if train_args.pipeline.trainable_embedder:
+        assert not train_args.pipeline.train_only_pooling, "Can't have both trainable embedder and train only pooling"
+        
+    if train_args.pipeline.train_only_pooling:
+        assert not train_args.pipeline.trainable_embedder, "Can't have both trainable embedder and train only pooling"
+        
+        
     llm_args, pipeline_args = load_args(
         folder,
         lora,
@@ -82,9 +89,11 @@ def load_training_model(
         ), "Only no MLP if no embeddings."
 
     # Load model and params for embedder
-    if pipeline_args.trainable_embedder:
+    if pipeline_args.trainable_embedder or pipeline_args.train_only_pooling:
         main_logger_info("Loading embedder model ...")
         llm_args.lora.enable = True
+        if pipeline_args.train_only_pooling:
+            llm_args.lora = None
         # Load pretrained params on rank 0
         llm_embedder, _, llm_embed_dim = load_llm_model(
             llm_args=llm_args,
@@ -130,7 +139,7 @@ def load_training_model(
             # initialize LoRA layers
             initialize_lora_parameters(augmented_model.llm, param_dtype)
 
-        if pipeline_args.trainable_embedder:
+        if pipeline_args.trainable_embedder and not pipeline_args.train_only_pooling:
             main_logger_info("Initializing lora layers  for Embedder ...")
             initialize_lora_parameters(augmented_model.trainable_embedder, param_dtype)
 
@@ -242,6 +251,7 @@ def load_training_model(
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
+    
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
@@ -257,6 +267,7 @@ def load_training_model(
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
         ignored_states=ignored_state,
     )
+    
 
     main_logger_info("Model sharded!")
 

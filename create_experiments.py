@@ -19,6 +19,8 @@ def main(args):
     config["prefix_prompt"] = args.prefix_prompt
     config["llm_name"] = args.llm_name
 
+    config["pipeline"]["trainable_llm"] = not args.not_train_llm
+    config["pipeline"]["train_only_pooling"] = args.train_only_pooling
     config["pipeline"]["w_embeds"] = not args.wo_embeds
     config["pipeline"]["mlp_project"]["n_layers"] = args.proj_n_layers
     config["pipeline"]["n_truncated_layers"] = args.n_truncated_layers
@@ -337,6 +339,11 @@ def arg_parser():
         "--not_train_llm",
         action="store_true",
         help="Whether to train the llm",
+    )
+    parser.add_argument(
+        "--train_only_pooling",
+        action="store_true",
+        help="Whether to use a LLM embedder but with trainable pooling",
     )
     return parser.parse_args()
 

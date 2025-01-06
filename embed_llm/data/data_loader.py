@@ -117,7 +117,7 @@ def build_data_loader(
     world_size: int,
     is_eval: bool,
     seed: int | None = None,
-    continuation: bool = 0.,
+    continuation: float = 0.,
 ) -> Iterator[Batch]:
 
     dataset = build_dataset(
@@ -131,8 +131,7 @@ def build_data_loader(
         continuation=continuation,
     )
 
-    batch_list = Batchlist()
-    batch_list_other_type = Batchlist()
+    batch_list_dict = {} 
     for sample in dataset:
         assert all(s >= 0 for s in sample.sizes)
 
@@ -146,35 +145,23 @@ def build_data_loader(
         ):
             continue
 
-        if (batch_list.data_type is None and 
-            (batch_list_other_type.data_type is None or batch_list_other_type.data_type  != sample.data_type)) \
-                or batch_list.data_type == sample.data_type:
-                    
-            batch_list.add(
-                sample.x,
-                sample.y,
-                sample.to_embed,
-                sample.sizes,
-                sample.mask,
-                sample.data_type,
-            )
-        else:
-            batch_list_other_type.add(
-                sample.x,
-                sample.y,
-                sample.to_embed,
-                sample.sizes,
-                sample.mask,
-                sample.data_type,
-            )
+        if sample.data_type not in batch_list_dict:
+            batch_list_dict[sample.data_type] = Batchlist()
+            
+        batch_list = batch_list_dict[sample.data_type]
+        batch_list.add(
+            sample.x,
+            sample.y,
+            sample.to_embed,
+            sample.sizes,
+            sample.mask,
+            sample.data_type,
+        )
 
         if len(batch_list) == batch_size:
             batch: Batch = batch_list.create_batch()
             yield batch
 
             batch_list.empty()
+            batch_list_dict[sample.data_type] = batch_list
         
-        elif len(batch_list_other_type) == batch_size:
-            batch: Batch = batch_list_other_type.create_batch()
-            yield batch
-            batch_list_other_type.empty()

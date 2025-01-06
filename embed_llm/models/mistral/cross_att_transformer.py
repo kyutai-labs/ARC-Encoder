@@ -48,6 +48,7 @@ class SimpleInputMetadata:
         )
 
 
+# Double MLP like
 # class Pooled_Cross_Attention(nn.Module):
 #     def __init__(
 #         self,
@@ -57,8 +58,9 @@ class SimpleInputMetadata:
 #         n_kv_heads: int,
 #     ):
 #         super().__init__()
-#         self.up = nn.Linear(dim, dim, bias=False)
-#         self.down = nn.Linear(dim, dim, bias=False)
+#         bottleneck = n_heads // n_kv_heads
+#         self.up = nn.Linear(dim, dim//bottleneck, bias=False)
+#         self.down = nn.Linear(dim//bottleneck, dim, bias=False)
 
 #     def forward(
 #         self,
@@ -74,7 +76,6 @@ class SimpleInputMetadata:
 #         return output
 
 
-# # Same number of params, closest to the original in terms of perf
 class Pooled_Cross_Attention(nn.Module):
     def __init__(
         self,
@@ -84,8 +85,12 @@ class Pooled_Cross_Attention(nn.Module):
         n_kv_heads: int,
     ):
         super().__init__()
-        self.up = nn.Linear(dim, 1024, bias=False)
-        self.down = nn.Linear(dim, dim, bias=False)
+        self.up = nn.Linear(dim, n_kv_heads*head_dim, bias=False)
+        self.down = nn.Linear(n_heads*head_dim, dim, bias=False)
+        self.repeat = n_heads // n_kv_heads
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+        self.dim = dim
 
     def forward(
         self,
@@ -94,13 +99,13 @@ class Pooled_Cross_Attention(nn.Module):
         mask: BlockDiagonalMask | None = None,
     ) -> torch.Tensor:
         x = self.up(embedding)
-        xv = x.view(-1, 8, 128)
-        val = torch.repeat_interleave(xv, repeats=4, dim=1)
+        xv = x.view(-1, self.n_kv_heads, self.head_dim)
+        val = torch.repeat_interleave(xv, repeats=self.repeat, dim=1)
         val = val[None, ...]
         output = torch.repeat_interleave(
             val, repeats=torch.tensor(seqlen).to(val.device), dim=1
         )
-        output = output.view(sum(seqlen), 4096)
+        output = output.view(sum(seqlen), self.dim)
         output = self.down(output)
         return output
 
@@ -534,10 +539,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
             h = token_embeds
 
         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
-        embed_seqlens = seqlens if embed_seqlens is None else embed_seqlens
-        cross_att_mask = BlockDiagonalMask.from_seqlens(
-            q_seqlen=seqlens, kv_seqlen=embed_seqlens
-        )
+        
+        if embeddings is not None:
+            embed_seqlens = seqlens if embed_seqlens is None else embed_seqlens
+            cross_att_mask = BlockDiagonalMask.from_seqlens(
+                q_seqlen=seqlens, kv_seqlen=embed_seqlens
+            )
+        else:
+            cross_att_mask = None
+            
         if self.causal:
             self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
         else:

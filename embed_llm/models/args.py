@@ -32,6 +32,7 @@ class EmbedAugArgs(Serializable):
     param_dtype: torch.dtype = torch.bfloat16
     embedder_name: str = "NVEmbed"
     trainable_embedder: bool = False
+    train_only_pooling: bool = False
     causal: bool = True
     do_pool: bool = False
     n_truncated_layers: int = 4
