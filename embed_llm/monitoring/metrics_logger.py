@@ -25,6 +25,7 @@ def get_train_logs(
     train_args: TrainArgs,
     instruct_cross_entropy: float | None = None,
     instruct_kl: float | None = None,
+    batch_type: str = "reconstruction",
 ) -> dict[str, float | int]:
     metrics = {
         "lr": lr,
@@ -40,6 +41,7 @@ def get_train_logs(
         "eta_in_seconds": state.eta,
         "instruct_cross_entropy": instruct_cross_entropy,
         "instruct_kl": instruct_kl,
+        'batch_type': batch_type,
     }
 
     return metrics
@@ -105,6 +107,7 @@ def train_log_msg(state: TrainState, logs: dict[str, float | int], loss: float) 
         ("eta", "%Y-%m-%d %H:%M:%S", "ETA"),
         ("instruct_cross_entropy", ".3f", "instruct_cross_entropy"),
         ("instruct_kl", ".3f", "instruct_kl"),
+        ("batch_type", "s", "Batch Type"),
     ]:
         name = key if new_name is None else new_name
         if metrics[key] is None:
@@ -114,6 +117,7 @@ def train_log_msg(state: TrainState, logs: dict[str, float | int], loss: float) 
         except KeyError:
             logger.error(f"{key} not found in {sorted(metrics.keys())}")
             raise
+            
 
     return " - ".join(parts)
 
@@ -191,7 +195,7 @@ class MetricsLogger:
         if not self.is_master:
             return
 
-        metrics_to_ignore = {"step"}
+        metrics_to_ignore = {"step", 'batch_type'}
         assert self.summary_writer is not None
         for key, value in metrics.items():
             if key in metrics_to_ignore or value is None:

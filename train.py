@@ -402,7 +402,6 @@ def _train(
             # start_time = time.time()
 
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
-            print("Batch type at device", batch.data_type, get_rank())
             if args.textual_continuation * args.continuation > 0.0:
 
                 rand_textual_continuation = (
@@ -433,7 +432,6 @@ def _train(
                         y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
                         y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
                         batch.data_type = "textual_continuation"
-                        main_logger_info("Textual continuation")
                         embeddings = None
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
@@ -518,6 +516,7 @@ def _train(
                 loss += mb_loss.item()
                 # print(prof.key_averages().table(sort_by="cuda_time_total"))
 
+            
             n_batch_tokens += x.numel()
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward
@@ -632,6 +631,7 @@ def _train(
                 train_args=args,
                 instruct_cross_entropy=cross_entropy_loss_avg,
                 instruct_kl=kl_loss_avg,
+                batch_type = batch.data_type
             )
             main_logger_info(train_log_msg(state, logs=train_logs, loss=avg_loss))
             metrics_logger.log(train_logs, step=state.step)
