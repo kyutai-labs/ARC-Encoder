@@ -9,36 +9,38 @@ lora:
   scaling: 2.0
   enable: true
 pipeline:
-  w_embeds: true
-  embedder_name: Mistral7B
-  trainable_embedder: true
-  n_truncated_layers: 8
-  normalize_embeddings: true
-  do_pool: true
   cross_att: true
   cross_att_layers: 16
+  dist_process: false
+  do_both: true
+  do_pool: true
+  embedder_name: Mistral7B
+  every_cross_att: null
   mlp_project:
+    act: gelu
     hidden_dim: 4096
     n_layers: 1
-    act: gelu
     type: mlp
-  do_both: true
-  shared_kv: false
-  pooling_module:
-    type: latent_attention
-    r: 512
-    n_heads: 8
-  every_cross_att: null
+  n_truncated_layers: 8
+  normalize_embeddings: true
   pooled_cross_att: true
-  causal: false
-  dist_process: false
+  pooling_module:
+    n_heads: 8
+    r: 512
+    type: latent_attention
+  shared_kv: false
+  train_only_pooling: true
+  trainable_embedder: false
+  trainable_llm: true
+  w_embeds: true
+  w_prefix_prompt: false
 data:
-  # train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/train_atlas_enwiki-dec2021_standard.jsonl
-  # eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl
-  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
-  eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/train_atlas_enwiki-dec2021_standard.jsonl
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl
+  # train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
+  # eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
   shuffle: false
-  # adapt_seq_len: true
+  adapt_seq_len: true
 seq_len: 128
 batch_size: 32
 num_microbatches: 1
@@ -55,9 +57,11 @@ eval_freq: 100
 no_eval: true
 ckpt_freq: 500
 save_adapters: true
+
+
 # wandb:
 #   project: embed_llm
 #   run_name: pretrain_both_trained_07_singpassage_0f6f2a1a
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
 #   offline: false
-prefix_prompt: true
+

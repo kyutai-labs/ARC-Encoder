@@ -353,7 +353,6 @@ class Checkpointer:
 
         if self.rank == 0:
             # save checkpoint in tmp path
-            print("LLM states", llm_states)
             if self.pipeline.pipeline_args.trainable_llm or self.llm.cross_att:
                 safetensors.torch.save_file(
                     llm_states,
