@@ -243,7 +243,7 @@ def sequence_iterator_reconstruction(
 
             if adapt_seq_len:
                 break
-    return None
+    return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes
 
 
 def sequence_iterator_continuation(
@@ -347,7 +347,7 @@ def sequence_iterator_continuation(
 
             if adapt_seq_len:
                 break
-    return None
+    return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes
     
 
 
@@ -371,12 +371,7 @@ def sequence_iterator(
 
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
-        rand_continue = (
-            torch.rand(1).cuda()
-            if get_rank() == 0
-            else torch.tensor([0.0], device="cuda")
-        )
-        dist.broadcast(rand_continue, 0)
+        rand_continue = np.random.rand()
         if (is_finite and continuation > 0) or continuation >= 1.0:
             do_continuation = True
         elif continuation == 0.0:
@@ -385,7 +380,7 @@ def sequence_iterator(
             do_continuation = rand_continue < continuation
 
         if do_continuation:
-            seq = sequence_iterator_continuation(
+            res = sequence_iterator_continuation(
                 sample=sample,
                 x_buffer=x_buffer,
                 y_buffer=y_buffer,
@@ -398,16 +393,19 @@ def sequence_iterator(
                 n_missing=n_missing,
                 data_type="continuation",
             ) 
-            if seq is not None:
-                yield seq
+            if isinstance(res, SequenceEmbedMaskAndSizes):
+                yield res
 
-            x_buffer, y_buffer = [], []
-            mask_buffer = []
-            to_embed_buffer = []
-            sizes = []
-            n_missing = seq_len
+                x_buffer, y_buffer = [], []
+                mask_buffer = []
+                to_embed_buffer = []
+                sizes = []
+                n_missing = seq_len
+            else: 
+                x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes = res
+                continue
         else:
-            seq = sequence_iterator_reconstruction(
+            res = sequence_iterator_reconstruction(
                 sample=sample,
                 x_buffer=x_buffer,
                 y_buffer=y_buffer,
@@ -420,14 +418,17 @@ def sequence_iterator(
                 n_missing=n_missing,
             )
 
-            if seq is not None:
-                yield seq
+            if isinstance(res, SequenceEmbedMaskAndSizes):
+                yield res
 
-            x_buffer, y_buffer = [], []
-            mask_buffer = []
-            to_embed_buffer = []
-            sizes = []
-            n_missing = seq_len
+                x_buffer, y_buffer = [], []
+                mask_buffer = []
+                to_embed_buffer = []
+                sizes = []
+                n_missing = seq_len
+            else: 
+                x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes = res
+                continue
 
     if is_finite:
         # if dataloader is in eval, pad to seq length

@@ -415,13 +415,14 @@ if __name__ == "__main__":
     ]
 
     max_seq_len = 128
+    
     for i, run_name in enumerate(run_names):
 
-        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'atlas') # 'atlas
+        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'standard_dump') # 'atlas','standard_dump'
+        
         evaluate_model(
             run_name,
             ["NQ", "TRIVIAQA"],
-            lim_toks=256,
             temps=[0, 0.5, 0.7],
             max_bs=4,
             output_file=output_file,
@@ -429,8 +430,5 @@ if __name__ == "__main__":
             max_seq_len=max_seq_len,
             tmp_path = tmp_path
         )
-        # print("Memory:", torch.cuda.memory_allocated() / 1024**3)
-        # print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)
-        print("Max Memory Allocated:", torch.cuda.max_memory_allocated() / 1024**3)
-        # print("Reset memory ! ")
+
         torch.cuda.empty_cache()
