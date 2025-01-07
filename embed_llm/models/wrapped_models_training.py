@@ -53,12 +53,15 @@ def load_training_model(
         assert train_args.pipeline.do_both, "If dist_process, must do both"
 
     if train_args.pipeline.trainable_embedder:
-        assert not train_args.pipeline.train_only_pooling, "Can't have both trainable embedder and train only pooling"
-        
+        assert (
+            not train_args.pipeline.train_only_pooling
+        ), "Can't have both trainable embedder and train only pooling"
+
     if train_args.pipeline.train_only_pooling:
-        assert not train_args.pipeline.trainable_embedder, "Can't have both trainable embedder and train only pooling"
-        
-        
+        assert (
+            not train_args.pipeline.trainable_embedder
+        ), "Can't have both trainable embedder and train only pooling"
+
     llm_args, pipeline_args = load_args(
         folder,
         lora,
@@ -251,7 +254,6 @@ def load_training_model(
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
-    
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
@@ -267,7 +269,6 @@ def load_training_model(
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
         ignored_states=ignored_state,
     )
-    
 
     main_logger_info("Model sharded!")
 
@@ -460,7 +461,6 @@ def load_training_model_from_ckpt(
                 for p_name, param in module.named_parameters():
                     param.requires_grad = True
 
-  
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)

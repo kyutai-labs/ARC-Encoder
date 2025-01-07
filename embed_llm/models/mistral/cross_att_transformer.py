@@ -85,8 +85,8 @@ class Pooled_Cross_Attention(nn.Module):
         n_kv_heads: int,
     ):
         super().__init__()
-        self.up = nn.Linear(dim, n_kv_heads*head_dim, bias=False)
-        self.down = nn.Linear(n_heads*head_dim, dim, bias=False)
+        self.up = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
+        self.down = nn.Linear(n_heads * head_dim, dim, bias=False)
         self.repeat = n_heads // n_kv_heads
         self.n_kv_heads = n_kv_heads
         self.head_dim = head_dim
@@ -539,7 +539,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             h = token_embeds
 
         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
-        
+
         if embeddings is not None:
             embed_seqlens = seqlens if embed_seqlens is None else embed_seqlens
             cross_att_mask = BlockDiagonalMask.from_seqlens(
@@ -547,7 +547,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             )
         else:
             cross_att_mask = None
-            
+
         if self.causal:
             self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
         else:

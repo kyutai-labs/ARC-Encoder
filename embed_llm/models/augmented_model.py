@@ -61,7 +61,6 @@ class EmbedAugModel(nn.Module):
             else pipeline_args.pooling_module
         )
 
-        
         self.dist_process = pipeline_args.dist_process
 
         if self.mlp_project_args.n_layers > 0 and self.w_embeds:
@@ -181,8 +180,12 @@ class EmbedAugPipeline(nn.Module):
             pipeline_args=self.pipeline_args,
             llm=llm,
             trainable_embedder=(
-                self.embedding_model if (self.pipeline_args.trainable_embedder 
-                                         or self.pipeline_args.train_only_pooling) else None
+                self.embedding_model
+                if (
+                    self.pipeline_args.trainable_embedder
+                    or self.pipeline_args.train_only_pooling
+                )
+                else None
             ),
         )
 
@@ -206,7 +209,10 @@ class EmbedAugPipeline(nn.Module):
             seqlens = []
             cur_pos = 0
 
-            if self.pipeline_args.trainable_embedder or self.pipeline_args.train_only_pooling:
+            if (
+                self.pipeline_args.trainable_embedder
+                or self.pipeline_args.train_only_pooling
+            ):
                 embeddings = []
                 embed_seqlens = []
 
@@ -262,7 +268,8 @@ class EmbedAugPipeline(nn.Module):
 
             if (
                 self.pipeline_args.w_embeds
-                and not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling
+                and not self.pipeline_args.trainable_embedder
+                and not self.pipeline_args.train_only_pooling
             ):
                 # To avoid OOM
                 with torch.no_grad():
@@ -327,7 +334,8 @@ class EmbedAugPipeline(nn.Module):
         else:
             if (
                 self.pipeline_args.w_embeds
-                and not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling
+                and not self.pipeline_args.trainable_embedder
+                and not self.pipeline_args.train_only_pooling
             ):
                 # To avoid OOM
                 with torch.no_grad():
@@ -475,6 +483,9 @@ class EmbedAugPipeline(nn.Module):
             pipe_path=ckpt_path,
         )
 
+        if not pipeline_args.trainable_llm:
+            llm_args.lora = None
+
         llm, tokenizer, embed_dim = load_llm_model(
             llm_args=llm_args,
             pipeline_args=pipeline_args,
@@ -497,9 +508,12 @@ class EmbedAugPipeline(nn.Module):
 
             llm.load_state_dict(cross_att_state_dicts, assign=True, strict=False)
 
-        if Path(lora_path).exists():
+        if Path(lora_path).exists() and pipeline_args.trainable_llm:
             llm.load_lora(Path(lora_path), cross_att=pipeline_args.cross_att)
 
+        for name, param in llm.named_parameters():
+            if param.is_meta:
+                print(name)
         llm = llm.to(device)
         llm.eval()
 

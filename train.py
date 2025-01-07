@@ -12,7 +12,7 @@ from torch.optim import AdamW, lr_scheduler
 from functools import partial
 import numpy as np
 import gc
-import sys 
+import sys
 
 # Debugging
 import time
@@ -113,9 +113,8 @@ def train(train_config: str | dict, data_config: str = None):
 
     with ExitStack() as exit_stack:
         _train(args, exit_stack)
-    
-    logger.info("Closed everything!")
 
+    logger.info("Closed everything!")
 
 
 def _train(
@@ -148,7 +147,6 @@ def _train(
             raise RuntimeError(
                 f"Run dir {run_dir} already exists. Make sure to either rename `run_dir` or remove {run_dir}."
             )
-   
 
     dist.barrier()
     run_dir.mkdir(exist_ok=True, parents=True)
@@ -201,7 +199,11 @@ def _train(
     else:
         trainable_embedder = args.pipeline.trainable_embedder
 
-    if args.pipeline.trainable_embedder or trainable_embedder or args.pipeline.train_only_pooling:
+    if (
+        args.pipeline.trainable_embedder
+        or trainable_embedder
+        or args.pipeline.train_only_pooling
+    ):
         embedding_model = None
     else:
         assert (
@@ -258,7 +260,7 @@ def _train(
     )
 
     """ Load  Dataloader"""
-    main_logger_info('If multi-passage, pooled cross-attention should be deactivated')
+    main_logger_info("If multi-passage, pooled cross-attention should be deactivated")
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
         args=args.data,
@@ -285,7 +287,7 @@ def _train(
             is_eval=True,
             continuation=args.continuation,
         )
-        
+
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
 
         eval_batches = []
@@ -361,7 +363,7 @@ def _train(
             model.tokenized_prompts["instruct"].append(
                 {"prefix": prefix, "suffix": suffix}
             )
-        
+
         model.tokenize_prompts["continuation"] = []
         for prompt in CONTINUATION_PROMPT:
             prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
@@ -369,7 +371,7 @@ def _train(
             model.tokenize_prompts["continuation"].append(
                 {"prefix": prefix, "suffix": suffix}
             )
-        
+
     main_logger_info("Start training")
     model.train()
     torch.cuda.empty_cache()
@@ -398,42 +400,42 @@ def _train(
             """ Training loop for basic reconstruction"""
 
             # start_time = time.time()
-            
-     
+
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
-            
-            if batch.data_type == "continuation":
-                rand_textual_continuation = torch.rand(1).cuda() if get_rank() == 0 else torch.tensor([0.0], device="cuda")
+            print("Batch type at device", batch.data_type, get_rank())
+            if args.textual_continuation * args.continuation > 0.0:
+
+                rand_textual_continuation = (
+                    torch.rand(1).cuda()
+                    if get_rank() == 0
+                    else torch.tensor([0.0], device="cuda")
+                )
                 dist.broadcast(rand_textual_continuation, 0)
-                if rand_textual_continuation < args.textual_continuation:
-                    x = []
-                    y = []
-                    seqlens = []
-                    y_mask = []
-                    ind = 0
-                    for to_embed, size in zip(batch.to_embed, batch.sizes):
-                        x.extend(to_embed["tokens"][0])
-                        x.extend(batch.x[ind : ind + size])
-                        y.extend(to_embed["tokens"][0])
-                        y.extend(batch.y[ind : ind + size])
-                        seqlens.append(len(to_embed["tokens"][0]) + size)
-                        ind += size
-                        y_mask.extend([False] * len(to_embed["tokens"][0]))
-                        y_mask.extend([True] * size)
 
-                    x = torch.from_numpy(np.array(x)).cuda(
-                        non_blocking=True
-                    )
-                    y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
-                    y = torch.from_numpy(np.array(y)).cuda(
-                        non_blocking=True
-                    )
-                    batch.data_type = "textual_continuation"
-                    main_logger_info("Textual continuation")
-                    embeddings = None
-                
+                if batch.data_type == "continuation":
+                    if rand_textual_continuation < args.textual_continuation:
+                        x = []
+                        y = []
+                        seqlens = []
+                        y_mask = []
+                        ind = 0
+                        for to_embed, size in zip(batch.to_embed, batch.sizes):
+                            x.extend(to_embed["tokens"][0])
+                            x.extend(batch.x[ind : ind + size])
+                            y.extend(to_embed["tokens"][0])
+                            y.extend(batch.y[ind : ind + size])
+                            seqlens.append(len(to_embed["tokens"][0]) + size)
+                            ind += size
+                            y_mask.extend([False] * len(to_embed["tokens"][0]))
+                            y_mask.extend([True] * size)
 
-            
+                        x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
+                        y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
+                        y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
+                        batch.data_type = "textual_continuation"
+                        main_logger_info("Textual continuation")
+                        embeddings = None
+
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
             output = model.forward(
@@ -533,7 +535,7 @@ def _train(
         grad_norm = torch.tensor([0.0], device="cuda")
         for name, p in model.named_parameters():
             if p.requires_grad:
-                if args.textual_continuation * args.continuation == 0.:
+                if args.textual_continuation * args.continuation == 0.0:
                     assert p.grad is not None, f"None grad for this param {name}"
                     if torch.any(torch.isnan(p.grad)).item():
                         print(f"Grad contains NaN for this param {name}")
@@ -543,7 +545,6 @@ def _train(
                         if torch.any(torch.isnan(p.grad)).item():
                             print(f"Grad contains NaN for this param {name}")
                         grad_norm += torch.norm(p.grad).item() ** 2
-                    
 
         if torch.any(torch.isnan(grad_norm)).item():
             raise ValueError(
@@ -597,7 +598,7 @@ def _train(
                 prepare_batch_fn=prepare_batch_fn,
                 batches=eval_batches,
                 state=state,
-                continuation= (args.continuation > 0.),
+                continuation=(args.continuation > 0.0),
                 instruction_tuning=args.instruct_tuning,
             )
 
@@ -646,9 +647,6 @@ def _train(
     main_logger_info("done!")
 
 
-
 if __name__ == "__main__":
-    # """See README.md for usage."""    
+    # """See README.md for usage."""
     fire.Fire(train)
-    
-

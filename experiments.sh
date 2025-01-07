@@ -13,16 +13,18 @@
 
 
 # Set up environment
-export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 10)) # Take care if already used
+export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_pool_trained_cont_singpassage_5daaa6bc.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_pool_trained_rec_singpassage_054f63f8.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_rec_noprefix_singpassage_0f6f2a1a.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_no_trained_rec_multipassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_no_trained_rec_multipassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_no_trained_rec_singpassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_no_trained_cont_singpassage_5daaa6bc.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_02_singpassage_0f6f2a1a.yaml    
 # /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_llm_trained_02_singpassage_054f63f8.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_05_singpassage_0f6f2a1a.yaml    

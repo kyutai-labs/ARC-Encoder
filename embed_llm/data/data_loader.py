@@ -117,7 +117,7 @@ def build_data_loader(
     world_size: int,
     is_eval: bool,
     seed: int | None = None,
-    continuation: float = 0.,
+    continuation: float = 0.0,
 ) -> Iterator[Batch]:
 
     dataset = build_dataset(
@@ -131,7 +131,7 @@ def build_data_loader(
         continuation=continuation,
     )
 
-    batch_list_dict = {} 
+    batch_list_dict = {}
     for sample in dataset:
         assert all(s >= 0 for s in sample.sizes)
 
@@ -147,7 +147,7 @@ def build_data_loader(
 
         if sample.data_type not in batch_list_dict:
             batch_list_dict[sample.data_type] = Batchlist()
-            
+
         batch_list = batch_list_dict[sample.data_type]
         batch_list.add(
             sample.x,
@@ -164,4 +164,3 @@ def build_data_loader(
 
             batch_list.empty()
             batch_list_dict[sample.data_type] = batch_list
-        

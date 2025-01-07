@@ -13,7 +13,6 @@ def main(args):
             config = yaml.safe_load(file)
     else:
         raise ValueError(f"{args.llm_name} not supported yet !")
-    
 
     config["continuation"] = args.continuation
     config["prefix_prompt"] = args.prefix_prompt

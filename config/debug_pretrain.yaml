@@ -2,8 +2,8 @@ model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_pretrain
-continuation: 1.0
-textual_continuation: 0.2
+continuation: 0.7
+textual_continuation: 0.5
 lora:
   rank: 64
   scaling: 2.0
@@ -48,14 +48,14 @@ optim:
   initial_lr: 1.0e-20
   final_lr: 1.0e-10
 seed: 0
-log_freq: 1
+log_freq: 10
 eval_freq: 100
 no_eval: false
 ckpt_freq: 500
 save_adapters: true
 # wandb:
 #   project: embed_llm
-#   run_name: pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada
+#   run_name: pretrain_both_trained_07_singpassage_0f6f2a1a
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
 #   offline: false
 prefix_prompt: true

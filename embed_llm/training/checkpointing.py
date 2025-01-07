@@ -326,10 +326,7 @@ class Checkpointer:
         ), "dst exists"
 
         tmp_llm_dst.mkdir(parents=True, exist_ok=True)
-        if (
-            self.pipeline.pipeline_args.trainable_llm
-            or self.trainable_embedder is not None
-        ):
+        if self.llm.cross_att:
             Path(tmp_llm_dst / "consolidated").mkdir(parents=True, exist_ok=True)
 
         if self.mlp_project is not None and self.mlp_project.n_layers > 0:
@@ -356,7 +353,8 @@ class Checkpointer:
 
         if self.rank == 0:
             # save checkpoint in tmp path
-            if self.pipeline.pipeline_args.trainable_llm:
+            print("LLM states", llm_states)
+            if self.pipeline.pipeline_args.trainable_llm or self.llm.cross_att:
                 safetensors.torch.save_file(
                     llm_states,
                     self.consolidated_path(
@@ -399,7 +397,6 @@ class Checkpointer:
                 self.write_llm_params_info(tmp_llm_dst.parent)
             else:
                 self.write_pipeline_params_info(tmp_llm_dst.parent)
-
 
             tmp_llm_dst.rename(self.dst_dir(type="llm"))
 

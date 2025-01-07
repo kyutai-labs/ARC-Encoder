@@ -66,8 +66,6 @@ def evaluate_model(
     results = {benchmark: {} for benchmark in benchmarks}
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
 
-
-
     # Get last checkpoint
     last_ckpt = sorted(
         [
@@ -151,17 +149,16 @@ def evaluate_model(
                     for pred, gts in zip(generated_sequences, answers)
                 ]
             ) / len(questions)
-            
-            metrics.append(
-                    {
-                        "CKPT": ckpt,
-                        "temp": temp,
-                        "split": "valid",
-                        "n_samples": n_samples,
-                        benchmark: value,
-                    }
-                )
 
+            metrics.append(
+                {
+                    "CKPT": ckpt,
+                    "temp": temp,
+                    "split": "valid",
+                    "n_samples": n_samples,
+                    benchmark: value,
+                }
+            )
 
     with open(
         "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
@@ -176,7 +173,7 @@ def evaluate_model(
         "r",
     ) as f:
         overall_results = json.load(f)
-    
+
     if run_name not in overall_results:
         overall_results[run_name] = metrics
     else:
@@ -186,12 +183,13 @@ def evaluate_model(
         "w",
     ) as f:
         json.dump(overall_results, f)
-        
-   
 
 
 def evaluate_reconstruction_model(
-    run_name: str, ckpt: int | None = None, pipeline: EmbedAugPipeline | None = None, output_file: str = None
+    run_name: str,
+    ckpt: int | None = None,
+    pipeline: EmbedAugPipeline | None = None,
+    output_file: str = None,
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
     max_batch_size = 4
@@ -378,12 +376,12 @@ def evaluate_reconstruction_model(
         "r",
     ) as f:
         overall_results = json.load(f)
-        
+
     if run_name not in overall_results:
         overall_results[run_name] = metrics
     else:
         overall_results[run_name].extend(metrics)
-        
+
     with open(
         output_file,
         "w",
@@ -396,14 +394,15 @@ if __name__ == "__main__":
     ensure_reproducibility(29)
     output_file = "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretraining.jsonl"
     run_names = [
-        "pretrain_both_trained_cont_singpassage_17c38ada","pretrain_llm_trained_cont_singpassage_5daaa6bc", \
-        "pretrain_llm_trained_rec_singpassage_054f63f8","pretrain_no_trained_cont_singpassage_5daaa6bc","pretrain_no_trained_rec_singpassage_054f63f8", \
-            "pretrain_no_trained_rec_multipassage_054f63f8"
+        # "pretrain_both_trained_cont_singpassage_17c38ada",
+        # "pretrain_llm_trained_cont_singpassage_5daaa6bc",
+        # "pretrain_llm_trained_rec_singpassage_054f63f8",
+        "pretrain_llm_trained_rec_multipassage_054f63f8",
     ]
 
-    for i, run_name in enumerate(sorted(run_names)):
+    for i, run_name in enumerate(run_names):
 
-        evaluate_reconstruction_model(run_name, output_file=output_file)    
+        evaluate_reconstruction_model(run_name, output_file=output_file)
         evaluate_model(
             run_name,
             ["NQ", "TRIVIAQA"],
@@ -411,7 +410,7 @@ if __name__ == "__main__":
             temps=[0, 0.5, 0.7],
             max_bs=4,
             output_file=output_file,
-            n_samples = 100
+            n_samples=100,
         )
         # print("Memory:", torch.cuda.memory_allocated() / 1024**3)
         # print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)

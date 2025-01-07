@@ -1,4 +1,3 @@
-
 import dataclasses
 import itertools
 import json
@@ -205,9 +204,7 @@ def sequence_iterator_reconstruction(
             to_embed_buffer.append(
                 {
                     "text": [
-                        tokenizer.decode(
-                            embed_tokens[0][cur_pos : cur_pos + n_missing]
-                        )
+                        tokenizer.decode(embed_tokens[0][cur_pos : cur_pos + n_missing])
                     ],
                     "tokens": [embed_tokens[0][cur_pos : cur_pos + n_missing]],
                 }
@@ -307,11 +304,9 @@ def sequence_iterator_continuation(
                 )
 
         upper_bound = min(cur_pos + n_missing, len(x))
-        
- 
+
         x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
-        
-            
+
         y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
 
         to_embed_buffer.append(
@@ -324,21 +319,16 @@ def sequence_iterator_continuation(
                     )
                 ],
                 "tokens": [
-                    embed_tokens[0][
-                        cur_pos : cur_pos + (upper_bound - cur_pos) // 2
-                    ]
+                    embed_tokens[0][cur_pos : cur_pos + (upper_bound - cur_pos) // 2]
                 ],
             }
         )
 
-  
-        mask_buffer.extend(
-            mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]
-        )
+        mask_buffer.extend(mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
         n_missing -= overall_size
 
         size = len(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
-                       
+
         sizes.append(size)
 
         cur_pos += overall_size
@@ -358,11 +348,9 @@ def sequence_iterator_continuation(
                     sizes=sizes,
                     data_type=data_type,
                 )
-   
 
             if adapt_seq_len:
                 break
-
 
 
 def sequence_iterator(
@@ -371,7 +359,7 @@ def sequence_iterator(
     tokenizer: Tokenizer,
     is_finite: bool,
     adapt_seq_len: bool = False,
-    continuation: float = 0.,
+    continuation: float = 0.0,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -383,22 +371,24 @@ def sequence_iterator(
     sizes: list[int] = []
     n_missing = seq_len
 
-    
-    
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
-        rand_continue = np.random.rand()
-        if (is_finite and continuation > 0) or continuation  >= 1.0:
+        rand_continue = (
+            torch.rand(1).cuda()
+            if get_rank() == 0
+            else torch.tensor([0.0], device="cuda")
+        )
+        dist.broadcast(rand_continue, 0)
+        if (is_finite and continuation > 0) or continuation >= 1.0:
             do_continuation = True
-        elif continuation == 0.:
+        elif continuation == 0.0:
             do_continuation = False
         else:
             do_continuation = rand_continue < continuation
 
-    
         if do_continuation:
             yield sequence_iterator_continuation(
-                sample = sample,
+                sample=sample,
                 x_buffer=x_buffer,
                 y_buffer=y_buffer,
                 mask_buffer=mask_buffer,
@@ -408,9 +398,9 @@ def sequence_iterator(
                 tokenizer=tokenizer,
                 adapt_seq_len=adapt_seq_len,
                 n_missing=n_missing,
-                data_type='continuation',
-                )
-            
+                data_type="continuation",
+            )
+
             x_buffer, y_buffer = [], []
             mask_buffer = []
             to_embed_buffer = []
@@ -418,7 +408,7 @@ def sequence_iterator(
             n_missing = seq_len
         else:
             yield sequence_iterator_reconstruction(
-                sample = sample,
+                sample=sample,
                 x_buffer=x_buffer,
                 y_buffer=y_buffer,
                 mask_buffer=mask_buffer,
@@ -434,8 +424,6 @@ def sequence_iterator(
             to_embed_buffer = []
             sizes = []
             n_missing = seq_len
-        
-
 
     if is_finite:
         # if dataloader is in eval, pad to seq length
@@ -452,9 +440,12 @@ def sequence_iterator(
                 to_embed=to_embed_buffer,
                 mask=mask_buffer,
                 sizes=sizes,
-                data_type= 'continuation' if int(continuation) == 1 or isinstance(continuation, float) else 'reconstruction',
+                data_type=(
+                    "continuation"
+                    if int(continuation) == 1 or isinstance(continuation, float)
+                    else "reconstruction"
+                ),
             )
-
 
 
 def build_dataset(
@@ -466,7 +457,7 @@ def build_dataset(
     is_eval: bool,
     seed: int | None = None,
     shuffle: bool = False,
-    continuation: float = 0.,
+    continuation: float = 0.0,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
 
     data = args.train_data if not is_eval else args.eval_data
@@ -506,7 +497,7 @@ def build_dataset(
         combined_iterator = interleave_iterators(
             sequence_iterators, probabilities=probabilities, rng=rng
         )
-    else: 
+    else:
         combined_iterator = itertools.chain.from_iterable(sequence_iterators)
 
     return combined_iterator
