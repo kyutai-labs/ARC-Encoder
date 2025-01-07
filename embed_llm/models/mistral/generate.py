@@ -5,33 +5,31 @@ from embed_llm.models.mistral.cross_att_transformer import Transformer
 
 @torch.inference_mode()
 def generate(
-    encoded_prompts: list[list[int]] | list[int],
+    prompt_pre_embed: list[list[int]] | list[int],
+    prompt_post_embed: list[list[int]] | list[int],
     model: Transformer,
     # images: list[list[np.ndarray]] = [],
     *,
     max_tokens: int,
     temperature: float | list[float],
-    embeddings: torch.Tensor | None = None,
     chunk_size: int | None = None,
+    embeddings: torch.Tensor | None = None,
     eos_id: int | None = None,
     embed_seqlens: list[int] | None = None,
     cat_embeddings: torch.Tensor | None = None,
     **kwargs,
 ) -> tuple[list[list[int]], list[list[float]]]:
-    # images_torch: list[list[torch.Tensor]] = []
-    # if images:
-    #     assert chunk_size is None
-    #     images_torch = [
-    #         [torch.tensor(im, device=model.device, dtype=model.dtype) for im in images_for_sample]
-    #         for images_for_sample in images
-    #     ]
 
-    if len(encoded_prompts) > 0 and not isinstance(encoded_prompts[0], list):
-        encoded_prompts = [encoded_prompts]
+
+    if len(prompt_pre_embed) > 0 and not isinstance(prompt_pre_embed[0], list):
+        prompt_pre_embed = [prompt_pre_embed]
+        
+    if len(prompt_post_embed) > 0 and not isinstance(prompt_post_embed[0], list):
+        prompt_post_embed = [prompt_post_embed]
 
     model = model.eval()
-    B, V = len(encoded_prompts), model.args.vocab_size
-    seqlens = [len(x) for x in encoded_prompts]
+    B, V = len(prompt_pre_embed), model.args.vocab_size
+    seqlens = [len(x)  for x in prompt_post_embed]
 
     concat = cat_embeddings is not None
 
@@ -55,28 +53,39 @@ def generate(
     # Bookkeeping
     logprobs: list[list[float]] = [[] for _ in range(B)]
     last_token_prelogits = None
+        
+
+    # Put in cache if trained with prefix prompt
+    if sum([len(p) for p in prompt_pre_embed]) > 0:
+        prelogits_pre = model.generate(
+            torch.tensor((sum(prompt_pre_embed, [])), device=model.device, dtype=torch.long),
+            seqlens=[len(p) for p in prompt_pre_embed],
+            embeddings=embeddings,
+            embed_seqlens=embed_seqlens,
+            cache=cache,
+            cat_embeddings=None,
+        )
 
     # One chunk if size not specified
     max_prompt_len = max(seqlens)
     if chunk_size is None:
         chunk_size = max_prompt_len
-
-    # flattened_images: list[torch.Tensor] = sum(images_torch, [])
-
+        
     # Encode prompt by chunks
     for s in range(0, max_prompt_len, chunk_size):
-        prompt_chunks = [p[s : s + chunk_size] for p in encoded_prompts]
-        assert all(len(p) > 0 for p in prompt_chunks)
+        prompt_post_embed_chunks = [p[s : s + chunk_size] for p in prompt_post_embed]
+        assert all(len(p) > 0 for p in prompt_post_embed_chunks)
 
         prelogits = model.generate(
-            torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
-            seqlens=[len(p) for p in prompt_chunks],
+            torch.tensor(sum(prompt_post_embed, []), device=model.device, dtype=torch.long),
+            # images=flattened_images,
+            seqlens=[len(p) for p in prompt_post_embed_chunks],
             embeddings=embeddings,
             embed_seqlens=embed_seqlens,
             cache=cache,
             cat_embeddings=cat_embeddings,
         )
-
+       
         # Stop concatenating if already in cache
         if s == 0 and concat:
             cat_embeddings = None
@@ -84,11 +93,12 @@ def generate(
         last_token_prelogits = prelogits.index_select(
             0,
             torch.tensor(
-                [len(p) for p in prompt_chunks], device=prelogits.device
+                [len(p) for p in prompt_post_embed_chunks], device=prelogits.device
             ).cumsum(dim=0)
             - 1,
         )
         assert last_token_prelogits.shape == (B, V)
+
 
     # decode
     generated_tensors = []
@@ -121,6 +131,7 @@ def generate(
             embeddings=embeddings,
             embed_seqlens=embed_seqlens,
             cache=cache,
+            cat_embeddings=None
         )
 
         assert last_token_prelogits.shape == (
@@ -133,7 +144,7 @@ def generate(
         generated_tokens = torch.cat(generated_tensors, 1).tolist()
     else:
         generated_tokens = []
-
+        
     if logprobs:
         logprobs = [torch.stack(probs, dim=0) for probs in logprobs]
     else:

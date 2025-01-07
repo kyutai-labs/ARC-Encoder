@@ -240,14 +240,10 @@ def sequence_iterator_reconstruction(
                     sizes=sizes,
                     data_type=data_type,
                 )
-            x_buffer, y_buffer = [], []
-            mask_buffer = []
-            to_embed_buffer = []
-            sizes = []
-            n_missing = seq_len
 
             if adapt_seq_len:
                 break
+    return None
 
 
 def sequence_iterator_continuation(
@@ -351,6 +347,8 @@ def sequence_iterator_continuation(
 
             if adapt_seq_len:
                 break
+    return None
+    
 
 
 def sequence_iterator(
@@ -387,7 +385,7 @@ def sequence_iterator(
             do_continuation = rand_continue < continuation
 
         if do_continuation:
-            yield sequence_iterator_continuation(
+            seq = sequence_iterator_continuation(
                 sample=sample,
                 x_buffer=x_buffer,
                 y_buffer=y_buffer,
@@ -399,7 +397,9 @@ def sequence_iterator(
                 adapt_seq_len=adapt_seq_len,
                 n_missing=n_missing,
                 data_type="continuation",
-            )
+            ) 
+            if seq is not None:
+                yield seq
 
             x_buffer, y_buffer = [], []
             mask_buffer = []
@@ -407,7 +407,7 @@ def sequence_iterator(
             sizes = []
             n_missing = seq_len
         else:
-            yield sequence_iterator_reconstruction(
+            seq = sequence_iterator_reconstruction(
                 sample=sample,
                 x_buffer=x_buffer,
                 y_buffer=y_buffer,
@@ -419,6 +419,10 @@ def sequence_iterator(
                 adapt_seq_len=adapt_seq_len,
                 n_missing=n_missing,
             )
+
+            if seq is not None:
+                yield seq
+
             x_buffer, y_buffer = [], []
             mask_buffer = []
             to_embed_buffer = []

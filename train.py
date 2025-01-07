@@ -346,7 +346,7 @@ def _train(
             "Using MLM on the first available embedded passage only, rest is discarded"
         )
 
-    if args.prefix_prompt:
+    if args.pipeline.w_prefix_prompt:
         model.tokenize_prompts = {}
         main_logger_info("Using paraphrase prompt")
         model.tokenized_prompts["reconstruction"] = []
@@ -402,6 +402,8 @@ def _train(
             # start_time = time.time()
 
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
+            print('Text',batch.to_embed[0]["text"][0])
+            print('Seqlens !',seqlens)
             if args.textual_continuation * args.continuation > 0.0:
 
                 rand_textual_continuation = (

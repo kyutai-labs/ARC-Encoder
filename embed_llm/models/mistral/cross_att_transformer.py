@@ -696,8 +696,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 new_seqlens = []
                 final_ind = 0
                 for i, size in enumerate(seqlens):
-                    assert size > 0
-
                     size_embed = embed_seqlens[i]
                     h[final_ind : size_embed + final_ind, :] = cat_embeddings[
                         sum(embed_seqlens[:i]) : sum(embed_seqlens[: i + 1]), :

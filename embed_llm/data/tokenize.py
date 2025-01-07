@@ -89,7 +89,6 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
 
     else:
         sample = data["text"]
-
         if data.get("passage") is not None:
             passages = data["passage"]
             embed_passage = passages if isinstance(passages, list) else [passages]

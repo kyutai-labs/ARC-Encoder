@@ -15,7 +15,7 @@ def main(args):
         raise ValueError(f"{args.llm_name} not supported yet !")
 
     config["continuation"] = args.continuation
-    config["prefix_prompt"] = args.prefix_prompt
+    config['pipeline']["prefix_prompt"] = args.prefix_prompt
     config["llm_name"] = args.llm_name
 
     config["pipeline"]["trainable_llm"] = not args.not_train_llm
@@ -353,22 +353,15 @@ if __name__ == "__main__":
 
     # import os
     # import yaml
-    # filenames =  ['mistral/'+file for file in os.listdir("config/experiments/mistral")]
+    # path_config = '/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/'
+    # filenames =  [file for file in os.listdir(path_config)]
     # for filename in filenames:
     #     if filename.endswith(".yaml"):
-    #         with open("config/experiments/"+filename,'r') as file:
+    #         with open(path_config+filename,'r') as file:
     #             config = yaml.safe_load(file)
-    #         if 'shared_kv' in config["pipeline"].keys():
-    #             if config["pipeline"]["shared_kv"]:
-    #                 config["pipeline"]["shared_kv"] = False
-    #                 config['exp_name'] = config['exp_name'].replace('True_SKV_', 'False_SKV_')
-    #                 config['wandb']['run_name'] = config['wandb']['run_name'].replace('True_SKV_', 'False_SKV_')
-    #                 filename = filename.replace('True_SKV_', 'False_SKV_')
-    #             else:
-    #                 config["pipeline"]["shared_kv"] = True
-    #                 config['exp_name'] = config['exp_name'].replace('False_SKV_', 'True_SKV_')
-    #                 config['wandb']['run_name'] = config['wandb']['run_name'].replace('False_SKV_', 'True_SKV_')
-    #                 filename = filename.replace('False_SKV_', 'True_SKV_')
-
-    #         with open("config/experiments/"+filename, 'w') as file:
+    #         config['exp_name'] = config['exp_name'].replace('pretrain_','nopref_pretrain_')   
+    #         config['wandb']['run_name'] = config['wandb']['run_name'].replace('pretrain_','nopref_pretrain_')
+    #         del config['prefix_prompt']
+    #         config['pipeline']['w_prefix_prompt'] = False
+    #         with open(path_config+filename.replace('pretrain_','nopref_pretrain_'), 'w') as file:
     #             yaml.dump(config, file)

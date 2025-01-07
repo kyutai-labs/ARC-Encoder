@@ -55,11 +55,12 @@ def evaluate_model(
     run_name: str,
     benchmarks: list[str],
     ckpt: int | None = None,
-    lim_toks: int = 128,
+    max_seq_len: int = 256,
     temps: list[float] = [0, 0.5, 0.7, 1],
     max_bs: int = 4,
     output_file: str = None,
     n_samples: int | None = 1000,
+    tmp_path: str = None,
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
@@ -71,13 +72,13 @@ def evaluate_model(
         [
             ckpt_name
             for ckpt_name in os.listdir(
-                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                tmp_path
                 + run_name
                 + "/checkpoints/"
             )
             if (
                 Path(
-                    "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                    tmp_path
                     + run_name
                     + "/checkpoints/"
                 )
@@ -89,7 +90,7 @@ def evaluate_model(
 
     pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
         llm_path=llm_path,
-        ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+        ckpt_path=tmp_path
         + run_name
         + "/checkpoints/"
         + last_ckpt,
@@ -130,10 +131,11 @@ def evaluate_model(
             n_samples = len(questions) if n_samples is None else n_samples
             for i in trange(0, n_samples, max_bs):
                 generated_sequence, logprobs = pipeline.generate(
-                    prompts=questions[i : i + max_bs],
+                    prompt_pre_embed=['']*len(questions[i : i + max_bs]),
+                    prompt_post_embed=questions[i : i + max_bs],
                     text_conditioning=context[i : i + max_bs],
                     temperature=temp,
-                    max_tokens=lim_toks,
+                    max_tokens=max_seq_len,
                     truncate_double_space=True,
                     device=device,
                     device_generation=other_device,
@@ -154,7 +156,6 @@ def evaluate_model(
                 {
                     "CKPT": ckpt,
                     "temp": temp,
-                    "split": "valid",
                     "n_samples": n_samples,
                     benchmark: value,
                 }
@@ -177,7 +178,7 @@ def evaluate_model(
     if run_name not in overall_results:
         overall_results[run_name] = metrics
     else:
-        overall_results[run_name].append(metrics)
+        overall_results[run_name].extend(metrics)
     with open(
         output_file,
         "w",
@@ -190,13 +191,22 @@ def evaluate_reconstruction_model(
     ckpt: int | None = None,
     pipeline: EmbedAugPipeline | None = None,
     output_file: str = None,
+    temperatures: list[float] = [0, 0.5, 0.7, 1],
+    max_seq_len: int = 256,
+    max_batch_size: int = 4,
+    tmp_path: str = None,
+    eval_data_type: str = 'atlas',
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
-    max_batch_size = 4
 
-    if "yaml" in run_name:
-        run_name = run_name.replace(".yaml", "")
-
+    if eval_data_type == 'atlas':
+        eval_data = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl"
+    elif eval_data_type == 'standard_dump':
+        eval_data = '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl'
+    else:
+        raise ValueError("Invalid eval_data_type")
+        
+        
     print("RUN NAME => ", run_name)
 
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
@@ -208,13 +218,13 @@ def evaluate_reconstruction_model(
             [
                 ckpt_name
                 for ckpt_name in os.listdir(
-                    "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                    tmp_path
                     + run_name
                     + "/checkpoints/"
                 )
                 if (
                     Path(
-                        "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                        tmp_path
                         + run_name
                         + "/checkpoints/"
                     )
@@ -226,7 +236,7 @@ def evaluate_reconstruction_model(
 
         pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
             llm_path=llm_path,
-            ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+            ckpt_path=tmp_path
             + run_name
             + "/checkpoints/"
             + last_ckpt,
@@ -241,7 +251,7 @@ def evaluate_reconstruction_model(
     elif pipeline is None:
         pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
             llm_path=llm_path,
-            ckpt_path="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+            ckpt_path=tmp_path
             + run_name
             + "/checkpoints/checkpoint_"
             + str(ckpt).zfill(6),
@@ -258,33 +268,36 @@ def evaluate_reconstruction_model(
 
     n_passages = 100
 
-    lim_toks = 128
-    eval_data = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl"
+    lim_toks = max_seq_len
     valid_passage = []
 
     with open(eval_data, "r") as f:
         for i, line in enumerate(f):
             if i == n_passages:
                 break
-            # If not preprocessed dump
-            # valid_passage.append(
-            #     pipeline.tokenizer.decode(
-            #         pipeline.tokenizer.encode(
-            #             json.loads(line)["text"].split("\n\n")[1], eos=True, bos=True
-            #         )[:lim_toks]
-            #     )
-            # )
-            valid_passage.append(json.loads(line)["text"])
 
-    temperatures = [0, 0.5, 0.7, 1]
-    max_tokens = 128
+            if eval_data_type == 'standard_dump':
+                valid_passage.append(
+                    pipeline.tokenizer.decode(
+                        pipeline.tokenizer.encode(
+                            json.loads(line)["text"].split("\n\n")[1], eos=True, bos=True
+                        )[:lim_toks]
+                    )
+                )
+            elif eval_data_type == 'atlas': 
+                valid_passage.append(
+                    pipeline.tokenizer.decode(
+                        pipeline.tokenizer.encode(
+                            json.loads(line)["text"], eos=True, bos=True
+                        )[:lim_toks]
+                    )
+                )
+                
+    
 
-    results_generation = {
-        "0": {"valid": {"word_prompt": {}, "empty_prompt": {}}},
-        "0.5": {"valid": {"word_prompt": {}, "empty_prompt": {}}},
-        "0.7": {"valid": {"word_prompt": {}, "empty_prompt": {}}},
-        "1": {"valid": {"word_prompt": {}, "empty_prompt": {}}},
-    }
+    max_tokens = lim_toks
+
+    results_generation = {}
 
     n_passages = len(valid_passage)
     assert n_passages == len(valid_passage)
@@ -300,7 +313,10 @@ def evaluate_reconstruction_model(
         for i in range(0, n_passages, max_batch_size):
             passage = valid_passage[i : i + max_batch_size]
             generated_sequence, logprobs = pipeline.generate(
-                prompts=[""] * len(passage),
+                prompt_pre_embed = (['']*len(passage) if not pipeline.pipeline_args.w_prefix_prompt 
+                else ['In other words, background: ']*len(passage)), 
+                prompt_post_embed = (['']*len(passage) if not pipeline.pipeline_args.w_prefix_prompt 
+                else [' is just another way of saying: ']*len(passage)),
                 text_conditioning=passage,
                 temperature=temp,
                 max_tokens=max_tokens,
@@ -310,58 +326,52 @@ def evaluate_reconstruction_model(
             )
 
             generated_sequences.extend(generated_sequence)
-        results_generation[str(temp)]["valid"]["empty_prompt"] = {
-            "seq": generated_sequences
-        }
+        results_generation[str(temp)] =  generated_sequences
+        
 
     metrics = []
     for temp in results_generation.keys():
         # for split in results_generation[temp].keys():
-        for prompt_type in results_generation[temp]["valid"].keys():
-            if prompt_type == "empty_prompt":
-                generated_sequences = results_generation[str(temp)]["valid"][
-                    prompt_type
-                ]["seq"]
-                gt_passage = valid_passage  # train_passage if split == 'train' else valid_passage
-                overlap = word_overlap(gt_passage, generated_sequences)
-                bleu_score = get_bleu_score(gt_passage, generated_sequences)
-                bleu_score_avg = get_bleu_score(
-                    gt_passage, generated_sequences, avg=True
-                )
-                meteor_score = get_meteor(gt_passage, generated_sequences)
-                em = np.mean(
-                    np.array(
-                        [
-                            get_em(gt, pred)
-                            for gt, pred in zip(gt_passage, generated_sequences)
-                        ]
-                    )
-                )
 
-                print(
-                    f"CKPT: {ckpt}, Temperature: {temp}, Split: valid, Prompt Type: {prompt_type}, Overlap: {overlap}",
-                    "Bleu Score:",
-                    bleu_score,
-                    "EM:",
-                    em,
-                    "Meteor:",
-                    meteor_score,
-                    "Bleu Score Avg:",
-                    bleu_score_avg,
+            generated_sequences = results_generation[str(temp)]
+            gt_passage = valid_passage  # train_passage if split == 'train' else valid_passage
+            overlap = word_overlap(gt_passage, generated_sequences)
+            bleu_score = get_bleu_score(gt_passage, generated_sequences)
+            bleu_score_avg = get_bleu_score(
+                gt_passage, generated_sequences, avg=True
+            )
+            meteor_score = get_meteor(gt_passage, generated_sequences)
+            em = np.mean(
+                np.array(
+                    [
+                        get_em(gt, pred)
+                        for gt, pred in zip(gt_passage, generated_sequences)
+                    ]
                 )
-                metrics.append(
-                    {
-                        "CKPT": ckpt,
-                        "temp": temp,
-                        "split": "valid",
-                        "prompt_type": prompt_type,
-                        "overlap": overlap,
-                        "bleu_score": bleu_score,
-                        "em": em,
-                        "Meteor": meteor_score,
-                        "Bleu Score Avg": bleu_score_avg,
-                    }
-                )
+            )
+
+            print(
+                f"CKPT: {ckpt}, Temperature: {temp}, Overlap: {overlap}",
+                "Bleu Score:",
+                bleu_score,
+                "EM:",
+                em,
+                "Meteor:",
+                meteor_score,
+                "Bleu Score Avg:",
+                bleu_score_avg,
+            )
+            metrics.append(
+                {
+                    "CKPT": ckpt,
+                    "temp": temp,
+                    "overlap": overlap,
+                    "bleu_score": bleu_score,
+                    "em": em,
+                    "Meteor": meteor_score,
+                    "Bleu Score Avg": bleu_score_avg,
+                }
+            )
 
     with open(
         "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
@@ -392,17 +402,22 @@ def evaluate_reconstruction_model(
 if __name__ == "__main__":
 
     ensure_reproducibility(29)
-    output_file = "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretraining.jsonl"
+    output_file = "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretraining.json"
+    tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+    # tmp_path = '/lustre/scwpod02/client/kyutai-interns/hippop/tmp/experiments/'
+
     run_names = [
-        # "pretrain_both_trained_cont_singpassage_17c38ada",
-        # "pretrain_llm_trained_cont_singpassage_5daaa6bc",
-        # "pretrain_llm_trained_rec_singpassage_054f63f8",
+        # 'LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_atend_True_DB'
+        "pretrain_llm_trained_rec_singpassage_054f63f8",
+        "pretrain_both_trained_cont_singpassage_17c38ada",
+        "pretrain_llm_trained_cont_singpassage_5daaa6bc",
         "pretrain_llm_trained_rec_multipassage_054f63f8",
     ]
 
+    max_seq_len = 128
     for i, run_name in enumerate(run_names):
 
-        evaluate_reconstruction_model(run_name, output_file=output_file)
+        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'atlas') # 'atlas
         evaluate_model(
             run_name,
             ["NQ", "TRIVIAQA"],
@@ -411,6 +426,8 @@ if __name__ == "__main__":
             max_bs=4,
             output_file=output_file,
             n_samples=100,
+            max_seq_len=max_seq_len,
+            tmp_path = tmp_path
         )
         # print("Memory:", torch.cuda.memory_allocated() / 1024**3)
         # print("Memory Cached:", torch.cuda.memory_reserved() / 1024**3)

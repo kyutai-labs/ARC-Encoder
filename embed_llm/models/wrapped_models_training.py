@@ -62,6 +62,7 @@ def load_training_model(
             not train_args.pipeline.trainable_embedder
         ), "Can't have both trainable embedder and train only pooling"
 
+
     llm_args, pipeline_args = load_args(
         folder,
         lora,

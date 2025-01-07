@@ -1,10 +1,10 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-4
+#SBATCH --array=0-18%10
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx22,par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s04dgx11,par2dc5-ai-prd-cl02s04dgx06,par2dc5-ai-prd-cl02s03dgx21
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx22,par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s04dgx11,par2dc5-ai-prd-cl02s04dgx06,par2dc5-ai-prd-cl02s03dgx21,par2dc5-ai-prd-cl02s04dgx06
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
@@ -17,22 +17,25 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_pool_trained_cont_singpassage_5daaa6bc.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_pool_trained_rec_singpassage_054f63f8.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_rec_noprefix_singpassage_0f6f2a1a.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_07_singpassage_0f6f2a1a.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_llm_trained_07_singpassage_054f63f8.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_no_trained_rec_multipassage_054f63f8.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_no_trained_rec_singpassage_054f63f8.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_no_trained_cont_singpassage_5daaa6bc.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_02_singpassage_0f6f2a1a.yaml    
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_llm_trained_02_singpassage_054f63f8.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_05_singpassage_0f6f2a1a.yaml    
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_llm_trained_05_singpassage_054f63f8.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_both_trained_07_singpassage_0f6f2a1a.yaml    
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretrain_llm_trained_07_singpassage_054f63f8.yaml 
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_no_trained_cont_singpassage_5daaa6bc.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_no_trained_rec_multipassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_no_trained_rec_singpassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_02_singpassage_0f6f2a1a.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_llm_trained_02_singpassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_llm_trained_cont_singpassage_5daaa6bc.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_llm_trained_rec_multipassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_pool_trained_cont_singpassage_5daaa6bc.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_pool_trained_rec_singpassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_cont_singpassage_17c38ada.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_rec_multipassage_0f6f2a1a.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_rec_singpassage_0f6f2a1a.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_llm_trained_rec_singpassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_07_singpassage_0f6f2a1a.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_llm_trained_07_singpassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_05_singpassage_0f6f2a1a.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_llm_trained_05_singpassage_054f63f8.yaml
 )
 
 

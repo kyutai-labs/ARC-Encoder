@@ -5,7 +5,8 @@ import json
 import safetensors
 import logging
 from embed_llm.training.checkpointing import Checkpointer
-
+import os
+import yaml
 
 from embed_llm.models.args import LoraArgs
 from embed_llm.models.args import MLPProjectArgs, EmbedAugArgs, PoolingArgs
@@ -51,6 +52,10 @@ def load_args(
     if pipe_path is not None:
         with open(pipe_path + "/params.json", "r") as f:
             args = json.loads(f.read())
+            
+
+        
+          
         pipeline_args = EmbedAugArgs(
             **{
                 k: args.get(k)
@@ -58,6 +63,13 @@ def load_args(
                 if k in args
             }
         )
+        
+        if 'w_prefix_prompt' not in args:
+            with open(os.path.join(pipe_path, "../../args.yaml"), "r") as f:
+                 train_args = yaml.safe_load(f)
+            w_prefix_prompt = train_args.get("prefix_prompt", False)
+        pipeline_args.w_prefix_prompt = w_prefix_prompt
+        
         mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
         pipeline_args.mlp_project = mlp_project_args
 

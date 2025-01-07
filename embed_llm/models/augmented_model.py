@@ -61,6 +61,7 @@ class EmbedAugModel(nn.Module):
             else pipeline_args.pooling_module
         )
 
+        
         self.dist_process = pipeline_args.dist_process
 
         if self.mlp_project_args.n_layers > 0 and self.w_embeds:
@@ -180,12 +181,8 @@ class EmbedAugPipeline(nn.Module):
             pipeline_args=self.pipeline_args,
             llm=llm,
             trainable_embedder=(
-                self.embedding_model
-                if (
-                    self.pipeline_args.trainable_embedder
-                    or self.pipeline_args.train_only_pooling
-                )
-                else None
+                self.embedding_model if (self.pipeline_args.trainable_embedder 
+                                         or self.pipeline_args.train_only_pooling) else None
             ),
         )
 
@@ -209,10 +206,7 @@ class EmbedAugPipeline(nn.Module):
             seqlens = []
             cur_pos = 0
 
-            if (
-                self.pipeline_args.trainable_embedder
-                or self.pipeline_args.train_only_pooling
-            ):
+            if self.pipeline_args.trainable_embedder or self.pipeline_args.train_only_pooling:
                 embeddings = []
                 embed_seqlens = []
 
@@ -268,8 +262,7 @@ class EmbedAugPipeline(nn.Module):
 
             if (
                 self.pipeline_args.w_embeds
-                and not self.pipeline_args.trainable_embedder
-                and not self.pipeline_args.train_only_pooling
+                and not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling
             ):
                 # To avoid OOM
                 with torch.no_grad():
@@ -334,8 +327,7 @@ class EmbedAugPipeline(nn.Module):
         else:
             if (
                 self.pipeline_args.w_embeds
-                and not self.pipeline_args.trainable_embedder
-                and not self.pipeline_args.train_only_pooling
+                and not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling
             ):
                 # To avoid OOM
                 with torch.no_grad():
@@ -483,9 +475,6 @@ class EmbedAugPipeline(nn.Module):
             pipe_path=ckpt_path,
         )
 
-        if not pipeline_args.trainable_llm:
-            llm_args.lora = None
-
         llm, tokenizer, embed_dim = load_llm_model(
             llm_args=llm_args,
             pipeline_args=pipeline_args,
@@ -508,12 +497,9 @@ class EmbedAugPipeline(nn.Module):
 
             llm.load_state_dict(cross_att_state_dicts, assign=True, strict=False)
 
-        if Path(lora_path).exists() and pipeline_args.trainable_llm:
+        if Path(lora_path).exists():
             llm.load_lora(Path(lora_path), cross_att=pipeline_args.cross_att)
 
-        for name, param in llm.named_parameters():
-            if param.is_meta:
-                print(name)
         llm = llm.to(device)
         llm.eval()
 
@@ -594,9 +580,10 @@ class EmbedAugPipeline(nn.Module):
     @torch.inference_mode()
     def generate_mistral(
         self,
-        prompts: str | Sequence[str],
         text_conditioning: str | Sequence[str],
         device: str,
+        prompt_pre_embed: str | Sequence[str] = '',
+        prompt_post_embed: str | Sequence[str] = '',
         max_tokens: int = 100,
         temperature: float = 0.6,
         truncate_double_space: bool = False,
@@ -608,8 +595,11 @@ class EmbedAugPipeline(nn.Module):
 
         device_generation = device if device_generation is None else device_generation
 
-        if isinstance(prompts, str):
-            prompts = [prompts]
+        if isinstance(prompt_pre_embed, str):
+            prompt_pre_embed = [prompt_pre_embed]
+        if isinstance(prompt_post_embed, str):
+            prompt_post_embed = [prompt_post_embed]
+            
         if isinstance(text_conditioning, str):
             text_conditioning = [text_conditioning]
 
@@ -681,13 +671,28 @@ class EmbedAugPipeline(nn.Module):
             if not self.pipeline_args.dist_process:
                 embeddings = cat_embeddings
 
-        encoded_prompts = [
-            self.tokenizer.encode(prompt, bos=True, eos=False) for prompt in prompts
-        ]
+        encoded_pre_embed_prompts = []
+        encoded_post_embed_prompts = []
+        
+        for prompt_pre, prompt_post in zip(prompt_pre_embed, prompt_post_embed):
+            if prompt_pre == '' and not self.pipeline_args.w_prefix_prompt:
+                encoded_pre_embed_prompts.append([])
+            elif len(prompt_pre)>0 and not self.pipeline_args.w_prefix_prompt:
+                print('Including a prompt before embedding, not trained to do this')
+                encoded_pre_embed_prompts.append(self.tokenizer.encode(prompt_pre, bos=True, eos=False))
+            else:
+                encoded_pre_embed_prompts.append(self.tokenizer.encode(prompt_pre, bos=True, eos=False))
+            
+            if not self.pipeline_args.w_prefix_prompt:
+                encoded_post_embed_prompts.append(self.tokenizer.encode(prompt_post, bos=True, eos=False))
+            else:
+                encoded_post_embed_prompts.append(self.tokenizer.encode(prompt_post, bos=False, eos=False))
+
         eos_id = self.tokenizer.eos_id
 
         generated_tokens, attentions = mistral_generate(
-            encoded_prompts=encoded_prompts,
+            prompt_pre_embed=encoded_pre_embed_prompts,
+            prompt_post_embed=encoded_post_embed_prompts,
             embeddings=(
                 None
                 if embeddings is None or not self.pipeline_args.cross_att
