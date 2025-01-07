@@ -61,6 +61,7 @@ def evaluate_model(
     output_file: str = None,
     n_samples: int | None = 1000,
     tmp_path: str = None,
+    icl_examples: int = 0,
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
@@ -125,14 +126,21 @@ def evaluate_model(
                     answers.append(data["answer"])
                 # Take the first ranked retrieved passage
                 context.append(data["passages"][0])
+                
         print("Evaluation dataset loaded for", benchmark)
+        
+        icl_ex = ''
+        for doc, query, ans in zip(context[:icl_examples], questions[:icl_examples], answers[:icl_examples]):
+            icl_ex += f"Doc: {doc}\nQuery: {query}\nAnswer: {ans}\n\n"
+        
+             
         for temp in temps:
             generated_sequences = []
             n_samples = len(questions) if n_samples is None else n_samples
-            for i in trange(0, n_samples, max_bs):
+            for i in trange(icl_examples, n_samples+icl_examples, max_bs):
                 generated_sequence, logprobs = pipeline.generate(
                     prompt_pre_embed=['']*len(questions[i : i + max_bs]),
-                    prompt_post_embed=questions[i : i + max_bs],
+                    prompt_post_embed=[icl_ex + query for query in questions[i : i + max_bs]],
                     text_conditioning=context[i : i + max_bs],
                     temperature=temp,
                     max_tokens=max_seq_len,
@@ -151,7 +159,7 @@ def evaluate_model(
                     for pred, gts in zip(generated_sequences, answers)
                 ]
             ) / len(questions)
-
+            print('Temperature:', temp, benchmark +': ',value)
             metrics.append(
                 {
                     "CKPT": ckpt,
@@ -420,15 +428,15 @@ if __name__ == "__main__":
 
         evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'standard_dump') # 'atlas','standard_dump'
         
-        evaluate_model(
-            run_name,
-            ["NQ", "TRIVIAQA"],
-            temps=[0, 0.5, 0.7],
-            max_bs=4,
-            output_file=output_file,
-            n_samples=100,
-            max_seq_len=max_seq_len,
-            tmp_path = tmp_path
-        )
-
+        # evaluate_model(
+        #     run_name,
+        #     ["NQ", "TRIVIAQA"],
+        #     temps=[0, 0.5, 0.7],
+        #     max_bs=4,
+        #     output_file=output_file,
+        #     n_samples=100,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path = tmp_path,
+        #     icl_examples = 1
+        # )
         torch.cuda.empty_cache()

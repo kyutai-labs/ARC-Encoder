@@ -190,7 +190,7 @@ def load_training_model(
         augmented_model.pooling_args = None
         augmented_model.pooling_module = None
 
-    if pipeline_args.trainable_embedder:
+    if pipeline_args.trainable_embedder or pipeline_args.train_only_pooling:
         assert (
             augmented_model.trainable_embedder.n_layers
             > pipeline_args.n_truncated_layers

@@ -91,14 +91,17 @@ def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
         f"{num_train_params:,.0f} out of {num_params:,.0f} parameters are finetuned ({num_train_params / num_params * 100:.2f}%)."
     )
     lora_params = sum(p.numel() for n, p in model.named_parameters() if "lora" in n)
+    train_embedder_params =  0 if model.trainable_embedder is None else sum(p.numel()
+        for n, p in model.trainable_embedder.named_parameters()
+        if not is_cross_att(n)
+        and not "lora" in n)
+    
     llm_params = sum(
         p.numel()
-        for n, p in model.named_parameters()
+        for n, p in model.llm.named_parameters()
         if not is_cross_att(n)
         and not "lora" in n
-        and not "mlp_project" in n
-        and not "pooling_module" in n
-    )
+    ) + train_embedder_params
     mlp_project_params = sum(
         p.numel() for n, p in model.named_parameters() if "mlp_project" in n
     )
