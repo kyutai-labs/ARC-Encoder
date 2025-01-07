@@ -315,7 +315,7 @@ def load_training_model_from_ckpt(
         pipe_path=ckpt_path,
     )
 
-    if not old_pipeline_args.trainable_embedder:
+    if not (old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling):
         assert (
             not tune_embedder
         ), "If no trainable embedder, embedder model can't be instruct tuned"
@@ -334,7 +334,7 @@ def load_training_model_from_ckpt(
     )
 
     # Load model and params for embedder
-    if old_pipeline_args.trainable_embedder:
+    if old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling:
         main_logger_info("Loading embedder model ...")
 
         # Load pretrained params on rank 0
@@ -360,9 +360,11 @@ def load_training_model_from_ckpt(
                 del module
 
         llm_embedder.n_layers = llm_embedder.n_layers - n_truncated_layers
-        llm_embedder.load_lora(
-            Path(trainable_embedder_path + "/lora.safetensors"), cross_att=False
-        )
+        
+        if not old_pipeline_args.train_only_pooling:
+            llm_embedder.load_lora(
+                Path(trainable_embedder_path + "/lora.safetensors"), cross_att=False
+            )
 
         embedding_model = llm_embedder.to(torch.cuda.current_device())
 
@@ -397,7 +399,7 @@ def load_training_model_from_ckpt(
 
     augmented_model.llm = augmented_model.llm.to(torch.cuda.current_device())
 
-    if old_pipeline_args.trainable_embedder and old_pipeline_args.do_pool:
+    if (old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling) and old_pipeline_args.do_pool:
         if (
             old_pipeline_args.do_pool
             and "attention" in augmented_pipeline.pipeline_args.pooling_module.type
