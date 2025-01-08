@@ -338,13 +338,7 @@ def _train(
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
     prepare_batch_fn = partial(
         pipeline.prepare_forward,
-        batch_size=args.batch_size,
-        mlm=args.pipeline.mlm,
-    )
-    if args.pipeline.mlm:
-        main_logger_info(
-            "Using MLM on the first available embedded passage only, rest is discarded"
-        )
+        batch_size=args.batch_size)
 
     if args.pipeline.w_prefix_prompt:
         model.tokenize_prompts = {}

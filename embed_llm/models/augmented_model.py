@@ -193,187 +193,26 @@ class EmbedAugPipeline(nn.Module):
         self,
         batch: Batch,
         batch_size: int,
-        mlm: bool = False,
     ) -> tuple:
 
         embed_seqlens = []
 
-        if mlm:
-            x = []
-            y = []
-            texts = []
-            y_mask = None
-            seqlens = []
-            cur_pos = 0
 
-            if self.pipeline_args.trainable_embedder or self.pipeline_args.train_only_pooling:
+        if (
+            self.pipeline_args.w_embeds
+            and not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling
+        ):
+            # To avoid OOM
+            with torch.no_grad():
                 embeddings = []
-                embed_seqlens = []
-
-            for i, size in enumerate(batch.sizes):
-                new_text_tokens = []
-
-                if int(size * 0.15) == 0:
-                    continue
-
-                start = np.random.randint(0, size - int(size * 0.15))
-                learned_ids = np.arange(start, start + int(size * 0.15))
-                # learned_ids = np.random.choice(
-                #     size, size=int(size * 0.15), replace=False
-                # )
-                masked_ids = np.random.choice(
-                    learned_ids, size=int(len(learned_ids) * 0.8), replace=False
-                )
-                random_ids = np.random.choice(
-                    learned_ids, size=int(len(learned_ids) * 0.1), replace=False
-                )
-                x.extend(np.array(batch.x[cur_pos : cur_pos + size])[learned_ids])
-                y.extend(np.array(batch.y[cur_pos : cur_pos + size])[learned_ids])
-                seqlens.append(len(learned_ids))
-                cur_pos += size
-
-                text_tokens = self.tokenizer.encode(
-                    batch.to_embed[i]["text"][0], bos=False, eos=False
-                )
-
-                for i, token in enumerate(text_tokens):
-                    if i in learned_ids:
-                        if i in masked_ids:
-                            new_text_tokens.append(0)
-                        elif i in random_ids:
-                            new_text_tokens.append(
-                                np.random.randint(self.tokenizer.n_words)
-                            )
-                        else:
-                            new_text_tokens.append(token)
-                    else:
-                        new_text_tokens.append(token)
-                if self.pipeline_args.trainable_embedder:
-                    embeddings.extend(new_text_tokens)
-                    embed_seqlens.append(len(new_text_tokens))
-
-                texts.append(self.tokenizer.decode(new_text_tokens))
-            x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
-            y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
-            if self.pipeline_args.trainable_embedder:
-                embeddings = torch.from_numpy(np.array(embeddings)).cuda(
-                    non_blocking=True
-                )
-
-            if (
-                self.pipeline_args.w_embeds
-                and not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling
-            ):
-                # To avoid OOM
-                with torch.no_grad():
-                    embeddings = []
-                    subbatch = []
-                    # Maximum not to cause memory errors or also unspecified launch failure
-                    subbatch_size = 16 if batch_size > 16 else batch_size
-                    for i, text in enumerate(texts):
-                        subbatch.append(text)
-                        if len(subbatch) == subbatch_size:
-
-                            if not self.pipeline_args.do_pool:
-                                embeds, emb_seqlens = encode_text(
-                                    subbatch,
-                                    model_name=self.embed_model_name,
-                                    model=self.embedding_model,
-                                    query_embedding=False,
-                                    device=self.embedding_model.device,
-                                    cross_att=True,
-                                )
-                                embed_seqlens.extend(emb_seqlens)
-                            else:
-                                embeds = encode_text(
-                                    subbatch,
-                                    model_name=self.embed_model_name,
-                                    model=self.embedding_model,
-                                    query_embedding=False,
-                                    device=self.embedding_model.device,
-                                    cross_att=False,
-                                )
-                                embed_seqlens.extend([1] * len(subbatch))
-
-                            embeddings.append(
-                                embeds.type(self.pipeline_args.param_dtype)
-                            )
-
-                            subbatch = []
-                    if len(subbatch) > 0:
+                subbatch = []
+                # Maximum not to cause memory errors or also unspecified launch failure
+                subbatch_size = 16 if batch_size > 16 else batch_size
+                for i, to_embed in enumerate(batch.to_embed):
+                    subbatch.append(to_embed["text"])
+                    if len(subbatch) == subbatch_size:
                         if not self.pipeline_args.do_pool:
-                            embeds, emb_seqlens = encode_text(
-                                subbatch,
-                                model_name=self.embed_model_name,
-                                model=self.embedding_model,
-                                query_embedding=False,
-                                device=self.embedding_model.device,
-                                cross_att=True,
-                            )
-                            embed_seqlens.extend(emb_seqlens)
-                        else:
-                            embeds = encode_text(
-                                subbatch,
-                                model_name=self.embed_model_name,
-                                model=self.embedding_model,
-                                query_embedding=False,
-                                device=self.embedding_model.device,
-                                cross_att=False,
-                            )
-                            embed_seqlens.extend([1] * len(subbatch))
-                        embeddings.append(embeds.type(self.pipeline_args.param_dtype))
-                    embeddings = torch.concatenate(embeddings, dim=0)
-
-        else:
-            if (
-                self.pipeline_args.w_embeds
-                and not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling
-            ):
-                # To avoid OOM
-                with torch.no_grad():
-                    embeddings = []
-                    subbatch = []
-                    # Maximum not to cause memory errors or also unspecified launch failure
-                    subbatch_size = 16 if batch_size > 16 else batch_size
-                    for i, to_embed in enumerate(batch.to_embed):
-                        subbatch.append(to_embed["text"])
-                        if len(subbatch) == subbatch_size:
-                            if not self.pipeline_args.do_pool:
-                                subbatch = [" ".join(sublist) for sublist in subbatch]
-                                embeds, emb_seqlens = encode_text(
-                                    subbatch,
-                                    model_name=self.embed_model_name,
-                                    model=self.embedding_model,
-                                    query_embedding=False,
-                                    device=self.embedding_model.device,
-                                    cross_att=True,
-                                )
-                                # We keep all tokens so we can concatenate embeddings into one long sequence.
-                                embed_seqlens.extend(emb_seqlens)
-                            else:
-                                embed_seqlens.extend(
-                                    [len(l_text) for l_text in subbatch]
-                                )
-                                subbatch = [
-                                    el for sublist in subbatch for el in sublist
-                                ]  # Flatten list of lists
-
-                                embeds = encode_text(
-                                    subbatch,
-                                    model_name=self.embed_model_name,
-                                    model=self.embedding_model,
-                                    query_embedding=False,
-                                    device=self.embedding_model.device,
-                                    cross_att=False,
-                                )
-
-                            embeddings.append(
-                                embeds.type(self.pipeline_args.param_dtype)
-                            )
-
-                            subbatch = []
-                    if len(subbatch) > 0:
-                        if not self.pipeline_args.do_pool:
+                            subbatch = [" ".join(sublist) for sublist in subbatch]
                             embeds, emb_seqlens = encode_text(
                                 subbatch,
                                 model_name=self.embed_model_name,
@@ -383,13 +222,15 @@ class EmbedAugPipeline(nn.Module):
                                 cross_att=True,
                             )
                             # We keep all tokens so we can concatenate embeddings into one long sequence.
-                            subbatch = [" ".join(sublist) for sublist in subbatch]
                             embed_seqlens.extend(emb_seqlens)
                         else:
-                            embed_seqlens.extend([len(l_text) for l_text in subbatch])
+                            embed_seqlens.extend(
+                                [len(l_text) for l_text in subbatch]
+                            )
                             subbatch = [
                                 el for sublist in subbatch for el in sublist
                             ]  # Flatten list of lists
+
                             embeds = encode_text(
                                 subbatch,
                                 model_name=self.embed_model_name,
@@ -398,40 +239,71 @@ class EmbedAugPipeline(nn.Module):
                                 device=self.embedding_model.device,
                                 cross_att=False,
                             )
-                        embeddings.append(embeds.type(self.pipeline_args.param_dtype))
-                    embeddings = torch.concatenate(embeddings, dim=0)
 
-            else:
-                # Trainable Embedder
-                embeddings = [to_embed["tokens"] for to_embed in batch.to_embed]
-                embeddings = torch.from_numpy(
-                    np.array(
-                        [
-                            el
-                            for sublist in embeddings
-                            for subsublist in sublist
-                            for el in subsublist
-                        ]
-                    )
-                ).cuda(non_blocking=True)
-                embed_seqlens = []
-                for to_embed in batch.to_embed:
-                    assert not any(
-                        [len(l_tokens) <= 1 for l_tokens in to_embed["tokens"]]
-                    )
-                    embed_seqlens.append(
-                        [len(l_tokens) for l_tokens in to_embed["tokens"]]
-                    )
+                        embeddings.append(
+                            embeds.type(self.pipeline_args.param_dtype)
+                        )
 
-        if not mlm:
-            x = torch.from_numpy(batch.x).cuda(non_blocking=True)
-            y = torch.from_numpy(batch.y).cuda(non_blocking=True)
-            y_mask = (
-                torch.from_numpy(batch.y_mask).cuda(non_blocking=True)
-                if batch.y_mask is not None
-                else None
-            )
-            seqlens = batch.sizes
+                        subbatch = []
+                if len(subbatch) > 0:
+                    if not self.pipeline_args.do_pool:
+                        embeds, emb_seqlens = encode_text(
+                            subbatch,
+                            model_name=self.embed_model_name,
+                            model=self.embedding_model,
+                            query_embedding=False,
+                            device=self.embedding_model.device,
+                            cross_att=True,
+                        )
+                        # We keep all tokens so we can concatenate embeddings into one long sequence.
+                        subbatch = [" ".join(sublist) for sublist in subbatch]
+                        embed_seqlens.extend(emb_seqlens)
+                    else:
+                        embed_seqlens.extend([len(l_text) for l_text in subbatch])
+                        subbatch = [
+                            el for sublist in subbatch for el in sublist
+                        ]  # Flatten list of lists
+                        embeds = encode_text(
+                            subbatch,
+                            model_name=self.embed_model_name,
+                            model=self.embedding_model,
+                            query_embedding=False,
+                            device=self.embedding_model.device,
+                            cross_att=False,
+                        )
+                    embeddings.append(embeds.type(self.pipeline_args.param_dtype))
+                embeddings = torch.concatenate(embeddings, dim=0)
+
+        else:
+            # Trainable Embedder
+            embeddings = [to_embed["tokens"] for to_embed in batch.to_embed]
+            embeddings = torch.from_numpy(
+                np.array(
+                    [
+                        el
+                        for sublist in embeddings
+                        for subsublist in sublist
+                        for el in subsublist
+                    ]
+                )
+            ).cuda(non_blocking=True)
+            embed_seqlens = []
+            for to_embed in batch.to_embed:
+                assert not any(
+                    [len(l_tokens) <= 1 for l_tokens in to_embed["tokens"]]
+                )
+                embed_seqlens.append(
+                    [len(l_tokens) for l_tokens in to_embed["tokens"]]
+                )
+
+        x = torch.from_numpy(batch.x).cuda(non_blocking=True)
+        y = torch.from_numpy(batch.y).cuda(non_blocking=True)
+        y_mask = (
+            torch.from_numpy(batch.y_mask).cuda(non_blocking=True)
+            if batch.y_mask is not None
+            else None
+        )
+        seqlens = batch.sizes
 
         return x, y, y_mask, seqlens, embeddings, embed_seqlens
 
