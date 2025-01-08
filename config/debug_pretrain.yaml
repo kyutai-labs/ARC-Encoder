@@ -4,6 +4,13 @@ run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_pretrain
 continuation: 0.
 textual_continuation: 0.
+
+hybrid_task:
+    do: true
+    max_n_prefixes: 4
+    min_n_prefixes: 0
+    prop_continuation: 0.5
+
 lora:
   rank: 64
   scaling: 2.0
@@ -41,7 +48,7 @@ data:
   # eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
   shuffle: false
   adapt_seq_len: true
-seq_len: 128
+seq_len: 256
 batch_size: 32
 num_microbatches: 1
 max_steps: 40000
@@ -54,7 +61,7 @@ optim:
 seed: 0
 log_freq: 10
 eval_freq: 100
-no_eval: false
+no_eval: true
 ckpt_freq: 500
 save_adapters: true
 

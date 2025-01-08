@@ -50,7 +50,7 @@ class InstructionTuningArgs(Serializable):
 class HybridTask(Serializable):
     do: bool = False
     max_n_prefixes: int = 1
-    min_n_prefixes: int = 1
+    min_n_prefixes: int = 0
     prop_continuation: float = 0.5
 
 @dataclass

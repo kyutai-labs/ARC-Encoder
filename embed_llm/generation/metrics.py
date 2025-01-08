@@ -227,6 +227,17 @@ def get_accuracy(pred: str, ground_truth: str) -> int:
 def get_em(pred: str, ground_truth: str) -> int:
     return int(normalize_answer(ground_truth) == normalize_answer(pred))
 
+def get_approx_em(pred: str, ground_truth: str) -> int:
+    l_normed_pred = normalize_answer(pred).split(" ")
+    l_normed_gt = normalize_answer(ground_truth).split(" ")    
+    len_gt = len(l_normed_gt)
+    if len(l_normed_pred) < len_gt:
+        return 0
+    
+    for i in range(len(l_normed_pred) - len_gt + 1):
+        if l_normed_pred[i:i+len_gt] == l_normed_gt:
+            return 1
+    return 0
 
 def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
 

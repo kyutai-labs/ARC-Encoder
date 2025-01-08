@@ -15,6 +15,7 @@ from embed_llm.generation.metrics import (
     get_f1_score,
     get_rougel_score,
     metric_max_over_ground_truths,
+    get_approx_em
 )
 
 
@@ -151,23 +152,52 @@ def evaluate_model(
 
                 generated_sequences.extend(generated_sequence)
 
-            value = sum(
-                [
-                    metric_max_over_ground_truths(
-                        METRIC_EVALUATION[benchmark], pred, gts
-                    )
-                    for pred, gts in zip(generated_sequences, answers)
-                ]
-            ) / len(questions)
-            print('Temperature:', temp, benchmark +': ',value)
-            metrics.append(
-                {
-                    "CKPT": ckpt,
-                    "temp": temp,
-                    "n_samples": n_samples,
-                    benchmark: value,
-                }
-            )
+            if METRIC_EVALUATION[benchmark] == get_em:
+                value_em = sum(
+                    [
+                        metric_max_over_ground_truths(
+                            get_em, pred, gts
+                        )
+                        for pred, gts in zip(generated_sequences, answers)
+                    ]
+                ) / len(questions)
+                
+                value_approx = sum(
+                    [
+                        metric_max_over_ground_truths(
+                            get_approx_em, pred, gts
+                        )
+                        for pred, gts in zip(generated_sequences, answers)
+                    ]
+                ) / len(questions)
+                print('Temperature:', temp, benchmark +'EM : ',value_em, benchmark + 'Approx EM: ', value_approx)
+                metrics.append(
+                    {
+                        "CKPT": ckpt,
+                        "temp": temp,
+                        "n_samples": n_samples,
+                        'EM_'+benchmark: value_em,
+                        'Approx_EM_'+benchmark: value_approx,
+                    }
+                )
+            else:
+                value = sum(
+                    [
+                        metric_max_over_ground_truths(
+                            METRIC_EVALUATION[benchmark], pred, gts
+                        )
+                        for pred, gts in zip(generated_sequences, answers)
+                    ]
+                ) / len(questions)
+                print('Temperature:', temp, benchmark+ ': ', value)
+                metrics.append(
+                    {
+                        "CKPT": ckpt,
+                        "temp": temp,
+                        "n_samples": n_samples,
+                        benchmark: value,
+                    }
+                )
 
     with open(
         "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
@@ -421,9 +451,9 @@ if __name__ == "__main__":
         # "pretrain_both_trained_cont_singpassage_17c38ada",
         # "pretrain_llm_trained_cont_singpassage_5daaa6bc",
         # "pretrain_llm_trained_rec_multipassage_054f63f8",
-        'pretrain_both_trained_02_singpassage_0f6f2a1a',
-        'pretrain_both_trained_rec_multipassage_0f6f2a1a',
-        'pretrain_both_trained_rec_singpassage_0f6f2a1a',
+        # 'pretrain_both_trained_02_singpassage_0f6f2a1a',
+        # 'pretrain_both_trained_rec_multipassage_0f6f2a1a',
+        # 'pretrain_both_trained_rec_singpassage_0f6f2a1a',
         'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB'
         # 'pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada',
         # 'pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada',
