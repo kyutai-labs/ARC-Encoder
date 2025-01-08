@@ -146,10 +146,13 @@ class TrainState:
     n_seen_tokens: int = 0
     this_step_time: float = 0.0
     begin_step_time: float = 0.0
-    this_eval_perplexity: float | None = None
-    this_eval_perplexity_wo_embed: float | None = None
-    this_eval_loss: float | None = None
-    this_eval_loss_wo_embed: float | None = None
+    this_eval_perplexity_rec: float | None = None
+    this_eval_perplexity_textcont: float | None = None
+    this_eval_perplexity_embcont: float | None = None
+    this_eval_loss_rec: float | None = None
+    this_eval_loss_textcont: float | None = None
+    this_eval_loss_embcont: float | None = None
+    this_eval_kl_loss: float | None = None
 
     def start_step(self):
         self.step += 1

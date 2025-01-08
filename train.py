@@ -271,10 +271,11 @@ def _train(
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
         continuation=args.continuation,
+        hybrid_task = args.hybrid_task
     )
     main_logger_info("Data loader done")
     if not args.no_eval:
-        eval_data_loader = build_data_loader(
+        eval_data_loader_4rec = build_data_loader(
             tokenizer=pipeline.tokenizer,
             args=args.data,
             seq_len=args.seq_len,
@@ -285,19 +286,49 @@ def _train(
             rank=get_rank(),  # DDP rank
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
-            continuation=args.continuation,
+            continuation=False,
+            hybrid_task = None,
         )
 
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
 
         eval_batches = []
         while len(eval_batches) < 40:
-            batch = next(eval_data_loader)
+            batch = next(eval_data_loader_4rec)
             if len(batch.sizes) > 70:
                 print("Too many embeddings to do, skipping batch")
                 continue
             else:
                 eval_batches.append(batch)
+                
+        if args.continuation > 0.0 or args.hybrid_task.do:
+            eval_data_loader_4cont = build_data_loader(
+            tokenizer=pipeline.tokenizer,
+            args=args.data,
+            seq_len=args.seq_len,
+            batch_size=(
+                4 if args.batch_size <= 16 else args.batch_size // 4
+            ),  # To avoid OOM
+            seed=None,
+            rank=get_rank(),  # DDP rank
+            world_size=get_world_size(),  # DDP world_size
+            is_eval=True,
+            continuation=True,
+            hybrid_task = None,
+            )
+
+            # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
+
+            eval_batches_4cont = []
+            while len(eval_batches_4cont) < 40:
+                batch = next(eval_data_loader_4cont)
+                if len(batch.sizes) > 70:
+                    print("Too many embeddings to do, skipping batch")
+                    continue
+                else:
+                    eval_batches_4cont.append(batch)
+        else:
+            eval_batches_4cont = None
 
     # 9. Load optimizer
     optimizer = AdamW(
@@ -589,19 +620,21 @@ def _train(
             evaluate(
                 model=model,
                 prepare_batch_fn=prepare_batch_fn,
-                batches=eval_batches,
+                batches_rec=eval_batches,
                 state=state,
-                continuation=(args.continuation > 0.0),
                 instruction_tuning=args.instruct_tuning,
+                batches_cont=eval_batches_4cont,
             )
 
             eval_logs = get_eval_logs(
                 state.step,
                 avg_loss,
-                state.this_eval_perplexity,
-                state.this_eval_loss,
-                perplexity_wo_embed=state.this_eval_perplexity_wo_embed,
-                eval_loss_wo_embed=state.this_eval_loss_wo_embed,
+                state.this_eval_perplexity_rec,
+                state.this_eval_loss_rec,
+                perplexity_textcont=state.this_eval_perplexity_textcont,
+                eval_loss_textcont=state.this_eval_loss_textcont,
+                perplexity_embcont=state.this_eval_perplexity_embcont,
+                eval_loss_embcont=state.this_eval_loss_embcont,
                 eval_kl_loss=state.this_eval_kl_loss,
                 instruct_cross_entropy=cross_entropy_loss_avg,
                 instruct_kl=kl_loss_avg,

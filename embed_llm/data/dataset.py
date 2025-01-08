@@ -9,6 +9,7 @@ from typing import Iterator
 import numpy as np
 import torch.distributed as dist
 from embed_llm.training.distributed import get_rank
+from embed_llm.training.args import HybridTask
 from embed_llm.data.args import DataArgs
 from embed_llm.data.tokenize import Mask, TokenSample, encode, Tokenizer
 
@@ -460,6 +461,7 @@ def build_dataset(
     rank: int,
     world_size: int,
     is_eval: bool,
+    hybrid_task: HybridTask,
     seed: int | None = None,
     shuffle: bool = False,
     continuation: float = 0.0,
@@ -471,7 +473,6 @@ def build_dataset(
     dataset_iterators = [
         get_dataset_iterator(
             source=source,
-            args=args,
             tokenizer=tokenizer,
             rank=rank,
             world_size=world_size,
@@ -515,7 +516,6 @@ def get_rng(seed: int, rank: int) -> np.random.RandomState:
 
 
 def get_dataset_iterator(
-    args: DataArgs,
     source: DataDir | DataFile,
     rank: int,
     world_size: int,

@@ -417,10 +417,10 @@ if __name__ == "__main__":
 
     run_names = [
         # 'LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_atend_True_DB'
-        "pretrain_llm_trained_rec_singpassage_054f63f8",
-        "pretrain_both_trained_cont_singpassage_17c38ada",
-        "pretrain_llm_trained_cont_singpassage_5daaa6bc",
-        "pretrain_llm_trained_rec_multipassage_054f63f8",
+        # "pretrain_llm_trained_rec_singpassage_054f63f8",
+        # "pretrain_both_trained_cont_singpassage_17c38ada",
+        # "pretrain_llm_trained_cont_singpassage_5daaa6bc",
+        # "pretrain_llm_trained_rec_multipassage_054f63f8",
         'pretrain_both_trained_02_singpassage_0f6f2a1a',
         'pretrain_both_trained_rec_multipassage_0f6f2a1a',
         'pretrain_both_trained_rec_singpassage_0f6f2a1a',

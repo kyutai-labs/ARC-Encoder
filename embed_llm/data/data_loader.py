@@ -1,9 +1,8 @@
 import dataclasses
 from typing import Iterator
 import numpy as np
-import torch
-import torch.distributed as dist
-from embed_llm.training.distributed import get_rank
+
+from embed_llm.training.args import HybridTask
 from embed_llm.data.args import DataArgs
 from embed_llm.data.dataset import build_dataset
 from embed_llm.data.tokenize import Tokenizer
@@ -120,6 +119,7 @@ def build_data_loader(
     is_eval: bool,
     seed: int | None = None,
     continuation: float = 0.0,
+    hybrid_task: HybridTask | None = None,
 ) -> Iterator[Batch]:
 
     dataset = build_dataset(
@@ -131,6 +131,7 @@ def build_data_loader(
         world_size=world_size,
         is_eval=is_eval,
         continuation=continuation,
+        hybrid_task=hybrid_task,
     )
     
     batch_list_dict = {}

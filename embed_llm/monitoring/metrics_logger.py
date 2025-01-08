@@ -50,28 +50,36 @@ def get_train_logs(
 def get_eval_logs(
     step: int,
     train_loss: float,
-    perplexity: float | None = None,
-    eval_loss: float | None = None,
-    perplexity_wo_embed: float | None = None,
-    eval_loss_wo_embed: float | None = None,
+    perplexity_rec: float | None = None,
+    eval_loss_rec: float | None = None,
+    perplexity_textcont: float | None = None,
+    eval_loss_textcont: float | None = None,
+    perplexity_embcont: float | None = None,
+    eval_loss_embcont: float | None = None,
     instruct_cross_entropy: float | None = None,
     instruct_kl: float | None = None,
     eval_kl_loss: float | None = None,
 ) -> dict[str, float | int]:
     eval_dict = {"step": step, "train_loss": train_loss}
 
-    if perplexity is not None:
-        eval_dict["perplexity"] = perplexity
+    if perplexity_rec is not None:
+        eval_dict['perplexity_rec'] = perplexity_rec
 
-    if eval_loss is not None:
-        eval_dict["eval_loss"] = eval_loss
+    if eval_loss_rec is not None:
+        eval_dict['eval_loss_rec'] = eval_loss_rec
 
-    if perplexity_wo_embed is not None:
-        eval_dict["perplexity_wo_embed"] = perplexity_wo_embed
+    if perplexity_textcont is not None:
+        eval_dict['perplexity_textcont'] = perplexity_textcont
 
-    if eval_loss_wo_embed is not None:
-        eval_dict["eval_loss_wo_embed"] = eval_loss_wo_embed
+    if eval_loss_textcont is not None:
+        eval_dict['eval_loss_textcont'] = eval_loss_textcont
 
+    if perplexity_embcont is not None:
+        eval_dict['perplexity_embcont'] = perplexity_embcont
+
+    if eval_loss_embcont is not None:
+        eval_dict['eval_loss_embcont'] = eval_loss_embcont
+        
     if instruct_cross_entropy is not None:
         eval_dict["instruct_cross_entropy"] = instruct_cross_entropy
 
@@ -126,11 +134,13 @@ def eval_log_msg(logs: dict[str, float | int]) -> str:
     parts = []
     for key, fmt, new_name in [
         ("step", "06", None),
-        ("perplexity", ".3f", "eval_perplexity"),
-        ("eval_loss", ".3f", None),
-        ("train_loss", ".3f", None),
-        ("perplexity_wo_embed", ".3f", "eval_perplexity_wo_embed"),
-        ("eval_loss_wo_embed", ".3f", None),
+        ("perplexity_rec", ".3f", "Eval Reconstruction PPL"),
+        ("eval_loss_rec", ".3f", "Eval Reconstruction Loss"),
+        ("train_loss", ".3f", "Train Loss"),
+        ("perplexity_textcont", ".3f", "Eval Textcont PPL"),
+        ("eval_loss_textcont", ".3f", "Eval Textcont Loss"),
+        ("perplexity_embcont", ".3f", "Eval Embcont PPL"),
+        ("eval_loss_embcont", ".3f", "Eval Embcont Loss"),
         ("instruct_cross_entropy", ".3f", "instruct_cross_entropy"),
         ("instruct_kl", ".3f", "instruct_kl"),
         ("eval_kl_loss", ".3f", "eval_kl_loss"),
