@@ -46,6 +46,12 @@ class InstructionTuningArgs(Serializable):
     tune_llm: bool = False
     tune_embedder: bool = False
 
+@dataclass 
+class HybridTask(Serializable):
+    do: bool = False
+    max_n_prefixes: int = 1
+    min_n_prefixes: int = 1
+    prop_continuation: float = 0.5
 
 @dataclass
 class TrainArgs(Serializable):
@@ -105,6 +111,7 @@ class TrainArgs(Serializable):
     # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
     continuation: float = 0.0
     textual_continuation: float = 0.0
+    hybrid_task: HybridTask = field(default_factory=HybridTask)
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None

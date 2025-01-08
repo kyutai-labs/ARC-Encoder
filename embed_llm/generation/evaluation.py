@@ -378,6 +378,7 @@ def evaluate_reconstruction_model(
                     "em": em,
                     "Meteor": meteor_score,
                     "Bleu Score Avg": bleu_score_avg,
+                    'eval_data_type': eval_data_type
                 }
             )
 
@@ -420,13 +421,24 @@ if __name__ == "__main__":
         "pretrain_both_trained_cont_singpassage_17c38ada",
         "pretrain_llm_trained_cont_singpassage_5daaa6bc",
         "pretrain_llm_trained_rec_multipassage_054f63f8",
+        'pretrain_both_trained_02_singpassage_0f6f2a1a',
+        'pretrain_both_trained_rec_multipassage_0f6f2a1a',
+        'pretrain_both_trained_rec_singpassage_0f6f2a1a',
+        'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB'
+        # 'pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada',
+        # 'pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada',
+        # 'pretrain_llm_trained_02_singpassage_054f63f8',
+        # 'pretrain_llm_trained_05_singpassage_054f63f8',
+        # 'pretrain_both_trained_05_singpassage_0f6f2a1a'
     ]
 
-    max_seq_len = 128
+    max_seq_len = 256
     
     for i, run_name in enumerate(run_names):
-
+        print('Standard Dump')
         evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'standard_dump') # 'atlas','standard_dump'
+        print('Atlas')
+        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'atlas')
         
         # evaluate_model(
         #     run_name,

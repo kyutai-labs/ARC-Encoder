@@ -402,7 +402,6 @@ def _train(
             # start_time = time.time()
 
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
-     
             if args.textual_continuation * args.continuation > 0.0:
 
                 rand_textual_continuation = (

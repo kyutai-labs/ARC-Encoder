@@ -29,7 +29,7 @@ class MLPProjectArgs(Serializable):
 class EmbedAugArgs(Serializable):
     w_embeds: bool = False
     mlp_project: MLPProjectArgs = field(default_factory=MLPProjectArgs)
-    param_dtype: torch.dtype = torch.bfloat16
+    param_dtype: torch.dtype = torch.float32
     embedder_name: str = "NVEmbed"
     trainable_embedder: bool = False
     train_only_pooling: bool = False

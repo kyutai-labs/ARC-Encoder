@@ -63,6 +63,11 @@ def load_training_model(
         ), "Can't have both trainable embedder and train only pooling"
 
 
+    if train_args.hybrid_task.do:
+        assert train_args.continuation == 0.0, "Continuation must be 0 for hybrid task"
+        assert train_args.textual_continuation == 0.0, "Continuation must be 0 for hybrid task"
+        
+
     llm_args, pipeline_args = load_args(
         folder,
         lora,
