@@ -160,100 +160,115 @@ class SequenceEmbedMaskAndSizes:
 
 
 def sequence_iterator_hybrid(
-            sample: TokenSample,
-            x_buffer: list[int],
-            y_buffer: list[int],
-            to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]],
-            mask_buffer: Mask,
-            sizes: list[int],
-            seq_len: int,
-            tokenizer: Tokenizer,
-            max_n_prefixes: int = 1,
-            min_n_prefixes: int = 0,
-            prop_continuation: float = 0.5,
+    sample: TokenSample,
+    x_buffer: list[int],
+    y_buffer: list[int],
+    to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]],
+    mask_buffer: Mask,
+    sizes: list[int],
+    seq_len: int,
+    tokenizer: Tokenizer,
+    max_n_prefixes: int = 1,
+    min_n_prefixes: int = 0,
+    prop_continuation: float = 0.5,
 ) -> SequenceEmbedMaskAndSizes:
     assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
 
-
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
-    
+
     # Embed passage should be the same as x but might be divided in several sequence !
     embed_tokens = sample.passages.tokens
 
-
-    
     n_prefix_tokens = np.random.randint(min_n_prefixes, max_n_prefixes + 1)
-    
 
     continuation = False
-    
+
     if np.random.rand() < prop_continuation:
-        
+
         # If the passage is too short, we can't continue from it
-        if len(x)//4 >= (len(x) - 1) - 10 or len(x)//4 - n_prefix_tokens < 0:
+        if len(x) // 4 >= (len(x) - 1) - 10 or len(x) // 4 - n_prefix_tokens < 0:
             return None
-        
+
         # Can't embed more than seq_len tokens
-        # Arbitrary, to have enough context to continue from and to continue at least 10 tokens. 
-        start_lm = np.random.randint(len(x)//4, min((len(x) - 1) - 10, seq_len)) 
-            
+        # Arbitrary, to have enough context to continue from and to continue at least 10 tokens.
+        start_lm = np.random.randint(len(x) // 4, min((len(x) - 1) - 10, seq_len))
+
         new_embed = []
         n_emb_toks = 0
-        
+
         # Truncate such that all the passages represent just [0,start_continuation] tokens
-        for passage in  embed_tokens:
+        for passage in embed_tokens:
             if n_emb_toks + len(passage) <= start_lm:
                 n_emb_toks += len(passage)
                 new_embed.append(passage)
                 continue
             else:
-                new_embed.append(passage[:start_lm - n_emb_toks])
+                new_embed.append(passage[: start_lm - n_emb_toks])
                 break
-     
-        to_embed_buffer.append({"text": [tokenizer.decode(toks) for toks in new_embed], "tokens": new_embed})
+
+        to_embed_buffer.append(
+            {
+                "text": [tokenizer.decode(toks) for toks in new_embed],
+                "tokens": new_embed,
+            }
+        )
         continuation = True
     else:
         # If the passage is too short, we can't reconstruct at least 10 tokens
         if n_prefix_tokens >= (len(x) - 1) - 10:
             return None
-        
+
         # Can't embed more than seq_len tokens
         # Reconstruct at least 10 tokens
-        start_lm = np.random.randint(n_prefix_tokens, min((len(x) - 1) - 10, seq_len)) 
-            
+        start_lm = np.random.randint(n_prefix_tokens, min((len(x) - 1) - 10, seq_len))
+
         new_embed = []
         n_emb_toks = 0
-        
+
         # Truncate such that all the passages represent just [0,seq_len] tokens
-        for passage in  embed_tokens:
+        for passage in embed_tokens:
             if n_emb_toks + len(passage) <= seq_len:
                 n_emb_toks += len(passage)
                 new_embed.append(passage)
                 continue
             else:
-                new_embed.append(passage[:seq_len - n_emb_toks])
+                new_embed.append(passage[: seq_len - n_emb_toks])
                 break
-        
-        to_embed_buffer.append({"text": [tokenizer.decode(toks) for toks in new_embed], "tokens": new_embed})
-        
 
-    
+        to_embed_buffer.append(
+            {
+                "text": [tokenizer.decode(toks) for toks in new_embed],
+                "tokens": new_embed,
+            }
+        )
+
     # Continue/Reconstruct maximum seq_len tokens
-    x_buffer.extend(x[start_lm-n_prefix_tokens:start_lm - n_prefix_tokens + seq_len])
-    y_buffer.extend(y[start_lm-n_prefix_tokens:start_lm - n_prefix_tokens + seq_len])
-    mask_buffer.extend(n_prefix_tokens*[False] + mask[start_lm:start_lm - n_prefix_tokens + seq_len])
-    sizes.append(min(len(x),start_lm + seq_len - n_prefix_tokens) - start_lm + n_prefix_tokens)
-    
+    x_buffer.extend(
+        x[start_lm - n_prefix_tokens : start_lm - n_prefix_tokens + seq_len]
+    )
+    y_buffer.extend(
+        y[start_lm - n_prefix_tokens : start_lm - n_prefix_tokens + seq_len]
+    )
+    mask_buffer.extend(
+        n_prefix_tokens * [False]
+        + mask[start_lm : start_lm - n_prefix_tokens + seq_len]
+    )
+    sizes.append(
+        min(len(x), start_lm + seq_len - n_prefix_tokens) - start_lm + n_prefix_tokens
+    )
+
     if not continuation:
-        assert sizes[-1] <= len(to_embed_buffer[-1]["tokens"][0]), (sizes[-1], to_embed_buffer[-1]["tokens"][0])
+        assert sizes[-1] <= len(to_embed_buffer[-1]["tokens"][0]), (
+            sizes[-1],
+            to_embed_buffer[-1]["tokens"][0],
+        )
 
     assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
     assert len(x_buffer) <= seq_len
 
-
     assert len(to_embed_buffer) == len(sizes)
-    
+
     # we don't want to yield sequences with a mask filled with False
     if any(mask_buffer):
         return SequenceEmbedMaskAndSizes(
@@ -262,11 +277,12 @@ def sequence_iterator_hybrid(
             to_embed=to_embed_buffer,
             mask=mask_buffer,
             sizes=sizes,
-            data_type='continuation' if continuation else 'reconstruction',
+            data_type="continuation" if continuation else "reconstruction",
         )
     else:
         return None
-            
+
+
 def sequence_iterator_reconstruction(
     x_buffer: list[int],
     y_buffer: list[int],
@@ -458,7 +474,6 @@ def sequence_iterator_continuation(
             if adapt_seq_len:
                 break
     return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes
-    
 
 
 def sequence_iterator(
@@ -468,7 +483,7 @@ def sequence_iterator(
     is_finite: bool,
     adapt_seq_len: bool = False,
     continuation: float = 0.0,
-    hybrid_task: HybridTask | None = None,  
+    hybrid_task: HybridTask | None = None,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -480,7 +495,6 @@ def sequence_iterator(
     sizes: list[int] = []
     n_missing = seq_len
 
-  
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
         if hybrid_task is None or not hybrid_task.do:
@@ -505,7 +519,7 @@ def sequence_iterator(
                     adapt_seq_len=adapt_seq_len,
                     n_missing=n_missing,
                     data_type="continuation",
-                ) 
+                )
                 if isinstance(res, SequenceEmbedMaskAndSizes):
                     yield res
 
@@ -514,8 +528,15 @@ def sequence_iterator(
                     to_embed_buffer = []
                     sizes = []
                     n_missing = seq_len
-                else: 
-                    x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes = res
+                else:
+                    (
+                        x_buffer,
+                        y_buffer,
+                        to_embed_buffer,
+                        mask_buffer,
+                        n_missing,
+                        sizes,
+                    ) = res
                     continue
             else:
                 res = sequence_iterator_reconstruction(
@@ -539,25 +560,32 @@ def sequence_iterator(
                     to_embed_buffer = []
                     sizes = []
                     n_missing = seq_len
-                else: 
-                    x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes = res
+                else:
+                    (
+                        x_buffer,
+                        y_buffer,
+                        to_embed_buffer,
+                        mask_buffer,
+                        n_missing,
+                        sizes,
+                    ) = res
                     continue
         else:
             assert adapt_seq_len, "Hybrid task only works with adapt_seq_len=True"
             res = sequence_iterator_hybrid(
-            sample=sample,
-            x_buffer=x_buffer,
-            y_buffer=y_buffer,
-            mask_buffer=mask_buffer,
-            to_embed_buffer=to_embed_buffer,
-            sizes=sizes,
-            seq_len=seq_len,
-            tokenizer=tokenizer,
-            max_n_prefixes=hybrid_task.max_n_prefixes,
-            min_n_prefixes=hybrid_task.min_n_prefixes,
-            prop_continuation=hybrid_task.prop_continuation,
+                sample=sample,
+                x_buffer=x_buffer,
+                y_buffer=y_buffer,
+                mask_buffer=mask_buffer,
+                to_embed_buffer=to_embed_buffer,
+                sizes=sizes,
+                seq_len=seq_len,
+                tokenizer=tokenizer,
+                max_n_prefixes=hybrid_task.max_n_prefixes,
+                min_n_prefixes=hybrid_task.min_n_prefixes,
+                prop_continuation=hybrid_task.prop_continuation,
             )
-             
+
             if res is None:
                 continue
             else:
@@ -567,8 +595,6 @@ def sequence_iterator(
                 mask_buffer = []
                 to_embed_buffer = []
                 sizes = []
-
-       
 
     if is_finite:
         # if dataloader is in eval, pad to seq length

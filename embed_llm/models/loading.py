@@ -52,10 +52,7 @@ def load_args(
     if pipe_path is not None:
         with open(pipe_path + "/params.json", "r") as f:
             args = json.loads(f.read())
-            
 
-        
-          
         pipeline_args = EmbedAugArgs(
             **{
                 k: args.get(k)
@@ -63,16 +60,16 @@ def load_args(
                 if k in args
             }
         )
-        
-        if 'w_prefix_prompt' not in args:
+
+        if "w_prefix_prompt" not in args:
             with open(os.path.join(pipe_path, "../../args.yaml"), "r") as f:
-                 train_args = yaml.safe_load(f)
+                train_args = yaml.safe_load(f)
             w_prefix_prompt = train_args.get("prefix_prompt", False)
-        if 'max_seq_len' not in args:
+        if "max_seq_len" not in args:
             with open(os.path.join(pipe_path, "../../args.yaml"), "r") as f:
-                 train_args = yaml.safe_load(f)
+                train_args = yaml.safe_load(f)
             max_seq_len = train_args.get("seq_len", 256)
-            
+
         pipeline_args.w_prefix_prompt = w_prefix_prompt
         pipeline_args.max_seq_len = max_seq_len
         mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)

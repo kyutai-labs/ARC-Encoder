@@ -106,7 +106,7 @@ class Batchlist:
         to_embed = sum(self.to_embed[:bs], [])
         y_mask_flatten = self.flatten_to_numpy(self.y_mask[:bs], dtype=bool)
         y_mask_np: np.ndarray | None = None if y_mask_flatten.all() else y_mask_flatten
-        
+
         return Batch(x_np, y_np, to_embed, sizes, y_mask_np, data_type=self.data_type)
 
 
@@ -133,8 +133,8 @@ def build_data_loader(
         continuation=continuation,
     )
 
-    give_cont_batch = torch.tensor([False], device = 'cuda')
-    
+    give_cont_batch = torch.tensor([False], device="cuda")
+
     batch_list_dict = {}
     for sample in dataset:
         assert all(s >= 0 for s in sample.sizes)
@@ -151,8 +151,6 @@ def build_data_loader(
 
         if sample.data_type not in batch_list_dict:
             batch_list_dict[sample.data_type] = Batchlist()
-        
-        
 
         batch_list = batch_list_dict[sample.data_type]
         batch_list.add(
@@ -163,32 +161,31 @@ def build_data_loader(
             sample.mask,
             sample.data_type,
         )
-        print(f'Sample type {get_rank()}', sample.data_type)
+        print(f"Sample type {get_rank()}", sample.data_type)
         if len(batch_list) >= batch_size:
             dist.broadcast(give_cont_batch, 0)
             if get_rank() == 0 and sample.data_type == "continuation":
-                give_cont_batch = torch.tensor([True], device = 'cuda')
+                give_cont_batch = torch.tensor([True], device="cuda")
                 dist.broadcast(give_cont_batch, 0)
-                batch: Batch = batch_list.create_batch(bs = batch_size)
+                batch: Batch = batch_list.create_batch(bs=batch_size)
                 yield batch
 
-                batch_list.empty(bs = batch_size)
+                batch_list.empty(bs=batch_size)
                 batch_list_dict[sample.data_type] = batch_list
-                give_cont_batch = torch.tensor([False], device = 'cuda')
-                
+                give_cont_batch = torch.tensor([False], device="cuda")
+
             elif give_cont_batch.item():
                 if sample.data_type == "continuation":
-                    batch: Batch = batch_list.create_batch(bs = batch_size)
+                    batch: Batch = batch_list.create_batch(bs=batch_size)
                     yield batch
-                    batch_list.empty(bs = batch_size)
+                    batch_list.empty(bs=batch_size)
                     batch_list_dict[sample.data_type] = batch_list
-                    give_cont_batch = torch.tensor([False], device = 'cuda')
+                    give_cont_batch = torch.tensor([False], device="cuda")
                 else:
                     continue
             else:
-                batch: Batch = batch_list.create_batch(bs = batch_size)
+                batch: Batch = batch_list.create_batch(bs=batch_size)
                 yield batch
 
-                batch_list.empty(bs = batch_size)
+                batch_list.empty(bs=batch_size)
                 batch_list_dict[sample.data_type] = batch_list
-

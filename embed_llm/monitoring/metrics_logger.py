@@ -41,7 +41,7 @@ def get_train_logs(
         "eta_in_seconds": state.eta,
         "instruct_cross_entropy": instruct_cross_entropy,
         "instruct_kl": instruct_kl,
-        'batch_type': batch_type,
+        "batch_type": batch_type,
     }
 
     return metrics
@@ -63,23 +63,23 @@ def get_eval_logs(
     eval_dict = {"step": step, "train_loss": train_loss}
 
     if perplexity_rec is not None:
-        eval_dict['perplexity_rec'] = perplexity_rec
+        eval_dict["perplexity_rec"] = perplexity_rec
 
     if eval_loss_rec is not None:
-        eval_dict['eval_loss_rec'] = eval_loss_rec
+        eval_dict["eval_loss_rec"] = eval_loss_rec
 
     if perplexity_textcont is not None:
-        eval_dict['perplexity_textcont'] = perplexity_textcont
+        eval_dict["perplexity_textcont"] = perplexity_textcont
 
     if eval_loss_textcont is not None:
-        eval_dict['eval_loss_textcont'] = eval_loss_textcont
+        eval_dict["eval_loss_textcont"] = eval_loss_textcont
 
     if perplexity_embcont is not None:
-        eval_dict['perplexity_embcont'] = perplexity_embcont
+        eval_dict["perplexity_embcont"] = perplexity_embcont
 
     if eval_loss_embcont is not None:
-        eval_dict['eval_loss_embcont'] = eval_loss_embcont
-        
+        eval_dict["eval_loss_embcont"] = eval_loss_embcont
+
     if instruct_cross_entropy is not None:
         eval_dict["instruct_cross_entropy"] = instruct_cross_entropy
 
@@ -125,7 +125,6 @@ def train_log_msg(state: TrainState, logs: dict[str, float | int], loss: float) 
         except KeyError:
             logger.error(f"{key} not found in {sorted(metrics.keys())}")
             raise
-            
 
     return " - ".join(parts)
 
@@ -205,7 +204,7 @@ class MetricsLogger:
         if not self.is_master:
             return
 
-        metrics_to_ignore = {"step", 'batch_type'}
+        metrics_to_ignore = {"step", "batch_type"}
         assert self.summary_writer is not None
         for key, value in metrics.items():
             if key in metrics_to_ignore or value is None:

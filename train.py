@@ -271,7 +271,7 @@ def _train(
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
         continuation=args.continuation,
-        hybrid_task = args.hybrid_task
+        hybrid_task=args.hybrid_task,
     )
     main_logger_info("Data loader done")
     if not args.no_eval:
@@ -287,7 +287,7 @@ def _train(
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
             continuation=False,
-            hybrid_task = None,
+            hybrid_task=None,
         )
 
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
@@ -300,21 +300,21 @@ def _train(
                 continue
             else:
                 eval_batches.append(batch)
-                
+
         if args.continuation > 0.0 or args.hybrid_task.do:
             eval_data_loader_4cont = build_data_loader(
-            tokenizer=pipeline.tokenizer,
-            args=args.data,
-            seq_len=args.seq_len,
-            batch_size=(
-                4 if args.batch_size <= 16 else args.batch_size // 4
-            ),  # To avoid OOM
-            seed=None,
-            rank=get_rank(),  # DDP rank
-            world_size=get_world_size(),  # DDP world_size
-            is_eval=True,
-            continuation=True,
-            hybrid_task = None,
+                tokenizer=pipeline.tokenizer,
+                args=args.data,
+                seq_len=args.seq_len,
+                batch_size=(
+                    4 if args.batch_size <= 16 else args.batch_size // 4
+                ),  # To avoid OOM
+                seed=None,
+                rank=get_rank(),  # DDP rank
+                world_size=get_world_size(),  # DDP world_size
+                is_eval=True,
+                continuation=True,
+                hybrid_task=None,
             )
 
             # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
@@ -367,9 +367,7 @@ def _train(
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
-    prepare_batch_fn = partial(
-        pipeline.prepare_forward,
-        batch_size=args.batch_size)
+    prepare_batch_fn = partial(pipeline.prepare_forward, batch_size=args.batch_size)
 
     if args.pipeline.w_prefix_prompt:
         model.tokenize_prompts = {}
@@ -427,9 +425,7 @@ def _train(
             # start_time = time.time()
 
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
-            
-    
-                
+
             if args.textual_continuation * args.continuation > 0.0:
                 rand_textual_continuation = (
                     torch.rand(1).cuda()
@@ -543,7 +539,6 @@ def _train(
                 loss += mb_loss.item()
                 # print(prof.key_averages().table(sort_by="cuda_time_total"))
 
-            
             n_batch_tokens += x.numel()
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward
@@ -660,7 +655,7 @@ def _train(
                 train_args=args,
                 instruct_cross_entropy=cross_entropy_loss_avg,
                 instruct_kl=kl_loss_avg,
-                batch_type = batch.data_type
+                batch_type=batch.data_type,
             )
             main_logger_info(train_log_msg(state, logs=train_logs, loss=avg_loss))
             metrics_logger.log(train_logs, step=state.step)

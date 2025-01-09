@@ -133,7 +133,7 @@ def build_data_loader(
         continuation=continuation,
         hybrid_task=hybrid_task,
     )
-    
+
     batch_list_dict = {}
     for sample in dataset:
         assert all(s >= 0 for s in sample.sizes)
@@ -150,8 +150,6 @@ def build_data_loader(
 
         if sample.data_type not in batch_list_dict:
             batch_list_dict[sample.data_type] = Batchlist()
-        
-        
 
         batch_list = batch_list_dict[sample.data_type]
         batch_list.add(
@@ -162,7 +160,7 @@ def build_data_loader(
             sample.mask,
             sample.data_type,
         )
- 
+
         if len(batch_list) == batch_size:
             # if get_rank()==0 and sample.data_type == "continuation":
             #     give_cont_batch = torch.tensor([True], device = 'cuda')

@@ -63,13 +63,16 @@ def load_training_model(
         ), "Can't have both trainable embedder and train only pooling"
 
     if train_args.seq_len != train_args.pipeline.max_seq_len:
-        main_logger_info('Using SEQ LEN from train_args as Max Seq Len since different in pipeline args !!!')
+        main_logger_info(
+            "Using SEQ LEN from train_args as Max Seq Len since different in pipeline args !!!"
+        )
         train_args.pipeline.max_seq_len = train_args.seq_len
 
     if train_args.hybrid_task.do:
         assert train_args.continuation == 0.0, "Continuation must be 0 for hybrid task"
-        assert train_args.textual_continuation == 0.0, "Continuation must be 0 for hybrid task"
-        
+        assert (
+            train_args.textual_continuation == 0.0
+        ), "Continuation must be 0 for hybrid task"
 
     llm_args, pipeline_args = load_args(
         folder,
@@ -262,7 +265,6 @@ def load_training_model(
 
     log_train_params(augmented_model)
 
- 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
@@ -324,7 +326,9 @@ def load_training_model_from_ckpt(
         pipe_path=ckpt_path,
     )
 
-    if not (old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling):
+    if not (
+        old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling
+    ):
         assert (
             not tune_embedder
         ), "If no trainable embedder, embedder model can't be instruct tuned"
@@ -369,7 +373,7 @@ def load_training_model_from_ckpt(
                 del module
 
         llm_embedder.n_layers = llm_embedder.n_layers - n_truncated_layers
-        
+
         if not old_pipeline_args.train_only_pooling:
             llm_embedder.load_lora(
                 Path(trainable_embedder_path + "/lora.safetensors"), cross_att=False
@@ -408,7 +412,9 @@ def load_training_model_from_ckpt(
 
     augmented_model.llm = augmented_model.llm.to(torch.cuda.current_device())
 
-    if (old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling) and old_pipeline_args.do_pool:
+    if (
+        old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling
+    ) and old_pipeline_args.do_pool:
         if (
             old_pipeline_args.do_pool
             and "attention" in augmented_pipeline.pipeline_args.pooling_module.type

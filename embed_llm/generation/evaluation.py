@@ -15,7 +15,7 @@ from embed_llm.generation.metrics import (
     get_f1_score,
     get_rougel_score,
     metric_max_over_ground_truths,
-    get_approx_em
+    get_approx_em,
 )
 
 
@@ -73,29 +73,16 @@ def evaluate_QA(
     last_ckpt = sorted(
         [
             ckpt_name
-            for ckpt_name in os.listdir(
-                tmp_path
-                + run_name
-                + "/checkpoints/"
-            )
+            for ckpt_name in os.listdir(tmp_path + run_name + "/checkpoints/")
             if (
-                Path(
-                    tmp_path
-                    + run_name
-                    + "/checkpoints/"
-                )
-                / ckpt_name
-                / "params.json"
+                Path(tmp_path + run_name + "/checkpoints/") / ckpt_name / "params.json"
             ).exists()
         ]
     )[-1]
 
     pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
         llm_path=llm_path,
-        ckpt_path=tmp_path
-        + run_name
-        + "/checkpoints/"
-        + last_ckpt,
+        ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
         device=device,
         llm_name="Mistral7B",
         embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
@@ -105,17 +92,21 @@ def evaluate_QA(
     print("Evaluating checkpoint", ckpt)
 
     if max_seq_len != pipeline.pipeline_args.max_seq_len:
-        print('Warning: max_seq_len during model training \
-            ({}) is different from the one provided ({})'.format(pipeline.pipeline_args.max_seq_len, max_seq_len))
-        
+        print(
+            "Warning: max_seq_len during model training \
+            ({}) is different from the one provided ({})".format(
+                pipeline.pipeline_args.max_seq_len, max_seq_len
+            )
+        )
+
     device_count = torch.cuda.device_count()
     other_device = torch.device("cuda:1") if device_count > 1 else device
     metrics = {}
-    
+
     for benchmark in tqdm(
         benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
     ):
-        
+
         metrics[benchmark] = {}
         eval_data = EVAL_DATA_PATH[benchmark]
         context = []
@@ -134,24 +125,27 @@ def evaluate_QA(
                     answers.append(data["answer"])
                 # Take the first ranked retrieved passage
                 context.append(data["passages"][0])
-                
+
         print("Evaluation dataset loaded for", benchmark)
-        
-        icl_ex = ''
-        for doc, query, ans in zip(context[:icl_examples], questions[:icl_examples], answers[:icl_examples]):
+
+        icl_ex = ""
+        for doc, query, ans in zip(
+            context[:icl_examples], questions[:icl_examples], answers[:icl_examples]
+        ):
             icl_ex += f"Doc: {doc}\nQuery: {query}\nAnswer: {ans}\n\n"
-        
-             
+
         for temp in temps:
-    
+
             metrics[benchmark][str(temp)] = {}
-            
+
             generated_sequences = []
             n_samples = len(questions) if n_samples is None else n_samples
-            for i in trange(icl_examples, n_samples+icl_examples, max_bs):
+            for i in trange(icl_examples, n_samples + icl_examples, max_bs):
                 generated_sequence, logprobs = pipeline.generate(
-                    prompt_pre_embed=['']*len(questions[i : i + max_bs]),
-                    prompt_post_embed=[icl_ex + query for query in questions[i : i + max_bs]],
+                    prompt_pre_embed=[""] * len(questions[i : i + max_bs]),
+                    prompt_post_embed=[
+                        icl_ex + query for query in questions[i : i + max_bs]
+                    ],
                     text_conditioning=context[i : i + max_bs],
                     temperature=temp,
                     max_tokens=max_seq_len,
@@ -165,27 +159,30 @@ def evaluate_QA(
             if METRIC_EVALUATION[benchmark] == get_em:
                 value_em = sum(
                     [
-                        metric_max_over_ground_truths(
-                            get_em, pred, gts
-                        )
+                        metric_max_over_ground_truths(get_em, pred, gts)
                         for pred, gts in zip(generated_sequences, answers)
                     ]
                 ) / len(n_samples)
-                
+
                 value_approx = sum(
                     [
-                        metric_max_over_ground_truths(
-                            get_approx_em, pred, gts
-                        )
+                        metric_max_over_ground_truths(get_approx_em, pred, gts)
                         for pred, gts in zip(generated_sequences, answers)
                     ]
                 ) / len(n_samples)
-                print('Temperature:', temp, benchmark +' EM: ',value_em, benchmark + ' Approx EM: ', value_approx)
+                print(
+                    "Temperature:",
+                    temp,
+                    benchmark + " EM: ",
+                    value_em,
+                    benchmark + " Approx EM: ",
+                    value_approx,
+                )
                 metrics[benchmark][str(temp)] = {
-                                "n_samples": n_samples,
-                                'Metric': value_em,
-                                'approx_Metric': value_approx,
-                            }
+                    "n_samples": n_samples,
+                    "Metric": value_em,
+                    "approx_Metric": value_approx,
+                }
             else:
                 value = sum(
                     [
@@ -195,11 +192,11 @@ def evaluate_QA(
                         for pred, gts in zip(generated_sequences, answers)
                     ]
                 ) / len(n_samples)
-                print('Temperature:', temp, benchmark+ ': ', value)
+                print("Temperature:", temp, benchmark + ": ", value)
                 metrics[benchmark][str(temp)] = {
-                        "n_samples": n_samples,
-                        'Metric': value,
-                    }
+                    "n_samples": n_samples,
+                    "Metric": value,
+                }
 
     with open(
         "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
@@ -223,10 +220,9 @@ def evaluate_QA(
                 if benchmark not in overall_results[run_name][str(ckpt)].keys():
                     overall_results[run_name][str(ckpt)][benchmark] = {}
 
-
     for benchmark in metrics.keys():
         overall_results[run_name][str(ckpt)][benchmark] = metrics[benchmark]
-        
+
     with open(
         output_file,
         "w",
@@ -243,23 +239,28 @@ def evaluate_reconstruction_model(
     max_seq_len: int = 256,
     max_batch_size: int = 4,
     tmp_path: str = None,
-    eval_data_type: str = 'atlas',
-    n_passages : int = 100,
+    eval_data_type: str = "atlas",
+    n_passages: int = 100,
 ):
-    
-    
-    reconstruct_benchmarks = ["Overlap", "Bleu", "Trunc Bleu", "AVG Bleu", "Meteor", "EM"]
-    
+
+    reconstruct_benchmarks = [
+        "Overlap",
+        "Bleu",
+        "Trunc Bleu",
+        "AVG Bleu",
+        "Meteor",
+        "EM",
+    ]
+
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
-    if eval_data_type == 'atlas':
+    if eval_data_type == "atlas":
         eval_data = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl"
-    elif eval_data_type == 'standard_dump':
-        eval_data = '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl'
+    elif eval_data_type == "standard_dump":
+        eval_data = "/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl"
     else:
         raise ValueError("Invalid eval_data_type")
-        
-        
+
     print("RUN NAME => ", run_name)
 
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
@@ -270,17 +271,9 @@ def evaluate_reconstruction_model(
         last_ckpt = sorted(
             [
                 ckpt_name
-                for ckpt_name in os.listdir(
-                    tmp_path
-                    + run_name
-                    + "/checkpoints/"
-                )
+                for ckpt_name in os.listdir(tmp_path + run_name + "/checkpoints/")
                 if (
-                    Path(
-                        tmp_path
-                        + run_name
-                        + "/checkpoints/"
-                    )
+                    Path(tmp_path + run_name + "/checkpoints/")
                     / ckpt_name
                     / "params.json"
                 ).exists()
@@ -289,10 +282,7 @@ def evaluate_reconstruction_model(
 
         pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
             llm_path=llm_path,
-            ckpt_path=tmp_path
-            + run_name
-            + "/checkpoints/"
-            + last_ckpt,
+            ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
             device=device,
             llm_name="Mistral7B",
             embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
@@ -318,11 +308,15 @@ def evaluate_reconstruction_model(
     else:
         assert ckpt is not None
         pipeline: EmbedAugPipeline = pipeline
-        
+
     if max_seq_len != pipeline.pipeline_args.max_seq_len:
-        print('Warning: max_seq_len during model training \
-            ({}) is different from the one provided ({})'.format(pipeline.pipeline_args.max_seq_len, max_seq_len))
-        
+        print(
+            "Warning: max_seq_len during model training \
+            ({}) is different from the one provided ({})".format(
+                pipeline.pipeline_args.max_seq_len, max_seq_len
+            )
+        )
+
     lim_toks = max_seq_len
     valid_passage = []
 
@@ -331,15 +325,17 @@ def evaluate_reconstruction_model(
             if i == n_passages:
                 break
 
-            if eval_data_type == 'standard_dump':
+            if eval_data_type == "standard_dump":
                 valid_passage.append(
                     pipeline.tokenizer.decode(
                         pipeline.tokenizer.encode(
-                            json.loads(line)["text"].split("\n\n")[1], eos=True, bos=True
+                            json.loads(line)["text"].split("\n\n")[1],
+                            eos=True,
+                            bos=True,
                         )[:lim_toks]
                     )
                 )
-            elif eval_data_type == 'atlas': 
+            elif eval_data_type == "atlas":
                 valid_passage.append(
                     pipeline.tokenizer.decode(
                         pipeline.tokenizer.encode(
@@ -347,7 +343,7 @@ def evaluate_reconstruction_model(
                         )[:lim_toks]
                     )
                 )
-                
+
     max_tokens = lim_toks
 
     results_generation = {}
@@ -364,10 +360,16 @@ def evaluate_reconstruction_model(
         for i in range(0, n_passages, max_batch_size):
             passage = valid_passage[i : i + max_batch_size]
             generated_sequence, logprobs = pipeline.generate(
-                prompt_pre_embed = (['']*len(passage) if not pipeline.pipeline_args.w_prefix_prompt 
-                else ['In other words, background: ']*len(passage)), 
-                prompt_post_embed = (['']*len(passage) if not pipeline.pipeline_args.w_prefix_prompt 
-                else [' is just another way of saying: ']*len(passage)),
+                prompt_pre_embed=(
+                    [""] * len(passage)
+                    if not pipeline.pipeline_args.w_prefix_prompt
+                    else ["In other words, background: "] * len(passage)
+                ),
+                prompt_post_embed=(
+                    [""] * len(passage)
+                    if not pipeline.pipeline_args.w_prefix_prompt
+                    else [" is just another way of saying: "] * len(passage)
+                ),
                 text_conditioning=passage,
                 temperature=temp,
                 max_tokens=max_tokens,
@@ -377,62 +379,70 @@ def evaluate_reconstruction_model(
             )
 
             generated_sequences.extend(generated_sequence)
-        results_generation[str(temp)] =  generated_sequences
-        
+        results_generation[str(temp)] = generated_sequences
 
     metrics = {bench: {} for bench in reconstruct_benchmarks}
     for temp in results_generation.keys():
         # for split in results_generation[temp].keys():
 
-            generated_sequences = results_generation[str(temp)]
-            gt_passage = valid_passage  # train_passage if split == 'train' else valid_passage
-            overlap = word_overlap(gt_passage, generated_sequences)
-            metrics['Overlap'][temp] = {"n_samples": n_passages,
-                                        'Metric': overlap,
-                                        'eval_data_type': eval_data_type}
-            bleu_score = get_bleu_score(gt_passage, generated_sequences)
-            metrics['Bleu'][temp] = {"n_samples": n_passages,
-                                    'Metric': bleu_score,
-                                    'eval_data_type': eval_data_type}
-            trunc_bleu_score = get_bleu_score(gt_passage, generated_sequences, trunc=True)
-            metrics['Trunc Bleu'][temp] = {"n_samples": n_passages,
-                                        'Metric': trunc_bleu_score,
-                                        'eval_data_type': eval_data_type}
-            bleu_score_avg = get_bleu_score(
-                gt_passage, generated_sequences, avg=True
+        generated_sequences = results_generation[str(temp)]
+        gt_passage = (
+            valid_passage  # train_passage if split == 'train' else valid_passage
+        )
+        overlap = word_overlap(gt_passage, generated_sequences)
+        metrics["Overlap"][temp] = {
+            "n_samples": n_passages,
+            "Metric": overlap,
+            "eval_data_type": eval_data_type,
+        }
+        bleu_score = get_bleu_score(gt_passage, generated_sequences)
+        metrics["Bleu"][temp] = {
+            "n_samples": n_passages,
+            "Metric": bleu_score,
+            "eval_data_type": eval_data_type,
+        }
+        trunc_bleu_score = get_bleu_score(gt_passage, generated_sequences, trunc=True)
+        metrics["Trunc Bleu"][temp] = {
+            "n_samples": n_passages,
+            "Metric": trunc_bleu_score,
+            "eval_data_type": eval_data_type,
+        }
+        bleu_score_avg = get_bleu_score(gt_passage, generated_sequences, avg=True)
+        metrics["AVG Bleu"][temp] = {
+            "n_samples": n_passages,
+            "Metric": bleu_score_avg,
+            "eval_data_type": eval_data_type,
+        }
+        meteor_score = get_meteor(gt_passage, generated_sequences)
+        metrics["Meteor"][temp] = {
+            "n_samples": n_passages,
+            "Metric": meteor_score,
+            "eval_data_type": eval_data_type,
+        }
+        em = np.mean(
+            np.array(
+                [get_em(gt, pred) for gt, pred in zip(gt_passage, generated_sequences)]
             )
-            metrics['AVG Bleu'][temp] = {"n_samples": n_passages,
-                                        'Metric': bleu_score_avg,
-                                        'eval_data_type': eval_data_type}
-            meteor_score = get_meteor(gt_passage, generated_sequences)
-            metrics['Meteor'][temp] = {"n_samples": n_passages,
-                        'Metric': meteor_score,
-                        'eval_data_type': eval_data_type}   
-            em = np.mean(
-                np.array(
-                    [
-                        get_em(gt, pred)
-                        for gt, pred in zip(gt_passage, generated_sequences)
-                    ]
-                )
-            )
-            metrics['EM'][str(temp)] = {"n_samples": n_passages,
-                        'Metric': em,
-                        'eval_data_type': eval_data_type}
- 
+        )
+        metrics["EM"][str(temp)] = {
+            "n_samples": n_passages,
+            "Metric": em,
+            "eval_data_type": eval_data_type,
+        }
 
-            print(
-                f"CKPT: {ckpt}, Temperature: {temp}, Overlap: {overlap}",
-                "Bleu Score:",
-                bleu_score,
-                "Truncated output Bleu score:", trunc_bleu_score,
-                "EM:",
-                em,
-                "Meteor:",
-                meteor_score,
-                "Bleu Score Avg:",
-                bleu_score_avg,
-            )
+        print(
+            f"CKPT: {ckpt}, Temperature: {temp}, Overlap: {overlap}",
+            "Bleu Score:",
+            bleu_score,
+            "Truncated output Bleu score:",
+            trunc_bleu_score,
+            "EM:",
+            em,
+            "Meteor:",
+            meteor_score,
+            "Bleu Score Avg:",
+            bleu_score_avg,
+        )
 
     with open(
         "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
@@ -468,12 +478,15 @@ def evaluate_reconstruction_model(
             overall_results[run_name][str(ckpt)] = {}
             for benchmark in reconstruct_benchmarks:
                 if benchmark not in overall_results[run_name][str(ckpt)].keys():
-                    overall_results[run_name][str(ckpt)][benchmark] = {str(temp): [] for temp in temperatures}
-
+                    overall_results[run_name][str(ckpt)][benchmark] = {
+                        str(temp): [] for temp in temperatures
+                    }
 
     for benchmark in metrics.keys():
         for temp in metrics[benchmark].keys():
-            overall_results[run_name][str(ckpt)][benchmark][temp].append(metrics[benchmark][temp])
+            overall_results[run_name][str(ckpt)][benchmark][temp].append(
+                metrics[benchmark][temp]
+            )
 
     with open(
         output_file,
@@ -493,64 +506,77 @@ if __name__ == "__main__":
     if not os.path.exists(output_file):
         with open(output_file, "w") as f:
             json.dump({}, f)
-            
+
     run_names = [
         "pretrain_llm_trained_rec_singpassage_054f63f8",
         "pretrain_both_trained_cont_singpassage_17c38ada",
         "pretrain_llm_trained_cont_singpassage_5daaa6bc",
         "pretrain_llm_trained_rec_multipassage_054f63f8",
-        'pretrain_both_trained_02_singpassage_0f6f2a1a',
-        'pretrain_both_trained_rec_multipassage_0f6f2a1a',
-        'pretrain_both_trained_rec_singpassage_0f6f2a1a',
-        'pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada',
-        'pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada',
-        'pretrain_llm_trained_02_singpassage_054f63f8',
-        'pretrain_llm_trained_05_singpassage_054f63f8',
-        'nopref_pretrain_llm_trained_cont_singpassage_5daaa6bc',
-        'nopref_pretrain_no_trained_cont_singpassage_5daaa6bc',
+        "pretrain_both_trained_02_singpassage_0f6f2a1a",
+        "pretrain_both_trained_rec_multipassage_0f6f2a1a",
+        "pretrain_both_trained_rec_singpassage_0f6f2a1a",
+        "pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada",
+        "pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada",
+        "pretrain_llm_trained_02_singpassage_054f63f8",
+        "pretrain_llm_trained_05_singpassage_054f63f8",
+        "nopref_pretrain_llm_trained_cont_singpassage_5daaa6bc",
+        "nopref_pretrain_no_trained_cont_singpassage_5daaa6bc",
     ]
-        # 'pretrain_both_trained_05_singpassage_0f6f2a1a',
-        # 'nopref_pretrain_no_trained_rec_multipassage_054f63f8',
-        # 'nopref_pretrain_no_trained_rec_multipassage_054f63f8',
-        # 'nopref_pretrain_no_trained_rec_singpassage_054f63f8',
-        # 'nopref_pretrain_both_trained_02_singpassage_0f6f2a1a',
-        # 'nopref_pretrain_llm_trained_02_singpassage_054f63f8',
-        # 'nopref_pretrain_llm_trained_rec_multipassage_054f63f8',
-        # 'nopref_pretrain_pool_trained_cont_singpassage_5daaa6bc',
-        # 'nopref_pretrain_pool_trained_rec_singpassage_054f63f8',
-        # 'nopref_pretrain_both_trained_1cont_0',
-        # 'nopref_pretrain_both_trained_1cont_0',
-        # 'nopref_pretrain_both_trained_cont_singpassage_17c38ada',
-        # 'nopref_pretrain_both_trained_rec_multipassage_0f6f2a1a',
-        # 'nopref_pretrain_both_trained_rec_singpassage_0f6f2a1a',
-        # 'nopref_pretrain_llm_trained_rec_singpassage_054f63f8',
-        # 'nopref_pretrain_both_trained_07_singpassage_0f6f2a1a',
-        # 'nopref_pretrain_llm_trained_07_singpassage_054f63f8',
-        # 'nopref_pretrain_both_trained_05_singpassage_0f6f2a1a',
-        # 'nopref_pretrain_llm_trained_05_singpassage_054f63f8',
-        
-        #TODO IN 128 toks lim
-        # 'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB',
-        # 'LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB',
-        # 'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
-    
+    # 'pretrain_both_trained_05_singpassage_0f6f2a1a',
+    # 'nopref_pretrain_no_trained_rec_multipassage_054f63f8',
+    # 'nopref_pretrain_no_trained_rec_multipassage_054f63f8',
+    # 'nopref_pretrain_no_trained_rec_singpassage_054f63f8',
+    # 'nopref_pretrain_both_trained_02_singpassage_0f6f2a1a',
+    # 'nopref_pretrain_llm_trained_02_singpassage_054f63f8',
+    # 'nopref_pretrain_llm_trained_rec_multipassage_054f63f8',
+    # 'nopref_pretrain_pool_trained_cont_singpassage_5daaa6bc',
+    # 'nopref_pretrain_pool_trained_rec_singpassage_054f63f8',
+    # 'nopref_pretrain_both_trained_1cont_0',
+    # 'nopref_pretrain_both_trained_1cont_0',
+    # 'nopref_pretrain_both_trained_cont_singpassage_17c38ada',
+    # 'nopref_pretrain_both_trained_rec_multipassage_0f6f2a1a',
+    # 'nopref_pretrain_both_trained_rec_singpassage_0f6f2a1a',
+    # 'nopref_pretrain_llm_trained_rec_singpassage_054f63f8',
+    # 'nopref_pretrain_both_trained_07_singpassage_0f6f2a1a',
+    # 'nopref_pretrain_llm_trained_07_singpassage_054f63f8',
+    # 'nopref_pretrain_both_trained_05_singpassage_0f6f2a1a',
+    # 'nopref_pretrain_llm_trained_05_singpassage_054f63f8',
+
+    # TODO IN 128 toks lim
+    # 'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB',
+    # 'LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB',
+    # 'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
+
     for i, run_name in enumerate(run_names):
-        print('Standard Dump')
-        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1.], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'standard_dump') # 'atlas','standard_dump'
-        print('Atlas')
-        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1.], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'atlas')
-        
+        print("Standard Dump")
+        evaluate_reconstruction_model(
+            run_name,
+            output_file=output_file,
+            temperatures=[0, 0.5, 0.7, 1.0],
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            eval_data_type="standard_dump",
+        )  # 'atlas','standard_dump'
+        print("Atlas")
+        evaluate_reconstruction_model(
+            run_name,
+            output_file=output_file,
+            temperatures=[0, 0.5, 0.7, 1.0],
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            eval_data_type="atlas",
+        )
+
         evaluate_QA(
             run_name,
             ["NQ", "TRIVIAQA"],
-            temps=[0, 0.5, 0.7, 1.],
+            temps=[0, 0.5, 0.7, 1.0],
             max_bs=4,
             output_file=output_file,
             n_samples=100,
             max_seq_len=max_seq_len,
-            tmp_path = tmp_path,
-            icl_examples = 1
+            tmp_path=tmp_path,
+            icl_examples=1,
         )
         torch.cuda.empty_cache()
-        print('Finished run', run_name) 
-        
+        print("Finished run", run_name)

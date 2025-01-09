@@ -61,7 +61,6 @@ class EmbedAugModel(nn.Module):
             else pipeline_args.pooling_module
         )
 
-        
         self.dist_process = pipeline_args.dist_process
 
         if self.mlp_project_args.n_layers > 0 and self.w_embeds:
@@ -181,8 +180,12 @@ class EmbedAugPipeline(nn.Module):
             pipeline_args=self.pipeline_args,
             llm=llm,
             trainable_embedder=(
-                self.embedding_model if (self.pipeline_args.trainable_embedder 
-                                         or self.pipeline_args.train_only_pooling) else None
+                self.embedding_model
+                if (
+                    self.pipeline_args.trainable_embedder
+                    or self.pipeline_args.train_only_pooling
+                )
+                else None
             ),
         )
 
@@ -197,10 +200,10 @@ class EmbedAugPipeline(nn.Module):
 
         embed_seqlens = []
 
-
         if (
             self.pipeline_args.w_embeds
-            and not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling
+            and not self.pipeline_args.trainable_embedder
+            and not self.pipeline_args.train_only_pooling
         ):
             # To avoid OOM
             with torch.no_grad():
@@ -224,9 +227,7 @@ class EmbedAugPipeline(nn.Module):
                             # We keep all tokens so we can concatenate embeddings into one long sequence.
                             embed_seqlens.extend(emb_seqlens)
                         else:
-                            embed_seqlens.extend(
-                                [len(l_text) for l_text in subbatch]
-                            )
+                            embed_seqlens.extend([len(l_text) for l_text in subbatch])
                             subbatch = [
                                 el for sublist in subbatch for el in sublist
                             ]  # Flatten list of lists
@@ -240,9 +241,7 @@ class EmbedAugPipeline(nn.Module):
                                 cross_att=False,
                             )
 
-                        embeddings.append(
-                            embeds.type(self.pipeline_args.param_dtype)
-                        )
+                        embeddings.append(embeds.type(self.pipeline_args.param_dtype))
 
                         subbatch = []
                 if len(subbatch) > 0:
@@ -289,12 +288,8 @@ class EmbedAugPipeline(nn.Module):
             ).cuda(non_blocking=True)
             embed_seqlens = []
             for to_embed in batch.to_embed:
-                assert not any(
-                    [len(l_tokens) <= 1 for l_tokens in to_embed["tokens"]]
-                )
-                embed_seqlens.append(
-                    [len(l_tokens) for l_tokens in to_embed["tokens"]]
-                )
+                assert not any([len(l_tokens) <= 1 for l_tokens in to_embed["tokens"]])
+                embed_seqlens.append([len(l_tokens) for l_tokens in to_embed["tokens"]])
 
         x = torch.from_numpy(batch.x).cuda(non_blocking=True)
         y = torch.from_numpy(batch.y).cuda(non_blocking=True)
@@ -454,8 +449,8 @@ class EmbedAugPipeline(nn.Module):
         self,
         text_conditioning: str | Sequence[str],
         device: str,
-        prompt_pre_embed: str | Sequence[str] = '',
-        prompt_post_embed: str | Sequence[str] = '',
+        prompt_pre_embed: str | Sequence[str] = "",
+        prompt_post_embed: str | Sequence[str] = "",
         max_tokens: int = 100,
         temperature: float = 0.6,
         truncate_double_space: bool = False,
@@ -471,7 +466,7 @@ class EmbedAugPipeline(nn.Module):
             prompt_pre_embed = [prompt_pre_embed]
         if isinstance(prompt_post_embed, str):
             prompt_post_embed = [prompt_post_embed]
-            
+
         if isinstance(text_conditioning, str):
             text_conditioning = [text_conditioning]
 
@@ -545,20 +540,28 @@ class EmbedAugPipeline(nn.Module):
 
         encoded_pre_embed_prompts = []
         encoded_post_embed_prompts = []
-        
+
         for prompt_pre, prompt_post in zip(prompt_pre_embed, prompt_post_embed):
-            if prompt_pre == '' and not self.pipeline_args.w_prefix_prompt:
+            if prompt_pre == "" and not self.pipeline_args.w_prefix_prompt:
                 encoded_pre_embed_prompts.append([])
-            elif len(prompt_pre)>0 and not self.pipeline_args.w_prefix_prompt:
-                print('Including a prompt before embedding, not trained to do this')
-                encoded_pre_embed_prompts.append(self.tokenizer.encode(prompt_pre, bos=True, eos=False))
+            elif len(prompt_pre) > 0 and not self.pipeline_args.w_prefix_prompt:
+                print("Including a prompt before embedding, not trained to do this")
+                encoded_pre_embed_prompts.append(
+                    self.tokenizer.encode(prompt_pre, bos=True, eos=False)
+                )
             else:
-                encoded_pre_embed_prompts.append(self.tokenizer.encode(prompt_pre, bos=True, eos=False))
-            
+                encoded_pre_embed_prompts.append(
+                    self.tokenizer.encode(prompt_pre, bos=True, eos=False)
+                )
+
             if not self.pipeline_args.w_prefix_prompt:
-                encoded_post_embed_prompts.append(self.tokenizer.encode(prompt_post, bos=True, eos=False))
+                encoded_post_embed_prompts.append(
+                    self.tokenizer.encode(prompt_post, bos=True, eos=False)
+                )
             else:
-                encoded_post_embed_prompts.append(self.tokenizer.encode(prompt_post, bos=False, eos=False))
+                encoded_post_embed_prompts.append(
+                    self.tokenizer.encode(prompt_post, bos=False, eos=False)
+                )
 
         eos_id = self.tokenizer.eos_id
 

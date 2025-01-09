@@ -49,7 +49,7 @@ def evaluate(
     eval_loss_rec = torch.tensor(0.0).cuda()
     eval_kl_loss = torch.tensor([0.0], device="cuda")
     main_logger_info(f"Start eval for {len(batches_rec)} reconstruction batches")
-    
+
     for i, batch in enumerate(batches_rec):
         with torch.no_grad():
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
@@ -62,9 +62,7 @@ def evaluate(
                 batch_type=batch.data_type,
             )
             if not batch.is_pad_only:
-                eval_loss_rec += compute_ce_loss_with_mask(
-                    output, y, y_mask
-                )
+                eval_loss_rec += compute_ce_loss_with_mask(output, y, y_mask)
                 if instruction_tuning.kl:
                     contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
                     x_rag = []
@@ -87,9 +85,7 @@ def evaluate(
                         )
                         ind += size
 
-                    x_rag = torch.from_numpy(np.array(x_rag)).cuda(
-                        non_blocking=True
-                    )
+                    x_rag = torch.from_numpy(np.array(x_rag)).cuda(non_blocking=True)
                     y_mask_rag = torch.from_numpy(np.array(y_mask_rag)).cuda(
                         non_blocking=True
                     )
@@ -119,27 +115,27 @@ def evaluate(
                     batch.is_pad_only or y.abs().sum() != 0
                 ), "Pad sample is used to compute loss."
 
-    if batches_cont is not None:  
+    if batches_cont is not None:
         eval_loss_textcont = torch.tensor(0.0).cuda()
         eval_loss_embcont = torch.tensor(0.0).cuda()
         main_logger_info(f"Start eval for {len(batches_rec)} continuation batches")
-        
+
         for i, batch in enumerate(batches_cont):
             with torch.no_grad():
-                x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
-                
-                output = model.forward(
-                        x=x,
-                        embeddings=embeddings,
-                        seqlens=seqlens,
-                        embed_seqlens=embed_seqlens,
-                        batch_type=batch.data_type,
-                    )         
-                
-                eval_loss_embcont += compute_ce_loss_with_mask(
-                    output, y, y_mask
+                x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(
+                    batch
                 )
-                
+
+                output = model.forward(
+                    x=x,
+                    embeddings=embeddings,
+                    seqlens=seqlens,
+                    embed_seqlens=embed_seqlens,
+                    batch_type=batch.data_type,
+                )
+
+                eval_loss_embcont += compute_ce_loss_with_mask(output, y, y_mask)
+
                 input_ids = []
                 ground_truth = []
                 seqlens = []
@@ -166,12 +162,10 @@ def evaluate(
                 output_wo_embed = model.forward(
                     x=input_ids, embeddings=None, seqlens=seqlens
                 )
-                eval_loss_textcont+= compute_ce_loss_with_mask(
+                eval_loss_textcont += compute_ce_loss_with_mask(
                     output_wo_embed, ground_truth, mask
                 )
-                
-            
-        
+
     # sum loss
     main_logger_info("Eval finished!")
 
@@ -181,29 +175,29 @@ def evaluate(
     state.this_eval_perplexity_rec = (2**eval_loss_rec).item()
 
     if batches_cont is not None:
-        dist.all_reduce(eval_loss_textcont , op=dist.ReduceOp.SUM)
+        dist.all_reduce(eval_loss_textcont, op=dist.ReduceOp.SUM)
         dist.all_reduce(eval_loss_embcont, op=dist.ReduceOp.SUM)
-        eval_loss_textcont  /= total_num_samples
+        eval_loss_textcont /= total_num_samples
         eval_loss_embcont /= total_num_samples
         state.this_eval_loss_textcont = eval_loss_textcont.item()
         state.this_eval_loss_embcont = eval_loss_embcont.item()
-        state.this_eval_perplexity_textcont = (2**eval_loss_textcont ).item()
+        state.this_eval_perplexity_textcont = (2**eval_loss_textcont).item()
         state.this_eval_perplexity_embcont = (2**eval_loss_embcont).item()
         state.this_eval_kl_loss = None
-        
+
     elif instruction_tuning.do and instruction_tuning.kl:
         dist.all_reduce(eval_kl_loss, op=dist.ReduceOp.SUM)
         eval_kl_loss /= total_num_samples
         state.this_eval_kl_loss = eval_kl_loss.item()
         state.this_eval_loss_textcont = None
         state.this_eval_loss_embcont = None
-        state.this_eval_perplexity_textcont= None
+        state.this_eval_perplexity_textcont = None
         state.this_eval_perplexity_embcont = None
-        
+
     else:
         state.this_eval_loss_textcont = None
         state.this_eval_loss_embcont = None
-        state.this_eval_perplexity_textcont= None
+        state.this_eval_perplexity_textcont = None
         state.this_eval_perplexity_embcont = None
         state.this_eval_kl_loss = None
 

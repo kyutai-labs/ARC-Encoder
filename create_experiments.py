@@ -15,7 +15,7 @@ def main(args):
         raise ValueError(f"{args.llm_name} not supported yet !")
 
     config["continuation"] = args.continuation
-    config['pipeline']["prefix_prompt"] = args.prefix_prompt
+    config["pipeline"]["prefix_prompt"] = args.prefix_prompt
     config["llm_name"] = args.llm_name
 
     config["pipeline"]["trainable_llm"] = not args.not_train_llm
@@ -359,7 +359,7 @@ if __name__ == "__main__":
     #     if filename.endswith(".yaml"):
     #         with open(path_config+filename,'r') as file:
     #             config = yaml.safe_load(file)
-    #         config['exp_name'] = config['exp_name'].replace('pretrain_','nopref_pretrain_')   
+    #         config['exp_name'] = config['exp_name'].replace('pretrain_','nopref_pretrain_')
     #         config['wandb']['run_name'] = config['wandb']['run_name'].replace('pretrain_','nopref_pretrain_')
     #         del config['prefix_prompt']
     #         config['pipeline']['w_prefix_prompt'] = False

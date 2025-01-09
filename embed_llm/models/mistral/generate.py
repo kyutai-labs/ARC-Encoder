@@ -20,16 +20,15 @@ def generate(
     **kwargs,
 ) -> tuple[list[list[int]], list[list[float]]]:
 
-
     if len(prompt_pre_embed) > 0 and not isinstance(prompt_pre_embed[0], list):
         prompt_pre_embed = [prompt_pre_embed]
-        
+
     if len(prompt_post_embed) > 0 and not isinstance(prompt_post_embed[0], list):
         prompt_post_embed = [prompt_post_embed]
 
     model = model.eval()
     B, V = len(prompt_pre_embed), model.args.vocab_size
-    seqlens = [len(x)  for x in prompt_post_embed]
+    seqlens = [len(x) for x in prompt_post_embed]
 
     concat = cat_embeddings is not None
 
@@ -53,12 +52,13 @@ def generate(
     # Bookkeeping
     logprobs: list[list[float]] = [[] for _ in range(B)]
     last_token_prelogits = None
-        
 
     # Put in cache if trained with prefix prompt
     if sum([len(p) for p in prompt_pre_embed]) > 0:
         prelogits_pre = model.generate(
-            torch.tensor((sum(prompt_pre_embed, [])), device=model.device, dtype=torch.long),
+            torch.tensor(
+                (sum(prompt_pre_embed, [])), device=model.device, dtype=torch.long
+            ),
             seqlens=[len(p) for p in prompt_pre_embed],
             embeddings=embeddings,
             embed_seqlens=embed_seqlens,
@@ -70,14 +70,16 @@ def generate(
     max_prompt_len = max(seqlens)
     if chunk_size is None:
         chunk_size = max_prompt_len
-        
+
     # Encode prompt by chunks
     for s in range(0, max_prompt_len, chunk_size):
         prompt_post_embed_chunks = [p[s : s + chunk_size] for p in prompt_post_embed]
         assert all(len(p) > 0 for p in prompt_post_embed_chunks)
 
         prelogits = model.generate(
-            torch.tensor(sum(prompt_post_embed, []), device=model.device, dtype=torch.long),
+            torch.tensor(
+                sum(prompt_post_embed, []), device=model.device, dtype=torch.long
+            ),
             # images=flattened_images,
             seqlens=[len(p) for p in prompt_post_embed_chunks],
             embeddings=embeddings,
@@ -85,7 +87,7 @@ def generate(
             cache=cache,
             cat_embeddings=cat_embeddings,
         )
-       
+
         # Stop concatenating if already in cache
         if s == 0 and concat:
             cat_embeddings = None
@@ -98,7 +100,6 @@ def generate(
             - 1,
         )
         assert last_token_prelogits.shape == (B, V)
-
 
     # decode
     generated_tensors = []
@@ -131,7 +132,7 @@ def generate(
             embeddings=embeddings,
             embed_seqlens=embed_seqlens,
             cache=cache,
-            cat_embeddings=None
+            cat_embeddings=None,
         )
 
         assert last_token_prelogits.shape == (
@@ -144,7 +145,7 @@ def generate(
         generated_tokens = torch.cat(generated_tensors, 1).tolist()
     else:
         generated_tokens = []
-        
+
     if logprobs:
         logprobs = [torch.stack(probs, dim=0) for probs in logprobs]
     else:
