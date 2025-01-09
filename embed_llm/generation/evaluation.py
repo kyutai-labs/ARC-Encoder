@@ -52,7 +52,7 @@ def ensure_reproducibility(seed=42):
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 
-def evaluate_model(
+def evaluate_QA(
     run_name: str,
     benchmarks: list[str],
     ckpt: int | None = None,
@@ -110,10 +110,13 @@ def evaluate_model(
         
     device_count = torch.cuda.device_count()
     other_device = torch.device("cuda:1") if device_count > 1 else device
-    metrics = []
+    metrics = {}
+    
     for benchmark in tqdm(
         benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
     ):
+        
+        metrics[benchmark] = {}
         eval_data = EVAL_DATA_PATH[benchmark]
         context = []
         questions = []
@@ -140,6 +143,9 @@ def evaluate_model(
         
              
         for temp in temps:
+    
+            metrics[benchmark][str(temp)] = {}
+            
             generated_sequences = []
             n_samples = len(questions) if n_samples is None else n_samples
             for i in trange(icl_examples, n_samples+icl_examples, max_bs):
@@ -164,7 +170,7 @@ def evaluate_model(
                         )
                         for pred, gts in zip(generated_sequences, answers)
                     ]
-                ) / len(questions)
+                ) / len(n_samples)
                 
                 value_approx = sum(
                     [
@@ -173,17 +179,13 @@ def evaluate_model(
                         )
                         for pred, gts in zip(generated_sequences, answers)
                     ]
-                ) / len(questions)
+                ) / len(n_samples)
                 print('Temperature:', temp, benchmark +' EM: ',value_em, benchmark + ' Approx EM: ', value_approx)
-                metrics.append(
-                    {
-                        "CKPT": ckpt,
-                        "temp": temp,
-                        "n_samples": n_samples,
-                        'EM_'+benchmark: value_em,
-                        'Approx_EM_'+benchmark: value_approx,
-                    }
-                )
+                metrics[benchmark][str(temp)] = {
+                                "n_samples": n_samples,
+                                'Metric': value_em,
+                                'approx_Metric': value_approx,
+                            }
             else:
                 value = sum(
                     [
@@ -192,16 +194,12 @@ def evaluate_model(
                         )
                         for pred, gts in zip(generated_sequences, answers)
                     ]
-                ) / len(questions)
+                ) / len(n_samples)
                 print('Temperature:', temp, benchmark+ ': ', value)
-                metrics.append(
-                    {
-                        "CKPT": ckpt,
-                        "temp": temp,
+                metrics[benchmark][str(temp)] = {
                         "n_samples": n_samples,
-                        benchmark: value,
+                        'Metric': value,
                     }
-                )
 
     with open(
         "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
@@ -218,9 +216,17 @@ def evaluate_model(
         overall_results = json.load(f)
 
     if run_name not in overall_results:
-        overall_results[run_name] = metrics
-    else:
-        overall_results[run_name].extend(metrics)
+        overall_results[run_name] = {}
+        if ckpt not in overall_results[run_name].keys():
+            overall_results[run_name][str(ckpt)] = {}
+            for benchmark in benchmarks:
+                if benchmark not in overall_results[run_name][str(ckpt)].keys():
+                    overall_results[run_name][str(ckpt)][benchmark] = {}
+
+
+    for benchmark in metrics.keys():
+        overall_results[run_name][str(ckpt)][benchmark] = metrics[benchmark]
+        
     with open(
         output_file,
         "w",
@@ -240,6 +246,10 @@ def evaluate_reconstruction_model(
     eval_data_type: str = 'atlas',
     n_passages : int = 100,
 ):
+    
+    
+    reconstruct_benchmarks = ["Overlap", "Bleu", "Trunc Bleu", "AVG Bleu", "Meteor", "EM"]
+    
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
     if eval_data_type == 'atlas':
@@ -370,19 +380,34 @@ def evaluate_reconstruction_model(
         results_generation[str(temp)] =  generated_sequences
         
 
-    metrics = []
+    metrics = {bench: {} for bench in reconstruct_benchmarks}
     for temp in results_generation.keys():
         # for split in results_generation[temp].keys():
 
             generated_sequences = results_generation[str(temp)]
             gt_passage = valid_passage  # train_passage if split == 'train' else valid_passage
             overlap = word_overlap(gt_passage, generated_sequences)
+            metrics['Overlap'][temp] = {"n_samples": n_passages,
+                                        'Metric': overlap,
+                                        'eval_data_type': eval_data_type}
             bleu_score = get_bleu_score(gt_passage, generated_sequences)
+            metrics['Bleu'][temp] = {"n_samples": n_passages,
+                                    'Metric': bleu_score,
+                                    'eval_data_type': eval_data_type}
             trunc_bleu_score = get_bleu_score(gt_passage, generated_sequences, trunc=True)
+            metrics['Trunc Bleu'][temp] = {"n_samples": n_passages,
+                                        'Metric': trunc_bleu_score,
+                                        'eval_data_type': eval_data_type}
             bleu_score_avg = get_bleu_score(
                 gt_passage, generated_sequences, avg=True
             )
+            metrics['AVG Bleu'][temp] = {"n_samples": n_passages,
+                                        'Metric': bleu_score_avg,
+                                        'eval_data_type': eval_data_type}
             meteor_score = get_meteor(gt_passage, generated_sequences)
+            metrics['Meteor'][temp] = {"n_samples": n_passages,
+                        'Metric': meteor_score,
+                        'eval_data_type': eval_data_type}   
             em = np.mean(
                 np.array(
                     [
@@ -391,6 +416,10 @@ def evaluate_reconstruction_model(
                     ]
                 )
             )
+            metrics['EM'][str(temp)] = {"n_samples": n_passages,
+                        'Metric': em,
+                        'eval_data_type': eval_data_type}
+ 
 
             print(
                 f"CKPT: {ckpt}, Temperature: {temp}, Overlap: {overlap}",
@@ -403,19 +432,6 @@ def evaluate_reconstruction_model(
                 meteor_score,
                 "Bleu Score Avg:",
                 bleu_score_avg,
-            )
-            metrics.append(
-                {
-                    "CKPT": ckpt,
-                    "temp": temp,
-                    "overlap": overlap,
-                    "bleu_score": bleu_score,
-                    'trunc_bleu_score': trunc_bleu_score,
-                    "em": em,
-                    "Meteor": meteor_score,
-                    "Bleu Score Avg": bleu_score_avg,
-                    'eval_data_type': eval_data_type
-                }
             )
 
     with open(
@@ -432,10 +448,32 @@ def evaluate_reconstruction_model(
     ) as f:
         overall_results = json.load(f)
 
+    with open(
+        "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+        + run_name
+        + "/results_generation.json",
+        "a",
+    ) as f:
+        json.dump(overall_results, f)
+
+    with open(
+        output_file,
+        "r",
+    ) as f:
+        overall_results = json.load(f)
+
     if run_name not in overall_results:
-        overall_results[run_name] = metrics
-    else:
-        overall_results[run_name].extend(metrics)
+        overall_results[run_name] = {}
+        if ckpt not in overall_results[run_name].keys():
+            overall_results[run_name][str(ckpt)] = {}
+            for benchmark in reconstruct_benchmarks:
+                if benchmark not in overall_results[run_name][str(ckpt)].keys():
+                    overall_results[run_name][str(ckpt)][benchmark] = {str(temp): [] for temp in temperatures}
+
+
+    for benchmark in metrics.keys():
+        for temp in metrics[benchmark].keys():
+            overall_results[run_name][str(ckpt)][benchmark][temp].append(metrics[benchmark][temp])
 
     with open(
         output_file,
@@ -447,45 +485,72 @@ def evaluate_reconstruction_model(
 if __name__ == "__main__":
 
     ensure_reproducibility(29)
-    output_file = "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/pretraining.json"
+    output_file = "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/eval_pretraining.json"
     tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+    max_seq_len = 256
     # tmp_path = '/lustre/scwpod02/client/kyutai-interns/hippop/tmp/experiments/'
 
+    if not os.path.exists(output_file):
+        with open(output_file, "w") as f:
+            json.dump({}, f)
+            
     run_names = [
-
-        
-        # # "pretrain_llm_trained_rec_singpassage_054f63f8",
-        # # "pretrain_both_trained_cont_singpassage_17c38ada",
-        # # "pretrain_llm_trained_cont_singpassage_5daaa6bc",
-        # # "pretrain_llm_trained_rec_multipassage_054f63f8",
-        # 'pretrain_both_trained_02_singpassage_0f6f2a1a',
-        # # 'pretrain_both_trained_rec_multipassage_0f6f2a1a',
-        # # 'pretrain_both_trained_rec_singpassage_0f6f2a1a',
-        'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB'
-        # # 'pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada',
-        # # 'pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada',
-        # # 'pretrain_llm_trained_02_singpassage_054f63f8',
-        # # 'pretrain_llm_trained_05_singpassage_054f63f8',
-        # # 'pretrain_both_trained_05_singpassage_0f6f2a1a'
+        "pretrain_llm_trained_rec_singpassage_054f63f8",
+        "pretrain_both_trained_cont_singpassage_17c38ada",
+        "pretrain_llm_trained_cont_singpassage_5daaa6bc",
+        "pretrain_llm_trained_rec_multipassage_054f63f8",
+        'pretrain_both_trained_02_singpassage_0f6f2a1a',
+        'pretrain_both_trained_rec_multipassage_0f6f2a1a',
+        'pretrain_both_trained_rec_singpassage_0f6f2a1a',
+        'pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada',
+        'pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada',
+        'pretrain_llm_trained_02_singpassage_054f63f8',
+        'pretrain_llm_trained_05_singpassage_054f63f8',
+        'nopref_pretrain_llm_trained_cont_singpassage_5daaa6bc',
+        'nopref_pretrain_no_trained_cont_singpassage_5daaa6bc',
     ]
-
-    max_seq_len = 128
+        # 'pretrain_both_trained_05_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_no_trained_rec_multipassage_054f63f8',
+        # 'nopref_pretrain_no_trained_rec_multipassage_054f63f8',
+        # 'nopref_pretrain_no_trained_rec_singpassage_054f63f8',
+        # 'nopref_pretrain_both_trained_02_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_llm_trained_02_singpassage_054f63f8',
+        # 'nopref_pretrain_llm_trained_rec_multipassage_054f63f8',
+        # 'nopref_pretrain_pool_trained_cont_singpassage_5daaa6bc',
+        # 'nopref_pretrain_pool_trained_rec_singpassage_054f63f8',
+        # 'nopref_pretrain_both_trained_1cont_0',
+        # 'nopref_pretrain_both_trained_1cont_0',
+        # 'nopref_pretrain_both_trained_cont_singpassage_17c38ada',
+        # 'nopref_pretrain_both_trained_rec_multipassage_0f6f2a1a',
+        # 'nopref_pretrain_both_trained_rec_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_llm_trained_rec_singpassage_054f63f8',
+        # 'nopref_pretrain_both_trained_07_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_llm_trained_07_singpassage_054f63f8',
+        # 'nopref_pretrain_both_trained_05_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_llm_trained_05_singpassage_054f63f8',
+        
+        #TODO IN 128 toks lim
+        # 'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB',
+        # 'LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB',
+        # 'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
     
     for i, run_name in enumerate(run_names):
         print('Standard Dump')
-        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'standard_dump') # 'atlas','standard_dump'
+        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1.], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'standard_dump') # 'atlas','standard_dump'
         print('Atlas')
-        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'atlas')
+        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1.], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'atlas')
         
-        # evaluate_model(
-        #     run_name,
-        #     ["NQ", "TRIVIAQA"],
-        #     temps=[0, 0.5, 0.7],
-        #     max_bs=4,
-        #     output_file=output_file,
-        #     n_samples=100,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path = tmp_path,
-        #     icl_examples = 1
-        # )
+        evaluate_QA(
+            run_name,
+            ["NQ", "TRIVIAQA"],
+            temps=[0, 0.5, 0.7, 1.],
+            max_bs=4,
+            output_file=output_file,
+            n_samples=100,
+            max_seq_len=max_seq_len,
+            tmp_path = tmp_path,
+            icl_examples = 1
+        )
         torch.cuda.empty_cache()
+        print('Finished run', run_name) 
+        
