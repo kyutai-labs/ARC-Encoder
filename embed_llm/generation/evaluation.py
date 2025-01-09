@@ -104,6 +104,10 @@ def evaluate_model(
     ckpt = int(last_ckpt.split("_")[-1])
     print("Evaluating checkpoint", ckpt)
 
+    if max_seq_len != pipeline.pipeline_args.max_seq_len:
+        print('Warning: max_seq_len during model training \
+            ({}) is different from the one provided ({})'.format(pipeline.pipeline_args.max_seq_len, max_seq_len))
+        
     device_count = torch.cuda.device_count()
     other_device = torch.device("cuda:1") if device_count > 1 else device
     metrics = []
@@ -170,7 +174,7 @@ def evaluate_model(
                         for pred, gts in zip(generated_sequences, answers)
                     ]
                 ) / len(questions)
-                print('Temperature:', temp, benchmark +'EM : ',value_em, benchmark + 'Approx EM: ', value_approx)
+                print('Temperature:', temp, benchmark +' EM: ',value_em, benchmark + ' Approx EM: ', value_approx)
                 metrics.append(
                     {
                         "CKPT": ckpt,
@@ -234,6 +238,7 @@ def evaluate_reconstruction_model(
     max_batch_size: int = 4,
     tmp_path: str = None,
     eval_data_type: str = 'atlas',
+    n_passages : int = 100,
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
@@ -303,9 +308,11 @@ def evaluate_reconstruction_model(
     else:
         assert ckpt is not None
         pipeline: EmbedAugPipeline = pipeline
-
-    n_passages = 100
-
+        
+    if max_seq_len != pipeline.pipeline_args.max_seq_len:
+        print('Warning: max_seq_len during model training \
+            ({}) is different from the one provided ({})'.format(pipeline.pipeline_args.max_seq_len, max_seq_len))
+        
     lim_toks = max_seq_len
     valid_passage = []
 
@@ -331,8 +338,6 @@ def evaluate_reconstruction_model(
                     )
                 )
                 
-    
-
     max_tokens = lim_toks
 
     results_generation = {}
@@ -345,8 +350,6 @@ def evaluate_reconstruction_model(
 
     for temp in temperatures:
         print(f"Temperature: {temp}")
-        generated_sequences = []
-
         generated_sequences = []
         for i in range(0, n_passages, max_batch_size):
             passage = valid_passage[i : i + max_batch_size]
@@ -375,6 +378,7 @@ def evaluate_reconstruction_model(
             gt_passage = valid_passage  # train_passage if split == 'train' else valid_passage
             overlap = word_overlap(gt_passage, generated_sequences)
             bleu_score = get_bleu_score(gt_passage, generated_sequences)
+            trunc_bleu_score = get_bleu_score(gt_passage, generated_sequences, trunc=True)
             bleu_score_avg = get_bleu_score(
                 gt_passage, generated_sequences, avg=True
             )
@@ -392,6 +396,7 @@ def evaluate_reconstruction_model(
                 f"CKPT: {ckpt}, Temperature: {temp}, Overlap: {overlap}",
                 "Bleu Score:",
                 bleu_score,
+                "Truncated output Bleu score:", trunc_bleu_score,
                 "EM:",
                 em,
                 "Meteor:",
@@ -405,6 +410,7 @@ def evaluate_reconstruction_model(
                     "temp": temp,
                     "overlap": overlap,
                     "bleu_score": bleu_score,
+                    'trunc_bleu_score': trunc_bleu_score,
                     "em": em,
                     "Meteor": meteor_score,
                     "Bleu Score Avg": bleu_score_avg,
@@ -446,29 +452,30 @@ if __name__ == "__main__":
     # tmp_path = '/lustre/scwpod02/client/kyutai-interns/hippop/tmp/experiments/'
 
     run_names = [
-        # 'LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_atend_True_DB'
-        # "pretrain_llm_trained_rec_singpassage_054f63f8",
-        # "pretrain_both_trained_cont_singpassage_17c38ada",
-        # "pretrain_llm_trained_cont_singpassage_5daaa6bc",
-        # "pretrain_llm_trained_rec_multipassage_054f63f8",
+
+        
+        # # "pretrain_llm_trained_rec_singpassage_054f63f8",
+        # # "pretrain_both_trained_cont_singpassage_17c38ada",
+        # # "pretrain_llm_trained_cont_singpassage_5daaa6bc",
+        # # "pretrain_llm_trained_rec_multipassage_054f63f8",
         # 'pretrain_both_trained_02_singpassage_0f6f2a1a',
-        # 'pretrain_both_trained_rec_multipassage_0f6f2a1a',
-        # 'pretrain_both_trained_rec_singpassage_0f6f2a1a',
+        # # 'pretrain_both_trained_rec_multipassage_0f6f2a1a',
+        # # 'pretrain_both_trained_rec_singpassage_0f6f2a1a',
         'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB'
-        # 'pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada',
-        # 'pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada',
-        # 'pretrain_llm_trained_02_singpassage_054f63f8',
-        # 'pretrain_llm_trained_05_singpassage_054f63f8',
-        # 'pretrain_both_trained_05_singpassage_0f6f2a1a'
+        # # 'pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada',
+        # # 'pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada',
+        # # 'pretrain_llm_trained_02_singpassage_054f63f8',
+        # # 'pretrain_llm_trained_05_singpassage_054f63f8',
+        # # 'pretrain_both_trained_05_singpassage_0f6f2a1a'
     ]
 
-    max_seq_len = 256
+    max_seq_len = 128
     
     for i, run_name in enumerate(run_names):
         print('Standard Dump')
-        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'standard_dump') # 'atlas','standard_dump'
+        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'standard_dump') # 'atlas','standard_dump'
         print('Atlas')
-        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7, 1], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'atlas')
+        evaluate_reconstruction_model(run_name, output_file=output_file, temperatures = [0, 0.5, 0.7], max_seq_len=max_seq_len, tmp_path = tmp_path, eval_data_type = 'atlas')
         
         # evaluate_model(
         #     run_name,

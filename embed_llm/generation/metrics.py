@@ -89,18 +89,20 @@ def word_overlap(ground_truth: list[str] | str, predicted: list[str] | str) -> f
 
 
 def get_bleu_score(
-    ground_truth: list[str] | str, predicted: list[str] | str, avg: bool = False
+    ground_truth: list[str] | str, predicted: list[str] | str, avg: bool = False, trunc: bool = False
 ) -> float:
     if not avg:
         metric = BLEUScore(n_gram=4)
         if isinstance(ground_truth, str) and isinstance(predicted, str):
             assert len(ground_truth) > 0, "Ground truth set is empty"
+            predicted = predicted if not trunc else predicted[:len(ground_truth)]
             metric.update(predicted, [ground_truth])
             return metric.compute().item()
         elif isinstance(ground_truth, list) and isinstance(predicted, list):
             for gt_text, pred_text in zip(ground_truth, predicted):
                 assert len(gt_text) > 0, "Ground truth set is empty"
                 try:
+                    pred_text = pred_text if not trunc else pred_text[:len(gt_text)]
                     metric.update(pred_text, [gt_text])
                 except:
                     print(
@@ -116,6 +118,7 @@ def get_bleu_score(
         if isinstance(ground_truth, str) and isinstance(predicted, str):
             assert len(ground_truth) > 0, "Ground truth set is empty"
             for metric in metrics:
+                predicted = predicted if not trunc else predicted[:len(ground_truth)]
                 metric.update(predicted, [ground_truth])
             result = np.array([metric.compute().item() for metric in metrics])
             return result.mean()
@@ -124,6 +127,7 @@ def get_bleu_score(
                 assert len(gt_text) > 0, "Ground truth set is empty"
                 try:
                     for metric in metrics:
+                        pred_text = pred_text if not trunc else pred_text[:len(gt_text)]
                         metric.update(pred_text, [gt_text])
                 except:
                     print(

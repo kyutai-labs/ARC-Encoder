@@ -47,6 +47,7 @@ class EmbedAugArgs(Serializable):
     every_cross_att: int | None = None
     trainable_llm: bool = True
     w_prefix_prompt: bool = False
+    max_seq_len: int = 256
 
 
 @dataclass
