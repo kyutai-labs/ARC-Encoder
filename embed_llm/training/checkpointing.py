@@ -333,14 +333,19 @@ class Checkpointer:
             tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
 
         if self.trainable_embedder is not None:
-            tmp_trainable_embedder_dst = self._tmp(
-                llm_dst.parent / "trainable_embedder"
-            )
-            tmp_trainable_embedder_dst.mkdir(parents=True, exist_ok=True)
+            if not self.pipeline.pipeline_args.train_only_pooling:
+                tmp_trainable_embedder_dst = self._tmp(
+                    llm_dst.parent / "trainable_embedder"
+                )
+                tmp_trainable_embedder_dst.mkdir(parents=True, exist_ok=True)
 
-            if self.pooling_module is not None:
+                if self.pooling_module is not None:
+                    tmp_pooling_module_dst = self._tmp(llm_dst.parent / "pooling_module")
+                    tmp_pooling_module_dst.mkdir(parents=True, exist_ok=True)
+            else:
                 tmp_pooling_module_dst = self._tmp(llm_dst.parent / "pooling_module")
                 tmp_pooling_module_dst.mkdir(parents=True, exist_ok=True)
+                
 
         (
             llm_states,
@@ -374,15 +379,25 @@ class Checkpointer:
                 )
 
             if self.trainable_embedder is not None:
-                safetensors.torch.save_file(
-                    trainable_embedder_states,
-                    self.consolidated_path(
-                        tmp_trainable_embedder_dst,
-                        use_safetensors=True,
-                        save_only_lora=True,
-                    ),  # always use safetensors for checkpointing
-                )
-                if self.pooling_module is not None:
+                if not self.pipeline.pipeline_args.train_only_pooling:
+                    safetensors.torch.save_file(
+                        trainable_embedder_states,
+                        self.consolidated_path(
+                            tmp_trainable_embedder_dst,
+                            use_safetensors=True,
+                            save_only_lora=True,
+                        ),  # always use safetensors for checkpointing
+                    )
+                    if self.pooling_module is not None:
+                        safetensors.torch.save_file(
+                            pooling_module_states,
+                            self.consolidated_path(
+                                tmp_pooling_module_dst,
+                                use_safetensors=True,
+                                save_only_lora=False,
+                            ),  # always use safetensors for checkpointing
+                        )
+                else:
                     safetensors.torch.save_file(
                         pooling_module_states,
                         self.consolidated_path(
@@ -403,10 +418,13 @@ class Checkpointer:
                 tmp_mlp_project_dst.rename(self.dst_dir(type="mlp_project"))
 
             if self.trainable_embedder is not None:
-                tmp_trainable_embedder_dst.rename(
-                    self.dst_dir(type="trainable_embedder")
-                )
-                if self.pooling_module is not None:
+                if not self.pipeline.pipeline_args.train_only_pooling:
+                    tmp_trainable_embedder_dst.rename(
+                        self.dst_dir(type="trainable_embedder")
+                    )
+                    if self.pooling_module is not None:
+                        tmp_pooling_module_dst.rename(self.dst_dir(type="pooling_module"))
+                else:
                     tmp_pooling_module_dst.rename(self.dst_dir(type="pooling_module"))
 
             logger.info(

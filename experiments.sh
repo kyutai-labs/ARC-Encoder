@@ -1,10 +1,10 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=19-20
+#SBATCH --array=21-31
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx20 #par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s04dgx11 #,par2dc5-ai-prd-cl02s04dgx22,par2dc5-ai-prd-cl02s04dgx06,par2dc5-ai-prd-cl02s03dgx21,par2dc5-ai-prd-cl02s04dgx24
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx20,par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s04dgx11,par2dc5-ai-prd-cl02s04dgx22,par2dc5-ai-prd-cl02s04dgx06,par2dc5-ai-prd-cl02s02dgx03
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
@@ -38,6 +38,17 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_llm_trained_05_singpassage_054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_nollm_trained_rec_singpassage_5darr64.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_nollm_trained_rec_multipassage_5darr64.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_nollm_trained_cont_singpassage_5darr64.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_rec_singpassage_2gate_0f6f2a1a.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_rec_singpassage_16gate_0f6f2a1a.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_rec_singpassage_4gate_0f6f2a1a.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_both_trained_rec_singpassage_8gate_0f6f2a1a.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_llm_trained_rec_singpassage_8gate_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_nollm_trained_rec_singpassage_8gate_5darr64.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_no_trained_rec_singpassage_8gate_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_pool_trained_rec_singpassage_8gate_054f63f8.yaml
 )
 
 
@@ -62,6 +73,13 @@ echo "Starting at: $(date)"
 srun --gpus=$N_GPU \
     micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG
 
+RUN_NAME=$(basename "$CONFIG" .yaml)
+
+echo "Starting evaluation of run $RUN_NAME"
+
+srun --gpus=$N_GPU \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME
+   
 echo "Finished at: $(date)"
 
 # End of file

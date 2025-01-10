@@ -9,7 +9,7 @@ from embed_llm.models.lora import LoraArgs
 
 @dataclass
 class PoolingArgs(Serializable):
-    type: str = "eos"  # latent_attention, mean
+    type: str = "latent_attention"  # latent_attention, mean
     r: int = 512  # Hidden dim of latent if latent attention pooling
     n_heads: int = 8  # Number of heads in latent attention pooling
     n_layers: int = 1
@@ -48,6 +48,7 @@ class EmbedAugArgs(Serializable):
     trainable_llm: bool = True
     w_prefix_prompt: bool = False
     max_seq_len: int = 256
+    gate_bottleneck: int = 1
 
 
 @dataclass
@@ -76,6 +77,7 @@ class MistralModelArgs(Serializable):
     shared_kv: bool = True
     pooled_cross_att: bool = False
     every_cross_att: int | None = None
+    gate_bottleneck: int = 1
     # vision_encoder: VisionEncoderArgs] | None = None
     """ If adding new args take care giving it to load args """
 

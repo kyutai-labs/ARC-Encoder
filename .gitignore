@@ -14,3 +14,4 @@ embed_llm.egg-info
 *_experiments.sh
 tests.ipynb
 check_loading.py
+testscript.sh

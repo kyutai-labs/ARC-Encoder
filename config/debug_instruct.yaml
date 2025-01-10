@@ -2,7 +2,7 @@ model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_instruct
-start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/experiments/LT_FN_Truemean_3_MLP_8_TRUNC_True_CA_16_CAL_atend_True_DB/checkpoints/checkpoint_019500
+start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/debug_pretrain/checkpoints/checkpoint_000005
 
 lora:
   rank: 64
@@ -29,7 +29,7 @@ data:
   adapt_seq_len: true
 
 seq_len: 128
-batch_size: 32
+batch_size: 4
 num_microbatches: 1
 max_steps: 20000
 optim:
@@ -41,7 +41,7 @@ optim:
 seed: 0
 log_freq: 10
 eval_freq: 100
-no_eval: false
+no_eval: true
 ckpt_freq: 500
 save_adapters: true
 

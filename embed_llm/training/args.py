@@ -53,6 +53,8 @@ class HybridTask(Serializable):
     max_n_prefixes: int = 1
     min_n_prefixes: int = 0
     prop_continuation: float = 0.5
+    prop_noembed_continuation: float = 0.5
+    prop_uselessembed_continuation: float = 0.0
 
 
 @dataclass

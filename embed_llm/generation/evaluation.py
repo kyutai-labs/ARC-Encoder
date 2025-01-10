@@ -4,8 +4,9 @@ import json
 import numpy as np
 import random
 from tqdm import tqdm, trange
+import argparse
+import subprocess as sp
 from pathlib import Path
-import torch.distributed as dist
 from embed_llm.models.augmented_model import EmbedAugPipeline
 from embed_llm.generation.metrics import (
     word_overlap,
@@ -20,11 +21,17 @@ from embed_llm.generation.metrics import (
 
 
 EVAL_DATA_PATH = {
-    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA/nq_data.jsonl",
+    "NQ": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA/nq_open_hf.jsonl', # nq_data.jsonl
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA/triviaqa_data.jsonl",
 }
 
 METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em}
+
+# Profiling memory
+def get_gpu_memory():
+    command = "nvidia-smi"
+    memory_free_info = sp.check_output(command.split()).decode("ascii")
+    return memory_free_info
 
 
 def set_global_seed(seed=42):
@@ -63,33 +70,37 @@ def evaluate_QA(
     n_samples: int | None = 1000,
     tmp_path: str = None,
     icl_examples: int = 0,
+    pipeline: EmbedAugPipeline | None = None,
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
     results = {benchmark: {} for benchmark in benchmarks}
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
 
-    # Get last checkpoint
-    last_ckpt = sorted(
-        [
-            ckpt_name
-            for ckpt_name in os.listdir(tmp_path + run_name + "/checkpoints/")
-            if (
-                Path(tmp_path + run_name + "/checkpoints/") / ckpt_name / "params.json"
-            ).exists()
-        ]
-    )[-1]
+    if pipeline is None:
+        # Get last checkpoint
+        last_ckpt = sorted(
+            [
+                ckpt_name
+                for ckpt_name in os.listdir(tmp_path + run_name + "/checkpoints/")
+                if (
+                    Path(tmp_path + run_name + "/checkpoints/") / ckpt_name / "params.json"
+                ).exists()
+            ]
+        )[-1]
 
-    pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
-        llm_path=llm_path,
-        ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
-        device=device,
-        llm_name="Mistral7B",
-        embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
-        max_batch_size=max_bs,
-    )
-    ckpt = int(last_ckpt.split("_")[-1])
-    print("Evaluating checkpoint", ckpt)
+        pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
+            llm_path=llm_path,
+            ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
+            device=device,
+            llm_name="Mistral7B",
+            embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
+            max_batch_size=max_bs,
+        )
+        ckpt = int(last_ckpt.split("_")[-1])
+        print("Evaluating checkpoint", ckpt)
+    else:
+        pipeline: EmbedAugPipeline = pipeline
 
     if max_seq_len != pipeline.pipeline_args.max_seq_len:
         print(
@@ -126,26 +137,33 @@ def evaluate_QA(
                 # Take the first ranked retrieved passage
                 context.append(data["passages"][0])
 
+        c = list(zip(questions, context, answers))
+        random.shuffle(c)
+        questions, context, answers = zip(*c)
+        
         print("Evaluation dataset loaded for", benchmark)
 
         icl_ex = ""
         for doc, query, ans in zip(
             context[:icl_examples], questions[:icl_examples], answers[:icl_examples]
         ):
-            icl_ex += f"Doc: {doc}\nQuery: {query}\nAnswer: {ans}\n\n"
+            icl_ex += f"Query: {query}\nAnswer: {ans}\n\n"
 
         for temp in temps:
-
-            metrics[benchmark][str(temp)] = {}
-
             generated_sequences = []
             n_samples = len(questions) if n_samples is None else n_samples
             for i in trange(icl_examples, n_samples + icl_examples, max_bs):
+                no_context_prompt = [
+                        icl_ex + f"Query: {query}\nAnswer: "  for query in questions[i : i + max_bs]
+                    ]
+
+                context_prompt = [' answer the question following the examples:\n\n' + icl_ex + f"Query: {query}\nAnswer: "  for query in questions[i : i + max_bs]
+                    ]
+                
                 generated_sequence, logprobs = pipeline.generate(
-                    prompt_pre_embed=[""] * len(questions[i : i + max_bs]),
-                    prompt_post_embed=[
-                        icl_ex + query for query in questions[i : i + max_bs]
-                    ],
+                    prompt_pre_embed= (['']*len(questions[i : i + max_bs]) if not pipeline.pipeline_args.w_prefix_prompt 
+                        else ['Based on the context ']*len(questions[i : i + max_bs])),
+                    prompt_post_embed= context_prompt if pipeline.pipeline_args.w_prefix_prompt else no_context_prompt,
                     text_conditioning=context[i : i + max_bs],
                     temperature=temp,
                     max_tokens=max_seq_len,
@@ -162,14 +180,42 @@ def evaluate_QA(
                         metric_max_over_ground_truths(get_em, pred, gts)
                         for pred, gts in zip(generated_sequences, answers)
                     ]
-                ) / len(n_samples)
+                ) / n_samples
 
                 value_approx = sum(
                     [
                         metric_max_over_ground_truths(get_approx_em, pred, gts)
                         for pred, gts in zip(generated_sequences, answers)
                     ]
-                ) / len(n_samples)
+                ) / n_samples
+       
+                if 'EM' not in metrics[benchmark].keys():
+                    metrics[benchmark]['EM'] = {}
+                metrics[benchmark]['EM'][str(temp)] = {}
+                
+                if 'F1' not in metrics[benchmark].keys():
+                    metrics[benchmark]['F1'] = {}
+                metrics[benchmark]['F1'][str(temp)] = {}
+                
+                metrics[benchmark]['EM'][str(temp)] = {
+                    "n_samples": n_samples,
+                    'icl_examples': icl_examples,
+                    "Metric": value_em,
+                    "approx_Metric": value_approx,
+                }
+                value_f1 = sum(
+                    [
+                        metric_max_over_ground_truths(get_f1_score, pred, gts)
+                        for pred, gts in zip(generated_sequences, answers)
+                    ]
+                ) / n_samples
+                
+                metrics[benchmark]['F1'][str(temp)] = {
+                    "n_samples": n_samples,
+                    'icl_examples': icl_examples,
+                    "Metric": value_f1,
+                }
+                
                 print(
                     "Temperature:",
                     temp,
@@ -177,12 +223,9 @@ def evaluate_QA(
                     value_em,
                     benchmark + " Approx EM: ",
                     value_approx,
+                    benchmark + " F1: ",
+                    value_f1,
                 )
-                metrics[benchmark][str(temp)] = {
-                    "n_samples": n_samples,
-                    "Metric": value_em,
-                    "approx_Metric": value_approx,
-                }
             else:
                 value = sum(
                     [
@@ -191,10 +234,12 @@ def evaluate_QA(
                         )
                         for pred, gts in zip(generated_sequences, answers)
                     ]
-                ) / len(n_samples)
+                ) / n_samples
                 print("Temperature:", temp, benchmark + ": ", value)
+                    
                 metrics[benchmark][str(temp)] = {
                     "n_samples": n_samples,
+                    'icl_examples': icl_examples,
                     "Metric": value,
                 }
 
@@ -212,23 +257,32 @@ def evaluate_QA(
     ) as f:
         overall_results = json.load(f)
 
-    if run_name not in overall_results:
+
+    if run_name not in overall_results.keys():
         overall_results[run_name] = {}
-        if ckpt not in overall_results[run_name].keys():
-            overall_results[run_name][str(ckpt)] = {}
-            for benchmark in benchmarks:
-                if benchmark not in overall_results[run_name][str(ckpt)].keys():
-                    overall_results[run_name][str(ckpt)][benchmark] = {}
+    if str(ckpt) not in overall_results[run_name].keys():
+        overall_results[run_name][str(ckpt)] = {}
+    for benchmark in benchmarks:
+        if benchmark not in overall_results[run_name][str(ckpt)].keys():
+            overall_results[run_name][str(ckpt)][benchmark] = {}
 
     for benchmark in metrics.keys():
-        overall_results[run_name][str(ckpt)][benchmark] = metrics[benchmark]
+        for metric in metrics[benchmark].keys():
+            if metric not in overall_results[run_name][str(ckpt)][benchmark].keys():
+                overall_results[run_name][str(ckpt)][benchmark][metric] = {}
+            for temp in metrics[benchmark][metric].keys():
+                if temp not in overall_results[run_name][str(ckpt)][benchmark][metric].keys():
+                    overall_results[run_name][str(ckpt)][benchmark][metric][temp] = []
+                overall_results[run_name][str(ckpt)][benchmark][metric][temp].append(
+                    metrics[benchmark][metric][temp]
+                )
 
     with open(
         output_file,
         "w",
     ) as f:
         json.dump(overall_results, f)
-
+    return pipeline, ckpt
 
 def evaluate_reconstruction_model(
     run_name: str,
@@ -452,19 +506,7 @@ def evaluate_reconstruction_model(
     ) as f:
         json.dump(metrics, f)
 
-    with open(
-        output_file,
-        "r",
-    ) as f:
-        overall_results = json.load(f)
 
-    with open(
-        "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-        + run_name
-        + "/results_generation.json",
-        "a",
-    ) as f:
-        json.dump(overall_results, f)
 
     with open(
         output_file,
@@ -472,15 +514,16 @@ def evaluate_reconstruction_model(
     ) as f:
         overall_results = json.load(f)
 
-    if run_name not in overall_results:
+    if run_name not in overall_results.keys():
         overall_results[run_name] = {}
-        if ckpt not in overall_results[run_name].keys():
-            overall_results[run_name][str(ckpt)] = {}
-            for benchmark in reconstruct_benchmarks:
-                if benchmark not in overall_results[run_name][str(ckpt)].keys():
-                    overall_results[run_name][str(ckpt)][benchmark] = {
-                        str(temp): [] for temp in temperatures
-                    }
+    if str(ckpt) not in list(overall_results[run_name].keys()):
+        overall_results[run_name][str(ckpt)] = {}
+    for benchmark in reconstruct_benchmarks:
+        if benchmark not in list(overall_results[run_name][str(ckpt)].keys()):
+            overall_results[run_name][str(ckpt)][benchmark] = {
+                str(temp): [] for temp in temperatures
+            }
+
 
     for benchmark in metrics.keys():
         for temp in metrics[benchmark].keys():
@@ -493,90 +536,188 @@ def evaluate_reconstruction_model(
         "w",
     ) as f:
         json.dump(overall_results, f)
+        
+    return pipeline, ckpt
 
+def arg_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--run_name",
+        type=str,
+        default=None,
+    )
+    return parser.parse_args()
 
 if __name__ == "__main__":
-
+    args = arg_parser()
+    
     ensure_reproducibility(29)
+    
+    
     output_file = "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/eval_pretraining.json"
     tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+    
     max_seq_len = 256
+    n_passages = 100
+    
     # tmp_path = '/lustre/scwpod02/client/kyutai-interns/hippop/tmp/experiments/'
 
     if not os.path.exists(output_file):
         with open(output_file, "w") as f:
             json.dump({}, f)
 
-    run_names = [
-        "pretrain_llm_trained_rec_singpassage_054f63f8",
-        "pretrain_both_trained_cont_singpassage_17c38ada",
-        "pretrain_llm_trained_cont_singpassage_5daaa6bc",
-        "pretrain_llm_trained_rec_multipassage_054f63f8",
-        "pretrain_both_trained_02_singpassage_0f6f2a1a",
-        "pretrain_both_trained_rec_multipassage_0f6f2a1a",
-        "pretrain_both_trained_rec_singpassage_0f6f2a1a",
-        "pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada",
-        "pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada",
-        "pretrain_llm_trained_02_singpassage_054f63f8",
-        "pretrain_llm_trained_05_singpassage_054f63f8",
-        "nopref_pretrain_llm_trained_cont_singpassage_5daaa6bc",
-        "nopref_pretrain_no_trained_cont_singpassage_5daaa6bc",
-    ]
-    # 'pretrain_both_trained_05_singpassage_0f6f2a1a',
-    # 'nopref_pretrain_no_trained_rec_multipassage_054f63f8',
-    # 'nopref_pretrain_no_trained_rec_multipassage_054f63f8',
-    # 'nopref_pretrain_no_trained_rec_singpassage_054f63f8',
-    # 'nopref_pretrain_both_trained_02_singpassage_0f6f2a1a',
-    # 'nopref_pretrain_llm_trained_02_singpassage_054f63f8',
-    # 'nopref_pretrain_llm_trained_rec_multipassage_054f63f8',
-    # 'nopref_pretrain_pool_trained_cont_singpassage_5daaa6bc',
-    # 'nopref_pretrain_pool_trained_rec_singpassage_054f63f8',
-    # 'nopref_pretrain_both_trained_1cont_0',
-    # 'nopref_pretrain_both_trained_1cont_0',
-    # 'nopref_pretrain_both_trained_cont_singpassage_17c38ada',
-    # 'nopref_pretrain_both_trained_rec_multipassage_0f6f2a1a',
-    # 'nopref_pretrain_both_trained_rec_singpassage_0f6f2a1a',
-    # 'nopref_pretrain_llm_trained_rec_singpassage_054f63f8',
-    # 'nopref_pretrain_both_trained_07_singpassage_0f6f2a1a',
-    # 'nopref_pretrain_llm_trained_07_singpassage_054f63f8',
-    # 'nopref_pretrain_both_trained_05_singpassage_0f6f2a1a',
-    # 'nopref_pretrain_llm_trained_05_singpassage_054f63f8',
+    if args.run_name is not None:
+        print('Memory:', get_gpu_memory())
+        run_names = [args.run_name]
+    else:
+        run_names = [
+            "pretrain_llm_trained_rec_singpassage_054f63f8",
+            "pretrain_both_trained_cont_singpassage_17c38ada",
+            "pretrain_llm_trained_cont_singpassage_5daaa6bc",
+            "pretrain_llm_trained_rec_multipassage_054f63f8",
+            "pretrain_both_trained_02_singpassage_0f6f2a1a",
+            "pretrain_both_trained_rec_multipassage_0f6f2a1a",
+            "pretrain_both_trained_rec_singpassage_0f6f2a1a",
+            "pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada",
+            "pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada",
+            "pretrain_llm_trained_02_singpassage_054f63f8",
+            "pretrain_llm_trained_05_singpassage_054f63f8",
+            "nopref_pretrain_llm_trained_cont_singpassage_5daaa6bc",
+            "nopref_pretrain_no_trained_cont_singpassage_5daaa6bc",
+            'nopref_pretrain_no_trained_rec_singpassage_054f63f8',
+            'nopref_pretrain_no_trained_rec_multipassage_054f63f8',
+            'pretrain_both_trained_05_singpassage_0f6f2a1a',]
+        
+        
+        # 'nopref_pretrain_both_trained_02_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_llm_trained_02_singpassage_054f63f8',
+        # 'nopref_pretrain_llm_trained_rec_multipassage_054f63f8',
+        # 'nopref_pretrain_pool_trained_cont_singpassage_5daaa6bc',
+        # 'nopref_pretrain_pool_trained_rec_singpassage_054f63f8',
+        # 'nopref_pretrain_both_trained_1cont_0',
+        # 'nopref_pretrain_both_trained_1cont_0',
+        # 'nopref_pretrain_both_trained_cont_singpassage_17c38ada',
+        # 'nopref_pretrain_both_trained_rec_multipassage_0f6f2a1a',
+        # 'nopref_pretrain_both_trained_rec_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_llm_trained_rec_singpassage_054f63f8',
+        # 'nopref_pretrain_both_trained_07_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_llm_trained_07_singpassage_054f63f8',
+        # 'nopref_pretrain_both_trained_05_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_llm_trained_05_singpassage_054f63f8',
 
-    # TODO IN 128 toks lim
-    # 'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB',
-    # 'LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB',
-    # 'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
 
     for i, run_name in enumerate(run_names):
+
         print("Standard Dump")
-        evaluate_reconstruction_model(
+        pipeline, ckpt = evaluate_reconstruction_model(
             run_name,
             output_file=output_file,
             temperatures=[0, 0.5, 0.7, 1.0],
             max_seq_len=max_seq_len,
             tmp_path=tmp_path,
             eval_data_type="standard_dump",
+            n_passages=n_passages,
         )  # 'atlas','standard_dump'
+        
         print("Atlas")
-        evaluate_reconstruction_model(
+        pipeline, ckpt = evaluate_reconstruction_model(
             run_name,
             output_file=output_file,
             temperatures=[0, 0.5, 0.7, 1.0],
             max_seq_len=max_seq_len,
             tmp_path=tmp_path,
             eval_data_type="atlas",
+            pipeline=pipeline,
+            ckpt=ckpt,
+            n_passages=n_passages,
         )
 
-        evaluate_QA(
+
+
+        pipeline, ckpt = evaluate_QA(
             run_name,
-            ["NQ", "TRIVIAQA"],
-            temps=[0, 0.5, 0.7, 1.0],
+             ["NQ","TRIVIAQA"],
+            temps=[0, 0.5, 0.7],
             max_bs=4,
             output_file=output_file,
-            n_samples=100,
+            n_samples=n_passages,
             max_seq_len=max_seq_len,
             tmp_path=tmp_path,
-            icl_examples=1,
+            icl_examples=0,
+            pipeline=pipeline,
+            ckpt=ckpt,
+        )
+        
+        pipeline, ckpt = evaluate_QA(
+            run_name,
+            ["NQ","TRIVIAQA"],
+            temps=[0, 0.5, 0.7],
+            max_bs=4,
+            output_file=output_file,
+            n_samples=n_passages,
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            icl_examples=2,
+            pipeline=pipeline,
+            ckpt=ckpt,
+        )
+        
+        pipeline, ckpt = evaluate_QA(
+            run_name,
+            ["NQ","TRIVIAQA"],
+            temps=[0, 0.5, 0.7],
+            max_bs=4,
+            output_file=output_file,
+            n_samples=n_passages,
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            icl_examples=4,
+            pipeline=pipeline,
+            ckpt=ckpt,
         )
         torch.cuda.empty_cache()
         print("Finished run", run_name)
+
+
+
+    # # TODO IN 128 toks lim
+    # # 'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB',
+    # # 'LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB',
+    # # 'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
+
+    # run_names = ['LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',]#'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB','LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB']
+    # max_seq_len = 128
+    # for i, run_name in enumerate(run_names):
+    #     print("Standard Dump")
+    #     evaluate_reconstruction_model(
+    #         run_name,
+    #         output_file=output_file,
+    #         temperatures=[0, 0.5, 0.7, 1.0],
+    #         max_seq_len=max_seq_len,
+    #         tmp_path=tmp_path,
+    #         eval_data_type="standard_dump",
+    #     )  # 'atlas','standard_dump'
+    #     print("Atlas")
+    #     evaluate_reconstruction_model(
+    #         run_name,
+    #         output_file=output_file,
+    #         temperatures=[0, 0.5, 0.7, 1.0],
+    #         max_seq_len=max_seq_len,
+    #         tmp_path=tmp_path,
+    #         eval_data_type="atlas",
+    #     )
+
+
+    #     evaluate_QA(
+    #         run_name,
+    #         ["NQ"],#, "TRIVIAQA"],
+    #         temps=[0, 0.5, 0.7, 1.0],
+    #         max_bs=4,
+    #         output_file=output_file,
+    #         n_samples=100,
+    #         max_seq_len=max_seq_len,
+    #         tmp_path=tmp_path,
+    #         icl_examples=1,
+    #     )
+    #     torch.cuda.empty_cache()
+    #     print("Finished run", run_name)

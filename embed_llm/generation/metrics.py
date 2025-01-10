@@ -8,7 +8,7 @@ from collections import Counter
 import unicodedata
 import nltk
 
-nltk.download("wordnet")
+# nltk.download("wordnet")
 
 
 class SimpleTokenizer(object):

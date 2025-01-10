@@ -319,18 +319,6 @@ class EmbedAugPipeline(nn.Module):
 
         mlp_path = ckpt_path + "/" + "MLP_projector"
 
-        if Path(ckpt_path + "/" + llm_name.lower() + "/trainable_embedder").exists():
-            trainable_embedder = True
-            trainable_embedder_path = (
-                ckpt_path + "/" + llm_name.lower() + "/trainable_embedder"
-            )
-            pooling_module_path = ckpt_path + "/" + llm_name.lower() + "/pooling_module"
-        else:
-            trainable_embedder = False
-            embedding_model = get_pretrained_embedder(
-                embed_model_name, device_map=device
-            )
-
         with open(os.path.join(ckpt_path, "../../args.yaml"), "r") as f:
             train_args = yaml.safe_load(f)
         lora = LoraArgs(train_args["lora"])
@@ -341,6 +329,24 @@ class EmbedAugPipeline(nn.Module):
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
         )
+        
+       
+        if pipeline_args.trainable_embedder:     
+            assert Path(ckpt_path + "/" + llm_name.lower() + "/trainable_embedder").exists()
+            trainable_embedder_path = (
+                ckpt_path + "/" + llm_name.lower() + "/trainable_embedder"
+            )
+            pooling_module_path = ckpt_path + "/" + llm_name.lower() + "/pooling_module"
+        elif pipeline_args.train_only_pooling:
+            assert Path(ckpt_path + "/" + llm_name.lower() + "/pooling_module").exists()
+            pooling_module_path = ckpt_path + "/" + llm_name.lower() + "/pooling_module"
+        else:
+            embedding_model = get_pretrained_embedder(
+                embed_model_name, device_map=device
+            )
+
+        if not pipeline_args.trainable_llm:
+            llm_args.lora = None
 
         llm, tokenizer, embed_dim = load_llm_model(
             llm_args=llm_args,
@@ -370,7 +376,11 @@ class EmbedAugPipeline(nn.Module):
         llm = llm.to(device)
         llm.eval()
 
-        if trainable_embedder:
+        if pipeline_args.trainable_embedder or pipeline_args.train_only_pooling:
+            llm_args.lora = lora
+            if pipeline_args.train_only_pooling:
+                llm_args.lora = None
+                
             llm_embedder, _, llm_embed_dim = load_llm_model(
                 llm_args=llm_args,
                 pipeline_args=pipeline_args,
@@ -393,16 +403,16 @@ class EmbedAugPipeline(nn.Module):
                     del module
 
             llm_embedder.n_layers = llm_embedder.n_layers - n_truncated_layers
-
-            llm_embedder.load_lora(
-                Path(trainable_embedder_path + "/lora.safetensors"), cross_att=False
-            )
+            if not pipeline_args.train_only_pooling:
+                llm_embedder.load_lora(
+                    Path(trainable_embedder_path + "/lora.safetensors"), cross_att=False
+                )
             embedding_model = llm_embedder.to(device)
             embedding_model.eval()
 
         augmented_pipeline = EmbedAugPipeline(
             pipeline_args=pipeline_args,
-            embed_model_name=embed_model_name if not trainable_embedder else "llm",
+            embed_model_name=embed_model_name if (not pipeline_args.trainable_embedder and not pipeline_args.train_only_pooling) else "llm",
             embedding_model=embedding_model,
             tokenizer=tokenizer,
         )
@@ -413,7 +423,7 @@ class EmbedAugPipeline(nn.Module):
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
 
-        if trainable_embedder and pipeline_args.do_pool:
+        if (pipeline_args.trainable_embedder or pipeline_args.train_only_pooling) and pipeline_args.do_pool:
             if (
                 pipeline_args.do_pool
                 and "attention" in augmented_pipeline.pipeline_args.pooling_module.type
@@ -470,7 +480,7 @@ class EmbedAugPipeline(nn.Module):
         if isinstance(text_conditioning, str):
             text_conditioning = [text_conditioning]
 
-        if self.pipeline_args.w_embeds and not self.pipeline_args.trainable_embedder:
+        if self.pipeline_args.w_embeds and (not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling):
             if self.pipeline_args.cross_att and not self.pipeline_args.do_pool:
                 embeddings, embed_seqlens = encode_text(
                     text_conditioning,
@@ -494,7 +504,7 @@ class EmbedAugPipeline(nn.Module):
                     else embed_seqlens
                 )
 
-        elif self.pipeline_args.w_embeds and self.pipeline_args.trainable_embedder:
+        elif self.pipeline_args.w_embeds and (self.pipeline_args.trainable_embedder or self.pipeline_args.train_only_pooling):
             x = [
                 self.tokenizer.encode(text, bos=True, eos=True)
                 for text in text_conditioning

@@ -65,13 +65,14 @@ def load_args(
             with open(os.path.join(pipe_path, "../../args.yaml"), "r") as f:
                 train_args = yaml.safe_load(f)
             w_prefix_prompt = train_args.get("prefix_prompt", False)
+            pipeline_args.w_prefix_prompt = w_prefix_prompt
         if "max_seq_len" not in args:
             with open(os.path.join(pipe_path, "../../args.yaml"), "r") as f:
                 train_args = yaml.safe_load(f)
             max_seq_len = train_args.get("seq_len", 256)
+            pipeline_args.max_seq_len = max_seq_len
 
-        pipeline_args.w_prefix_prompt = w_prefix_prompt
-        pipeline_args.max_seq_len = max_seq_len
+  
         mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
         pipeline_args.mlp_project = mlp_project_args
 
@@ -111,6 +112,7 @@ def load_args(
         ),
         shared_kv=True if pipeline_args.shared_kv else False,
         pooled_cross_att=True if pipeline_args.pooled_cross_att else False,
+        gate_bottleneck = getattr(pipeline_args, "gate_bottleneck", 1),
     )
 
     if args.get("rope_theta") is not None:

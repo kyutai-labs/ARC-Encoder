@@ -158,8 +158,8 @@ class ReversedLatentAttention(nn.Module):
         self.head_dim = hidden_dim // n_heads
 
         self.latents = torch.nn.Parameter(
-            torch.randn(self.r, latent_dim), requires_grad=True
-        )
+            torch.randn(self.r, latent_dim), requires_grad=True)
+
 
         # Attention as in the Perceiver IO encoder
         self.cross_attend_block_encoder = PreNorm(
@@ -253,8 +253,7 @@ class LatentAttention(nn.Module):
         )
 
         self.latents = torch.nn.Parameter(
-            torch.randn(self.r, latent_dim), requires_grad=True
-        )
+            torch.randn(self.r, latent_dim), requires_grad=True)
 
         self.mlp_layers = nn.ModuleList()
         for _ in range(n_layers):

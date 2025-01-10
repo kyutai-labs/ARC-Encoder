@@ -192,6 +192,7 @@ class Cross_AttTransformerBlock(nn.Module):
         lora: LoraArgs | None = None,
         moe: MoeArgs | None = None,
         pooled_cross_att: bool = False,
+        gate_bottleneck: int = 1,
     ):
         super().__init__()
         self.n_heads = n_heads
@@ -211,13 +212,13 @@ class Cross_AttTransformerBlock(nn.Module):
                 head_dim=head_dim,
                 n_kv_heads=n_kv_heads,
             )
-            self.gate = MLP_block(in_dim=dim, out_dim=dim, act="gelu")
+            self.gate = MLP_block(in_dim=dim, out_dim=dim, hidden_dim = dim//gate_bottleneck,  act="gelu")
         else:
             self.cross_attention = Pooled_Cross_Attention(
                 dim=dim, n_heads=n_heads, head_dim=head_dim, n_kv_heads=n_kv_heads
             )
 
-            self.gate = MLP_block(in_dim=dim, out_dim=dim, act="gelu")
+            self.gate = MLP_block(in_dim = dim, out_dim = dim, hidden_dim = dim//gate_bottleneck,  act="gelu")
 
         self.pooled_cross_att = pooled_cross_att
 
@@ -346,6 +347,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     lora=args.lora,
                     moe=args.moe,
                     pooled_cross_att=args.pooled_cross_att,
+                    gate_bottleneck=args.gate_bottleneck,   
                 )
                 self.cross_att_layers_id.append(i)
             elif self.every_cross_att != -1 and i % self.every_cross_att == 0:
@@ -359,6 +361,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     lora=args.lora,
                     moe=args.moe,
                     pooled_cross_att=args.pooled_cross_att,
+                    gate_bottleneck=args.gate_bottleneck,   
                 )
                 self.cross_att_layers_id.append(i)
             else:

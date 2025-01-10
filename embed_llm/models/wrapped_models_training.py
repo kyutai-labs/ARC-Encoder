@@ -4,7 +4,9 @@ import safetensors
 from torch.distributed.fsdp import BackwardPrefetch
 from torch.distributed.fsdp.api import ShardingStrategy
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
-
+import pprint
+import dataclasses
+import subprocess as sp
 from embed_llm.training.mixed_precision import (
     bfSixteen,
     bfSixteen_mixed,
@@ -106,7 +108,7 @@ def load_training_model(
     # Load model and params for embedder
     if pipeline_args.trainable_embedder or pipeline_args.train_only_pooling:
         main_logger_info("Loading embedder model ...")
-        llm_args.lora.enable = True
+        llm_args.lora = lora
         if pipeline_args.train_only_pooling:
             llm_args.lora = None
         # Load pretrained params on rank 0
@@ -309,15 +311,6 @@ def load_training_model_from_ckpt(
 
     mlp_path = ckpt_path + "/" + "MLP_projector"
 
-    if Path(
-        ckpt_path + "/" + train_args.llm_name.lower() + "/trainable_embedder"
-    ).exists():
-        trainable_embedder_path = (
-            ckpt_path + "/" + train_args.llm_name.lower() + "/trainable_embedder"
-        )
-        pooling_module_path = (
-            ckpt_path + "/" + train_args.llm_name.lower() + "/pooling_module"
-        )
 
     llm_args, old_pipeline_args = load_args(
         folder=folder,
@@ -326,6 +319,18 @@ def load_training_model_from_ckpt(
         pipe_path=ckpt_path,
     )
 
+    main_logger_info(f"Old Pipeline: {pprint.pformat(dataclasses.asdict(old_pipeline_args))}")
+    
+    if old_pipeline_args.trainable_embedder:     
+        assert Path(ckpt_path + "/" + train_args.llm_name.lower() + "/trainable_embedder").exists()
+        trainable_embedder_path = (
+            ckpt_path + "/" + train_args.llm_name.lower() + "/trainable_embedder"
+        )
+        pooling_module_path = ckpt_path + "/" + train_args.llm_name.lower()  + "/pooling_module"
+    elif old_pipeline_args.train_only_pooling:
+        assert Path(ckpt_path + "/" + train_args.llm_name.lower()  + "/pooling_module").exists()
+        pooling_module_path = ckpt_path + "/" + train_args.llm_name.lower()  + "/pooling_module"
+        
     if not (
         old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling
     ):
@@ -336,19 +341,23 @@ def load_training_model_from_ckpt(
         assert not tune_llm, "If no trainable llm, llm model can't be instruct tuned"
         llm_args.lora = None
 
-    model, tokenizer, embed_dim = load_llm_model(
+    llm, tokenizer, embed_dim = load_llm_model(
         llm_args=llm_args,
         pipeline_args=old_pipeline_args,
         folder=folder,
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=False,
-        parll=False,
+        parll=True,
     )
+
 
     # Load model and params for embedder
     if old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling:
         main_logger_info("Loading embedder model ...")
+        llm_args.lora = lora
+        if old_pipeline_args.train_only_pooling or not tune_embedder:
+            llm_args.lora = None
 
         # Load pretrained params on rank 0
         llm_embedder, _, llm_embed_dim = load_llm_model(
@@ -358,7 +367,7 @@ def load_training_model_from_ckpt(
             checkpoint=checkpoint,
             param_dtype=param_dtype,
             for_embedding=True,
-            parll=False,
+            parll=True,
         )
 
         n_truncated_layers = old_pipeline_args.n_truncated_layers
@@ -375,11 +384,11 @@ def load_training_model_from_ckpt(
         llm_embedder.n_layers = llm_embedder.n_layers - n_truncated_layers
 
         if not old_pipeline_args.train_only_pooling:
-            llm_embedder.load_lora(
-                Path(trainable_embedder_path + "/lora.safetensors"), cross_att=False
-            )
-
-        embedding_model = llm_embedder.to(torch.cuda.current_device())
+            if get_rank() == 0:
+                llm_embedder.load_lora(
+                    Path(trainable_embedder_path + "/lora.safetensors"), cross_att=False
+                )
+        embedding_model = llm_embedder
 
     # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
@@ -390,27 +399,8 @@ def load_training_model_from_ckpt(
         instruct_args=train_args.instruct_tuning,
     )
 
-    augmented_model = augmented_pipeline.get_model(llm=model)
-
-    if old_pipeline_args.cross_att:
-        main_logger_info("Loading cross att state dict")
-        state_dict = safetensors.torch.load_file(Path(lora_path))
-        cross_att_state_dicts = {
-            k: v.to(param_dtype)
-            for k, v in state_dict.items()
-            if "lora" not in k and is_cross_att(k)
-        }
-        augmented_model.llm.load_state_dict(
-            cross_att_state_dicts, assign=True, strict=False
-        )
-
-    if Path(lora_path).exists():
-        main_logger_info("Loading LLM LoRA state dict")
-        augmented_model.llm.load_lora(
-            Path(lora_path), cross_att=old_pipeline_args.cross_att
-        )
-
-    augmented_model.llm = augmented_model.llm.to(torch.cuda.current_device())
+    with torch.device("meta"):
+        augmented_model = augmented_pipeline.get_model(llm=llm)
 
     if (
         old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling
@@ -420,51 +410,82 @@ def load_training_model_from_ckpt(
             and "attention" in augmented_pipeline.pipeline_args.pooling_module.type
         ):
             state_dict = load_state_dict(Path(pooling_module_path), dtype=param_dtype)
-            augmented_pipeline.model.pooling_module.process.load_state_dict(
-                state_dict, assign=True, strict=True
-            )
+            if get_rank() == 0:
+                augmented_model.pooling_module.process.load_state_dict(
+                    state_dict, assign=True, strict=True
+                )
+            
+            augmented_model.pooling_module.process.latents = torch.nn.Parameter([v for k, v in state_dict.items() if "latents" in k][0].cuda())
+           
+            ignored_state = [augmented_model.pooling_module.process.latents]
+        else:
+            ignored_state = []
 
     if old_pipeline_args.mlp_project.n_layers > 0:
         main_logger_info("Loading MLP projector")
-        augmented_model.mlp_project.load_state_dict(
-            safetensors.torch.load_file(mlp_path + "/consolidated.safetensors"),
-            assign=True,
-            strict=True,
-        )
+        state_dict = safetensors.torch.load_file(mlp_path + "/consolidated.safetensors")
+        if get_rank() == 0:
+            augmented_model.mlp_project.load_state_dict(
+                safetensors.torch.load_file(mlp_path + "/consolidated.safetensors"),
+                assign=True,
+                strict=True,
+            ) 
+        if "attention" in augmented_model.mlp_project_args.type:
+            augmented_model.mlp_project.latents = torch.nn.Parameter([v for k, v in state_dict.items() if "latents" in k][0].cuda())
+            ignored_state.append(augmented_model.mlp_project.latents)
 
-    assert not any(
-        p.is_meta for n, p in augmented_model.named_parameters() if "latents" not in n
-    ), "All parameters should be initialized by now"
+    if get_rank() == 0:
+        if old_pipeline_args.cross_att:
+            main_logger_info("Loading cross att state dict")
+            state_dict = safetensors.torch.load_file(Path(lora_path))
+            cross_att_state_dicts = {
+                k: v.to(param_dtype)
+                for k, v in state_dict.items()
+                if "lora" not in k and is_cross_att(k)
+            }
+            augmented_model.llm.load_state_dict(
+                cross_att_state_dicts, assign=True, strict=False
+            )
+        print('AUGMENTED MODEL', augmented_model.llm.args)
 
-    # Since param latents not sharded, initialize on all devices
-    if (
-        old_pipeline_args.do_pool
-        and augmented_model.pooling_args is not None
-        and "attention" in augmented_model.pooling_args.type
-    ):
+        if tune_llm and Path(lora_path).exists():
+            main_logger_info("Loading LLM LoRA state dict")
+            augmented_model.llm.load_lora(
+                Path(lora_path), cross_att=old_pipeline_args.cross_att
+            )
 
-        ignored_state = [augmented_model.pooling_module.process.latents]
+        param_init_fn = None
+        
+        for name, param in augmented_model.named_parameters():
+            if param.is_meta:
+                print(name)
+        assert not any(
+            p.is_meta for n, p in augmented_model.named_parameters() if "latents" not in n
+        ), "All parameters should be initialized by now"
+        
+
     else:
-        ignored_state = []
+        
+        def param_init_fn(m):
+            m.to_empty(device=torch.cuda.current_device(), recurse=False)
+            m.to(param_dtype)
+                
+        assert all(
+            p.is_meta for n, p in augmented_model.named_parameters() if 'latents' not in n
+        ), "All parameters should be on meta"
 
-    if "attention" in augmented_model.mlp_project_args.type:
+ 
 
-        ignored_state.append(augmented_model.mlp_project.latents)
 
     ignored_state = None if len(ignored_state) == 0 else ignored_state
 
-    torch.distributed.barrier()
 
     # only finetune LoRA, MLP projector and pooling parameters and freeze before wrapping
-
     # If lora not enable weights have already been merged
     for name, param in augmented_model.named_parameters():
-        if tune_llm and "llm" in name and lora.enable and "lora" in name:
+        if tune_llm and "llm" in name and ((lora.enable and "lora" in name) or not lora.enable):
             param.requires_grad = True
         elif tune_embedder and "trainable" in name and lora.enable and "lora" in name:
-            param.requires_grad = True
-        # Full fine-tuning
-        elif tune_llm and not lora.enable and "llm" in name:
             param.requires_grad = True
         elif "mlp_project" in name:
             param.requires_grad = True
@@ -483,8 +504,17 @@ def load_training_model_from_ckpt(
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
 
+    
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
+    # Profiling memory
+    def get_gpu_memory():
+        command = "nvidia-smi"
+        memory_free_info = sp.check_output(command.split()).decode("ascii")
+        return memory_free_info
+    print('MEMORY BEFORE FSDP', get_gpu_memory())
 
+    torch.distributed.barrier()
+    
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
@@ -493,9 +523,13 @@ def load_training_model_from_ckpt(
         mixed_precision=bfSixteen_mixed if train_args.mixed_precision else bfSixteen,
         limit_all_gathers=True,
         device_id=torch.cuda.current_device(),
-        sync_module_states=False,
+        sync_module_states=True,
+        param_init_fn=param_init_fn,
         ignored_states=ignored_state,
     )
+    
 
     main_logger_info("Model sharded!")
+
+    print('MEMORY AFTER FSDP', get_gpu_memory())
     return (augmented_pipeline, wrapped_model)

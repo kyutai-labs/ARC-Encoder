@@ -423,10 +423,9 @@ def _train(
             """ Training loop for basic reconstruction"""
 
             # start_time = time.time()
-
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
 
-            if args.textual_continuation * args.continuation > 0.0:
+            if args.textual_continuation * args.continuation > 0.0 or args.hybrid_task.do:
                 rand_textual_continuation = (
                     torch.rand(1).cuda()
                     if get_rank() == 0
@@ -466,7 +465,7 @@ def _train(
                 embed_seqlens=embed_seqlens,
                 batch_type=batch.data_type,
             )
-
+            
             if not args.instruct_tuning.do:
                 mb_loss = compute_ce_loss_with_mask(
                     logits=output, target=y, target_mask=y_mask
