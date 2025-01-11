@@ -17,6 +17,7 @@ class Batch:
     y_mask: np.ndarray | None = None
     is_pad_only: bool = False
     data_type: str = "reconstruction"
+    n_prefixes: list[int] | None = None
 
     def __post_init__(self):
         assert self.x.ndim == 1
@@ -42,6 +43,8 @@ class Batch:
             # create all 0's mask for pad samples
             self.y_mask = np.zeros_like(self.x)
             self.to_embed = [{"text": [""], "tokens": [[0]]} for _ in self.to_embed]
+        if self.n_prefixes is not None:
+            assert len(self.n_prefixes) == len(self.to_embed)
 
 
 @dataclasses.dataclass
@@ -54,6 +57,7 @@ class Batchlist:
     sizes: list[list[int]] = dataclasses.field(default_factory=list)
     y_mask: list[list[bool]] = dataclasses.field(default_factory=list)
     data_type: str = None
+    n_prefixes: list[list[int]] | None = None
 
     def __post_init__(self):
         assert self.x == [], "`Batchlist` has to be empty at init."
@@ -73,6 +77,7 @@ class Batchlist:
         sizes: list[int],
         y_mask: list[bool],
         data_type: str,
+        n_prefixes: list[int] | None = None,
     ):
         self.x.append(x)
         self.y.append(y)
@@ -81,6 +86,12 @@ class Batchlist:
         self.y_mask.append(y_mask)
         if self.data_type is None:
             self.data_type = data_type
+        
+        if n_prefixes is not None:
+            if self.n_prefixes is None:
+                self.n_prefixes = []
+            self.n_prefixes.append(n_prefixes)
+            
         assert self.data_type == data_type
 
     def empty(self):
@@ -90,6 +101,7 @@ class Batchlist:
         self.sizes = []
         self.y_mask = []
         self.data_type = None
+        self.n_prefixes = None
 
     @staticmethod
     def flatten_to_numpy(list_of_lists: list[list[object]], dtype) -> np.ndarray:
@@ -105,8 +117,13 @@ class Batchlist:
 
         y_mask_flatten = self.flatten_to_numpy(self.y_mask, dtype=bool)
         y_mask_np: np.ndarray | None = None if y_mask_flatten.all() else y_mask_flatten
-
-        return Batch(x_np, y_np, to_embed, sizes, y_mask_np, data_type=self.data_type)
+        
+        if self.n_prefixes is not None:
+            n_prefixes = sum(self.n_prefixes, [])
+        else:
+            n_prefixes = None
+        
+        return Batch(x_np, y_np, to_embed, sizes, y_mask_np, data_type=self.data_type, n_prefixes=n_prefixes)
 
 
 def build_data_loader(
@@ -152,19 +169,20 @@ def build_data_loader(
             batch_list_dict[sample.data_type] = Batchlist()
 
         batch_list = batch_list_dict[sample.data_type]
+        
+        
         batch_list.add(
             sample.x,
             sample.y,
             sample.to_embed,
             sample.sizes,
             sample.mask,
-            sample.data_type,
+            data_type = sample.data_type,
+            n_prefixes=getattr(sample, "n_prefixes", None),
         )
 
         if len(batch_list) == batch_size:
-            # if get_rank()==0 and sample.data_type == "continuation":
-            #     give_cont_batch = torch.tensor([True], device = 'cuda')
-            #     dist.broadcast(give_cont_batch, 0)
+
             batch: Batch = batch_list.create_batch()
             yield batch
 

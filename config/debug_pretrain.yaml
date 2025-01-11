@@ -7,11 +7,11 @@ textual_continuation: 0.
 
 hybrid_task:
     do: false
-    max_n_prefixes: 4
+    max_n_prefixes: 10
     min_n_prefixes: 0
-    prop_continuation: 0.5
-    prop_noembed_continuation: 0.5
-    prop_uselessembed_continuation: 0.0
+    prop_continuation: 0.2
+    prop_noembed_continuation: 0.2
+    prop_uselessembed_continuation: 0.1
 
 lora:
   rank: 64
@@ -55,7 +55,7 @@ data:
 seq_len: 256
 batch_size: 32
 num_microbatches: 1
-max_steps: 5
+max_steps: 10
 optim:
   max_lr: 5.0e-05
   weight_decay: 0.1
@@ -63,7 +63,7 @@ optim:
   initial_lr: 1.0e-20
   final_lr: 1.0e-10
 seed: 0
-log_freq: 10
+log_freq: 1
 eval_freq: 100
 no_eval: true
 ckpt_freq: 500

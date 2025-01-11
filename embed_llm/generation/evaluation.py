@@ -684,6 +684,7 @@ if __name__ == "__main__":
     # # 'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB',
     # # 'LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB',
     # # 'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
+    # # 'LT_FN_Truelatent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
 
     # run_names = ['LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',]#'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB','LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB']
     # max_seq_len = 128

@@ -425,37 +425,84 @@ def _train(
             # start_time = time.time()
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
 
-            if args.textual_continuation * args.continuation > 0.0 or args.hybrid_task.do:
-                rand_textual_continuation = (
+            if args.textual_continuation * args.continuation > 0.0 or args.hybrid_task.prop_noembed_continuation > 0.0:
+                rand_noembed_continuation = (
                     torch.rand(1).cuda()
                     if get_rank() == 0
                     else torch.tensor([0.0], device="cuda")
                 )
-                dist.broadcast(rand_textual_continuation, 0)
+                dist.broadcast(rand_noembed_continuation, 0)
 
-                if batch.data_type == "continuation":
-                    if rand_textual_continuation < args.textual_continuation:
+                if batch.data_type == "continuation" and rand_noembed_continuation < args.textual_continuation:
+                    x = []
+                    y = []
+                    seqlens = []
+                    y_mask = []
+                    ind = 0
+                    for to_embed, size in zip(batch.to_embed, batch.sizes):
+                        x.extend(to_embed["tokens"][0])
+                        x.extend(batch.x[ind : ind + size])
+                        y.extend(to_embed["tokens"][0])
+                        y.extend(batch.y[ind : ind + size])
+                        seqlens.append(len(to_embed["tokens"][0]) + size)
+                        ind += size
+                        y_mask.extend([False] * len(to_embed["tokens"][0]))
+                        y_mask.extend([True] * size)
+
+                    x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
+                    y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
+                    y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
+                    batch.data_type = "textual_continuation"
+                    embeddings = None
+                
+                if rand_noembed_continuation < args.hybrid_task.prop_noembed_continuation and args.hybrid_task.do:
+                    if batch.data_type == "continuation":
                         x = []
                         y = []
                         seqlens = []
                         y_mask = []
                         ind = 0
-                        for to_embed, size in zip(batch.to_embed, batch.sizes):
+                        for to_embed, size, n_prefix in zip(batch.to_embed, batch.sizes, batch.n_prefixes):
                             x.extend(to_embed["tokens"][0])
-                            x.extend(batch.x[ind : ind + size])
+                            x.extend(batch.x[ind + n_prefix : ind + size])
                             y.extend(to_embed["tokens"][0])
-                            y.extend(batch.y[ind : ind + size])
-                            seqlens.append(len(to_embed["tokens"][0]) + size)
+                            y.extend(batch.y[ind + n_prefix : ind + size])
+                            seqlens.append(len(to_embed["tokens"][0]) + size - n_prefix)
                             ind += size
                             y_mask.extend([False] * len(to_embed["tokens"][0]))
-                            y_mask.extend([True] * size)
+                            y_mask.extend([True] * (size - n_prefix))
 
                         x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
                         y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
                         y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
-                        batch.data_type = "textual_continuation"
+                        batch.data_type = "noembed_continuation"
+                        embeddings = None
+                        
+                    elif batch.data_type == "reconstruction" :
+                        x = []
+                        y = []
+                        seqlens = []
+                        y_mask = []
+                        ind = 0
+                        for to_embed, size, n_prefix in zip(batch.to_embed, batch.sizes, batch.n_prefixes):
+                            x.extend(to_embed["tokens"][0])
+                            y.extend(to_embed["tokens"][0])
+                            seqlens.append(len(to_embed["tokens"][0]))
+                            ind += size
+            
+                            y_mask.extend([False] * (len(to_embed["tokens"][0])//2))
+                            y_mask.extend([True] * (len(to_embed["tokens"][0]) - len(to_embed["tokens"][0])//2))
+                        x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
+                        y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
+                        y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
+                        batch.data_type = "noembed_reconstruction"
                         embeddings = None
 
+                    else: # text continuation where the sample is not helpful
+                        batch.data_type = "noembed_reconstruction"
+                        embeddings = None
+                        
+                
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
             output = model.forward(
@@ -555,7 +602,7 @@ def _train(
         grad_norm = torch.tensor([0.0], device="cuda")
         for name, p in model.named_parameters():
             if p.requires_grad:
-                if args.textual_continuation * args.continuation == 0.0:
+                if args.textual_continuation * args.continuation == 0.0 and args.hybrid_task.prop_noembed_continuation == 0.0: 
                     assert p.grad is not None, f"None grad for this param {name}"
                     if torch.any(torch.isnan(p.grad)).item():
                         print(f"Grad contains NaN for this param {name}")
