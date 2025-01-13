@@ -2,7 +2,7 @@ model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_instruct
-start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/debug_pretrain/checkpoints/checkpoint_000005
+start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/test_pretrain/checkpoints/checkpoint_000010
 
 lora:
   rank: 64
@@ -17,7 +17,7 @@ instruct_tuning:
   alpha: 2.0
   temp: 1.0
   tune_llm: true
-  tune_embedder: false
+  tune_embedder: true
 
 
 data:
@@ -29,7 +29,7 @@ data:
   adapt_seq_len: true
 
 seq_len: 128
-batch_size: 4
+batch_size: 32
 num_microbatches: 1
 max_steps: 20000
 optim:

@@ -194,7 +194,7 @@ def _train(
             args.start_from_ckpt_path
             + "/"
             + args.llm_name.lower()
-            + "/trainable_embedder"
+            + "/pooling_module"
         ).exists()
     else:
         trainable_embedder = args.pipeline.trainable_embedder
@@ -203,6 +203,7 @@ def _train(
         args.pipeline.trainable_embedder
         or trainable_embedder
         or args.pipeline.train_only_pooling
+        
     ):
         embedding_model = None
     else:
@@ -218,7 +219,6 @@ def _train(
 
         embedding_model.eval()
     """ Load LLM and tokenizers """
-
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
     args.pipeline.param_dtype = param_dtype
 
@@ -329,7 +329,7 @@ def _train(
                     eval_batches_4cont.append(batch)
         else:
             eval_batches_4cont = None
-
+            
     # 9. Load optimizer
     optimizer = AdamW(
         model.parameters(),
@@ -424,8 +424,7 @@ def _train(
 
             # start_time = time.time()
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
-
-            if args.textual_continuation * args.continuation > 0.0 or args.hybrid_task.prop_noembed_continuation > 0.0:
+            if args.textual_continuation * args.continuation > 0.0 or (args.hybrid_task.prop_noembed_continuation > 0.0 and args.hybrid_task.do):
                 rand_noembed_continuation = (
                     torch.rand(1).cuda()
                     if get_rank() == 0
@@ -505,6 +504,7 @@ def _train(
                 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
+       
             output = model.forward(
                 x=x,
                 embeddings=embeddings,
@@ -531,7 +531,7 @@ def _train(
 
                 if args.instruct_tuning.cross_entropy:
                     mb_loss = instruct_cross_entropy
-
+                    
                 if args.instruct_tuning.kl:
                     contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
                     x_rag = []
@@ -562,13 +562,17 @@ def _train(
                     assert len(x_rag) == len(
                         y_mask_rag
                     ), "x_rag and y_mask_rag should be the same length"
-                    rag_output = model.forward(
-                        x=x_rag,
-                        embeddings=embeddings,
-                        seqlens=seqlens_rag,
-                        embed_seqlens=embed_seqlens,
-                        batch_type=batch.data_type,
-                    )
+                    
+                    with torch.no_grad():
+                        model.eval()
+                        rag_output = model.forward(
+                            x=x_rag,
+                            embeddings=None,
+                            seqlens=seqlens_rag,
+                            embed_seqlens=embed_seqlens,
+                            batch_type=batch.data_type,
+                        )
+                        model.train()
 
                     kl_dv_loss = compute_kl_loss_with_mask(
                         rag_logits=rag_output,
@@ -581,6 +585,7 @@ def _train(
                     kl_loss += kl_dv_loss.item()
                     mb_loss = mb_loss + args.instruct_tuning.alpha * kl_dv_loss
 
+                    
                 mb_loss.backward()
                 loss += mb_loss.item()
                 # print(prof.key_averages().table(sort_by="cuda_time_total"))

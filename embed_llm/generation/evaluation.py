@@ -138,7 +138,7 @@ def evaluate_QA(
                 context.append(data["passages"][0])
 
         c = list(zip(questions, context, answers))
-        random.shuffle(c)
+        random.shuffle(c, random = lambda: 0.42)
         questions, context, answers = zip(*c)
         
         print("Evaluation dataset loaded for", benchmark)
@@ -571,43 +571,152 @@ if __name__ == "__main__":
         run_names = [args.run_name]
     else:
         run_names = [
-            "pretrain_llm_trained_rec_singpassage_054f63f8",
-            "pretrain_both_trained_cont_singpassage_17c38ada",
-            "pretrain_llm_trained_cont_singpassage_5daaa6bc",
-            "pretrain_llm_trained_rec_multipassage_054f63f8",
-            "pretrain_both_trained_02_singpassage_0f6f2a1a",
-            "pretrain_both_trained_rec_multipassage_0f6f2a1a",
-            "pretrain_both_trained_rec_singpassage_0f6f2a1a",
-            "pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada",
-            "pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada",
-            "pretrain_llm_trained_02_singpassage_054f63f8",
-            "pretrain_llm_trained_05_singpassage_054f63f8",
-            "nopref_pretrain_llm_trained_cont_singpassage_5daaa6bc",
-            "nopref_pretrain_no_trained_cont_singpassage_5daaa6bc",
-            'nopref_pretrain_no_trained_rec_singpassage_054f63f8',
-            'nopref_pretrain_no_trained_rec_multipassage_054f63f8',
-            'pretrain_both_trained_05_singpassage_0f6f2a1a',]
+            # Done
+            # "pretrain_llm_trained_rec_singpassage_054f63f8",
+            # "pretrain_both_trained_cont_singpassage_17c38ada",
+            # "pretrain_llm_trained_cont_singpassage_5daaa6bc",
+            # "pretrain_llm_trained_rec_multipassage_054f63f8",
+            # "pretrain_both_trained_02_singpassage_0f6f2a1a",
+            # "pretrain_both_trained_rec_multipassage_0f6f2a1a",
+            # "pretrain_both_trained_rec_singpassage_0f6f2a1a",
+            # "pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada",
+            # "pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada",
+            # "pretrain_llm_trained_02_singpassage_054f63f8",
+            # "pretrain_llm_trained_05_singpassage_054f63f8",
+            # "nopref_pretrain_llm_trained_cont_singpassage_5daaa6bc",
+            # "nopref_pretrain_no_trained_cont_singpassage_5daaa6bc",
+            # 'nopref_pretrain_no_trained_rec_singpassage_054f63f8',
+            # 'nopref_pretrain_no_trained_rec_multipassage_054f63f8',
+            # 'pretrain_both_trained_05_singpassage_0f6f2a1a',]
+            # 'nopref_pretrain_both_trained_02_singpassage_0f6f2a1a',
+            # 'nopref_pretrain_llm_trained_02_singpassage_054f63f8',
+            # 'nopref_pretrain_llm_trained_rec_multipassage_054f63f8',
+            # 'nopref_pretrain_pool_trained_cont_singpassage_5daaa6bc',
+            # 'nopref_pretrain_nollm_trained_cont_singpassage_5darr64',
+            # 'nopref_pretrain_llm_trained_07_singpassage_054f63f8',
+            # 'nopref_pretrain_pool_trained_rec_singpassage_054f63f8',
+            # 'nopref_pretrain_both_trained_cont_singpassage_17c38ada',
+            # 'nopref_pretrain_llm_trained_rec_singpassage_054f63f8',
+            # 'nopref_pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada',
+            
+            # Doable
+
+
+             'nopref_pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada',
+             'nopref_pretrain_both_trained_02_singpassage_0f6f2a1a' 
+            
+            
         
-        
-        # 'nopref_pretrain_both_trained_02_singpassage_0f6f2a1a',
-        # 'nopref_pretrain_llm_trained_02_singpassage_054f63f8',
-        # 'nopref_pretrain_llm_trained_rec_multipassage_054f63f8',
-        # 'nopref_pretrain_pool_trained_cont_singpassage_5daaa6bc',
-        # 'nopref_pretrain_pool_trained_rec_singpassage_054f63f8',
-        # 'nopref_pretrain_both_trained_1cont_0',
-        # 'nopref_pretrain_both_trained_1cont_0',
-        # 'nopref_pretrain_both_trained_cont_singpassage_17c38ada',
+
+        # still training
         # 'nopref_pretrain_both_trained_rec_multipassage_0f6f2a1a',
         # 'nopref_pretrain_both_trained_rec_singpassage_0f6f2a1a',
-        # 'nopref_pretrain_llm_trained_rec_singpassage_054f63f8',
-        # 'nopref_pretrain_both_trained_07_singpassage_0f6f2a1a',
-        # 'nopref_pretrain_llm_trained_07_singpassage_054f63f8',
-        # 'nopref_pretrain_both_trained_05_singpassage_0f6f2a1a',
-        # 'nopref_pretrain_llm_trained_05_singpassage_054f63f8',
-
+        # 'nopref_pretrain_both_trained_07_singpassage_0f6f2a1a', 
+        # 'nopref_pretrain_both_trained_rec_singpassage_2gate_0f6f2a1a',
+        # 'nopref_pretrain_both_trained_rec_singpassage_16gate_0f6f2a1a',
+        # 'nopref_pretrain_both_trained_rec_singpassage_4gate_0f6f2a1a',
+        # 'nopref_pretrain_both_trained_rec_singpassage_8gate_0f6f2a1a',
+        # 'nopref_pretrain_llm_trained_rec_singpassage_8gate_054f63f8',
+        # 'nopref_pretrain_nollm_trained_rec_singpassage_8gate_5darr64',
+        # 'nopref_pretrain_no_trained_rec_singpassage_8gate_054f63f8',
+        # 'nopref_pretrain_both_trained_highuseless_hybrid_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_both_trained_lownoembed_hybrid_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_both_trained_std_hybrid_singpassage_0f6f2a1a',
+        # 'nopref_pretrain_both_trained_std_hybrid_multipassage_0f6f2a1a',
+        # 'nopref_pretrain_pool_trained_rec_singpassage_8gate_054f63f8',
+        # 'nopref_pretrain_llm_trained_std_hybrid_multipassage_054f63f8',
+        # 'nopref_pretrain_llm_trained_std_hybrid_singpassage_054f63f8',
+        # 'nopref_pretrain_nollm_trained_std_hybrid_multipassage_5darr64',
+        # 'nopref_pretrain_nollm_trained_std_hybrid_singpassage_5darr64',
+        # 'nopref_pretrain_no_trained_std_hybrid_multipassage_054f63f8',
+        # 'nopref_pretrain_no_trained_std_hybrid_singpassage_054f63f8',
+        # 'nopref_pretrain_pool_trained_std_hybrid_singpassage_054f63f8',
+        ]
 
     for i, run_name in enumerate(run_names):
 
+        print("Standard Dump")
+        pipeline, ckpt = evaluate_reconstruction_model(
+            run_name,
+            output_file=output_file,
+            temperatures=[0, 0.5, 0.7],
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            eval_data_type="standard_dump",
+            n_passages=n_passages,
+        )  # 'atlas','standard_dump'
+        
+        print("Atlas")
+        pipeline, ckpt = evaluate_reconstruction_model(
+            run_name,
+            output_file=output_file,
+            temperatures=[0, 0.5, 0.7],
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            eval_data_type="atlas",
+            pipeline=pipeline,
+            ckpt=ckpt,
+            n_passages=n_passages,
+        )
+
+
+
+        pipeline, ckpt = evaluate_QA(
+            run_name,
+             ["NQ","TRIVIAQA"],
+            temps=[0, 0.5],
+            max_bs=4,
+            output_file=output_file,
+            n_samples=n_passages,
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            icl_examples=0,
+            pipeline=pipeline,
+            ckpt=ckpt,
+        )
+        
+        pipeline, ckpt = evaluate_QA(
+            run_name,
+            ["NQ","TRIVIAQA"],
+            temps=[0, 0.5],
+            max_bs=4,
+            output_file=output_file,
+            n_samples=n_passages,
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            icl_examples=2,
+            pipeline=pipeline,
+            ckpt=ckpt,
+        )
+        
+        pipeline, ckpt = evaluate_QA(
+            run_name,
+            ["NQ","TRIVIAQA"],
+            temps=[0, 0.5],
+            max_bs=4,
+            output_file=output_file,
+            n_samples=n_passages,
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            icl_examples=4,
+            pipeline=pipeline,
+            ckpt=ckpt,
+        )
+        torch.cuda.empty_cache()
+        print("Finished run", run_name)
+
+
+
+    # TODO IN 128 toks lim
+    run_names = [
+    # 'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB',
+    # 'LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB',
+    # 'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
+    'LT_FN_Truelatent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB']
+
+   
+    max_seq_len = 128
+    for i, run_name in enumerate(run_names):
         print("Standard Dump")
         pipeline, ckpt = evaluate_reconstruction_model(
             run_name,
@@ -637,7 +746,7 @@ if __name__ == "__main__":
         pipeline, ckpt = evaluate_QA(
             run_name,
              ["NQ","TRIVIAQA"],
-            temps=[0, 0.5, 0.7],
+            temps=[0, 0.5],
             max_bs=4,
             output_file=output_file,
             n_samples=n_passages,
@@ -651,7 +760,7 @@ if __name__ == "__main__":
         pipeline, ckpt = evaluate_QA(
             run_name,
             ["NQ","TRIVIAQA"],
-            temps=[0, 0.5, 0.7],
+            temps=[0, 0.5],
             max_bs=4,
             output_file=output_file,
             n_samples=n_passages,
@@ -665,7 +774,7 @@ if __name__ == "__main__":
         pipeline, ckpt = evaluate_QA(
             run_name,
             ["NQ","TRIVIAQA"],
-            temps=[0, 0.5, 0.7],
+            temps=[0, 0.5],
             max_bs=4,
             output_file=output_file,
             n_samples=n_passages,
@@ -678,47 +787,3 @@ if __name__ == "__main__":
         torch.cuda.empty_cache()
         print("Finished run", run_name)
 
-
-
-    # # TODO IN 128 toks lim
-    # # 'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB',
-    # # 'LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB',
-    # # 'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
-    # # 'LT_FN_Truelatent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
-
-    # run_names = ['LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',]#'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB','LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB']
-    # max_seq_len = 128
-    # for i, run_name in enumerate(run_names):
-    #     print("Standard Dump")
-    #     evaluate_reconstruction_model(
-    #         run_name,
-    #         output_file=output_file,
-    #         temperatures=[0, 0.5, 0.7, 1.0],
-    #         max_seq_len=max_seq_len,
-    #         tmp_path=tmp_path,
-    #         eval_data_type="standard_dump",
-    #     )  # 'atlas','standard_dump'
-    #     print("Atlas")
-    #     evaluate_reconstruction_model(
-    #         run_name,
-    #         output_file=output_file,
-    #         temperatures=[0, 0.5, 0.7, 1.0],
-    #         max_seq_len=max_seq_len,
-    #         tmp_path=tmp_path,
-    #         eval_data_type="atlas",
-    #     )
-
-
-    #     evaluate_QA(
-    #         run_name,
-    #         ["NQ"],#, "TRIVIAQA"],
-    #         temps=[0, 0.5, 0.7, 1.0],
-    #         max_bs=4,
-    #         output_file=output_file,
-    #         n_samples=100,
-    #         max_seq_len=max_seq_len,
-    #         tmp_path=tmp_path,
-    #         icl_examples=1,
-    #     )
-    #     torch.cuda.empty_cache()
-    #     print("Finished run", run_name)

@@ -337,7 +337,7 @@ def load_training_model_from_ckpt(
         assert (
             not tune_embedder
         ), "If no trainable embedder, embedder model can't be instruct tuned"
-    if not old_pipeline_args.trainable_llm:
+    if not old_pipeline_args.trainable_llm or not tune_llm:
         assert not tune_llm, "If no trainable llm, llm model can't be instruct tuned"
         llm_args.lora = None
 
@@ -401,6 +401,8 @@ def load_training_model_from_ckpt(
 
     with torch.device("meta"):
         augmented_model = augmented_pipeline.get_model(llm=llm)
+    
+    ignored_state = []
 
     if (
         old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling
@@ -418,8 +420,8 @@ def load_training_model_from_ckpt(
             augmented_model.pooling_module.process.latents = torch.nn.Parameter([v for k, v in state_dict.items() if "latents" in k][0].cuda())
            
             ignored_state = [augmented_model.pooling_module.process.latents]
-        else:
-            ignored_state = []
+            del state_dict
+
 
     if old_pipeline_args.mlp_project.n_layers > 0:
         main_logger_info("Loading MLP projector")
@@ -433,6 +435,8 @@ def load_training_model_from_ckpt(
         if "attention" in augmented_model.mlp_project_args.type:
             augmented_model.mlp_project.latents = torch.nn.Parameter([v for k, v in state_dict.items() if "latents" in k][0].cuda())
             ignored_state.append(augmented_model.mlp_project.latents)
+            
+        del state_dict
 
     if get_rank() == 0:
         if old_pipeline_args.cross_att:
@@ -446,10 +450,16 @@ def load_training_model_from_ckpt(
             augmented_model.llm.load_state_dict(
                 cross_att_state_dicts, assign=True, strict=False
             )
-        print('AUGMENTED MODEL', augmented_model.llm.args)
 
-        if tune_llm and Path(lora_path).exists():
+
+        if Path(lora_path).exists():
             main_logger_info("Loading LLM LoRA state dict")
+            
+            if not tune_llm:
+                augmented_model.llm.args.lora = None
+            else:
+                augmented_model.llm.args.lora = lora
+                
             augmented_model.llm.load_lora(
                 Path(lora_path), cross_att=old_pipeline_args.cross_att
             )
@@ -459,6 +469,7 @@ def load_training_model_from_ckpt(
         for name, param in augmented_model.named_parameters():
             if param.is_meta:
                 print(name)
+                
         assert not any(
             p.is_meta for n, p in augmented_model.named_parameters() if "latents" not in n
         ), "All parameters should be initialized by now"
@@ -474,7 +485,6 @@ def load_training_model_from_ckpt(
             p.is_meta for n, p in augmented_model.named_parameters() if 'latents' not in n
         ), "All parameters should be on meta"
 
- 
 
 
     ignored_state = None if len(ignored_state) == 0 else ignored_state
@@ -482,6 +492,9 @@ def load_training_model_from_ckpt(
 
     # only finetune LoRA, MLP projector and pooling parameters and freeze before wrapping
     # If lora not enable weights have already been merged
+
+
+            
     for name, param in augmented_model.named_parameters():
         if tune_llm and "llm" in name and ((lora.enable and "lora" in name) or not lora.enable):
             param.requires_grad = True
@@ -506,15 +519,10 @@ def load_training_model_from_ckpt(
 
     
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
-    # Profiling memory
-    def get_gpu_memory():
-        command = "nvidia-smi"
-        memory_free_info = sp.check_output(command.split()).decode("ascii")
-        return memory_free_info
-    print('MEMORY BEFORE FSDP', get_gpu_memory())
 
     torch.distributed.barrier()
     
+
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
@@ -531,5 +539,4 @@ def load_training_model_from_ckpt(
 
     main_logger_info("Model sharded!")
 
-    print('MEMORY AFTER FSDP', get_gpu_memory())
     return (augmented_pipeline, wrapped_model)

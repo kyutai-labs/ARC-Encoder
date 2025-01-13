@@ -303,12 +303,6 @@ def sequence_iterator_hybrid(
         
     n_prefixes.append(n_prefix_tokens)
 
-    if not continuation and not useless_embed_continuation:
-        assert sizes[-1] <= len(to_embed_buffer[-1]["tokens"][0]), (
-            sizes[-1],
-            to_embed_buffer[-1]["tokens"][0],
-        )
-
     assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
     assert len(to_embed_buffer) == len(sizes)
 

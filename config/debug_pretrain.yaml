@@ -33,14 +33,14 @@ pipeline:
     type: mlp
   n_truncated_layers: 8
   normalize_embeddings: true
-  pooled_cross_att: true
+  pooled_cross_att: false
   pooling_module:
     n_heads: 8
     r: 512
     type: latent_attention
   shared_kv: false
-  train_only_pooling: true
-  trainable_embedder: false
+  train_only_pooling: false
+  trainable_embedder: true
   trainable_llm: true
   w_embeds: true
   w_prefix_prompt: false
