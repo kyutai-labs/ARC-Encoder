@@ -1,10 +1,10 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-9 #42
+#SBATCH --array=4-7 #42
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx11,par2dc5-ai-prd-cl02s02dgx03,par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s04dgx24
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s04dgx20,par2dc5-ai-prd-cl02s04dgx22
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
@@ -56,11 +56,11 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_pool_trained_rec_singpassage_8gate_054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_llm_trained_std_hybrid_singpassage_054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_llm_trained_std_hybrid_multipassage_054f63f8.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_nollm_trained_std_hybrid_multipassage_5darr64.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_nollm_trained_std_hybrid_multipassage_5darr64.yaml # Did not work
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_nollm_trained_std_hybrid_singpassage_5darr64.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_no_trained_std_hybrid_multipassage_054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_no_trained_std_hybrid_singpassage_054f63f8.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_pool_trained_std_hybrid_singpassage_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/nopref_pretrain_pool_trained_std_hybrid_singpassage_054f63f8.yaml # Working ? 
 )
 
 

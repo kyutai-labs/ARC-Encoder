@@ -23,15 +23,17 @@ def generate(
     if len(prompt_pre_embed) > 0 and not isinstance(prompt_pre_embed[0], list):
         prompt_pre_embed = [prompt_pre_embed]
 
+
     if len(prompt_post_embed) > 0 and not isinstance(prompt_post_embed[0], list):
         prompt_post_embed = [prompt_post_embed]
 
     model = model.eval()
-    B, V = len(prompt_pre_embed), model.args.vocab_size
+    B, V = len(prompt_post_embed), model.args.vocab_size
+
     seqlens = [len(x) for x in prompt_post_embed]
 
     concat = cat_embeddings is not None
-
+   
     # Cache
     cache_window = (
         max(seqlens) + max_tokens + 3 if concat else max(seqlens) + max_tokens
@@ -45,12 +47,11 @@ def generate(
         model.args.head_dim,
         model.args.sliding_window,
     )
-
+    model.pos_to_keep = []
     cache.to(device=model.device, dtype=model.dtype)
     cache.reset()
 
-    # Bookkeeping
-    logprobs: list[list[float]] = [[] for _ in range(B)]
+ 
     last_token_prelogits = None
 
     # Put in cache if trained with prefix prompt
@@ -78,7 +79,7 @@ def generate(
 
         prelogits = model.generate(
             torch.tensor(
-                sum(prompt_post_embed, []), device=model.device, dtype=torch.long
+                sum(prompt_post_embed_chunks, []), device=model.device, dtype=torch.long
             ),
             # images=flattened_images,
             seqlens=[len(p) for p in prompt_post_embed_chunks],
@@ -88,7 +89,7 @@ def generate(
             cat_embeddings=cat_embeddings,
         )
 
-        # Stop concatenating if already in cache
+        # Stop concatenating after first chunk
         if s == 0 and concat:
             cat_embeddings = None
 
@@ -114,10 +115,7 @@ def generate(
 
     for j in range(max_tokens):
         next_token = sample(last_token_prelogits, temperature=temperature[j], top_p=0.8)
-
-        for b in range(B):
-            logprobs[b].append(last_token_prelogits[b])
-
+        
         if eos_id is not None:
             is_finished = is_finished | (next_token == eos_id).cpu()
 
@@ -146,12 +144,7 @@ def generate(
     else:
         generated_tokens = []
 
-    if logprobs:
-        logprobs = [torch.stack(probs, dim=0) for probs in logprobs]
-    else:
-        logprobs = []
-
-    return generated_tokens, logprobs
+    return generated_tokens
 
 
 def get_attention(

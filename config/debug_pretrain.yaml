@@ -2,22 +2,27 @@ model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_pretrain
-continuation: 0.
-textual_continuation: 0.
 
 hybrid_task:
-    do: false
+    do: true
     max_n_prefixes: 10
     min_n_prefixes: 0
-    prop_continuation: 0.2
-    prop_noembed_continuation: 0.2
+    prop_continuation: 0.5
+    prop_noembed_continuation: 0.3
     prop_uselessembed_continuation: 0.1
-
+llm_name: Mistral7B
+log_freq: 10
 lora:
+  enable: true
   rank: 64
   scaling: 2.0
-  enable: true
 
+optim:
+  final_lr: 1.0e-10
+  initial_lr: 1.0e-20
+  max_lr: 5.0e-05
+  warm_up_steps: 5
+  weight_decay: 0.1
 pipeline:
   cross_att: true
   cross_att_layers: 16
@@ -31,20 +36,18 @@ pipeline:
     hidden_dim: 4096
     n_layers: 1
     type: mlp
-  n_truncated_layers: 8
-  normalize_embeddings: true
-  pooled_cross_att: false
   pooling_module:
     n_heads: 8
     r: 512
     type: latent_attention
+  n_truncated_layers: 8
+  normalize_embeddings: true
+  pooled_cross_att: false
   shared_kv: false
-  train_only_pooling: false
   trainable_embedder: true
-  trainable_llm: true
+  trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
-  gate_bottleneck: 8
 data:
   train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/train_atlas_enwiki-dec2021_standard.jsonl
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl
@@ -55,13 +58,7 @@ data:
 seq_len: 256
 batch_size: 32
 num_microbatches: 1
-max_steps: 10
-optim:
-  max_lr: 5.0e-05
-  weight_decay: 0.1
-  warm_up_steps: 2
-  initial_lr: 1.0e-20
-  final_lr: 1.0e-10
+max_steps: 40
 seed: 0
 log_freq: 1
 eval_freq: 100

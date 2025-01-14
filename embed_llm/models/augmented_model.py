@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from pathlib import Path
-from typing import Sequence
 import safetensors.torch
 
 import safetensors
@@ -457,15 +456,14 @@ class EmbedAugPipeline(nn.Module):
     @torch.inference_mode()
     def generate_mistral(
         self,
-        text_conditioning: str | Sequence[str],
+        text_conditioning: str | list[str] | list[list[str]] | None,
         device: str,
-        prompt_pre_embed: str | Sequence[str] = "",
-        prompt_post_embed: str | Sequence[str] = "",
+        prompt_pre_embed: str | list[str] = "",
+        prompt_post_embed: str | list[str] = "",
         max_tokens: int = 100,
         temperature: float = 0.6,
         truncate_double_space: bool = False,
         device_generation: str | None = None,
-        attention: bool = False,
         embed_seqlens: list[int] | None = None,
         **kwargs,
     ):
@@ -478,12 +476,20 @@ class EmbedAugPipeline(nn.Module):
             prompt_post_embed = [prompt_post_embed]
 
         if isinstance(text_conditioning, str):
-            text_conditioning = [text_conditioning]
+            text_conditioning = [[text_conditioning]]
+        elif isinstance(text_conditioning, list):
+            if isinstance(text_conditioning[0], str):
+                text_conditioning = [[text] for text in text_conditioning]
+        
+        if text_conditioning is None:
+            w_embeds = False
+        else:
+            w_embeds = self.pipeline_args.w_embeds
 
-        if self.pipeline_args.w_embeds and (not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling):
+        if w_embeds and (not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling):
             if self.pipeline_args.cross_att and not self.pipeline_args.do_pool:
                 embeddings, embed_seqlens = encode_text(
-                    text_conditioning,
+                    sum(text_conditioning, []) if isinstance(text_conditioning,list) else text_conditioning,
                     self.embed_model_name,
                     self.embedding_model,
                     query_embedding=False,
@@ -492,22 +498,18 @@ class EmbedAugPipeline(nn.Module):
                 )
             else:
                 embeddings = encode_text(
-                    text_conditioning,
+                    sum(text_conditioning, []) if isinstance(text_conditioning,list) else text_conditioning,
                     self.embed_model_name,
                     self.embedding_model,
                     query_embedding=False,
                     device=device,
                 )
-                embed_seqlens = (
-                    [1] * embeddings.shape[0]
-                    if embed_seqlens is None
-                    else embed_seqlens
-                )
+                embed_seqlens = [len(l_text) for l_text in text_conditioning]
 
-        elif self.pipeline_args.w_embeds and (self.pipeline_args.trainable_embedder or self.pipeline_args.train_only_pooling):
+        elif w_embeds and (self.pipeline_args.trainable_embedder or self.pipeline_args.train_only_pooling):
             x = [
                 self.tokenizer.encode(text, bos=True, eos=True)
-                for text in text_conditioning
+                for l_text in text_conditioning for text in l_text
             ]
             seqlens = [len(tokens) for tokens in x]
             x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
@@ -520,9 +522,7 @@ class EmbedAugPipeline(nn.Module):
             if self.pipeline_args.do_pool:
                 embeddings = self.model.pooling_module(x=embeddings, seqlens=seqlens)
 
-            embed_seqlens = (
-                [1] * embeddings.shape[0] if embed_seqlens is None else embed_seqlens
-            )
+            embed_seqlens = [len(l_text) for l_text in text_conditioning]
         else:
             embeddings = None
             embed_seqlens = None
@@ -574,8 +574,7 @@ class EmbedAugPipeline(nn.Module):
                 )
 
         eos_id = self.tokenizer.eos_id
-
-        generated_tokens, attentions = mistral_generate(
+        generated_tokens = mistral_generate(
             prompt_pre_embed=encoded_pre_embed_prompts,
             prompt_post_embed=encoded_post_embed_prompts,
             embeddings=(
@@ -595,7 +594,6 @@ class EmbedAugPipeline(nn.Module):
                 or (not self.pipeline_args.do_both and self.pipeline_args.cross_att)
                 else cat_embeddings.to(device_generation)
             ),
-            attention=attention,
             **kwargs,
         )
 
@@ -614,6 +612,6 @@ class EmbedAugPipeline(nn.Module):
             final_texts = produced_text
 
         if kwargs.get("return_embeddings", False):
-            return final_texts, attentions, embeddings
+            return final_texts,  embeddings
 
-        return final_texts, attentions
+        return final_texts

@@ -505,7 +505,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 assert size > 0
 
                 if len(prefixes) > 0:
-                    # Insert embedding at the beginning of the sequence
+                    # Insert embedding at the beginning of the sequencep
                     size_embed = len(prefixes[i]) + embed_seqlens[i] + len(suffixes[i])
                     tok_before_embed = self.tok_embeddings(
                         torch.tensor(prefixes[i], device=self.device)
@@ -677,50 +677,45 @@ class Transformer(ModelBase, LoRALoaderMixin):
             )
         token_embeds = self.tok_embeddings(input_ids)
 
-        if self.pipeline_rank == 0:
-            assert self.tok_embeddings is not None
-            # if self.vision_encoder is not None and images:
-            #     h = self.embed_vision_language_features(input_ids, images)
-            # else:
-            token_embeds = self.tok_embeddings(input_ids)
-            if cat_embeddings is not None:
-                num_supp_toks = (
-                    sum(embed_seqlens)
-                    if embed_seqlens is not None
-                    else cat_embeddings.shape[0]
-                )
 
-                h = torch.zeros(
-                    (num_supp_toks + len(token_embeds), self.args.dim),
-                    device=self.device,
-                    dtype=self.dtype,
-                )
+        assert self.tok_embeddings is not None
+        # if self.vision_encoder is not None and images:
+        #     h = self.embed_vision_language_features(input_ids, images)
+        # else:
 
-                new_seqlens = []
-                final_ind = 0
-                for i, size in enumerate(seqlens):
-                    size_embed = embed_seqlens[i]
-                    h[final_ind : size_embed + final_ind, :] = cat_embeddings[
-                        sum(embed_seqlens[:i]) : sum(embed_seqlens[: i + 1]), :
-                    ]
-
-                    self.pos_to_keep.extend([False] * size_embed)
-                    # Insert token embeddings
-                    h[size_embed + final_ind : size_embed + final_ind + size, :] = (
-                        token_embeds[sum(seqlens[:i]) : sum(seqlens[:i]) + size, :]
-                    )
-                    self.pos_to_keep.extend([True] * size)
-                    final_ind += size_embed + size
-                    new_seqlens.append(size + size_embed)
-                seqlens = new_seqlens
-            else:
-                h = token_embeds
-
-        else:
-            h = torch.empty(
-                num_supp_toks, self.args.dim, device=self.device, dtype=self.dtype
+        if cat_embeddings is not None:
+            num_supp_toks = (
+                sum(embed_seqlens)
+                if embed_seqlens is not None
+                else cat_embeddings.shape[0]
             )
-            torch.distributed.recv(h, src=self.pipeline_rank - 1)
+
+            h = torch.zeros(
+                (num_supp_toks + len(token_embeds), self.args.dim),
+                device=self.device,
+                dtype=self.dtype,
+            )
+
+            new_seqlens = []
+            final_ind = 0
+            for i, size in enumerate(seqlens):
+                size_embed = embed_seqlens[i]
+                h[final_ind : size_embed + final_ind, :] = cat_embeddings[
+                    sum(embed_seqlens[:i]) : sum(embed_seqlens[: i + 1]), :
+                ]
+
+                self.pos_to_keep.extend([False] * size_embed)
+                # Insert token embeddings
+                h[size_embed + final_ind : size_embed + final_ind + size, :] = (
+                    token_embeds[sum(seqlens[:i]) : sum(seqlens[:i]) + size, :]
+                )
+                self.pos_to_keep.extend([True] * size)
+                final_ind += size_embed + size
+                new_seqlens.append(size + size_embed)
+            seqlens = new_seqlens
+        else:
+            h = token_embeds
+
 
         input_metadata: list[CacheInputMetadata] | list[SimpleInputMetadata]
 
@@ -794,20 +789,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         if cache is not None:
             cache.update_seqlens(seqlens)
-        if self.pipeline_rank < self.num_pipeline_ranks - 1:
-            torch.distributed.send(h, dst=self.pipeline_rank + 1)
-            self.pos_to_keep = []
-            return h
+   
+        normalized_h = self.norm(h)
 
-        else:
-            normalized_h = self.norm(h)
-
-            if cat_embeddings is not None:
-                normalized_h = normalized_h[
-                    torch.tensor(self.pos_to_keep, dtype=torch.bool)
-                ]
-            self.pos_to_keep = []
-            return normalized_h
+        if cat_embeddings is not None:
+            normalized_h = normalized_h[
+                torch.tensor(self.pos_to_keep, dtype=torch.bool)
+            ]
+        self.pos_to_keep = []
+        return normalized_h
 
     def generate(
         self,
@@ -820,7 +810,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
     ) -> torch.Tensor:
         cross_att_cache = (
             None
-            if embed_seqlens is None
+            if embeddings is None
             else CrossAttCache(
                 embeddings.shape[0],
                 n_kv_heads=self.args.n_kv_heads,
@@ -828,6 +818,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 kv_seqlens=embed_seqlens,
             )
         )
+
         h = self.generate_partial(
             input_ids,
             seqlens,
@@ -838,17 +829,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
             cat_embeddings=cat_embeddings,
         )  # , images=images
 
-        if self.pipeline_rank < self.num_pipeline_ranks - 1:
-            # ignore the intermediate activations as we'll get the final output from
-            # the last stage
-            outs = torch.empty(
-                h.shape[0], self.vocab_size, device=h.device, dtype=h.dtype
-            )
-        else:
-            assert self.output is not None
-            outs = self.output(h)
-        if self.num_pipeline_ranks > 1:
-            torch.distributed.broadcast(outs, src=self.num_pipeline_ranks - 1)
+        assert self.output is not None
+        outs = self.output(h)
+   
 
         return outs.float()
 

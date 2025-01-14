@@ -71,6 +71,7 @@ def evaluate_QA(
     tmp_path: str = None,
     icl_examples: int = 0,
     pipeline: EmbedAugPipeline | None = None,
+    w_embeds: bool = True, # To test baseline LLM
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
@@ -127,15 +128,15 @@ def evaluate_QA(
         with open(eval_data, "r") as f:
             for line in f:
                 data = json.loads(line)
-                questions.append(data["question"])
+                questions.append(data["question"].strip())
 
                 if isinstance(data["answer"], str):
-                    answers.append([data["answer"]])
+                    answers.append(data["answer"].strip())
 
                 else:
-                    answers.append(data["answer"])
+                    answers.append(data["answer"][0].strip())
                 # Take the first ranked retrieved passage
-                context.append(data["passages"][0])
+                context.append(data["passages"][0].strip())
 
         c = list(zip(questions, context, answers))
         random.shuffle(c, random = lambda: 0.42)
@@ -147,24 +148,42 @@ def evaluate_QA(
         for doc, query, ans in zip(
             context[:icl_examples], questions[:icl_examples], answers[:icl_examples]
         ):
-            icl_ex += f"Query: {query}\nAnswer: {ans}\n\n"
-
+            icl_ex += f"Document: {doc}\nQuery: {query}\nAnswer: {ans}\n\n"
+            # icl_ex += f"Query: {query}\nAnswer: {ans}\n\n"
+    
+        if icl_examples > 0:
+            icl_ex = f"Based on the following examples:\n\n{icl_ex}Answer the following questions:\n\n"
+        else:
+            icl_ex = "Answer the following questions:\n\n"
+        
         for temp in temps:
             generated_sequences = []
             n_samples = len(questions) if n_samples is None else n_samples
             for i in trange(icl_examples, n_samples + icl_examples, max_bs):
-                no_context_prompt = [
-                        icl_ex + f"Query: {query}\nAnswer: "  for query in questions[i : i + max_bs]
-                    ]
-
-                context_prompt = [' answer the question following the examples:\n\n' + icl_ex + f"Query: {query}\nAnswer: "  for query in questions[i : i + max_bs]
-                    ]
                 
-                generated_sequence, logprobs = pipeline.generate(
+                if w_embeds:
+                    no_context_prompt = [
+                            icl_ex + f"Query: {query}\nAnswer: " for query in questions[i : i + max_bs]
+                        ] 
+
+                    context_prompt = [' answer the question following the examples:\n\n' + icl_ex + f"Query: {query}\nAnswer: "  for query in questions[i : i + max_bs]
+                        ]
+                else:
+                    no_context_prompt = [
+                            icl_ex + f"Document: {cont}\nQuery: {query}\nAnswer: "  for query, cont in zip(questions[i : i + max_bs],context[i : i + max_bs])
+                        ] 
+                    # no_context_prompt = [
+                    #         icl_ex + f"Query: {query}\nAnswer: "  for query, cont in zip(questions[i : i + max_bs],context[i : i + max_bs])
+                    #     ]
+                    
+                    context_prompt = [' answer the question following the examples:\n\n' + icl_ex + f"Document: {cont}\nQuery: {query}\nAnswer: "  for query, cont in zip(questions[i : i + max_bs],context[i : i + max_bs])
+                        ]
+                    
+                generated_sequence = pipeline.generate(
                     prompt_pre_embed= (['']*len(questions[i : i + max_bs]) if not pipeline.pipeline_args.w_prefix_prompt 
                         else ['Based on the context ']*len(questions[i : i + max_bs])),
-                    prompt_post_embed= context_prompt if pipeline.pipeline_args.w_prefix_prompt else no_context_prompt,
-                    text_conditioning=context[i : i + max_bs],
+                    prompt_post_embed = context_prompt if pipeline.pipeline_args.w_prefix_prompt else no_context_prompt,
+                    text_conditioning=context[i : i + max_bs] if w_embeds else None,
                     temperature=temp,
                     max_tokens=max_seq_len,
                     truncate_double_space=True,
@@ -202,6 +221,12 @@ def evaluate_QA(
                     'icl_examples': icl_examples,
                     "Metric": value_em,
                     "approx_Metric": value_approx,
+                    'answer in context': sum(
+                    [
+                        metric_max_over_ground_truths(get_approx_em, context, gts)
+                        for context, gts in zip(context[icl_examples: n_samples + icl_examples], answers)
+                    ]
+                ) / n_samples
                 }
                 value_f1 = sum(
                     [
@@ -257,6 +282,8 @@ def evaluate_QA(
     ) as f:
         overall_results = json.load(f)
 
+    if not w_embeds:
+        run_name = 'Mistral_RAG'
 
     if run_name not in overall_results.keys():
         overall_results[run_name] = {}
@@ -413,7 +440,7 @@ def evaluate_reconstruction_model(
         generated_sequences = []
         for i in range(0, n_passages, max_batch_size):
             passage = valid_passage[i : i + max_batch_size]
-            generated_sequence, logprobs = pipeline.generate(
+            generated_sequence = pipeline.generate(
                 prompt_pre_embed=(
                     [""] * len(passage)
                     if not pipeline.pipeline_args.w_prefix_prompt
@@ -559,8 +586,53 @@ if __name__ == "__main__":
     
     max_seq_len = 256
     n_passages = 100
-    
-    # tmp_path = '/lustre/scwpod02/client/kyutai-interns/hippop/tmp/experiments/'
+
+
+    for run_name in ['nopref_pretrain_nollm_trained_cont_singpassage_5darr64']:
+        
+        pipeline, ckpt = evaluate_QA(
+            run_name,
+             ["NQ","TRIVIAQA"],
+            temps=[0.5],
+            max_bs=4,
+            output_file=output_file,
+            n_samples=400,
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            icl_examples=0,
+            w_embeds=False,
+        )
+        
+        # pipeline, ckpt = evaluate_QA(
+        #     run_name,
+        #     ["NQ","TRIVIAQA"],
+        #     temps=[0, 0.5],
+        #     max_bs=4,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=5,
+        #     w_embeds = False,
+        # )
+        
+        # pipeline, ckpt = evaluate_QA(
+        #     run_name,
+        #     ["NQ","TRIVIAQA"],
+        #     temps=[0, 0.5],
+        #     max_bs=4,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=4,
+        #     pipeline=pipeline,
+        #     ckpt=ckpt,
+        #     w_embeds = False,
+        # )
+        torch.cuda.empty_cache()
+        print("Finished run", run_name)
+
 
     if not os.path.exists(output_file):
         with open(output_file, "w") as f:
@@ -598,27 +670,24 @@ if __name__ == "__main__":
             # 'nopref_pretrain_both_trained_cont_singpassage_17c38ada',
             # 'nopref_pretrain_llm_trained_rec_singpassage_054f63f8',
             # 'nopref_pretrain_both_trained_1cont_0.5textcont_singpassage_17c38ada',
+            # 'nopref_pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada',
+            # 'nopref_pretrain_both_trained_02_singpassage_0f6f2a1a',
+            # 'nopref_pretrain_no_trained_rec_singpassage_8gate_054f63f8',
+            # 'nopref_pretrain_both_trained_rec_singpassage_0f6f2a1a',
+            # 'nopref_pretrain_both_trained_07_singpassage_0f6f2a1a',
+            # 'nopref_pretrain_nollm_trained_rec_multipassage_5darr64',
+            # 'nopref_pretrain_both_trained_rec_multipassage_0f6f2a1a',
+            # 'nopref_pretrain_llm_trained_rec_singpassage_8gate_054f63f8',
             
-            # Doable
-
-
-             'nopref_pretrain_both_trained_1cont_0.2textcont_singpassage_17c38ada',
-             'nopref_pretrain_both_trained_02_singpassage_0f6f2a1a' 
             
-            
-        
+            # Weird QA
 
         # still training
-        # 'nopref_pretrain_both_trained_rec_multipassage_0f6f2a1a',
-        # 'nopref_pretrain_both_trained_rec_singpassage_0f6f2a1a',
-        # 'nopref_pretrain_both_trained_07_singpassage_0f6f2a1a', 
         # 'nopref_pretrain_both_trained_rec_singpassage_2gate_0f6f2a1a',
         # 'nopref_pretrain_both_trained_rec_singpassage_16gate_0f6f2a1a',
         # 'nopref_pretrain_both_trained_rec_singpassage_4gate_0f6f2a1a',
         # 'nopref_pretrain_both_trained_rec_singpassage_8gate_0f6f2a1a',
-        # 'nopref_pretrain_llm_trained_rec_singpassage_8gate_054f63f8',
         # 'nopref_pretrain_nollm_trained_rec_singpassage_8gate_5darr64',
-        # 'nopref_pretrain_no_trained_rec_singpassage_8gate_054f63f8',
         # 'nopref_pretrain_both_trained_highuseless_hybrid_singpassage_0f6f2a1a',
         # 'nopref_pretrain_both_trained_lownoembed_hybrid_singpassage_0f6f2a1a',
         # 'nopref_pretrain_both_trained_std_hybrid_singpassage_0f6f2a1a',
@@ -675,115 +744,115 @@ if __name__ == "__main__":
             ckpt=ckpt,
         )
         
-        pipeline, ckpt = evaluate_QA(
-            run_name,
-            ["NQ","TRIVIAQA"],
-            temps=[0, 0.5],
-            max_bs=4,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=2,
-            pipeline=pipeline,
-            ckpt=ckpt,
-        )
+        # pipeline, ckpt = evaluate_QA(
+        #     run_name,
+        #     ["NQ","TRIVIAQA"],
+        #     temps=[0, 0.5],
+        #     max_bs=4,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=2,
+        #     pipeline=pipeline,
+        #     ckpt=ckpt,
+        # )
         
-        pipeline, ckpt = evaluate_QA(
-            run_name,
-            ["NQ","TRIVIAQA"],
-            temps=[0, 0.5],
-            max_bs=4,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=4,
-            pipeline=pipeline,
-            ckpt=ckpt,
-        )
+        # pipeline, ckpt = evaluate_QA(
+        #     run_name,
+        #     ["NQ","TRIVIAQA"],
+        #     temps=[0, 0.5],
+        #     max_bs=4,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=4,
+        #     pipeline=pipeline,
+        #     ckpt=ckpt,
+        # )
         torch.cuda.empty_cache()
         print("Finished run", run_name)
 
 
 
-    # TODO IN 128 toks lim
-    run_names = [
-    # 'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB',
-    # 'LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB',
-    # 'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
-    'LT_FN_Truelatent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB']
+    # # TODO IN 128 toks lim
+    # run_names = [
+    # # 'LT_FN_TrueMEAN_1_MLP_RLatt_True_CA_2_CAL_every_True_DB',
+    # # 'LT_FN_TrueMEAN_1_MLP_Latt_True_CA_2_CAL_every_True_DB',
+    # # 'LT_FN_Truemean_1_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB',
+    # 'LT_FN_Truelatent_attention_3_MLP_8_TRUNC_True_CA_2_CAL_every_True_DB']
 
    
-    max_seq_len = 128
-    for i, run_name in enumerate(run_names):
-        print("Standard Dump")
-        pipeline, ckpt = evaluate_reconstruction_model(
-            run_name,
-            output_file=output_file,
-            temperatures=[0, 0.5, 0.7, 1.0],
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            eval_data_type="standard_dump",
-            n_passages=n_passages,
-        )  # 'atlas','standard_dump'
+    # max_seq_len = 128
+    # for i, run_name in enumerate(run_names):
+    #     print("Standard Dump")
+    #     pipeline, ckpt = evaluate_reconstruction_model(
+    #         run_name,
+    #         output_file=output_file,
+    #         temperatures=[0, 0.5, 0.7, 1.0],
+    #         max_seq_len=max_seq_len,
+    #         tmp_path=tmp_path,
+    #         eval_data_type="standard_dump",
+    #         n_passages=n_passages,
+    #     )  # 'atlas','standard_dump'
         
-        print("Atlas")
-        pipeline, ckpt = evaluate_reconstruction_model(
-            run_name,
-            output_file=output_file,
-            temperatures=[0, 0.5, 0.7, 1.0],
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            eval_data_type="atlas",
-            pipeline=pipeline,
-            ckpt=ckpt,
-            n_passages=n_passages,
-        )
+    #     print("Atlas")
+    #     pipeline, ckpt = evaluate_reconstruction_model(
+    #         run_name,
+    #         output_file=output_file,
+    #         temperatures=[0, 0.5, 0.7, 1.0],
+    #         max_seq_len=max_seq_len,
+    #         tmp_path=tmp_path,
+    #         eval_data_type="atlas",
+    #         pipeline=pipeline,
+    #         ckpt=ckpt,
+    #         n_passages=n_passages,
+    #     )
 
 
 
-        pipeline, ckpt = evaluate_QA(
-            run_name,
-             ["NQ","TRIVIAQA"],
-            temps=[0, 0.5],
-            max_bs=4,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=0,
-            pipeline=pipeline,
-            ckpt=ckpt,
-        )
+    #     pipeline, ckpt = evaluate_QA(
+    #         run_name,
+    #          ["NQ","TRIVIAQA"],
+    #         temps=[0, 0.5],
+    #         max_bs=4,
+    #         output_file=output_file,
+    #         n_samples=n_passages,
+    #         max_seq_len=max_seq_len,
+    #         tmp_path=tmp_path,
+    #         icl_examples=0,
+    #         pipeline=pipeline,
+    #         ckpt=ckpt,
+    #     )
         
-        pipeline, ckpt = evaluate_QA(
-            run_name,
-            ["NQ","TRIVIAQA"],
-            temps=[0, 0.5],
-            max_bs=4,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=2,
-            pipeline=pipeline,
-            ckpt=ckpt,
-        )
+    #     pipeline, ckpt = evaluate_QA(
+    #         run_name,
+    #         ["NQ","TRIVIAQA"],
+    #         temps=[0, 0.5],
+    #         max_bs=4,
+    #         output_file=output_file,
+    #         n_samples=n_passages,
+    #         max_seq_len=max_seq_len,
+    #         tmp_path=tmp_path,
+    #         icl_examples=2,
+    #         pipeline=pipeline,
+    #         ckpt=ckpt,
+    #     )
         
-        pipeline, ckpt = evaluate_QA(
-            run_name,
-            ["NQ","TRIVIAQA"],
-            temps=[0, 0.5],
-            max_bs=4,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=4,
-            pipeline=pipeline,
-            ckpt=ckpt,
-        )
-        torch.cuda.empty_cache()
-        print("Finished run", run_name)
+    #     pipeline, ckpt = evaluate_QA(
+    #         run_name,
+    #         ["NQ","TRIVIAQA"],
+    #         temps=[0, 0.5],
+    #         max_bs=4,
+    #         output_file=output_file,
+    #         n_samples=n_passages,
+    #         max_seq_len=max_seq_len,
+    #         tmp_path=tmp_path,
+    #         icl_examples=4,
+    #         pipeline=pipeline,
+    #         ckpt=ckpt,
+    #     )
+    #     torch.cuda.empty_cache()
+    #     print("Finished run", run_name)
 

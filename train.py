@@ -219,6 +219,10 @@ def _train(
 
         embedding_model.eval()
     """ Load LLM and tokenizers """
+    
+    if not args.pipeline.trainable_llm:
+        assert args.hybrid_task.prop_noembed_continuation == 0.0, "Noembed continuation should be deactivated when LLM not fine-tuned"
+        
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
     args.pipeline.param_dtype = param_dtype
 
@@ -504,7 +508,7 @@ def _train(
                 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
-       
+
             output = model.forward(
                 x=x,
                 embeddings=embeddings,
@@ -517,6 +521,7 @@ def _train(
                 mb_loss = compute_ce_loss_with_mask(
                     logits=output, target=y, target_mask=y_mask
                 )
+
                 mb_loss.backward()
                 loss += mb_loss.item()
                 train_ppl += 2 ** (mb_loss.item())
