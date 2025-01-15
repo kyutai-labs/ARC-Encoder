@@ -153,6 +153,8 @@ class TrainState:
     this_eval_loss_textcont: float | None = None
     this_eval_loss_embcont: float | None = None
     this_eval_kl_loss: float | None = None
+    this_eval_loss_nocontext: float | None = None
+    this_eval_perplexity_nocontext: float | None = None
 
     def start_step(self):
         self.step += 1

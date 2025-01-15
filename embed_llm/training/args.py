@@ -45,6 +45,7 @@ class InstructionTuningArgs(Serializable):
     temp: float = 1.0
     tune_llm: bool = False
     tune_embedder: bool = False
+    
 
 
 @dataclass
@@ -52,9 +53,11 @@ class HybridTask(Serializable):
     do: bool = False
     max_n_prefixes: int = 1
     min_n_prefixes: int = 0
-    prop_continuation: float = 0.5
-    prop_noembed_continuation: float = 0.5
+    prop_continuation: float = 0.0
+    prop_noembed_continuation: float = 0.0
     prop_uselessembed_continuation: float = 0.0
+    one_task_4_all: bool = True
+    max_embeds: int = 0 # Works only with one_task_4_all=True
 
 
 @dataclass

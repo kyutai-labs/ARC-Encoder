@@ -23,7 +23,7 @@ def main(args):
     config["pipeline"]["w_embeds"] = not args.wo_embeds
     config["pipeline"]["mlp_project"]["n_layers"] = args.proj_n_layers
     config["pipeline"]["n_truncated_layers"] = args.n_truncated_layers
-
+    config["pipeline"]["gate_bottleneck"] = args.gate_bottleneck
     assert args.embedder_name == "NVEmbed"
     config["pipeline"]["do_pool"] = args.not_pool
     config["pipeline"]["trainable_llm"] = not args.not_train_llm
@@ -41,6 +41,17 @@ def main(args):
     else:
         # del config["pipeline"]["causal"]
         del config["pipeline"]["pooling_module"]
+        
+    if args.do_hybrid_task:
+        config["hybrid_task"] = {}
+        config["hybrid_task"]["do"] = args.do_hybrid_task
+        config["hybrid_task"]["max_n_prefixes"] = args.max_n_prefixes
+        config["hybrid_task"]["min_n_prefixes"] = args.min_n_prefixes
+        config["hybrid_task"]["prop_continuation"] = args.prop_continuation
+        config["hybrid_task"]["prop_noembed_continuation"] = args.prop_noembed_continuation
+        config["hybrid_task"]["prop_uselessembed_continuation"] = args.prop_uselessembed_continuation
+        config["hybrid_task"]["one_task_4_all"] = args.one_task_4_all
+        config["hybrid_task"]["max_embeds"] = args.max_embeds
 
     if not args.not_cross_att:
         config["pipeline"]["do_both"] = not args.not_do_both
@@ -217,7 +228,7 @@ def arg_parser():
     parser.add_argument(
         "--pooling",
         type=str,
-        default="mean",
+        default="latent_attention",
         help="Pooling method",
         choices=["mean", "eos", "latent_attention", "reversed_latent_attention"],
     )
@@ -244,7 +255,7 @@ def arg_parser():
         "--not_cross_att",
         action="store_true",
         help="Whether to use cross-attention",
-    )
+    ) 
     parser.add_argument(
         "--cross_att_layers",
         type=int,
@@ -343,6 +354,68 @@ def arg_parser():
         "--train_only_pooling",
         action="store_true",
         help="Whether to use a LLM embedder but with trainable pooling",
+    )
+    
+    parser.add_argument(
+        "--do_hybrid_task",
+        action="store_true",
+        help="Whether to use a hybrid task",
+    )
+    
+    parser.add_argument(
+        "--max_n_prefixes",
+        type=int,
+        default=1,
+        help="Maximum number of prefixes",
+    )
+    
+    parser.add_argument(
+        "--min_n_prefixes",
+        type=int,
+        default=0,
+        help="Minimum number of prefixes",
+    )
+    
+    
+    parser.add_argument(
+        "--prop_continuation",
+        type=float,
+        default=0.0,
+        help="Proportion of continuation",
+    )
+    
+    parser.add_argument(
+        "--prop_noembed_continuation",
+        type=float,
+        default=0.0,
+        help="Proportion of noembed continuation",
+    )
+    
+    parser.add_argument(
+        "--prop_uselessembed_continuation",
+        type=float,
+        default=0.0,
+        help="Proportion of uselessembed continuation",
+    )
+    
+    parser.add_argument(
+        "--one_task_4_all",
+        action="store_true",
+        help="Whether to use one task for all",
+    )
+    
+    parser.add_argument(
+        "--max_embeds",
+        type=int,
+        default=0,
+        help="Maximum number of embeddings",
+    )
+    
+    parser.add_argument(
+        "--gate_bottleneck",
+        type=int,
+        default=8,
+        help="Gate bottleneck",
     )
     return parser.parse_args()
 

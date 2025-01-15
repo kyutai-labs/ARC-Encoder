@@ -59,6 +59,8 @@ def get_eval_logs(
     instruct_cross_entropy: float | None = None,
     instruct_kl: float | None = None,
     eval_kl_loss: float | None = None,
+    eval_loss_nocontext: float | None = None,
+    eval_perplexity_nocontext: float | None = None,
 ) -> dict[str, float | int]:
     eval_dict = {"step": step, "train_loss": train_loss}
 
@@ -88,6 +90,12 @@ def get_eval_logs(
 
     if eval_kl_loss is not None:
         eval_dict["eval_kl_loss"] = eval_kl_loss
+        
+    if eval_loss_nocontext is not None:
+        eval_dict["eval_loss_nocontext"] = eval_loss_nocontext
+        
+    if eval_perplexity_nocontext is not None:
+        eval_dict["eval_perplexity_nocontext"] = eval_perplexity_nocontext
 
     return eval_dict
 
@@ -143,6 +151,8 @@ def eval_log_msg(logs: dict[str, float | int]) -> str:
         ("instruct_cross_entropy", ".3f", "instruct_cross_entropy"),
         ("instruct_kl", ".3f", "instruct_kl"),
         ("eval_kl_loss", ".3f", "eval_kl_loss"),
+        ("eval_loss_nocontext", ".3f", "eval_loss_nocontext"),
+        ("eval_perplexity_nocontext", ".3f", "PPL continuation wo context"),
     ]:
         name = key if new_name is None else new_name
         if key in logs:

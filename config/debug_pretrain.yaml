@@ -2,14 +2,15 @@ model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_pretrain
-
+continuation: 1.0
 hybrid_task:
-    do: true
+    do: false
     max_n_prefixes: 10
     min_n_prefixes: 0
     prop_continuation: 0.5
     prop_noembed_continuation: 0.3
-    prop_uselessembed_continuation: 0.1
+    prop_uselessembed_continuation: 0.
+
 llm_name: Mistral7B
 log_freq: 10
 lora:
@@ -61,8 +62,8 @@ num_microbatches: 1
 max_steps: 40
 seed: 0
 log_freq: 1
-eval_freq: 100
-no_eval: true
+eval_freq: 1
+no_eval: false
 ckpt_freq: 500
 save_adapters: true
 

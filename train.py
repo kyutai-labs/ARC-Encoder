@@ -221,7 +221,7 @@ def _train(
     """ Load LLM and tokenizers """
     
     if not args.pipeline.trainable_llm:
-        assert args.hybrid_task.prop_noembed_continuation == 0.0, "Noembed continuation should be deactivated when LLM not fine-tuned"
+        assert args.hybrid_task.prop_noembed_continuation*int(args.hybrid_task.do) == 0.0, "Noembed continuation should be deactivated when LLM not fine-tuned"
         
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
     args.pipeline.param_dtype = param_dtype
@@ -459,7 +459,7 @@ def _train(
                     embeddings = None
                 
                 if rand_noembed_continuation < args.hybrid_task.prop_noembed_continuation and args.hybrid_task.do:
-                    if batch.data_type == "continuation":
+                    if batch.data_type == "continuation" or batch.data_type == 'one_4_all':
                         x = []
                         y = []
                         seqlens = []
@@ -677,6 +677,7 @@ def _train(
                 state=state,
                 instruction_tuning=args.instruct_tuning,
                 batches_cont=eval_batches_4cont,
+                tokenizer = pipeline.tokenizer,
             )
 
             eval_logs = get_eval_logs(
@@ -691,6 +692,8 @@ def _train(
                 eval_kl_loss=state.this_eval_kl_loss,
                 instruct_cross_entropy=cross_entropy_loss_avg,
                 instruct_kl=kl_loss_avg,
+                eval_loss_nocontext= state.this_eval_loss_nocontext,
+                eval_perplexity_nocontext= state.this_eval_perplexity_nocontext,
             )
 
             main_logger_info(eval_log_msg(eval_logs))

@@ -98,8 +98,8 @@ class EmbedAugModel(nn.Module):
         self,
         x: torch.Tensor,
         seqlens: list[int],
-        embeddings: torch.Tensor | list[list[list[int]]] | None = None,
-        embed_seqlens: list[int] | list[list[int]] | None = None,
+        embeddings: torch.Tensor  | None = None,
+        embed_seqlens:  list[list[int]] | None = None,
         batch_type: str = "reconstruction",
     ) -> torch.Tensor:
 
@@ -467,6 +467,7 @@ class EmbedAugPipeline(nn.Module):
         embed_seqlens: list[int] | None = None,
         **kwargs,
     ):
+  
 
         device_generation = device if device_generation is None else device_generation
 
@@ -475,12 +476,16 @@ class EmbedAugPipeline(nn.Module):
         if isinstance(prompt_post_embed, str):
             prompt_post_embed = [prompt_post_embed]
 
-        if isinstance(text_conditioning, str):
-            text_conditioning = [[text_conditioning]]
-        elif isinstance(text_conditioning, list):
-            if isinstance(text_conditioning[0], str):
-                text_conditioning = [[text] for text in text_conditioning]
-        
+    
+        if text_conditioning is not None:
+            if isinstance(text_conditioning, str):
+                text_conditioning = [[text_conditioning]]
+            elif isinstance(text_conditioning, list):
+                if isinstance(text_conditioning[0], str):
+                    text_conditioning = [[text] for text in text_conditioning]
+            else:
+                raise ValueError("Text conditioning must be a string or a list of strings")
+            
         if text_conditioning is None:
             w_embeds = False
         else:
@@ -507,6 +512,7 @@ class EmbedAugPipeline(nn.Module):
                 embed_seqlens = [len(l_text) for l_text in text_conditioning]
 
         elif w_embeds and (self.pipeline_args.trainable_embedder or self.pipeline_args.train_only_pooling):
+            
             x = [
                 self.tokenizer.encode(text, bos=True, eos=True)
                 for l_text in text_conditioning for text in l_text

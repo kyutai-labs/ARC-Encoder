@@ -24,6 +24,7 @@ def evaluate(
     state: TrainState,
     instruction_tuning: InstructionTuningArgs | None = None,
     batches_cont: list[Batch] | None = None,
+    tokenizer: object | None = None,
 ):
     # Create fake samples to make FSDP happy for unbalanced data
     num_samples = torch.tensor([len(batches_rec)], device="cuda", dtype=torch.long)
@@ -45,6 +46,74 @@ def evaluate(
 
     # eval mode!
     model.eval()
+    
+    
+    if batches_cont is not None:
+        eval_loss_textcont = torch.tensor(0.0).cuda()
+        eval_loss_embcont = torch.tensor(0.0).cuda()
+        eval_loss_nocontext = torch.tensor(0.0).cuda()
+        main_logger_info(f"Start eval for {len(batches_rec)} continuation batches")
+
+        for i, batch in enumerate(batches_cont):
+            with torch.no_grad():
+                x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(
+                    batch
+                )
+
+                output = model.forward(
+                    x=x,
+                    embeddings=embeddings,
+                    seqlens=seqlens,
+                    embed_seqlens=embed_seqlens,
+                    batch_type=batch.data_type,
+                )
+
+                eval_loss_embcont += compute_ce_loss_with_mask(output, y, y_mask)
+                output_rec_on_cont = model.forward(
+                    x=x, embeddings=None, seqlens=seqlens
+                )
+                eval_loss_nocontext += compute_ce_loss_with_mask(output_rec_on_cont, y, None)
+                input_ids = []
+                ground_truth = []
+                seqlens = []
+                mask = []
+                test_embed = []
+                test_x = []
+                ind = 0
+                for to_embed, size in zip(batch.to_embed, batch.sizes):
+                    input_ids.extend(to_embed["tokens"][0])
+                    test_embed.extend(to_embed["tokens"][0])
+                    test_x.extend(batch.x[ind : ind + size])
+                    input_ids.extend(batch.x[ind : ind + size])
+   
+
+                    ground_truth.extend(to_embed["tokens"][0])
+                    ground_truth.extend(batch.y[ind : ind + size])
+                    seqlens.append(len(to_embed["tokens"][0]) + size)
+                    ind += size
+                    mask.extend([False] * len(to_embed["tokens"][0]))
+                    mask.extend([True] * size)
+                    # Trainable Embedder
+     
+                assert sum(seqlens) == len(input_ids), f"Seqlens {sum(seqlens)} and input_ids {len(input_ids)} should be the same"
+                assert sum(mask) == len(output), f"Mask {sum(mask)} and output {len(output)} should be the same"
+                assert torch.equal(torch.tensor(torch.from_numpy(np.array(test_embed))).cuda(), embeddings), "Input ids should be the same"
+                assert torch.equal(torch.tensor(torch.from_numpy(np.array(test_x))).cuda(), x), "Input ids should be the same"
+                
+                input_ids = torch.from_numpy(np.array(input_ids)).cuda(
+                    non_blocking=True
+                )
+                mask = torch.tensor(mask).cuda(non_blocking=True)
+                ground_truth = torch.from_numpy(np.array(ground_truth)).cuda(
+                    non_blocking=True
+                )
+                assert torch.equal(torch.masked_select(ground_truth,mask),y), "Ground truth and mask should be the same"
+                output_wo_embed = model.forward(
+                    x=input_ids, embeddings=None, seqlens=seqlens
+                )
+                eval_loss_textcont += compute_ce_loss_with_mask(
+                    output_wo_embed, ground_truth, mask
+                )
 
     eval_loss_rec = torch.tensor(0.0).cuda()
     eval_kl_loss = torch.tensor([0.0], device="cuda")
@@ -115,56 +184,9 @@ def evaluate(
                     batch.is_pad_only or y.abs().sum() != 0
                 ), "Pad sample is used to compute loss."
 
-    if batches_cont is not None:
-        eval_loss_textcont = torch.tensor(0.0).cuda()
-        eval_loss_embcont = torch.tensor(0.0).cuda()
-        main_logger_info(f"Start eval for {len(batches_rec)} continuation batches")
+   
+                
 
-        for i, batch in enumerate(batches_cont):
-            with torch.no_grad():
-                x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(
-                    batch
-                )
-
-                output = model.forward(
-                    x=x,
-                    embeddings=embeddings,
-                    seqlens=seqlens,
-                    embed_seqlens=embed_seqlens,
-                    batch_type=batch.data_type,
-                )
-
-                eval_loss_embcont += compute_ce_loss_with_mask(output, y, y_mask)
-
-                input_ids = []
-                ground_truth = []
-                seqlens = []
-                mask = []
-                ind = 0
-                for to_embed, size in zip(batch.to_embed, batch.sizes):
-                    input_ids.extend(to_embed["tokens"][0])
-                    input_ids.extend(batch.x[ind : ind + size])
-                    ground_truth.extend(to_embed["tokens"][0])
-                    ground_truth.extend(batch.y[ind : ind + size])
-                    seqlens.append(len(to_embed["tokens"][0]) + size)
-                    ind += size
-                    mask.extend([False] * len(to_embed["tokens"][0]))
-                    mask.extend([True] * size)
-                    # Trainable Embedder
-
-                input_ids = torch.from_numpy(np.array(input_ids)).cuda(
-                    non_blocking=True
-                )
-                mask = torch.tensor(mask).cuda(non_blocking=True)
-                ground_truth = torch.from_numpy(np.array(ground_truth)).cuda(
-                    non_blocking=True
-                )
-                output_wo_embed = model.forward(
-                    x=input_ids, embeddings=None, seqlens=seqlens
-                )
-                eval_loss_textcont += compute_ce_loss_with_mask(
-                    output_wo_embed, ground_truth, mask
-                )
 
     # sum loss
     main_logger_info("Eval finished!")
@@ -177,12 +199,16 @@ def evaluate(
     if batches_cont is not None:
         dist.all_reduce(eval_loss_textcont, op=dist.ReduceOp.SUM)
         dist.all_reduce(eval_loss_embcont, op=dist.ReduceOp.SUM)
+        dist.all_reduce(eval_loss_nocontext, op=dist.ReduceOp.SUM)
         eval_loss_textcont /= total_num_samples
         eval_loss_embcont /= total_num_samples
+        eval_loss_nocontext /= total_num_samples
         state.this_eval_loss_textcont = eval_loss_textcont.item()
         state.this_eval_loss_embcont = eval_loss_embcont.item()
+        state.this_eval_loss_nocontext = eval_loss_nocontext.item()
         state.this_eval_perplexity_textcont = (2**eval_loss_textcont).item()
         state.this_eval_perplexity_embcont = (2**eval_loss_embcont).item()
+        state.this_eval_perplexity_nocontext = (2**eval_loss_nocontext).item()
         state.this_eval_kl_loss = None
 
     elif instruction_tuning.do and instruction_tuning.kl:
@@ -191,8 +217,10 @@ def evaluate(
         state.this_eval_kl_loss = eval_kl_loss.item()
         state.this_eval_loss_textcont = None
         state.this_eval_loss_embcont = None
+        state.this_eval_loss_nocontext = None
         state.this_eval_perplexity_textcont = None
         state.this_eval_perplexity_embcont = None
+        state.this_eval_perplexity_nocontext = None
 
     else:
         state.this_eval_loss_textcont = None
@@ -200,6 +228,8 @@ def evaluate(
         state.this_eval_perplexity_textcont = None
         state.this_eval_perplexity_embcont = None
         state.this_eval_kl_loss = None
+        state.this_eval_loss_nocontext = None
+        state.this_eval_perplexity_nocontext = None
 
     # train mode!
     model.train()

@@ -51,6 +51,9 @@ def maybe_load_local_dataset(
     data_list: list[TokenSample] = []
     for line in lines:
         data = json.loads(line)
+        
+        if "rand" in data.keys() and float(data["rand"]) >= 0.8:
+            continue
 
         data_sample: TokenSample = encode(
             data, tokenizer=tokenizer, data_path=str(path)
@@ -326,6 +329,80 @@ def sequence_iterator_hybrid(
         )
     else:
         return None
+
+
+def sequence_iterator_one_task_4_all(
+    x_buffer: list[int],
+    y_buffer: list[int],
+    to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]],
+    mask_buffer: Mask,
+    sizes: list[int],
+    sample: TokenSample,
+    seq_len: int,
+    tokenizer: Tokenizer,
+    n_prefixes: list[int],
+    max_embeds: int = 0,
+) -> SequenceEmbedMaskAndSizes:
+    assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
+
+    tokens, mask = sample.tokens, sample.masks[1:]
+    x, y = tokens[:-1], tokens[1:]
+    
+    if len(tokens) <= seq_len + 1:
+        return None
+
+    if max_embeds == 0:
+        to_embed_buffer.append(
+            {
+                "text": [tokenizer.decode(tokens[:seq_len])],
+                "tokens": [tokens[:seq_len]],
+            }
+        )
+        end_embed = seq_len
+    else:
+        nb_embed = np.random.randint(1, max_embeds + 1)
+        new_embed = []
+        n_embed = 0
+        n_embed_toks = 0
+        for i in range(0,len(tokens),seq_len):
+            new_embed.append(tokens[i:i+seq_len])
+            n_embed_toks += len(tokens[i:i+seq_len])
+            n_embed += 1
+            if n_embed == nb_embed:
+                break
+            
+        to_embed_buffer.append(
+            {
+                "text": [tokenizer.decode(toks) for toks in new_embed],
+                "tokens": new_embed,
+            }
+        )
+        end_embed = n_embed_toks
+        
+
+    start_lm = np.random.randint(0, end_embed - 10)
+    n_prefixes.append(seq_len - start_lm)
+    x_buffer.extend(x[start_lm : start_lm + seq_len])   
+    y_buffer.extend(y[start_lm : start_lm + seq_len])
+    mask_buffer.extend(mask[start_lm : start_lm + seq_len])
+    sizes.append(len(x[start_lm : start_lm + seq_len]))
+    assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
+    assert len(to_embed_buffer) == len(sizes)
+
+    # we don't want to yield sequences with a mask filled with False
+    if any(mask_buffer):
+        return SequenceEmbedMaskAndSizes(
+            x=x_buffer,
+            y=y_buffer,
+            to_embed=to_embed_buffer,
+            mask=mask_buffer,
+            sizes=sizes,
+            n_prefixes = n_prefixes,
+            data_type='one_4_all',
+        )
+    else:
+        return None
+
 
 
 def sequence_iterator_reconstruction(
@@ -617,39 +694,64 @@ def sequence_iterator(
                     ) = res
                     continue
         else:
-            assert adapt_seq_len, "Hybrid task only works with adapt_seq_len=True"
-            res = sequence_iterator_hybrid(
-                sample=sample,
-                x_buffer=x_buffer,
-                y_buffer=y_buffer,
-                mask_buffer=mask_buffer,
-                to_embed_buffer=to_embed_buffer,
-                n_prefixes=n_prefixes,
-                sizes=sizes,
-                seq_len=seq_len,
-                tokenizer=tokenizer,
-                max_n_prefixes=hybrid_task.max_n_prefixes,
-                min_n_prefixes=hybrid_task.min_n_prefixes,
-                prop_continuation=hybrid_task.prop_continuation,
-                prop_uselessembed_continuation = hybrid_task.prop_uselessembed_continuation,
-                useless_embed_continuation = useless_embed_continuation,
-                
-            )
+            if not hybrid_task.one_task_4_all:
+                assert adapt_seq_len, "Hybrid task only works with adapt_seq_len=True"
+                res = sequence_iterator_hybrid(
+                    sample=sample,
+                    x_buffer=x_buffer,
+                    y_buffer=y_buffer,
+                    mask_buffer=mask_buffer,
+                    to_embed_buffer=to_embed_buffer,
+                    n_prefixes=n_prefixes,
+                    sizes=sizes,
+                    seq_len=seq_len,
+                    tokenizer=tokenizer,
+                    max_n_prefixes=hybrid_task.max_n_prefixes,
+                    min_n_prefixes=hybrid_task.min_n_prefixes,
+                    prop_continuation=hybrid_task.prop_continuation,
+                    prop_uselessembed_continuation = hybrid_task.prop_uselessembed_continuation,
+                    useless_embed_continuation = useless_embed_continuation,
+                    
+                )
 
-            if isinstance(res, SequenceEmbedMaskAndSizes):
-                yield res
-                n_prefixes = []
-                x_buffer, y_buffer = [], []
-                mask_buffer = []
-                to_embed_buffer = []
-                sizes = []
-                useless_embed_continuation = False
-            elif res is None:
-                useless_embed_continuation = False
-                continue
+                if isinstance(res, SequenceEmbedMaskAndSizes):
+                    yield res
+                    n_prefixes = []
+                    x_buffer, y_buffer = [], []
+                    mask_buffer = []
+                    to_embed_buffer = []
+                    sizes = []
+                    useless_embed_continuation = False
+                elif res is None:
+                    useless_embed_continuation = False
+                    continue
+                else:
+                    to_embed_buffer, useless_embed_continuation = res
+                    continue
             else:
-                to_embed_buffer, useless_embed_continuation = res
-                continue
+                res = sequence_iterator_one_task_4_all(
+                    sample=sample,
+                    x_buffer=x_buffer,
+                    y_buffer=y_buffer,
+                    mask_buffer=mask_buffer,
+                    to_embed_buffer=to_embed_buffer,
+                    sizes=sizes,
+                    seq_len=seq_len,
+                    tokenizer=tokenizer,
+                    n_prefixes = n_prefixes,
+                    max_embeds=hybrid_task.max_embeds,
+                )
+
+                if isinstance(res, SequenceEmbedMaskAndSizes):
+                    yield res
+
+                    x_buffer, y_buffer = [], []
+                    mask_buffer = []
+                    to_embed_buffer = []
+                    sizes = []
+                    n_prefixes = []
+                else:
+                    continue
 
 
     if is_finite:
@@ -822,6 +924,10 @@ def lazy_load_and_yield(
                 continue
 
             data = json.loads(line)
+            
+            if "rand" in data.keys() and float(data["rand"]) >= 0.8:
+                continue
+            
             yield encode(
                 data,
                 tokenizer=tokenizer,
