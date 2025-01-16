@@ -309,7 +309,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         checkpoint: bool = False,
         pipeline_rank: int = 0,
         num_pipeline_ranks: int = 1,  # Don't use pipeline parallelism for now
-        causal: bool = True,
     ):
         super().__init__()
         self.args = args
@@ -417,7 +416,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         )
 
         self.n_local_layers = self.n_layers
-        self.causal = causal
         self.for_embedding = False
         self.pos_to_keep = []
 
@@ -551,7 +549,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
         else:
             cross_att_mask = None
 
-        if self.causal:
+        # Causality deactivated when using LLM for embedder
+        if not self.for_embedding:
             self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
         else:
             self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)

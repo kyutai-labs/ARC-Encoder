@@ -46,14 +46,9 @@ class EmbedAugArgs(Serializable):
     max_seq_len: int = 256
     gate_bottleneck: int = 8
     
-    # To remove
-    causal: bool = True
+    # Remove later
     do_pool: bool = False
-    normalize_embeddings: bool = True
-    dist_process: bool = False
-
-
-
+    
 
 
 @dataclass

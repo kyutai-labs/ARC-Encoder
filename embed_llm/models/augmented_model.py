@@ -52,15 +52,12 @@ class EmbedAugModel(nn.Module):
         self.w_embeds = pipeline_args.w_embeds
         self.mlp_project_args = pipeline_args.mlp_project
         self.trainable_embedder = trainable_embedder
-        self.normalize_embeddings = pipeline_args.normalize_embeddings
 
         self.pooling_args = (
             None
             if trainable_embedder is None or not pipeline_args.do_pool
             else pipeline_args.pooling_module
         )
-
-        self.dist_process = pipeline_args.dist_process
 
         if self.mlp_project_args.n_layers > 0 and self.w_embeds:
             if self.mlp_project_args.type == "mlp":
@@ -125,24 +122,19 @@ class EmbedAugModel(nn.Module):
         else:
             embed_seqlens = embed_seqlens
 
-        if self.normalize_embeddings and embeddings is not None:
+        if embeddings is not None:
             embeddings = F.normalize(embeddings, p=2, dim=-1)
 
-        if self.mlp_project is not None and embeddings is not None:
-            if self.mlp_project_args.type == "mlp":
-                if self.dist_process:
-                    cat_embeddings = self.mlp_project(embeddings)
-                else:
+            if self.mlp_project is not None:
+                if self.mlp_project_args.type == "mlp":
                     embeddings = self.mlp_project(embeddings)
                     cat_embeddings = embeddings
-            else:
-                if self.dist_process:
-                    cat_embeddings = self.mlp_project(embeddings, seqlens=embed_seqlens)
                 else:
                     embeddings = self.mlp_project(embeddings, seqlens=embed_seqlens)
                     cat_embeddings = embeddings
-        else:
-            cat_embeddings = embeddings
+            else:
+                cat_embeddings = embeddings
+      
 
         return self.llm.forward(
             input_ids=x,
@@ -535,8 +527,7 @@ class EmbedAugPipeline(nn.Module):
             cat_embeddings = None
 
         if embeddings is not None:
-            if self.pipeline_args.normalize_embeddings:
-                embeddings = F.normalize(embeddings, p=2, dim=-1)
+            embeddings = F.normalize(embeddings, p=2, dim=-1)
 
             if self.model.mlp_project is not None:
                 if self.pipeline_args.mlp_project.type == "mlp":
@@ -551,8 +542,7 @@ class EmbedAugPipeline(nn.Module):
             else:
                 cat_embeddings = embeddings
 
-            if not self.pipeline_args.dist_process:
-                embeddings = cat_embeddings
+            embeddings = cat_embeddings
 
         encoded_pre_embed_prompts = []
         encoded_post_embed_prompts = []

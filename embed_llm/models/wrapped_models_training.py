@@ -50,9 +50,6 @@ def load_training_model(
     if not train_args.pipeline.cross_att:
         assert train_args.pipeline.do_pool, "If not cross-attention, must do pooling"
 
-    if train_args.pipeline.dist_process:
-        assert train_args.pipeline.cross_att, "If dist_process, must do cross-attention"
-        assert train_args.pipeline.do_both, "If dist_process, must do both"
 
     if train_args.pipeline.trainable_embedder:
         assert (
@@ -407,10 +404,7 @@ def load_training_model_from_ckpt(
     if (
         old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling
     ) and old_pipeline_args.do_pool:
-        if (
-            old_pipeline_args.do_pool
-            and "attention" in augmented_pipeline.pipeline_args.pooling_module.type
-        ):
+        if "attention" in augmented_pipeline.pipeline_args.pooling_module.type:
             state_dict = load_state_dict(Path(pooling_module_path), dtype=param_dtype)
             if get_rank() == 0:
                 augmented_model.pooling_module.process.load_state_dict(
