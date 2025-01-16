@@ -34,7 +34,6 @@ def evaluate(
 
     total_num_samples = int(torch.tensor(all_num_samples).sum().item())
     max_num_samples = int(torch.tensor(all_num_samples).max().item())
-
     for _ in range(max_num_samples - int(num_samples.item())):
         pad_x = np.zeros_like(batches_rec[-1].x)
         pad_y = np.zeros_like(batches_rec[-1].y)

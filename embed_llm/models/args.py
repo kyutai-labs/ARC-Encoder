@@ -33,22 +33,27 @@ class EmbedAugArgs(Serializable):
     embedder_name: str = "NVEmbed"
     trainable_embedder: bool = False
     train_only_pooling: bool = False
-    causal: bool = True
-    do_pool: bool = False
-    n_truncated_layers: int = 4
-    normalize_embeddings: bool = True
+    n_truncated_layers: int = 8
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
     shared_kv: bool = True
     cross_att: bool = False
     cross_att_layers: int | None = None
-    do_both: bool = False
-    dist_process: bool = False
     pooled_cross_att: bool = False
     every_cross_att: int | None = None
+    do_both: bool = False
     trainable_llm: bool = True
     w_prefix_prompt: bool = False
     max_seq_len: int = 256
-    gate_bottleneck: int = 1
+    gate_bottleneck: int = 8
+    
+    # To remove
+    causal: bool = True
+    do_pool: bool = False
+    normalize_embeddings: bool = True
+    dist_process: bool = False
+
+
+
 
 
 @dataclass

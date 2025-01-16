@@ -294,12 +294,12 @@ class Cross_AttTransformerBlock(nn.Module):
                 if show_attention:
                     cross_attn_mtx = None
 
-        out = self.feed_forward.forward(self.ffn_norm(h))
-
+        r = self.feed_forward.forward(self.ffn_norm(h))
+        out = h + r
         if not show_attention:
-            return h + out
+            return out
         else:
-            return h + out, attn_mtx, cross_attn_mtx
+            return out, attn_mtx, cross_attn_mtx
 
 
 class Transformer(ModelBase, LoRALoaderMixin):
@@ -639,7 +639,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             return (attn_mtx,)
 
         normalized_h = self.norm(h)
-
+        
         if cat_embeddings is not None:
             normalized_h = normalized_h[
                 torch.tensor(self.pos_to_keep, dtype=torch.bool)
@@ -789,7 +789,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         if cache is not None:
             cache.update_seqlens(seqlens)
-   
         normalized_h = self.norm(h)
 
         if cat_embeddings is not None:

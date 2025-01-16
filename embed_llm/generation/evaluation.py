@@ -8,6 +8,9 @@ import argparse
 import subprocess as sp
 from pathlib import Path
 from embed_llm.models.augmented_model import EmbedAugPipeline
+from mistral_inference.transformer import Transformer
+from mistral_inference.generate import generate
+from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 from embed_llm.generation.metrics import (
     word_overlap,
     get_bleu_score,
@@ -70,47 +73,56 @@ def evaluate_QA(
     n_samples: int | None = 1000,
     tmp_path: str = None,
     icl_examples: int = 0,
-    pipeline: EmbedAugPipeline | None = None,
+    pipeline: EmbedAugPipeline | Transformer | None = None,
     w_embeds: bool = True, # To test baseline LLM
     doc_w_context: bool = True,
+    mistral: bool = False
 ):
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
     results = {benchmark: {} for benchmark in benchmarks}
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
 
-    if pipeline is None:
-        # Get last checkpoint
-        last_ckpt = sorted(
-            [
-                ckpt_name
-                for ckpt_name in os.listdir(tmp_path + run_name + "/checkpoints/")
-                if (
-                    Path(tmp_path + run_name + "/checkpoints/") / ckpt_name / "params.json"
-                ).exists()
-            ]
-        )[-1]
+    if not mistral:
+        if pipeline is None:
+            # Get last checkpoint
+            last_ckpt = sorted(
+                [
+                    ckpt_name
+                    for ckpt_name in os.listdir(tmp_path + run_name + "/checkpoints/")
+                    if (
+                        Path(tmp_path + run_name + "/checkpoints/") / ckpt_name / "params.json"
+                    ).exists()
+                ]
+            )[-1]
 
-        pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
-            llm_path=llm_path,
-            ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
-            device=device,
-            llm_name="Mistral7B",
-            embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
-            max_batch_size=max_bs,
-        )
-        ckpt = int(last_ckpt.split("_")[-1])
-        print("Evaluating checkpoint", ckpt)
-    else:
-        pipeline: EmbedAugPipeline = pipeline
-
-    if max_seq_len != pipeline.pipeline_args.max_seq_len:
-        print(
-            "Warning: max_seq_len during model training \
-            ({}) is different from the one provided ({})".format(
-                pipeline.pipeline_args.max_seq_len, max_seq_len
+            pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
+                llm_path=llm_path,
+                ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
+                device=device,
+                llm_name="Mistral7B",
+                embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
+                max_batch_size=max_bs,
             )
-        )
+            ckpt = int(last_ckpt.split("_")[-1])
+            print("Evaluating checkpoint", ckpt)
+        else:
+            pipeline: EmbedAugPipeline = pipeline
+
+        if max_seq_len != pipeline.pipeline_args.max_seq_len:
+            print(
+                "Warning: max_seq_len during model training \
+                ({}) is different from the one provided ({})".format(
+                    pipeline.pipeline_args.max_seq_len, max_seq_len
+                )
+            )
+    else:
+        if pipeline is None:
+            mistral_model = Transformer.from_folder('/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/', device = 'cuda:0', max_batch_size = max_bs, dtype = torch.float32)
+        else:
+            mistral_model = pipeline
+        mistral_tokenizer = MistralTokenizer.from_file("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3").instruct_tokenizer.tokenizer
+            
 
     device_count = torch.cuda.device_count()
     other_device = torch.device("cuda:1") if device_count > 1 else device
@@ -178,21 +190,30 @@ def evaluate_QA(
                         no_context_prompt = [
                                 icl_ex + f"Query: {query}\nAnswer: "  for query, cont in zip(questions[i : i + max_bs],context[i : i + max_bs])
                             ]
+   
+                if not mistral:
+                    generated_sequence = pipeline.generate(
+                        prompt_pre_embed= (['']*len(questions[i : i + max_bs]) if not pipeline.pipeline_args.w_prefix_prompt 
+                            else ['Based on the context ']*len(questions[i : i + max_bs])),
+                        prompt_post_embed = context_prompt if pipeline.pipeline_args.w_prefix_prompt else no_context_prompt,
+                        text_conditioning=list(context[i : i + max_bs]) if w_embeds else None,
+                        temperature=temp,
+                        max_tokens=max_seq_len,
+                        truncate_double_space=True,
+                        device=device,
+                        device_generation=other_device,
+                    )
+                else:
+               
                     
-                    # Useless
-                    context_prompt = [' answer the question following the examples:\n\n' + icl_ex + f"Document: {cont}\nQuery: {query}\nAnswer: "  for query, cont in zip(questions[i : i + max_bs],context[i : i + max_bs])]
+                    tokens = [mistral_tokenizer.encode(prompt, bos = True, eos = False) for prompt in no_context_prompt]
                     
-                generated_sequence = pipeline.generate(
-                    prompt_pre_embed= (['']*len(questions[i : i + max_bs]) if not pipeline.pipeline_args.w_prefix_prompt 
-                        else ['Based on the context ']*len(questions[i : i + max_bs])),
-                    prompt_post_embed = context_prompt if pipeline.pipeline_args.w_prefix_prompt else no_context_prompt,
-                    text_conditioning=list(context[i : i + max_bs]) if w_embeds else None,
-                    temperature=temp,
-                    max_tokens=max_seq_len,
-                    truncate_double_space=True,
-                    device=device,
-                    device_generation=other_device,
-                )
+                    generated_sequence = generate(
+                        model = mistral_model,
+                        encoded_prompts = tokens,
+                        max_tokens = max_seq_len,
+                        temperature = temp,
+                        eos_id = mistral_tokenizer.eos_id)
 
                 generated_sequences.extend(generated_sequence)
                 
@@ -272,13 +293,14 @@ def evaluate_QA(
                     "Metric": value,
                 }
 
-    with open(
-        "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-        + run_name
-        + "/results_generation.json",
-        "a",
-    ) as f:
-        json.dump(results, f)
+    if run_name != '':
+        with open(
+            "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+            + run_name
+            + "/results_generation.json",
+            "a",
+        ) as f:
+            json.dump(results, f)
 
     with open(
         output_file,
@@ -286,9 +308,9 @@ def evaluate_QA(
     ) as f:
         overall_results = json.load(f)
 
-    if not w_embeds and doc_w_context:
+    if mistral and doc_w_context:
         run_name = 'Mistral_RAG'
-    elif not w_embeds and not doc_w_context:
+    elif mistral and not doc_w_context:
         run_name = 'Mistral_no_RAG'
 
     if run_name not in overall_results.keys():
@@ -315,6 +337,10 @@ def evaluate_QA(
         "w",
     ) as f:
         json.dump(overall_results, f)
+        
+    if mistral:
+        return mistral_model
+    
     return pipeline, ckpt
 
 def evaluate_reconstruction_model(
@@ -588,15 +614,119 @@ if __name__ == "__main__":
     ensure_reproducibility(29)
     
     
-    output_file = "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/eval_QA_llm_useful.json"
+    output_file = "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/eval_QA_mistral.json"
     tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
         
     if not os.path.exists(output_file):
         with open(output_file, "w") as f:
             json.dump({}, f)
         
-    max_seq_len = 256
+    max_seq_len = 512
     n_passages = 500
+
+    mistral_model = evaluate_QA(
+            '',
+            ["NQ","TRIVIAQA"],
+        temps=[0, 0.5, 0.7],
+        max_bs=4,
+        output_file=output_file,
+        n_samples=n_passages,
+        max_seq_len=max_seq_len,
+        tmp_path=tmp_path,
+        icl_examples=0,
+        mistral = True,
+        doc_w_context=False,
+        w_embeds = False,
+        # pipeline=pipeline,
+        # ckpt=ckpt,
+    )
+        
+    torch.cuda.empty_cache()
+    mistral_model = evaluate_QA(
+        '',
+        ["NQ","TRIVIAQA"],
+        temps=[0, 0.5, 0.7],
+        max_bs=4,
+        output_file=output_file,
+        n_samples=n_passages,
+        max_seq_len=max_seq_len,
+        tmp_path=tmp_path,
+        icl_examples=2,
+        pipeline=mistral_model,
+        mistral = True,
+        doc_w_context=False,
+        w_embeds = False,
+    )
+    torch.cuda.empty_cache()
+    mistral_model = evaluate_QA(
+        '',
+        ["NQ","TRIVIAQA"],
+        temps=[0, 0.5, 0.7],
+        max_bs=4,
+        output_file=output_file,
+        n_samples=n_passages,
+        max_seq_len=max_seq_len,
+        tmp_path=tmp_path,
+        icl_examples=5,
+        pipeline=mistral_model,
+        mistral = True,
+        doc_w_context=False,
+        w_embeds = False,
+    )
+    torch.cuda.empty_cache()
+    
+    mistral_model = evaluate_QA(
+            '',
+            ["NQ","TRIVIAQA"],
+        temps=[0, 0.5, 0.7],
+        max_bs=4,
+        output_file=output_file,
+        n_samples=n_passages,
+        max_seq_len=max_seq_len,
+        tmp_path=tmp_path,
+        icl_examples=0,
+        mistral = True,
+        doc_w_context=True,
+        w_embeds = False,
+        pipeline = mistral_model,
+        # pipeline=pipeline,
+        # ckpt=ckpt,
+    )
+        
+    torch.cuda.empty_cache()
+    mistral_model = evaluate_QA(
+        '',
+        ["NQ","TRIVIAQA"],
+        temps=[0, 0.5, 0.7],
+        max_bs=4,
+        output_file=output_file,
+        n_samples=n_passages,
+        max_seq_len=max_seq_len,
+        tmp_path=tmp_path,
+        icl_examples=2,
+        pipeline=mistral_model,
+        mistral = True,
+        doc_w_context=True,
+        w_embeds = False,
+    )
+    torch.cuda.empty_cache()
+    mistral_model = evaluate_QA(
+        '',
+        ["NQ","TRIVIAQA"],
+        temps=[0, 0.5, 0.7],
+        max_bs=4,
+        output_file=output_file,
+        n_samples=n_passages,
+        max_seq_len=max_seq_len,
+        tmp_path=tmp_path,
+        icl_examples=5,
+        pipeline=mistral_model,
+        mistral = True,
+        doc_w_context=True,
+        w_embeds = False,
+    )
+    torch.cuda.empty_cache()
+
 
 
     # for run_name in ['nopref_pretrain_nollm_trained_cont_singpassage_5darr64']:
@@ -696,16 +826,16 @@ if __name__ == "__main__":
 
 
 
-    if args.run_name is not None:
-        print('Memory:', get_gpu_memory())
-        run_names = [args.run_name]
-    else:
-        run_names = [
-            # Done
-            'nopref_pretrain_nollm_trained_rec_multipassage_5darr64',
-            'nopref_pretrain_nollm_trained_cont_singpassage_5darr64',
-            "pretrain_both_trained_rec_singpassage_0f6f2a1a",
-            "pretrain_both_trained_cont_singpassage_17c38ada",
+    # if args.run_name is not None:
+    #     print('Memory:', get_gpu_memory())
+    #     run_names = [args.run_name]
+    # else:
+    #     run_names = [
+    #         # Done
+    #         'nopref_pretrain_nollm_trained_rec_multipassage_5darr64',
+    #         'nopref_pretrain_nollm_trained_cont_singpassage_5darr64',
+    #         "pretrain_both_trained_rec_singpassage_0f6f2a1a",
+    #         "pretrain_both_trained_cont_singpassage_17c38ada",
             
             # # "pretrain_llm_trained_rec_singpassage_054f63f8",
             # # "pretrain_both_trained_cont_singpassage_17c38ada",
@@ -760,9 +890,9 @@ if __name__ == "__main__":
         # 'nopref_pretrain_no_trained_std_hybrid_multipassage_054f63f8',
         # 'nopref_pretrain_no_trained_std_hybrid_singpassage_054f63f8',
         # 'nopref_pretrain_pool_trained_std_hybrid_singpassage_054f63f8',
-        ]
+    #     ]
 
-    for i, run_name in enumerate(run_names):
+    # for i, run_name in enumerate(run_names):
 
         # print("Standard Dump")
         # pipeline, ckpt = evaluate_reconstruction_model(
@@ -790,48 +920,48 @@ if __name__ == "__main__":
 
 
 
-        pipeline, ckpt = evaluate_QA(
-            run_name,
-                ["NQ","TRIVIAQA"],
-            temps=[0, 0.7],
-            max_bs=4,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=0,
-            # pipeline=pipeline,
-            # ckpt=ckpt,
-        )
-        
-        torch.cuda.empty_cache()
         # pipeline, ckpt = evaluate_QA(
         #     run_name,
-        #     ["NQ","TRIVIAQA"],
-        #     temps=[0, 0.5],
+        #         ["NQ","TRIVIAQA"],
+        #     temps=[0, 0.7],
         #     max_bs=4,
         #     output_file=output_file,
         #     n_samples=n_passages,
         #     max_seq_len=max_seq_len,
         #     tmp_path=tmp_path,
-        #     icl_examples=2,
+        #     icl_examples=0,
+        #     # pipeline=pipeline,
+        #     # ckpt=ckpt,
+        # )
+        
+        # torch.cuda.empty_cache()
+        # # pipeline, ckpt = evaluate_QA(
+        # #     run_name,
+        # #     ["NQ","TRIVIAQA"],
+        # #     temps=[0, 0.5],
+        # #     max_bs=4,
+        # #     output_file=output_file,
+        # #     n_samples=n_passages,
+        # #     max_seq_len=max_seq_len,
+        # #     tmp_path=tmp_path,
+        # #     icl_examples=2,
+        # #     pipeline=pipeline,
+        # #     ckpt=ckpt,
+        # # )
+        # # torch.cuda.empty_cache()
+        # pipeline, ckpt = evaluate_QA(
+        #     run_name,
+        #     ["NQ","TRIVIAQA"],
+        #     temps=[0, 0.7],
+        #     max_bs=4,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=5,
         #     pipeline=pipeline,
         #     ckpt=ckpt,
         # )
         # torch.cuda.empty_cache()
-        pipeline, ckpt = evaluate_QA(
-            run_name,
-            ["NQ","TRIVIAQA"],
-            temps=[0, 0.7],
-            max_bs=4,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=5,
-            pipeline=pipeline,
-            ckpt=ckpt,
-        )
-        torch.cuda.empty_cache()
-        print("Finished run", run_name)
+        # print("Finished run", run_name)
 
