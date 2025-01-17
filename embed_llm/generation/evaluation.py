@@ -173,7 +173,9 @@ def evaluate_QA(
         for doc, query, ans in zip(
             context[:icl_examples], questions[:icl_examples], answers[:icl_examples]
         ):
-            
+            if isinstance(ans, list):
+                ans = random.choice(ans)
+                
             if max_multi_passage>1:
                 doc = '\n'.join(doc)
                 
@@ -399,6 +401,7 @@ def evaluate_reconstruction_model(
     tmp_path: str = None,
     eval_data_type: str = "atlas",
     n_passages: int = 100,
+    max_multi_passage: int = 1,
 ):
 
     reconstruct_benchmarks = [
@@ -418,6 +421,9 @@ def evaluate_reconstruction_model(
         eval_data = "/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl"
     else:
         raise ValueError("Invalid eval_data_type")
+    
+    if max_multi_passage > 1:
+        eval_data = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_50_30_20.jsonl"
 
     print("RUN NAME => ", run_name)
 
@@ -478,29 +484,39 @@ def evaluate_reconstruction_model(
     lim_toks = max_seq_len
     valid_passage = []
 
-    with open(eval_data, "r") as f:
-        for i, line in enumerate(f):
-            if i == n_passages:
-                break
+    if max_multi_passage == 1:
+        with open(eval_data, "r") as f:
+            for i, line in enumerate(f):
+                if i == n_passages:
+                    break
 
-            if eval_data_type == "standard_dump":
-                valid_passage.append(
-                    pipeline.tokenizer.decode(
-                        pipeline.tokenizer.encode(
-                            json.loads(line)["text"].split("\n\n")[1],
-                            eos=True,
-                            bos=True,
-                        )[:lim_toks]
+                if eval_data_type == "standard_dump":
+                    valid_passage.append(
+                        pipeline.tokenizer.decode(
+                            pipeline.tokenizer.encode(
+                                json.loads(line)["text"].split("\n\n")[1],
+                                eos=True,
+                                bos=True,
+                            )[:lim_toks]
+                        )
                     )
-                )
-            elif eval_data_type == "atlas":
-                valid_passage.append(
-                    pipeline.tokenizer.decode(
-                        pipeline.tokenizer.encode(
-                            json.loads(line)["text"], eos=True, bos=True
-                        )[:lim_toks]
+                elif eval_data_type == "atlas":
+                    valid_passage.append(
+                        pipeline.tokenizer.decode(
+                            pipeline.tokenizer.encode(
+                                json.loads(line)["text"], eos=True, bos=True
+                            )[:lim_toks]
+                        )
                     )
+    else:
+        with open(eval_data, "r") as f:
+            for i, line in enumerate(f):
+                if i == n_passages:
+                    break
+                valid_passage.append(
+                    json.loads(line)["passage"][:max_multi_passage]
                 )
+        
 
     max_tokens = lim_toks
 
@@ -516,6 +532,7 @@ def evaluate_reconstruction_model(
         print(f"Temperature: {temp}")
         generated_sequences = []
         for i in range(0, n_passages, max_batch_size):
+            
             passage = list(valid_passage[i : i + max_batch_size])
             generated_sequence = pipeline.generate(
                 prompt_pre_embed=(
@@ -544,9 +561,8 @@ def evaluate_reconstruction_model(
         # for split in results_generation[temp].keys():
 
         generated_sequences = results_generation[str(temp)]
-        gt_passage = (
-            valid_passage  # train_passage if split == 'train' else valid_passage
-        )
+        gt_passage = valid_passage  if isinstance(valid_passage[0],str) else [' '.join(p) for p in valid_passage]
+        
         overlap = word_overlap(gt_passage, generated_sequences)
         metrics["Overlap"][temp] = {
             "n_samples": n_passages,
@@ -687,6 +703,7 @@ if __name__ == "__main__":
    
     if args.mistral:
         assert not args.eval_reconstruction, "Cannot evaluate reconstruction with Mistral"
+        print('EVALUATING WITHOUT CONTEXT')
         mistral_model =  evaluate_QA(
                         '',
                         ["NQ","TRIVIAQA"],
@@ -702,7 +719,7 @@ if __name__ == "__main__":
                         w_embeds = False,
                     )
         torch.cuda.empty_cache()
-
+        print('EVALUATING WITH CONTEXT')
         mistral_model =  evaluate_QA(
                         '',
                         ["NQ","TRIVIAQA"],
@@ -723,6 +740,7 @@ if __name__ == "__main__":
     
        
         for icl_ex in icl_tests[1:]:
+            print('EVALUATING WITHOUT CONTEXT')
             mistral_model = evaluate_QA(
                     '',
                     ["NQ","TRIVIAQA"],
@@ -740,7 +758,7 @@ if __name__ == "__main__":
                     mistral_model = mistral_model,
                 )
             torch.cuda.empty_cache()
-                
+            print('EVALUATING WITH CONTEXT')
             mistral_model = evaluate_QA(
                     '',
                     ["NQ","TRIVIAQA"],
@@ -761,30 +779,42 @@ if __name__ == "__main__":
         
     else:
         if args.eval_reconstruction:
-            print("Standard Dump")
-            pipeline, ckpt = evaluate_reconstruction_model(
+            if args.multi_passages > 1:
+                pipeline, ckpt = evaluate_reconstruction_model(
                 args.run_name,
                 output_file=output_file,
                 temperatures=temp_tests,
                 max_seq_len=max_seq_len,
                 tmp_path=tmp_path,
-                eval_data_type="standard_dump",
                 n_passages=n_passages,
-            )  
-            torch.cuda.empty_cache()
-            print("Atlas")
-            pipeline, ckpt = evaluate_reconstruction_model(
-                args.run_name,
-                output_file=output_file,
-                temperatures=temp_tests,
-                max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
-                eval_data_type="atlas",
-                pipeline=pipeline,
-                ckpt=ckpt,
-                n_passages=n_passages,
+                max_multi_passage=args.multi_passages,
             )
-            torch.cuda.empty_cache()
+                torch.cuda.empty_cache()
+            else:
+                print("Standard Dump")
+                pipeline, ckpt = evaluate_reconstruction_model(
+                    args.run_name,
+                    output_file=output_file,
+                    temperatures=temp_tests,
+                    max_seq_len=max_seq_len,
+                    tmp_path=tmp_path,
+                    eval_data_type="standard_dump",
+                    n_passages=n_passages,
+                )  
+                torch.cuda.empty_cache()
+                print("Atlas")
+                pipeline, ckpt = evaluate_reconstruction_model(
+                    args.run_name,
+                    output_file=output_file,
+                    temperatures=temp_tests,
+                    max_seq_len=max_seq_len,
+                    tmp_path=tmp_path,
+                    eval_data_type="atlas",
+                    pipeline=pipeline,
+                    ckpt=ckpt,
+                    n_passages=n_passages,
+                )
+                torch.cuda.empty_cache()
             
             
         pipeline, ckpt = evaluate_QA(
