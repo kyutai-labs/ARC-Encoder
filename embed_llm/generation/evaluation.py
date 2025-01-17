@@ -757,6 +757,8 @@ def arg_parser():
     parser.add_argument("--mistral", action="store_true")
     parser.add_argument("--wo_embeds", action="store_false")
     parser.add_argument("--multi_passages", type=int, default=1)
+    parser.add_argument("--reconstruct_seq_len", type=int, default=256)
+    parser.add_argument("--reconstruct_npassages", type=int, default=500)
 
     return parser.parse_args()
 
@@ -785,82 +787,82 @@ if __name__ == "__main__":
     n_passages = args.n_passages
 
     if args.mistral:
-        assert (
-            not args.eval_reconstruction
-        ), "Cannot evaluate reconstruction with Mistral"
-        print("EVALUATING WITHOUT CONTEXT")
-        mistral_model = evaluate_QA(
-            "",
-            ["NQ", "TRIVIAQA"],
-            temps=temp_tests,
-            max_bs=args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=icl_tests[0],
-            mistral=True,
-            icl_w_context=False,
-            query_w_context=False,
-            w_embeds=False,
-        )
-        torch.cuda.empty_cache()
-        print("EVALUATING WITH CONTEXT")
-        mistral_model = evaluate_QA(
-            "",
-            ["NQ", "TRIVIAQA"],
-            temps=temp_tests,
-            max_bs=args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=icl_tests[0],
-            mistral=True,
-            icl_w_context=True,
-            query_w_context=True,
-            w_embeds=False,
-            pipeline=mistral_model,
-        )
-        torch.cuda.empty_cache()
+        # assert (
+        #     not args.eval_reconstruction
+        # ), "Cannot evaluate reconstruction with Mistral"
+        # print("EVALUATING WITHOUT CONTEXT")
+        # mistral_model = evaluate_QA(
+        #     "",
+        #     ["NQ", "TRIVIAQA"],
+        #     temps=temp_tests,
+        #     max_bs=args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=icl_tests[0],
+        #     mistral=True,
+        #     icl_w_context=False,
+        #     query_w_context=False,
+        #     w_embeds=False,
+        # )
+        # torch.cuda.empty_cache()
+        # print("EVALUATING WITH CONTEXT")
+        # mistral_model = evaluate_QA(
+        #     "",
+        #     ["NQ", "TRIVIAQA"],
+        #     temps=temp_tests,
+        #     max_bs=args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=icl_tests[0],
+        #     mistral=True,
+        #     icl_w_context=True,
+        #     query_w_context=True,
+        #     w_embeds=False,
+        #     pipeline=mistral_model,
+        # )
+        # torch.cuda.empty_cache()
 
-        for icl_ex in icl_tests[1:]:
-            print("EVALUATING WITHOUT CONTEXT")
-            mistral_model = evaluate_QA(
-                "",
-                ["NQ", "TRIVIAQA"],
-                temps=temp_tests,
-                max_bs=args.bs,
-                output_file=output_file,
-                n_samples=n_passages,
-                max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
-                icl_examples=icl_ex,
-                mistral=True,
-                icl_w_context=False,
-                query_w_context=False,
-                w_embeds=False,
-                pipeline=mistral_model,
-            )
-            torch.cuda.empty_cache()
-            print("EVALUATING WITH CONTEXT")
-            mistral_model = evaluate_QA(
-                "",
-                ["NQ", "TRIVIAQA"],
-                temps=temp_tests,
-                max_bs=args.bs,
-                output_file=output_file,
-                n_samples=n_passages,
-                max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
-                icl_examples=icl_ex,
-                mistral=True,
-                icl_w_context=True,
-                query_w_context=True,
-                w_embeds=False,
-                pipeline=mistral_model,
-            )
-            torch.cuda.empty_cache()
+        # for icl_ex in icl_tests[1:]:
+        #     print("EVALUATING WITHOUT CONTEXT")
+        #     mistral_model = evaluate_QA(
+        #         "",
+        #         ["NQ", "TRIVIAQA"],
+        #         temps=temp_tests,
+        #         max_bs=args.bs,
+        #         output_file=output_file,
+        #         n_samples=n_passages,
+        #         max_seq_len=max_seq_len,
+        #         tmp_path=tmp_path,
+        #         icl_examples=icl_ex,
+        #         mistral=True,
+        #         icl_w_context=False,
+        #         query_w_context=False,
+        #         w_embeds=False,
+        #         pipeline=mistral_model,
+        #     )
+        #     torch.cuda.empty_cache()
+        #     print("EVALUATING WITH CONTEXT")
+        #     mistral_model = evaluate_QA(
+        #         "",
+        #         ["NQ", "TRIVIAQA"],
+        #         temps=temp_tests,
+        #         max_bs=args.bs,
+        #         output_file=output_file,
+        #         n_samples=n_passages,
+        #         max_seq_len=max_seq_len,
+        #         tmp_path=tmp_path,
+        #         icl_examples=icl_ex,
+        #         mistral=True,
+        #         icl_w_context=True,
+        #         query_w_context=True,
+        #         w_embeds=False,
+        #         pipeline=mistral_model,
+        #     )
+        #     torch.cuda.empty_cache()
             
             
    
@@ -909,9 +911,9 @@ if __name__ == "__main__":
                     args.run_name,
                     output_file=output_file,
                     temperatures=temp_tests,
-                    max_seq_len=max_seq_len,
+                    max_seq_len=args.reconstruct_seq_len,
                     tmp_path=tmp_path,
-                    n_passages=n_passages,
+                    n_passages=args.reconstruct_npassages,
                     max_multi_passage=args.multi_passages,
                 )
                 torch.cuda.empty_cache()
@@ -921,10 +923,10 @@ if __name__ == "__main__":
                     args.run_name,
                     output_file=output_file,
                     temperatures=temp_tests,
-                    max_seq_len=max_seq_len,
+                    max_seq_len=args.reconstruct_seq_len,
                     tmp_path=tmp_path,
                     eval_data_type="standard_dump",
-                    n_passages=n_passages,
+                    n_passages=args.reconstruct_npassages,
                 )
                 torch.cuda.empty_cache()
                 print("Atlas")
@@ -932,12 +934,12 @@ if __name__ == "__main__":
                     args.run_name,
                     output_file=output_file,
                     temperatures=temp_tests,
-                    max_seq_len=max_seq_len,
+                    max_seq_len=args.reconstruct_seq_len,
                     tmp_path=tmp_path,
                     eval_data_type="atlas",
                     pipeline=pipeline,
                     ckpt=ckpt,
-                    n_passages=n_passages,
+                    n_passages=args.reconstruct_npassages,
                 )
                 torch.cuda.empty_cache()
 

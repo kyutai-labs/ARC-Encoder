@@ -309,7 +309,7 @@ def _train(
                 args=args.data,
                 seq_len=args.seq_len,
                 batch_size=(
-                    4 if args.batch_size <= 16 else args.batch_size // 4
+                    4 if args.batch_size <= 16 else args.batch_size // get_world_size()
                 ),  # To avoid OOM
                 seed=None,
                 rank=get_rank(),  # DDP rank
@@ -319,7 +319,7 @@ def _train(
                 hybrid_task=None,
             )
 
-            # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
+            # pre-load all eval batches, 40 batches * n_gpus * batch_size // n_gpus
 
             eval_batches_4cont = []
             while len(eval_batches_4cont) < 40:
@@ -417,6 +417,7 @@ def _train(
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
 
+                
             # Avoid OOM due to too many embeddings for the same batch
             while len(batch.sizes) > 70:
                 batch = next(train_data_loader)

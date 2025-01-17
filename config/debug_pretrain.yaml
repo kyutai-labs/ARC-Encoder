@@ -8,27 +8,38 @@ lora:
   rank: 64
   scaling: 2.0
   enable: true
+
+hybrid_task:
+  do: true
+  max_embeds: 3
+  max_n_prefixes: 1
+  min_n_prefixes: 0
+  one_task_4_all: true
+  prop_continuation: 0.0
+  prop_noembed_continuation: 0.05
+  prop_uselessembed_continuation: 0.0
+
 pipeline:
-  w_embeds: true
-  embedder_name: NVEmbed
-  trainable_embedder: False
-  n_truncated_layers: 8
-  do_pool: true
   cross_att: true
   cross_att_layers: 16
+  do_both: true
+  do_pool: true
+  embedder_name: NVEmbed
+  every_cross_att: null
+  gate_bottleneck: 8
   mlp_project:
+    act: gelu
     hidden_dim: 4096
     n_layers: 1
-    act: gelu
     type: mlp
-  do_both: true
-  shared_kv: false
-  every_cross_att: null
+  n_truncated_layers: 8
   pooled_cross_att: false
-  prefix_prompt: false
+  w_prefix_prompt: false
+  shared_kv: false
+  train_only_pooling: false
+  trainable_embedder: false
   trainable_llm: true
-  train_only_pooling: False
-  gate_bottleneck: 8
+  w_embeds: true
 
 data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
@@ -45,15 +56,6 @@ optim:
   warm_up_steps: 500
   initial_lr: 1.0e-20
   final_lr: 1.0e-10
-hybrid_task:
-  do: true
-  max_n_prefixes: 1
-  min_n_prefixes: 0
-  prop_continuation: 0.0
-  prop_noembed_continuation: 0.05
-  prop_uselessembed_continuation: 0.0
-  one_task_4_all: true
-  max_embeds: 3
 
 
 optim:
@@ -71,7 +73,7 @@ max_steps: 40
 seed: 0
 log_freq: 1
 eval_freq: 1
-no_eval: false
+no_eval: true
 ckpt_freq: 500
 save_adapters: true
 

@@ -1,10 +1,10 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-13 #42
+#SBATCH --array=3-13 #42
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s04dgx20,par2dc5-ai-prd-cl02s04dgx23,par2dc5-ai-prd-cl02s04dgx22,par2dc5-ai-prd-cl02s04dgx12,par2dc5-ai-prd-cl02s04dgx09
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s04dgx20,par2dc5-ai-prd-cl02s01dgx01,par2dc5-ai-prd-cl02s04dgx24,par2dc5-ai-prd-cl02s01dgx09
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
@@ -20,17 +20,17 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_NVwlllm_5noembed_3multi_054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_NVwollm_0noembed_3multi_054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_alltrained_5noembed_3multi_054f63f8.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_allwollm_0noembed_3multi_054f63f8.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_poolllm_5noembed_3multi_054f63f8.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_poolwollm_0noembed_3multi_054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_NVwlllm_5noembed054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_NVwollm_0noembed054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_alltrained_5noembed054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_alltrained_1noembed054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_alltrained_10noembed054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_allwollm_0noembed054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_poolllm_5noembed054f63f8.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_poolwollm_0noembed054f63f8.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_alltrained_1noembed054f63f8.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_alltrained_10noembed054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_allwollm_0noembed_3multi_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_poolllm_5noembed_3multi_054f63f8.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/hybrid_poolwollm_0noembed_3multi_054f63f8.yaml
 )
 
 
@@ -60,7 +60,8 @@ RUN_NAME=$(basename "$CONFIG" .yaml)
 echo "Starting evaluation of run $RUN_NAME"
 
 srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/eval_new_hybrid.json \
+    --n_passages 1000 --max_seq_len 64 
    
 echo "Finished at: $(date)"
 
