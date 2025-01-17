@@ -11,7 +11,7 @@ lora:
 pipeline:
   w_embeds: true
   embedder_name: NVEmbed
-  trainable_embedder: false
+  trainable_embedder: False
   n_truncated_layers: 8
   do_pool: true
   cross_att: true
@@ -27,17 +27,22 @@ pipeline:
   pooled_cross_att: false
   prefix_prompt: false
   trainable_llm: true
-  train_only_pooling: false
+  train_only_pooling: False
   gate_bottleneck: 8
+
 data:
-  eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
   shuffle: false
-  adapt_seq_len: true
+
+seq_len: 128
+batch_size: 32
+num_microbatches: 1
+max_steps: 40000
 optim:
   max_lr: 5.0e-05
   weight_decay: 0.1
-  warm_up_steps: 5
+  warm_up_steps: 500
   initial_lr: 1.0e-20
   final_lr: 1.0e-10
 hybrid_task:
@@ -45,10 +50,19 @@ hybrid_task:
   max_n_prefixes: 1
   min_n_prefixes: 0
   prop_continuation: 0.0
-  prop_noembed_continuation: 0.5
+  prop_noembed_continuation: 0.05
   prop_uselessembed_continuation: 0.0
   one_task_4_all: true
-  max_embeds: 2
+  max_embeds: 3
+
+
+optim:
+  max_lr: 5.0e-05
+  weight_decay: 0.1
+  warm_up_steps: 5
+  initial_lr: 1.0e-20
+  final_lr: 1.0e-10
+
 
 seq_len: 256
 batch_size: 32
@@ -57,7 +71,7 @@ max_steps: 40
 seed: 0
 log_freq: 1
 eval_freq: 1
-no_eval: true
+no_eval: false
 ckpt_freq: 500
 save_adapters: true
 

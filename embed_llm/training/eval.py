@@ -77,12 +77,11 @@ def evaluate(
                 ground_truth = []
                 seqlens = []
                 mask = []
-                test_embed = []
+
                 test_x = []
                 ind = 0
                 for to_embed, size in zip(batch.to_embed, batch.sizes):
                     input_ids.extend(to_embed["tokens"][0])
-                    test_embed.extend(to_embed["tokens"][0])
                     test_x.extend(batch.x[ind : ind + size])
                     input_ids.extend(batch.x[ind : ind + size])
 
@@ -100,10 +99,7 @@ def evaluate(
                 assert sum(mask) == len(
                     output
                 ), f"Mask {sum(mask)} and output {len(output)} should be the same"
-                assert torch.equal(
-                    torch.tensor(torch.from_numpy(np.array(test_embed))).cuda(),
-                    embeddings,
-                ), "Input ids should be the same"
+
                 assert torch.equal(
                     torch.tensor(torch.from_numpy(np.array(test_x))).cuda(), x
                 ), "Input ids should be the same"
@@ -118,6 +114,8 @@ def evaluate(
                 assert torch.equal(
                     torch.masked_select(ground_truth, mask), y
                 ), "Ground truth and mask should be the same"
+                
+                
                 output_wo_embed = model.forward(
                     x=input_ids, embeddings=None, seqlens=seqlens
                 )

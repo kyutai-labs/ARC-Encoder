@@ -76,7 +76,8 @@ def evaluate_QA(
     icl_examples: int = 0,
     pipeline: EmbedAugPipeline | Transformer | None = None,
     w_embeds: bool = True,  # To test baseline LLM
-    doc_w_context: bool = True,
+    query_w_context: bool = False,
+    icl_w_context: bool = True,
     mistral: bool = False,
     max_multi_passage: int = 1,
 ):
@@ -187,7 +188,7 @@ def evaluate_QA(
             if max_multi_passage > 1:
                 doc = "\n".join(doc)
 
-            if doc_w_context:
+            if icl_w_context:
                 icl_ex += f"Context: {doc}\nQuery: {query}\nAnswer: {ans}\n\n"
             else:
                 icl_ex += f"Query: {query}\nAnswer: {ans}\n\n"
@@ -216,7 +217,7 @@ def evaluate_QA(
                         for query in new_questions[i : i + max_bs]
                     ]
                 else:
-                    if doc_w_context:
+                    if query_w_context:
 
                         if max_multi_passage <= 1:
                             no_context_prompt = [
@@ -352,7 +353,7 @@ def evaluate_QA(
                 metrics[benchmark]["EM"][str(temp)] = {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
-                    "w_context_in_examples": doc_w_context,
+                    "w_context_in_examples": icl_w_context,
                     "Metric": value_em,
                     "approx_Metric": value_approx,
                     "answer in context": n_answer_in_context,
@@ -370,7 +371,7 @@ def evaluate_QA(
                 metrics[benchmark]["F1"][str(temp)] = {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
-                    "w_context_in_examples": doc_w_context,
+                    "w_context_in_examples": icl_w_context,
                     "Metric": value_f1,
                 }
                 print(
@@ -386,7 +387,7 @@ def evaluate_QA(
                     "Temperature:",
                     temp,
                     "w_context_in_examples",
-                    doc_w_context,
+                    icl_w_context,
                     benchmark + " EM: ",
                     value_em,
                     benchmark + " Approx EM: ",
@@ -412,7 +413,7 @@ def evaluate_QA(
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
                     "Metric": value,
-                    "w_context_in_examples": doc_w_context,
+                    "w_context_in_examples": icl_w_context,
                 }
 
     if run_name != "":
@@ -430,10 +431,10 @@ def evaluate_QA(
     ) as f:
         overall_results = json.load(f)
 
-    if mistral and doc_w_context:
+    if mistral and query_w_context:
         run_name = "Mistral_RAG"
         ckpt = 0
-    elif mistral and not doc_w_context:
+    elif mistral and not query_w_context:
         run_name = "Mistral_no_RAG"
         ckpt = 0
 
@@ -799,7 +800,8 @@ if __name__ == "__main__":
             tmp_path=tmp_path,
             icl_examples=icl_tests[0],
             mistral=True,
-            doc_w_context=False,
+            icl_w_context=False,
+            query_w_context=False,
             w_embeds=False,
         )
         torch.cuda.empty_cache()
@@ -815,7 +817,8 @@ if __name__ == "__main__":
             tmp_path=tmp_path,
             icl_examples=icl_tests[0],
             mistral=True,
-            doc_w_context=True,
+            icl_w_context=True,
+            query_w_context=True,
             w_embeds=False,
             pipeline=mistral_model,
         )
@@ -833,11 +836,11 @@ if __name__ == "__main__":
                 max_seq_len=max_seq_len,
                 tmp_path=tmp_path,
                 icl_examples=icl_ex,
-                pipeline=mistral_model,
                 mistral=True,
-                doc_w_context=False,
+                icl_w_context=False,
+                query_w_context=False,
                 w_embeds=False,
-                mistral_model=mistral_model,
+                pipeline=mistral_model,
             )
             torch.cuda.empty_cache()
             print("EVALUATING WITH CONTEXT")
@@ -851,13 +854,53 @@ if __name__ == "__main__":
                 max_seq_len=max_seq_len,
                 tmp_path=tmp_path,
                 icl_examples=icl_ex,
-                pipeline=mistral_model,
                 mistral=True,
-                doc_w_context=True,
+                icl_w_context=True,
+                query_w_context=True,
                 w_embeds=False,
-                mistral_model=mistral_model,
+                pipeline=mistral_model,
             )
             torch.cuda.empty_cache()
+            
+            
+   
+        print("EVALUATING WITH CONTEXT but not in ICL")
+        mistral_model = evaluate_QA(
+            "",
+            ["NQ", "TRIVIAQA"],
+            temps=temp_tests,
+            max_bs=args.bs,
+            output_file=output_file,
+            n_samples=n_passages,
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            icl_examples=icl_tests[1],
+            mistral=True,
+            icl_w_context=False,
+            query_w_context=True,
+            w_embeds=False,
+        )
+        torch.cuda.empty_cache()
+            
+        for icl_ex in icl_tests[2:]:
+            mistral_model = evaluate_QA(
+            "",
+            ["NQ", "TRIVIAQA"],
+            temps=temp_tests,
+            max_bs=args.bs,
+            output_file=output_file,
+            n_samples=n_passages,
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            icl_examples=icl_ex,
+            pipeline=mistral_model,
+            mistral=True,
+            icl_w_context=False,
+            query_w_context=True,
+            w_embeds=False,
+            )
+            torch.cuda.empty_cache()
+
 
     else:
         if args.eval_reconstruction:
@@ -909,7 +952,7 @@ if __name__ == "__main__":
             tmp_path=tmp_path,
             icl_examples=icl_tests[0],
             w_embeds=args.wo_embeds,
-            doc_w_context=False,
+            icl_w_context=False,
             max_multi_passage=args.multi_passages,
         )
 
@@ -924,7 +967,7 @@ if __name__ == "__main__":
             tmp_path=tmp_path,
             icl_examples=icl_tests[0],
             w_embeds=args.wo_embeds,
-            doc_w_context=True,
+            icl_w_context=True,
             pipeline=pipeline,
             ckpt=ckpt,
             max_multi_passage=args.multi_passages,
@@ -942,7 +985,7 @@ if __name__ == "__main__":
                 tmp_path=tmp_path,
                 icl_examples=icl_ex,
                 w_embeds=args.wo_embeds,
-                doc_w_context=False,
+                icl_w_context=False,
                 pipeline=pipeline,
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
@@ -959,7 +1002,7 @@ if __name__ == "__main__":
                 tmp_path=tmp_path,
                 icl_examples=icl_ex,
                 w_embeds=args.wo_embeds,
-                doc_w_context=True,
+                icl_w_context=True,
                 pipeline=pipeline,
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
@@ -978,7 +1021,7 @@ if __name__ == "__main__":
     #         tmp_path=tmp_path,
     #         icl_examples=0,
     #         w_embeds=False,
-    #         doc_w_context = False,
+    #         icl_w_context = False,
     #     )
 
     #     pipeline, ckpt = evaluate_QA(
@@ -992,7 +1035,7 @@ if __name__ == "__main__":
     #         tmp_path=tmp_path,
     #         icl_examples=2,
     #         w_embeds = False,
-    #         doc_w_context = False,
+    #         icl_w_context = False,
     #     )
 
     #     pipeline, ckpt = evaluate_QA(
@@ -1008,7 +1051,7 @@ if __name__ == "__main__":
     #         pipeline=pipeline,
     #         ckpt=ckpt,
     #         w_embeds = False,
-    #         doc_w_context = False,
+    #         icl_w_context = False,
     #     )
 
     #     torch.cuda.empty_cache()
