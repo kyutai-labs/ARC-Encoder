@@ -39,7 +39,7 @@ class EmbedAugArgs(Serializable):
     w_prefix_prompt: bool = False
     max_seq_len: int = 256
     gate_bottleneck: int = 8
-    
+
     # Could be simplified
     cross_att: bool = False
     cross_att_layers: int | None = None
@@ -47,12 +47,9 @@ class EmbedAugArgs(Serializable):
     every_cross_att: int | None = None
     do_both: bool = False
     w_embeds: bool = False
-    
-    
+
     # Remove later
     do_pool: bool = False
-    
-    
 
 
 @dataclass

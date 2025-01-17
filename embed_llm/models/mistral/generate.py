@@ -23,7 +23,6 @@ def generate(
     if len(prompt_pre_embed) > 0 and not isinstance(prompt_pre_embed[0], list):
         prompt_pre_embed = [prompt_pre_embed]
 
-
     if len(prompt_post_embed) > 0 and not isinstance(prompt_post_embed[0], list):
         prompt_post_embed = [prompt_post_embed]
 
@@ -33,7 +32,7 @@ def generate(
     seqlens = [len(x) for x in prompt_post_embed]
 
     concat = cat_embeddings is not None
-   
+
     # Cache
     cache_window = (
         max(seqlens) + max_tokens + 3 if concat else max(seqlens) + max_tokens
@@ -51,7 +50,6 @@ def generate(
     cache.to(device=model.device, dtype=model.dtype)
     cache.reset()
 
- 
     last_token_prelogits = None
 
     # Put in cache if trained with prefix prompt
@@ -115,7 +113,7 @@ def generate(
 
     for j in range(max_tokens):
         next_token = sample(last_token_prelogits, temperature=temperature[j], top_p=0.8)
-        
+
         if eos_id is not None:
             is_finished = is_finished | (next_token == eos_id).cpu()
 

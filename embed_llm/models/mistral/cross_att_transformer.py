@@ -212,13 +212,17 @@ class Cross_AttTransformerBlock(nn.Module):
                 head_dim=head_dim,
                 n_kv_heads=n_kv_heads,
             )
-            self.gate = MLP_block(in_dim=dim, out_dim=dim, hidden_dim = dim//gate_bottleneck,  act="gelu")
+            self.gate = MLP_block(
+                in_dim=dim, out_dim=dim, hidden_dim=dim // gate_bottleneck, act="gelu"
+            )
         else:
             self.cross_attention = Pooled_Cross_Attention(
                 dim=dim, n_heads=n_heads, head_dim=head_dim, n_kv_heads=n_kv_heads
             )
 
-            self.gate = MLP_block(in_dim = dim, out_dim = dim, hidden_dim = dim//gate_bottleneck,  act="gelu")
+            self.gate = MLP_block(
+                in_dim=dim, out_dim=dim, hidden_dim=dim // gate_bottleneck, act="gelu"
+            )
 
         self.pooled_cross_att = pooled_cross_att
 
@@ -346,7 +350,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     lora=args.lora,
                     moe=args.moe,
                     pooled_cross_att=args.pooled_cross_att,
-                    gate_bottleneck=args.gate_bottleneck,   
+                    gate_bottleneck=args.gate_bottleneck,
                 )
                 self.cross_att_layers_id.append(i)
             elif self.every_cross_att != -1 and i % self.every_cross_att == 0:
@@ -360,7 +364,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     lora=args.lora,
                     moe=args.moe,
                     pooled_cross_att=args.pooled_cross_att,
-                    gate_bottleneck=args.gate_bottleneck,   
+                    gate_bottleneck=args.gate_bottleneck,
                 )
                 self.cross_att_layers_id.append(i)
             else:
@@ -638,7 +642,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             return (attn_mtx,)
 
         normalized_h = self.norm(h)
-        
+
         if cat_embeddings is not None:
             normalized_h = normalized_h[
                 torch.tensor(self.pos_to_keep, dtype=torch.bool)
@@ -675,7 +679,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 embeddings.shape[0],
             )
         token_embeds = self.tok_embeddings(input_ids)
-
 
         assert self.tok_embeddings is not None
         # if self.vision_encoder is not None and images:
@@ -714,7 +717,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
             seqlens = new_seqlens
         else:
             h = token_embeds
-
 
         input_metadata: list[CacheInputMetadata] | list[SimpleInputMetadata]
 
@@ -829,7 +831,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         assert self.output is not None
         outs = self.output(h)
-   
 
         return outs.float()
 

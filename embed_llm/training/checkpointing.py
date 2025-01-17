@@ -340,12 +340,13 @@ class Checkpointer:
                 tmp_trainable_embedder_dst.mkdir(parents=True, exist_ok=True)
 
                 if self.pooling_module is not None:
-                    tmp_pooling_module_dst = self._tmp(llm_dst.parent / "pooling_module")
+                    tmp_pooling_module_dst = self._tmp(
+                        llm_dst.parent / "pooling_module"
+                    )
                     tmp_pooling_module_dst.mkdir(parents=True, exist_ok=True)
             else:
                 tmp_pooling_module_dst = self._tmp(llm_dst.parent / "pooling_module")
                 tmp_pooling_module_dst.mkdir(parents=True, exist_ok=True)
-                
 
         (
             llm_states,
@@ -423,7 +424,9 @@ class Checkpointer:
                         self.dst_dir(type="trainable_embedder")
                     )
                     if self.pooling_module is not None:
-                        tmp_pooling_module_dst.rename(self.dst_dir(type="pooling_module"))
+                        tmp_pooling_module_dst.rename(
+                            self.dst_dir(type="pooling_module")
+                        )
                 else:
                     tmp_pooling_module_dst.rename(self.dst_dir(type="pooling_module"))
 

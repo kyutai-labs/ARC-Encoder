@@ -24,11 +24,12 @@ from embed_llm.generation.metrics import (
 
 
 EVAL_DATA_PATH = {
-    "NQ": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA/nq_open_hf.jsonl', # nq_data.jsonl
+    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA/nq_open_hf.jsonl",  # nq_data.jsonl
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA/triviaqa_data.jsonl",
 }
 
 METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em}
+
 
 # Profiling memory
 def get_gpu_memory():
@@ -74,7 +75,7 @@ def evaluate_QA(
     tmp_path: str = None,
     icl_examples: int = 0,
     pipeline: EmbedAugPipeline | Transformer | None = None,
-    w_embeds: bool = True, # To test baseline LLM
+    w_embeds: bool = True,  # To test baseline LLM
     doc_w_context: bool = True,
     mistral: bool = False,
     max_multi_passage: int = 1,
@@ -84,8 +85,8 @@ def evaluate_QA(
     results = {benchmark: {} for benchmark in benchmarks}
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
 
-    # Loading model 
-    
+    # Loading model
+
     if not mistral:
         if pipeline is None:
             # Get last checkpoint
@@ -94,7 +95,9 @@ def evaluate_QA(
                     ckpt_name
                     for ckpt_name in os.listdir(tmp_path + run_name + "/checkpoints/")
                     if (
-                        Path(tmp_path + run_name + "/checkpoints/") / ckpt_name / "params.json"
+                        Path(tmp_path + run_name + "/checkpoints/")
+                        / ckpt_name
+                        / "params.json"
                     ).exists()
                 ]
             )[-1]
@@ -121,16 +124,21 @@ def evaluate_QA(
             )
     else:
         if pipeline is None:
-            mistral_model = Transformer.from_folder('/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/', device = 'cuda:0', max_batch_size = max_bs, dtype = torch.float32)
+            mistral_model = Transformer.from_folder(
+                "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/",
+                device="cuda:0",
+                max_batch_size=max_bs,
+                dtype=torch.float32,
+            )
         else:
             mistral_model = pipeline
-        mistral_tokenizer = MistralTokenizer.from_file("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3").instruct_tokenizer.tokenizer
-            
+        mistral_tokenizer = MistralTokenizer.from_file(
+            "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3"
+        ).instruct_tokenizer.tokenizer
 
     device_count = torch.cuda.device_count()
     other_device = torch.device("cuda:1") if device_count > 1 else device
-    
-    
+
     # Creating dataset
     metrics = {}
 
@@ -152,21 +160,21 @@ def evaluate_QA(
                 if isinstance(data["answer"], str):
                     answers.append([data["answer"].strip()])
 
-                elif isinstance(data["answer"], list):  
+                elif isinstance(data["answer"], list):
                     answers.append(data["answer"])
                 else:
                     raise ValueError("Invalid answer type")
                 # Take the first ranked retrieved passage
-                
+
                 if max_multi_passage <= 1:
                     context.append(data["passages"][0].strip())
                 else:
                     context.append(data["passages"][:max_multi_passage])
 
         c = list(zip(questions, context, answers))
-        random.shuffle(c, random = lambda: 0.42)
+        random.shuffle(c, random=lambda: 0.42)
         questions, context, answers = zip(*c)
-        
+
         print("Evaluation dataset loaded for", benchmark)
 
         icl_ex = ""
@@ -175,144 +183,210 @@ def evaluate_QA(
         ):
             if isinstance(ans, list):
                 ans = random.choice(ans)
-                
-            if max_multi_passage>1:
-                doc = '\n'.join(doc)
-                
+
+            if max_multi_passage > 1:
+                doc = "\n".join(doc)
+
             if doc_w_context:
                 icl_ex += f"Context: {doc}\nQuery: {query}\nAnswer: {ans}\n\n"
             else:
                 icl_ex += f"Query: {query}\nAnswer: {ans}\n\n"
-    
-        new_context, new_questions, new_answers = list(context[icl_examples:]), list(questions[icl_examples:]), list(answers[icl_examples:])
-        
-        
+
+        new_context, new_questions, new_answers = (
+            list(context[icl_examples:]),
+            list(questions[icl_examples:]),
+            list(answers[icl_examples:]),
+        )
+
         for temp in temps:
             generated_sequences = []
             n_samples = len(new_questions) if n_samples is None else n_samples
             for i in trange(0, n_samples, max_bs):
-                
+
                 if w_embeds:
                     no_context_prompt = [
-                            icl_ex + f"Query: {query}\nAnswer: " for query in new_questions[i : i + max_bs]
-                        ] 
+                        icl_ex + f"Query: {query}\nAnswer: "
+                        for query in new_questions[i : i + max_bs]
+                    ]
 
-                    context_prompt = [' answer the question following the examples:\n\n' + icl_ex + f"Query: {query}\nAnswer: "  for query in new_questions[i : i + max_bs]
-                        ]
+                    context_prompt = [
+                        " answer the question following the examples:\n\n"
+                        + icl_ex
+                        + f"Query: {query}\nAnswer: "
+                        for query in new_questions[i : i + max_bs]
+                    ]
                 else:
                     if doc_w_context:
-                        
+
                         if max_multi_passage <= 1:
                             no_context_prompt = [
-                                    icl_ex + f"Context: {doc}\nQuery: {query}\nAnswer: "  for query, doc in zip(new_questions[i : i + max_bs],new_context[i : i + max_bs])
-                                ] 
+                                icl_ex + f"Context: {doc}\nQuery: {query}\nAnswer: "
+                                for query, doc in zip(
+                                    new_questions[i : i + max_bs],
+                                    new_context[i : i + max_bs],
+                                )
+                            ]
                         else:
                             no_context_prompt = [
-                                    icl_ex + "Context: "+'\n'.join(doc)+f"\nQuery: {query}\nAnswer: "  for query, doc in zip(new_questions[i : i + max_bs],new_context[i : i + max_bs])
-                                ]
+                                icl_ex
+                                + "Context: "
+                                + "\n".join(doc)
+                                + f"\nQuery: {query}\nAnswer: "
+                                for query, doc in zip(
+                                    new_questions[i : i + max_bs],
+                                    new_context[i : i + max_bs],
+                                )
+                            ]
                     else:
                         no_context_prompt = [
-                                icl_ex + f"Query: {query}\nAnswer: "  for query, cont in zip(new_questions[i : i + max_bs],new_context[i : i + max_bs])
-                            ]
-   
+                            icl_ex + f"Query: {query}\nAnswer: "
+                            for query, cont in zip(
+                                new_questions[i : i + max_bs],
+                                new_context[i : i + max_bs],
+                            )
+                        ]
+
                 if not mistral:
-                    
+
                     if w_embeds:
                         text_conditioning = list(new_context[i : i + max_bs])
                     else:
                         text_conditioning = None
-                            
+
                     generated_sequence = pipeline.generate(
-                        prompt_pre_embed= (['']*len(new_questions[i : i + max_bs]) if not pipeline.pipeline_args.w_prefix_prompt 
-                            else ['Based on the context ']*len(new_questions[i : i + max_bs])), # If model trained with task prefix before embedding
-                        prompt_post_embed = context_prompt if pipeline.pipeline_args.w_prefix_prompt else no_context_prompt,
-                        text_conditioning= text_conditioning,
+                        prompt_pre_embed=(
+                            [""] * len(new_questions[i : i + max_bs])
+                            if not pipeline.pipeline_args.w_prefix_prompt
+                            else ["Based on the context "]
+                            * len(new_questions[i : i + max_bs])
+                        ),  # If model trained with task prefix before embedding
+                        prompt_post_embed=(
+                            context_prompt
+                            if pipeline.pipeline_args.w_prefix_prompt
+                            else no_context_prompt
+                        ),
+                        text_conditioning=text_conditioning,
                         temperature=temp,
                         max_tokens=max_seq_len,
                         truncate_double_space=True,
                         device=device,
                         device_generation=other_device,
                     )
-                    generated_sequences.extend([gen.split('\n')[0] for gen in generated_sequence])
+                    generated_sequences.extend(
+                        [gen.split("\n")[0] for gen in generated_sequence]
+                    )
                 else:
-               
-                    
-                    tokens = [mistral_tokenizer.encode(prompt, bos = True, eos = False) for prompt in no_context_prompt]
-                    
+
+                    tokens = [
+                        mistral_tokenizer.encode(prompt, bos=True, eos=False)
+                        for prompt in no_context_prompt
+                    ]
+
                     generated_sequence, logprobs = generate(
-                        model = mistral_model,
-                        encoded_prompts = tokens,
-                        max_tokens = max_seq_len,
-                        temperature = temp,
-                        eos_id = mistral_tokenizer.eos_id)
+                        model=mistral_model,
+                        encoded_prompts=tokens,
+                        max_tokens=max_seq_len,
+                        temperature=temp,
+                        eos_id=mistral_tokenizer.eos_id,
+                    )
 
-                    generated_sequences.extend([mistral_tokenizer.decode(gen).split('\n')[0] for gen in generated_sequence])
-                
+                    generated_sequences.extend(
+                        [
+                            mistral_tokenizer.decode(gen).split("\n")[0]
+                            for gen in generated_sequence
+                        ]
+                    )
+
             if METRIC_EVALUATION[benchmark] == get_em:
-                value_em = sum(
-                    [
-                        metric_max_over_ground_truths(get_em, pred, gts)
-                        for pred, gts in zip(generated_sequences, new_answers)
-                    ]
-                ) / n_samples
+                value_em = (
+                    sum(
+                        [
+                            metric_max_over_ground_truths(get_em, pred, gts)
+                            for pred, gts in zip(generated_sequences, new_answers)
+                        ]
+                    )
+                    / n_samples
+                )
 
-                value_approx = sum(
-                    [
-                        metric_max_over_ground_truths(get_approx_em, pred, gts)
-                        for pred, gts in zip(generated_sequences, new_answers)
-                    ]
-                ) / n_samples
-       
-                if 'EM' not in metrics[benchmark].keys():
-                    metrics[benchmark]['EM'] = {}
-                metrics[benchmark]['EM'][str(temp)] = {}
-                
-                if 'F1' not in metrics[benchmark].keys():
-                    metrics[benchmark]['F1'] = {}
-                metrics[benchmark]['F1'][str(temp)] = {}
-                
+                value_approx = (
+                    sum(
+                        [
+                            metric_max_over_ground_truths(get_approx_em, pred, gts)
+                            for pred, gts in zip(generated_sequences, new_answers)
+                        ]
+                    )
+                    / n_samples
+                )
+
+                if "EM" not in metrics[benchmark].keys():
+                    metrics[benchmark]["EM"] = {}
+                metrics[benchmark]["EM"][str(temp)] = {}
+
+                if "F1" not in metrics[benchmark].keys():
+                    metrics[benchmark]["F1"] = {}
+                metrics[benchmark]["F1"][str(temp)] = {}
+
                 if max_multi_passage > 1:
-                    n_answer_in_context = sum(
-                        [
-                            metric_max_over_ground_truths(get_approx_em, '\n'.join(cont), gts)
-                            for cont, gts in zip(list(new_context), answers)
-                        ]
-                    ) / n_samples
+                    n_answer_in_context = (
+                        sum(
+                            [
+                                metric_max_over_ground_truths(
+                                    get_approx_em, "\n".join(cont), gts
+                                )
+                                for cont, gts in zip(list(new_context), answers)
+                            ]
+                        )
+                        / n_samples
+                    )
                 else:
-                    n_answer_in_context = sum(
-                        [
-                            metric_max_over_ground_truths(get_approx_em, cont, gts)
-                            for cont, gts in zip(list(new_context), answers)
-                        ]
-                    ) / n_samples
-                    
-                metrics[benchmark]['EM'][str(temp)] = {
+                    n_answer_in_context = (
+                        sum(
+                            [
+                                metric_max_over_ground_truths(get_approx_em, cont, gts)
+                                for cont, gts in zip(list(new_context), answers)
+                            ]
+                        )
+                        / n_samples
+                    )
+
+                metrics[benchmark]["EM"][str(temp)] = {
                     "n_samples": n_samples,
-                    'icl_examples': icl_examples,
-                    'w_context_in_examples': doc_w_context,
+                    "icl_examples": icl_examples,
+                    "w_context_in_examples": doc_w_context,
                     "Metric": value_em,
                     "approx_Metric": value_approx,
-                    'answer in context': n_answer_in_context,
+                    "answer in context": n_answer_in_context,
                 }
-                value_f1 = sum(
-                    [
-                        metric_max_over_ground_truths(get_f1_score, pred, gts)
-                        for pred, gts in zip(generated_sequences, new_answers)
-                    ]
-                ) / n_samples
-                
-                metrics[benchmark]['F1'][str(temp)] = {
+                value_f1 = (
+                    sum(
+                        [
+                            metric_max_over_ground_truths(get_f1_score, pred, gts)
+                            for pred, gts in zip(generated_sequences, new_answers)
+                        ]
+                    )
+                    / n_samples
+                )
+
+                metrics[benchmark]["F1"][str(temp)] = {
                     "n_samples": n_samples,
-                    'icl_examples': icl_examples,
-                    'w_context_in_examples': doc_w_context,
+                    "icl_examples": icl_examples,
+                    "w_context_in_examples": doc_w_context,
                     "Metric": value_f1,
                 }
-                print('Context |  query | gen sequence | answer:', list(zip(new_context, new_questions, generated_sequences, new_answers))[-1])
-                
+                print(
+                    "Context |  query | gen sequence | answer:",
+                    list(
+                        zip(
+                            new_context, new_questions, generated_sequences, new_answers
+                        )
+                    )[-1],
+                )
+
                 print(
                     "Temperature:",
                     temp,
-                    'w_context_in_examples', doc_w_context,
+                    "w_context_in_examples",
+                    doc_w_context,
                     benchmark + " EM: ",
                     value_em,
                     benchmark + " Approx EM: ",
@@ -321,24 +395,27 @@ def evaluate_QA(
                     value_f1,
                 )
             else:
-                value = sum(
-                    [
-                        metric_max_over_ground_truths(
-                            METRIC_EVALUATION[benchmark], pred, gts
-                        )
-                        for pred, gts in zip(generated_sequences, new_answers)
-                    ]
-                ) / n_samples
+                value = (
+                    sum(
+                        [
+                            metric_max_over_ground_truths(
+                                METRIC_EVALUATION[benchmark], pred, gts
+                            )
+                            for pred, gts in zip(generated_sequences, new_answers)
+                        ]
+                    )
+                    / n_samples
+                )
                 print("Temperature:", temp, benchmark + ": ", value)
-                    
+
                 metrics[benchmark][str(temp)] = {
                     "n_samples": n_samples,
-                    'icl_examples': icl_examples,
+                    "icl_examples": icl_examples,
                     "Metric": value,
-                    'w_context_in_examples': doc_w_context,
+                    "w_context_in_examples": doc_w_context,
                 }
 
-    if run_name != '':
+    if run_name != "":
         with open(
             "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
             + run_name
@@ -354,10 +431,10 @@ def evaluate_QA(
         overall_results = json.load(f)
 
     if mistral and doc_w_context:
-        run_name = 'Mistral_RAG'
+        run_name = "Mistral_RAG"
         ckpt = 0
     elif mistral and not doc_w_context:
-        run_name = 'Mistral_no_RAG'
+        run_name = "Mistral_no_RAG"
         ckpt = 0
 
     if run_name not in overall_results.keys():
@@ -373,7 +450,12 @@ def evaluate_QA(
             if metric not in overall_results[run_name][str(ckpt)][benchmark].keys():
                 overall_results[run_name][str(ckpt)][benchmark][metric] = {}
             for temp in metrics[benchmark][metric].keys():
-                if temp not in overall_results[run_name][str(ckpt)][benchmark][metric].keys():
+                if (
+                    temp
+                    not in overall_results[run_name][str(ckpt)][benchmark][
+                        metric
+                    ].keys()
+                ):
                     overall_results[run_name][str(ckpt)][benchmark][metric][temp] = []
                 overall_results[run_name][str(ckpt)][benchmark][metric][temp].append(
                     metrics[benchmark][metric][temp]
@@ -384,11 +466,12 @@ def evaluate_QA(
         "w",
     ) as f:
         json.dump(overall_results, f)
-        
+
     if mistral:
         return mistral_model
-    
+
     return pipeline, ckpt
+
 
 def evaluate_reconstruction_model(
     run_name: str,
@@ -421,7 +504,7 @@ def evaluate_reconstruction_model(
         eval_data = "/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl"
     else:
         raise ValueError("Invalid eval_data_type")
-    
+
     if max_multi_passage > 1:
         eval_data = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_50_30_20.jsonl"
 
@@ -513,10 +596,7 @@ def evaluate_reconstruction_model(
             for i, line in enumerate(f):
                 if i == n_passages:
                     break
-                valid_passage.append(
-                    json.loads(line)["passage"][:max_multi_passage]
-                )
-        
+                valid_passage.append(json.loads(line)["passage"][:max_multi_passage])
 
     max_tokens = lim_toks
 
@@ -532,7 +612,7 @@ def evaluate_reconstruction_model(
         print(f"Temperature: {temp}")
         generated_sequences = []
         for i in range(0, n_passages, max_batch_size):
-            
+
             passage = list(valid_passage[i : i + max_batch_size])
             generated_sequence = pipeline.generate(
                 prompt_pre_embed=(
@@ -561,8 +641,12 @@ def evaluate_reconstruction_model(
         # for split in results_generation[temp].keys():
 
         generated_sequences = results_generation[str(temp)]
-        gt_passage = valid_passage  if isinstance(valid_passage[0],str) else [' '.join(p) for p in valid_passage]
-        
+        gt_passage = (
+            valid_passage
+            if isinstance(valid_passage[0], str)
+            else [" ".join(p) for p in valid_passage]
+        )
+
         overlap = word_overlap(gt_passage, generated_sequences)
         metrics["Overlap"][temp] = {
             "n_samples": n_passages,
@@ -626,8 +710,6 @@ def evaluate_reconstruction_model(
     ) as f:
         json.dump(metrics, f)
 
-
-
     with open(
         output_file,
         "r",
@@ -644,7 +726,6 @@ def evaluate_reconstruction_model(
                 str(temp): [] for temp in temperatures
             }
 
-
     for benchmark in metrics.keys():
         for temp in metrics[benchmark].keys():
             overall_results[run_name][str(ckpt)][benchmark][temp].append(
@@ -656,8 +737,9 @@ def evaluate_reconstruction_model(
         "w",
     ) as f:
         json.dump(overall_results, f)
-        
+
     return pipeline, ckpt
+
 
 def arg_parser():
     parser = argparse.ArgumentParser()
@@ -666,129 +748,129 @@ def arg_parser():
         type=str,
         default=None,
     )
-    parser.add_argument('--eval_reconstruction', action='store_true')
-    parser.add_argument('--out_file', type=str, default=None)
-    parser.add_argument('--n_passages', type=int, default=500)
-    parser.add_argument('--max_seq_len', type=int, default=128)
-    parser.add_argument('--bs', type=int, default=4)
-    parser.add_argument('--mistral', action='store_true')
-    parser.add_argument('--wo_embeds', action='store_false')
-    parser.add_argument('--multi_passages', type=int, default=1)
-    
+    parser.add_argument("--eval_reconstruction", action="store_true")
+    parser.add_argument("--out_file", type=str, default=None)
+    parser.add_argument("--n_passages", type=int, default=500)
+    parser.add_argument("--max_seq_len", type=int, default=128)
+    parser.add_argument("--bs", type=int, default=4)
+    parser.add_argument("--mistral", action="store_true")
+    parser.add_argument("--wo_embeds", action="store_false")
+    parser.add_argument("--multi_passages", type=int, default=1)
+
     return parser.parse_args()
 
+
 if __name__ == "__main__":
-    
+
     icl_tests = [0, 2, 5]
     temp_tests = [0, 0.5]
 
     args = arg_parser()
-    
+
     ensure_reproducibility(29)
-    
-    
-    output_file = "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/eval_QA_mistral_wsplit.json" if args.out_file is None else args.out_file
+
+    output_file = (
+        "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/eval_QA_mistral_wsplit.json"
+        if args.out_file is None
+        else args.out_file
+    )
     tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-    
-        
+
     if not os.path.exists(output_file):
         with open(output_file, "w") as f:
             json.dump({}, f)
-        
+
     max_seq_len = args.max_seq_len
     n_passages = args.n_passages
-    
-    
-    
-   
+
     if args.mistral:
-        assert not args.eval_reconstruction, "Cannot evaluate reconstruction with Mistral"
-        print('EVALUATING WITHOUT CONTEXT')
-        mistral_model =  evaluate_QA(
-                        '',
-                        ["NQ","TRIVIAQA"],
-                        temps=temp_tests,
-                        max_bs = args.bs,
-                        output_file=output_file,
-                        n_samples=n_passages,
-                        max_seq_len=max_seq_len,
-                        tmp_path=tmp_path,
-                        icl_examples=icl_tests[0],
-                        mistral = True,
-                        doc_w_context=False,
-                        w_embeds = False,
-                    )
+        assert (
+            not args.eval_reconstruction
+        ), "Cannot evaluate reconstruction with Mistral"
+        print("EVALUATING WITHOUT CONTEXT")
+        mistral_model = evaluate_QA(
+            "",
+            ["NQ", "TRIVIAQA"],
+            temps=temp_tests,
+            max_bs=args.bs,
+            output_file=output_file,
+            n_samples=n_passages,
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            icl_examples=icl_tests[0],
+            mistral=True,
+            doc_w_context=False,
+            w_embeds=False,
+        )
         torch.cuda.empty_cache()
-        print('EVALUATING WITH CONTEXT')
-        mistral_model =  evaluate_QA(
-                        '',
-                        ["NQ","TRIVIAQA"],
-                        temps=temp_tests,
-                        max_bs = args.bs,
-                        output_file=output_file,
-                        n_samples=n_passages,
-                        max_seq_len=max_seq_len,
-                        tmp_path=tmp_path,
-                        icl_examples=icl_tests[0],
-                        mistral = True,
-                        doc_w_context=True,
-                        w_embeds = False,
-                        pipeline = mistral_model,
-                    )
+        print("EVALUATING WITH CONTEXT")
+        mistral_model = evaluate_QA(
+            "",
+            ["NQ", "TRIVIAQA"],
+            temps=temp_tests,
+            max_bs=args.bs,
+            output_file=output_file,
+            n_samples=n_passages,
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            icl_examples=icl_tests[0],
+            mistral=True,
+            doc_w_context=True,
+            w_embeds=False,
+            pipeline=mistral_model,
+        )
         torch.cuda.empty_cache()
-       
-    
-       
+
         for icl_ex in icl_tests[1:]:
-            print('EVALUATING WITHOUT CONTEXT')
+            print("EVALUATING WITHOUT CONTEXT")
             mistral_model = evaluate_QA(
-                    '',
-                    ["NQ","TRIVIAQA"],
-                    temps=temp_tests,
-                    max_bs = args.bs,
-                    output_file=output_file,
-                    n_samples=n_passages,
-                    max_seq_len=max_seq_len,
-                    tmp_path=tmp_path,
-                    icl_examples=icl_ex,
-                    pipeline=mistral_model,
-                    mistral = True,
-                    doc_w_context=False,
-                    w_embeds = False,
-                    mistral_model = mistral_model,
-                )
+                "",
+                ["NQ", "TRIVIAQA"],
+                temps=temp_tests,
+                max_bs=args.bs,
+                output_file=output_file,
+                n_samples=n_passages,
+                max_seq_len=max_seq_len,
+                tmp_path=tmp_path,
+                icl_examples=icl_ex,
+                pipeline=mistral_model,
+                mistral=True,
+                doc_w_context=False,
+                w_embeds=False,
+                mistral_model=mistral_model,
+            )
             torch.cuda.empty_cache()
-            print('EVALUATING WITH CONTEXT')
+            print("EVALUATING WITH CONTEXT")
             mistral_model = evaluate_QA(
-                    '',
-                    ["NQ","TRIVIAQA"],
-                    temps=temp_tests,
-                    max_bs = args.bs,
-                    output_file=output_file,
-                    n_samples=n_passages,
-                    max_seq_len=max_seq_len,
-                    tmp_path=tmp_path,
-                    icl_examples=icl_ex,
-                    pipeline=mistral_model,
-                    mistral = True,
-                    doc_w_context=True,
-                    w_embeds = False,
-                    mistral_model = mistral_model,
-                )
+                "",
+                ["NQ", "TRIVIAQA"],
+                temps=temp_tests,
+                max_bs=args.bs,
+                output_file=output_file,
+                n_samples=n_passages,
+                max_seq_len=max_seq_len,
+                tmp_path=tmp_path,
+                icl_examples=icl_ex,
+                pipeline=mistral_model,
+                mistral=True,
+                doc_w_context=True,
+                w_embeds=False,
+                mistral_model=mistral_model,
+            )
             torch.cuda.empty_cache()
-        
+
     else:
         if args.eval_reconstruction:
             if args.multi_passages > 1:
                 pipeline, ckpt = evaluate_reconstruction_model(
-                args.run_name,
-                output_file=output_file,
-                temperatures=temp_tests,
-                max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
-                n_passages=n_passages,
-                max_multi_passage=args.multi_passages,
-            )
+                    args.run_name,
+                    output_file=output_file,
+                    temperatures=temp_tests,
+                    max_seq_len=max_seq_len,
+                    tmp_path=tmp_path,
+                    n_passages=n_passages,
+                    max_multi_passage=args.multi_passages,
+                )
                 torch.cuda.empty_cache()
             else:
                 print("Standard Dump")
@@ -800,7 +882,7 @@ if __name__ == "__main__":
                     tmp_path=tmp_path,
                     eval_data_type="standard_dump",
                     n_passages=n_passages,
-                )  
+                )
                 torch.cuda.empty_cache()
                 print("Atlas")
                 pipeline, ckpt = evaluate_reconstruction_model(
@@ -815,81 +897,76 @@ if __name__ == "__main__":
                     n_passages=n_passages,
                 )
                 torch.cuda.empty_cache()
-            
-            
+
         pipeline, ckpt = evaluate_QA(
             args.run_name,
-             ["NQ","TRIVIAQA"],
-            temps = temp_tests,
-            max_bs = args.bs,
+            ["NQ", "TRIVIAQA"],
+            temps=temp_tests,
+            max_bs=args.bs,
             output_file=output_file,
             n_samples=n_passages,
             max_seq_len=max_seq_len,
             tmp_path=tmp_path,
             icl_examples=icl_tests[0],
             w_embeds=args.wo_embeds,
-            doc_w_context = False,
+            doc_w_context=False,
             max_multi_passage=args.multi_passages,
         )
-        
-                    
+
         pipeline, ckpt = evaluate_QA(
             args.run_name,
-             ["NQ","TRIVIAQA"],
-            temps = temp_tests,
-            max_bs = args.bs,
+            ["NQ", "TRIVIAQA"],
+            temps=temp_tests,
+            max_bs=args.bs,
             output_file=output_file,
             n_samples=n_passages,
             max_seq_len=max_seq_len,
             tmp_path=tmp_path,
             icl_examples=icl_tests[0],
             w_embeds=args.wo_embeds,
-            doc_w_context = True,
+            doc_w_context=True,
             pipeline=pipeline,
             ckpt=ckpt,
             max_multi_passage=args.multi_passages,
         )
-        
+
         for icl_ex in icl_tests[1:]:
             pipeline, ckpt = evaluate_QA(
                 args.run_name,
-                 ["NQ","TRIVIAQA"],
-                temps = temp_tests,
-                max_bs = args.bs,
+                ["NQ", "TRIVIAQA"],
+                temps=temp_tests,
+                max_bs=args.bs,
                 output_file=output_file,
                 n_samples=n_passages,
                 max_seq_len=max_seq_len,
                 tmp_path=tmp_path,
                 icl_examples=icl_ex,
                 w_embeds=args.wo_embeds,
-                doc_w_context = False,
+                doc_w_context=False,
                 pipeline=pipeline,
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
             )
-            
+
             pipeline, ckpt = evaluate_QA(
                 args.run_name,
-                 ["NQ","TRIVIAQA"],
-                temps = temp_tests,
-                max_bs = args.bs,
+                ["NQ", "TRIVIAQA"],
+                temps=temp_tests,
+                max_bs=args.bs,
                 output_file=output_file,
                 n_samples=n_passages,
                 max_seq_len=max_seq_len,
                 tmp_path=tmp_path,
                 icl_examples=icl_ex,
                 w_embeds=args.wo_embeds,
-                doc_w_context = True,
+                doc_w_context=True,
                 pipeline=pipeline,
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
             )
-        
-    
-  
 
     # for run_name in ['nopref_pretrain_nollm_trained_cont_singpassage_5darr64']:
-        
+
     #     pipeline, ckpt = evaluate_QA(
     #         run_name,
     #          ["NQ","TRIVIAQA"],
@@ -903,7 +980,7 @@ if __name__ == "__main__":
     #         w_embeds=False,
     #         doc_w_context = False,
     #     )
-        
+
     #     pipeline, ckpt = evaluate_QA(
     #         run_name,
     #         ["NQ","TRIVIAQA"],
@@ -917,7 +994,7 @@ if __name__ == "__main__":
     #         w_embeds = False,
     #         doc_w_context = False,
     #     )
-        
+
     #     pipeline, ckpt = evaluate_QA(
     #         run_name,
     #         ["NQ","TRIVIAQA"],
@@ -933,51 +1010,51 @@ if __name__ == "__main__":
     #         w_embeds = False,
     #         doc_w_context = False,
     #     )
-        
+
     #     torch.cuda.empty_cache()
     #     print("Finished run Mistral no RAG")
-        
-        # pipeline, ckpt = evaluate_QA(
-        #     run_name,
-        #      ["NQ","TRIVIAQA"],
-        #     temps=[0, 0.5],
-        #     max_bs = args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=0,
-        #     w_embeds=False,
-        # )
-        
-        # pipeline, ckpt = evaluate_QA(
-        #     run_name,
-        #     ["NQ","TRIVIAQA"],
-        #     temps=[0, 0.5],
-        #     max_bs = args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=2,
-        #     w_embeds = False,
-        # )
-        
-        # torch.cuda.empty_cache()
-        # pipeline, ckpt = evaluate_QA(
-        #     run_name,
-        #     ["NQ","TRIVIAQA"],
-        #     temps=[0, 0.5],
-        #     max_bs = args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=5,
-        #     pipeline=pipeline,
-        #     ckpt=ckpt,
-        #     w_embeds = False,
-        # )
-        
-        # torch.cuda.empty_cache()
-        # print("Finished run Mistral RAG")
+
+    # pipeline, ckpt = evaluate_QA(
+    #     run_name,
+    #      ["NQ","TRIVIAQA"],
+    #     temps=[0, 0.5],
+    #     max_bs = args.bs,
+    #     output_file=output_file,
+    #     n_samples=n_passages,
+    #     max_seq_len=max_seq_len,
+    #     tmp_path=tmp_path,
+    #     icl_examples=0,
+    #     w_embeds=False,
+    # )
+
+    # pipeline, ckpt = evaluate_QA(
+    #     run_name,
+    #     ["NQ","TRIVIAQA"],
+    #     temps=[0, 0.5],
+    #     max_bs = args.bs,
+    #     output_file=output_file,
+    #     n_samples=n_passages,
+    #     max_seq_len=max_seq_len,
+    #     tmp_path=tmp_path,
+    #     icl_examples=2,
+    #     w_embeds = False,
+    # )
+
+    # torch.cuda.empty_cache()
+    # pipeline, ckpt = evaluate_QA(
+    #     run_name,
+    #     ["NQ","TRIVIAQA"],
+    #     temps=[0, 0.5],
+    #     max_bs = args.bs,
+    #     output_file=output_file,
+    #     n_samples=n_passages,
+    #     max_seq_len=max_seq_len,
+    #     tmp_path=tmp_path,
+    #     icl_examples=5,
+    #     pipeline=pipeline,
+    #     ckpt=ckpt,
+    #     w_embeds = False,
+    # )
+
+    # torch.cuda.empty_cache()
+    # print("Finished run Mistral RAG")

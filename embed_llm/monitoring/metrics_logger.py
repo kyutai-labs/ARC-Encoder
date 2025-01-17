@@ -90,10 +90,10 @@ def get_eval_logs(
 
     if eval_kl_loss is not None:
         eval_dict["eval_kl_loss"] = eval_kl_loss
-        
+
     if eval_loss_nocontext is not None:
         eval_dict["eval_loss_nocontext"] = eval_loss_nocontext
-        
+
     if eval_perplexity_nocontext is not None:
         eval_dict["eval_perplexity_nocontext"] = eval_perplexity_nocontext
 

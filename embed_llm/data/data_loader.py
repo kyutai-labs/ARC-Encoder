@@ -86,12 +86,12 @@ class Batchlist:
         self.y_mask.append(y_mask)
         if self.data_type is None:
             self.data_type = data_type
-        
+
         if n_prefixes is not None:
             if self.n_prefixes is None:
                 self.n_prefixes = []
             self.n_prefixes.append(n_prefixes)
-            
+
         assert self.data_type == data_type
 
     def empty(self):
@@ -117,13 +117,21 @@ class Batchlist:
 
         y_mask_flatten = self.flatten_to_numpy(self.y_mask, dtype=bool)
         y_mask_np: np.ndarray | None = None if y_mask_flatten.all() else y_mask_flatten
-        
+
         if self.n_prefixes is not None:
             n_prefixes = sum(self.n_prefixes, [])
         else:
             n_prefixes = None
-        
-        return Batch(x_np, y_np, to_embed, sizes, y_mask_np, data_type=self.data_type, n_prefixes=n_prefixes)
+
+        return Batch(
+            x_np,
+            y_np,
+            to_embed,
+            sizes,
+            y_mask_np,
+            data_type=self.data_type,
+            n_prefixes=n_prefixes,
+        )
 
 
 def build_data_loader(
@@ -169,15 +177,14 @@ def build_data_loader(
             batch_list_dict[sample.data_type] = Batchlist()
 
         batch_list = batch_list_dict[sample.data_type]
-        
-        
+
         batch_list.add(
             sample.x,
             sample.y,
             sample.to_embed,
             sample.sizes,
             sample.mask,
-            data_type = sample.data_type,
+            data_type=sample.data_type,
             n_prefixes=getattr(sample, "n_prefixes", None),
         )
 

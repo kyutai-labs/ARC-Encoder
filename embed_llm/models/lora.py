@@ -157,8 +157,7 @@ class LoRALoaderMixin:
         lora_state_dict = {k: v.to(self.device) for k, v in lora_state_dict.items()}
 
         state_dict = self.state_dict()  # type: ignore[attr-defined]
-        
-        
+
         if self.args.lora is None:  # type: ignore[attr-defined]
             print("Loading and merging LoRA weights...")
 

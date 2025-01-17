@@ -95,8 +95,8 @@ class EmbedAugModel(nn.Module):
         self,
         x: torch.Tensor,
         seqlens: list[int],
-        embeddings: torch.Tensor  | None = None,
-        embed_seqlens:  list[list[int]] | None = None,
+        embeddings: torch.Tensor | None = None,
+        embed_seqlens: list[list[int]] | None = None,
         batch_type: str = "reconstruction",
     ) -> torch.Tensor:
 
@@ -134,7 +134,6 @@ class EmbedAugModel(nn.Module):
                     cat_embeddings = embeddings
             else:
                 cat_embeddings = embeddings
-      
 
         return self.llm.forward(
             input_ids=x,
@@ -320,10 +319,11 @@ class EmbedAugPipeline(nn.Module):
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
         )
-        
-       
-        if pipeline_args.trainable_embedder:     
-            assert Path(ckpt_path + "/" + llm_name.lower() + "/trainable_embedder").exists()
+
+        if pipeline_args.trainable_embedder:
+            assert Path(
+                ckpt_path + "/" + llm_name.lower() + "/trainable_embedder"
+            ).exists()
             trainable_embedder_path = (
                 ckpt_path + "/" + llm_name.lower() + "/trainable_embedder"
             )
@@ -371,7 +371,7 @@ class EmbedAugPipeline(nn.Module):
             llm_args.lora = lora
             if pipeline_args.train_only_pooling:
                 llm_args.lora = None
-                
+
             llm_embedder, _, llm_embed_dim = load_llm_model(
                 llm_args=llm_args,
                 pipeline_args=pipeline_args,
@@ -403,7 +403,14 @@ class EmbedAugPipeline(nn.Module):
 
         augmented_pipeline = EmbedAugPipeline(
             pipeline_args=pipeline_args,
-            embed_model_name=embed_model_name if (not pipeline_args.trainable_embedder and not pipeline_args.train_only_pooling) else "llm",
+            embed_model_name=(
+                embed_model_name
+                if (
+                    not pipeline_args.trainable_embedder
+                    and not pipeline_args.train_only_pooling
+                )
+                else "llm"
+            ),
             embedding_model=embedding_model,
             tokenizer=tokenizer,
         )
@@ -414,7 +421,9 @@ class EmbedAugPipeline(nn.Module):
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
 
-        if (pipeline_args.trainable_embedder or pipeline_args.train_only_pooling) and pipeline_args.do_pool:
+        if (
+            pipeline_args.trainable_embedder or pipeline_args.train_only_pooling
+        ) and pipeline_args.do_pool:
             if (
                 pipeline_args.do_pool
                 and "attention" in augmented_pipeline.pipeline_args.pooling_module.type
@@ -459,7 +468,6 @@ class EmbedAugPipeline(nn.Module):
         embed_seqlens: list[int] | None = None,
         **kwargs,
     ):
-  
 
         device_generation = device if device_generation is None else device_generation
 
@@ -468,7 +476,6 @@ class EmbedAugPipeline(nn.Module):
         if isinstance(prompt_post_embed, str):
             prompt_post_embed = [prompt_post_embed]
 
-    
         if text_conditioning is not None:
             if isinstance(text_conditioning, str):
                 text_conditioning = [[text_conditioning]]
@@ -476,17 +483,26 @@ class EmbedAugPipeline(nn.Module):
                 if isinstance(text_conditioning[0], str):
                     text_conditioning = [[text] for text in text_conditioning]
             else:
-                raise ValueError("Text conditioning must be a string or a list of strings")
-            
+                raise ValueError(
+                    "Text conditioning must be a string or a list of strings"
+                )
+
         if text_conditioning is None:
             w_embeds = False
         else:
             w_embeds = self.pipeline_args.w_embeds
 
-        if w_embeds and (not self.pipeline_args.trainable_embedder and not self.pipeline_args.train_only_pooling):
+        if w_embeds and (
+            not self.pipeline_args.trainable_embedder
+            and not self.pipeline_args.train_only_pooling
+        ):
             if self.pipeline_args.cross_att and not self.pipeline_args.do_pool:
                 embeddings, embed_seqlens = encode_text(
-                    sum(text_conditioning, []) if isinstance(text_conditioning,list) else text_conditioning,
+                    (
+                        sum(text_conditioning, [])
+                        if isinstance(text_conditioning, list)
+                        else text_conditioning
+                    ),
                     self.embed_model_name,
                     self.embedding_model,
                     query_embedding=False,
@@ -495,7 +511,11 @@ class EmbedAugPipeline(nn.Module):
                 )
             else:
                 embeddings = encode_text(
-                    sum(text_conditioning, []) if isinstance(text_conditioning,list) else text_conditioning,
+                    (
+                        sum(text_conditioning, [])
+                        if isinstance(text_conditioning, list)
+                        else text_conditioning
+                    ),
                     self.embed_model_name,
                     self.embedding_model,
                     query_embedding=False,
@@ -503,11 +523,15 @@ class EmbedAugPipeline(nn.Module):
                 )
                 embed_seqlens = [len(l_text) for l_text in text_conditioning]
 
-        elif w_embeds and (self.pipeline_args.trainable_embedder or self.pipeline_args.train_only_pooling):
-            
+        elif w_embeds and (
+            self.pipeline_args.trainable_embedder
+            or self.pipeline_args.train_only_pooling
+        ):
+
             x = [
                 self.tokenizer.encode(text, bos=True, eos=True)
-                for l_text in text_conditioning for text in l_text
+                for l_text in text_conditioning
+                for text in l_text
             ]
             seqlens = [len(tokens) for tokens in x]
             x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
@@ -608,6 +632,6 @@ class EmbedAugPipeline(nn.Module):
             final_texts = produced_text
 
         if kwargs.get("return_embeddings", False):
-            return final_texts,  embeddings
+            return final_texts, embeddings
 
         return final_texts

@@ -45,8 +45,7 @@ def evaluate(
 
     # eval mode!
     model.eval()
-    
-    
+
     if batches_cont is not None:
         eval_loss_textcont = torch.tensor(0.0).cuda()
         eval_loss_embcont = torch.tensor(0.0).cuda()
@@ -71,7 +70,9 @@ def evaluate(
                 output_rec_on_cont = model.forward(
                     x=x, embeddings=None, seqlens=seqlens
                 )
-                eval_loss_nocontext += compute_ce_loss_with_mask(output_rec_on_cont, y, None)
+                eval_loss_nocontext += compute_ce_loss_with_mask(
+                    output_rec_on_cont, y, None
+                )
                 input_ids = []
                 ground_truth = []
                 seqlens = []
@@ -84,7 +85,6 @@ def evaluate(
                     test_embed.extend(to_embed["tokens"][0])
                     test_x.extend(batch.x[ind : ind + size])
                     input_ids.extend(batch.x[ind : ind + size])
-   
 
                     ground_truth.extend(to_embed["tokens"][0])
                     ground_truth.extend(batch.y[ind : ind + size])
@@ -93,12 +93,21 @@ def evaluate(
                     mask.extend([False] * len(to_embed["tokens"][0]))
                     mask.extend([True] * size)
                     # Trainable Embedder
-     
-                assert sum(seqlens) == len(input_ids), f"Seqlens {sum(seqlens)} and input_ids {len(input_ids)} should be the same"
-                assert sum(mask) == len(output), f"Mask {sum(mask)} and output {len(output)} should be the same"
-                assert torch.equal(torch.tensor(torch.from_numpy(np.array(test_embed))).cuda(), embeddings), "Input ids should be the same"
-                assert torch.equal(torch.tensor(torch.from_numpy(np.array(test_x))).cuda(), x), "Input ids should be the same"
-                
+
+                assert sum(seqlens) == len(
+                    input_ids
+                ), f"Seqlens {sum(seqlens)} and input_ids {len(input_ids)} should be the same"
+                assert sum(mask) == len(
+                    output
+                ), f"Mask {sum(mask)} and output {len(output)} should be the same"
+                assert torch.equal(
+                    torch.tensor(torch.from_numpy(np.array(test_embed))).cuda(),
+                    embeddings,
+                ), "Input ids should be the same"
+                assert torch.equal(
+                    torch.tensor(torch.from_numpy(np.array(test_x))).cuda(), x
+                ), "Input ids should be the same"
+
                 input_ids = torch.from_numpy(np.array(input_ids)).cuda(
                     non_blocking=True
                 )
@@ -106,7 +115,9 @@ def evaluate(
                 ground_truth = torch.from_numpy(np.array(ground_truth)).cuda(
                     non_blocking=True
                 )
-                assert torch.equal(torch.masked_select(ground_truth,mask),y), "Ground truth and mask should be the same"
+                assert torch.equal(
+                    torch.masked_select(ground_truth, mask), y
+                ), "Ground truth and mask should be the same"
                 output_wo_embed = model.forward(
                     x=input_ids, embeddings=None, seqlens=seqlens
                 )
@@ -182,10 +193,6 @@ def evaluate(
                 assert (
                     batch.is_pad_only or y.abs().sum() != 0
                 ), "Pad sample is used to compute loss."
-
-   
-                
-
 
     # sum loss
     main_logger_info("Eval finished!")
