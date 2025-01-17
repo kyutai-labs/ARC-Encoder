@@ -428,6 +428,7 @@ def _train(
 
             # start_time = time.time()
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
+            
             if args.textual_continuation * args.continuation > 0.0 or (args.hybrid_task.prop_noembed_continuation > 0.0 and args.hybrid_task.do):
                 rand_noembed_continuation = (
                     torch.rand(1).cuda()
@@ -458,8 +459,8 @@ def _train(
                     batch.data_type = "textual_continuation"
                     embeddings = None
                 
-                if rand_noembed_continuation < args.hybrid_task.prop_noembed_continuation and args.hybrid_task.do:
-                    if batch.data_type == "continuation" or batch.data_type == 'one_4_all':
+                elif rand_noembed_continuation < args.hybrid_task.prop_noembed_continuation and args.hybrid_task.do:
+                    if batch.data_type == "continuation":
                         x = []
                         y = []
                         seqlens = []
@@ -479,20 +480,18 @@ def _train(
                         y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
                         y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
                         batch.data_type = "noembed_continuation"
-                        embeddings = None
+
+                
                         
                     elif batch.data_type == "reconstruction" :
                         x = []
                         y = []
                         seqlens = []
                         y_mask = []
-                        ind = 0
                         for to_embed, size, n_prefix in zip(batch.to_embed, batch.sizes, batch.n_prefixes):
                             x.extend(to_embed["tokens"][0])
                             y.extend(to_embed["tokens"][0])
                             seqlens.append(len(to_embed["tokens"][0]))
-                            ind += size
-            
                             y_mask.extend([False] * (len(to_embed["tokens"][0])//2))
                             y_mask.extend([True] * (len(to_embed["tokens"][0]) - len(to_embed["tokens"][0])//2))
                         x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
@@ -500,6 +499,25 @@ def _train(
                         y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
                         batch.data_type = "noembed_reconstruction"
                         embeddings = None
+                    
+                    elif batch.data_type == 'one_4_all':
+                        x = []
+                        y = []
+                        seqlens = []
+                        y_mask = []
+                        ind = 0
+                        for to_embed, size, n_prefix in zip(batch.to_embed, batch.sizes, batch.n_prefixes):
+                            tokens = sum(to_embed["tokens"], [])
+                            x.extend(tokens[:-1])
+                            y.extend(tokens[1:])
+                            seqlens.append(len(tokens) - 1)
+                            y_mask.extend([False] * ((len(tokens) - 1)//2) + [True] * (len(tokens) - 1 - ((len(tokens) - 1)//2)))
+                            
+
+                        x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
+                        y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
+                        y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
+                        batch.data_type = "noembed_continuation"
 
                     else: # text continuation where the sample is not helpful
                         batch.data_type = "noembed_reconstruction"

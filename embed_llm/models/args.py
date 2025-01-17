@@ -27,7 +27,6 @@ class MLPProjectArgs(Serializable):
 
 @dataclass
 class EmbedAugArgs(Serializable):
-    w_embeds: bool = False
     mlp_project: MLPProjectArgs = field(default_factory=MLPProjectArgs)
     param_dtype: torch.dtype = torch.float32
     embedder_name: str = "NVEmbed"
@@ -36,18 +35,23 @@ class EmbedAugArgs(Serializable):
     n_truncated_layers: int = 8
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
     shared_kv: bool = True
-    cross_att: bool = False
-    cross_att_layers: int | None = None
-    pooled_cross_att: bool = False
-    every_cross_att: int | None = None
-    do_both: bool = False
     trainable_llm: bool = True
     w_prefix_prompt: bool = False
     max_seq_len: int = 256
     gate_bottleneck: int = 8
     
+    # Could be simplified
+    cross_att: bool = False
+    cross_att_layers: int | None = None
+    pooled_cross_att: bool = False
+    every_cross_att: int | None = None
+    do_both: bool = False
+    w_embeds: bool = False
+    
+    
     # Remove later
     do_pool: bool = False
+    
     
 
 

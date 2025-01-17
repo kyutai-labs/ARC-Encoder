@@ -341,7 +341,7 @@ def sequence_iterator_one_task_4_all(
     seq_len: int,
     tokenizer: Tokenizer,
     n_prefixes: list[int],
-    max_embeds: int = 0,
+    max_embeds: int = 1,
 ) -> SequenceEmbedMaskAndSizes:
     assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
 
@@ -352,8 +352,8 @@ def sequence_iterator_one_task_4_all(
 
     while cur_pos < len(x):
         
-        if len(x) - cur_pos >= (max_embeds + 1) * seq_len - 10:
-            if max_embeds == 0:
+        if len(x) - cur_pos >= max_embeds * seq_len - 10:
+            if max_embeds == 1:
                 to_embed_buffer.append(
                     {
                         "text": [tokenizer.decode(tokens[cur_pos:cur_pos + seq_len])],
@@ -380,7 +380,7 @@ def sequence_iterator_one_task_4_all(
                 end_embed = n_embed_toks
         
 
-            start_lm = np.random.randint(0, end_embed - 10)
+            start_lm = np.random.randint(1, end_embed - 10)
             n_prefixes.append(end_embed - start_lm)
             x_buffer.extend(x[start_lm + cur_pos: start_lm + cur_pos + seq_len])   
             y_buffer.extend(y[start_lm + cur_pos: start_lm + cur_pos + seq_len])
@@ -390,7 +390,7 @@ def sequence_iterator_one_task_4_all(
             cur_pos += start_lm + size
             
         # If not enought to put seqlen in both embedding and x, split the rest in two parts
-        elif max_embeds == 0 and (len(x) - cur_pos)//2 > 10: # 10 of prefix + minimum 2 tokens to continue
+        elif max_embeds == 1 and (len(x) - cur_pos)//2 > 10: # 10 of prefix + minimum 2 tokens to continue
             end_embed = (len(x) - cur_pos)//2
             to_embed_buffer.append(
                 {
@@ -399,7 +399,7 @@ def sequence_iterator_one_task_4_all(
                 }
             )
             
-            start_lm = np.random.randint(0, end_embed - 10)
+            start_lm = np.random.randint(1, end_embed - 10)
             n_prefixes.append(end_embed - start_lm)
             x_buffer.extend(x[start_lm + cur_pos:])   
             y_buffer.extend(y[start_lm + cur_pos:])
@@ -407,8 +407,8 @@ def sequence_iterator_one_task_4_all(
             size = len(x[start_lm + cur_pos:])
             sizes.append(size)
             cur_pos += start_lm + size
-        
-        elif max_embeds > 0 and (len(x) - cur_pos) > 12 and (len(x) - cur_pos - 2)//max_embeds > 0 : 
+
+        elif max_embeds > 1 and (len(x) - cur_pos) > 12 and (len(x) - cur_pos - 2)//max_embeds > 0 : 
             # 10 of prefix + minimum 2 tokens to continue
             nb_embed = np.random.randint(1, max_embeds + 1)
             end_embed = len(x) - cur_pos - 2
@@ -431,24 +431,24 @@ def sequence_iterator_one_task_4_all(
             # In case there is a rest to the euclidean div
             end_embed = n_embed_toks
         
-            start_lm = np.random.randint(0, end_embed - 10)
+            start_lm = np.random.randint(1, end_embed - 10)
             n_prefixes.append(end_embed - start_lm)
-            x_buffer.extend(x[start_lm + cur_pos:])   
-            y_buffer.extend(y[start_lm + cur_pos:])
-            mask_buffer.extend(mask[start_lm + cur_pos :])
-            size = len(x[start_lm + cur_pos :])
+            x_buffer.extend(x[start_lm + cur_pos:start_lm + cur_pos + seq_len])   
+            y_buffer.extend(y[start_lm + cur_pos:start_lm + cur_pos + seq_len])
+            mask_buffer.extend(mask[start_lm + cur_pos :start_lm + cur_pos + seq_len])
+            size = len(x[start_lm + cur_pos :start_lm + cur_pos + seq_len])
             sizes.append(size)
             cur_pos += start_lm + size
-        
+
         else:
             return None
             
 
 
-        assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
-        assert len(x_buffer) <= seq_len
-        assert sum(sizes) <= seq_len
-        assert len(to_embed_buffer) == len(sizes)
+        assert len(mask_buffer) == len(x_buffer) == len(y_buffer), f'{len(mask_buffer)} == {len(x_buffer)} == {len(y_buffer)}'
+        assert len(x_buffer) <= seq_len, f'{len(x_buffer)} <= {seq_len}'
+        assert sum(sizes) <= seq_len, f'{sum(sizes)} <= {seq_len}'
+        assert len(to_embed_buffer) == len(sizes), f'{len(to_embed_buffer)} == {len(sizes)}'
         
         # we don't want to yield sequences with a mask filled with False
         if any(mask_buffer):
@@ -459,6 +459,7 @@ def sequence_iterator_one_task_4_all(
                 mask=mask_buffer,
                 sizes=sizes,
                 data_type='one_4_all',
+                n_prefixes = n_prefixes,
             )
         else:
             return None 

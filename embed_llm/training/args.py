@@ -59,7 +59,7 @@ class HybridTask(Serializable):
     prop_uselessembed_continuation: float = 0.0
     # Real hybrid task
     one_task_4_all: bool = True
-    max_embeds: int = 0 # Works only with one_task_4_all=True
+    max_embeds: int = 1 # Works only with one_task_4_all=True
 
 
 @dataclass
