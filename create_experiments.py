@@ -35,11 +35,9 @@ def main(args):
     if args.train_embedder:
         config["pipeline"]["embedder_name"] = args.llm_name
         config["pipeline"]["trainable_embedder"] = True
-        config["pipeline"]["causal"] = args.causal
         config["pipeline"]["pooling_module"]["type"] = args.pooling
 
     else:
-        # del config["pipeline"]["causal"]
         del config["pipeline"]["pooling_module"]
         
     if args.do_hybrid_task:
@@ -60,8 +58,7 @@ def main(args):
         config["pipeline"]["cross_att_layers"] = args.cross_att_layers
         config["pipeline"]["every_cross_att"] = args.every_cross_att
         config["pipeline"]["pooled_cross_att"] = not args.not_pooled_cross_att
-        if not args.not_do_both:
-            config["pipeline"]["dist_process"] = args.dist_process
+
         if args.mlm:
             config["pipeline"]["mlm"] = args.mlm
 
@@ -94,12 +91,10 @@ def main(args):
         + args.embedder_name
         + str(args.proj_n_layers)
         + str(args.n_truncated_layers)
-        + str(args.causal)
         + str(args.not_cross_att)
         + str(args.cross_att_layers)
         + str(args.shared_kv)
         + str(args.not_do_both)
-        + str(args.dist_process)
         + str(args.every_cross_att)
         + str(args.mlm)
         + str(args.continuation)
@@ -240,11 +235,6 @@ def arg_parser():
         help="Number of truncated layers to extract embedding",
     )
 
-    parser.add_argument(
-        "--causal",
-        action="store_true",
-        help="Whether to use a causal embedder",
-    )
 
     parser.add_argument(
         "--continuation",
@@ -281,11 +271,6 @@ def arg_parser():
         help="Whether to both cross-attended and concatenated embeddings",
     )
 
-    parser.add_argument(
-        "--dist_process",
-        action="store_true",
-        help="Whether to distinctively process embeddings",
-    )
 
     parser.add_argument(
         "--every_cross_att",

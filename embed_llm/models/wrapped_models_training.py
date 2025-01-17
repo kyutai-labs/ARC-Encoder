@@ -72,7 +72,9 @@ def load_training_model(
         assert (
             train_args.textual_continuation == 0.0
         ), "Continuation must be 0 for hybrid task"
-
+        if train_args.hybrid_task.max_embeds > 1:
+            assert not train_args.pipeline.pooled_cross_att, "If using several embeddings can't used pooled cross att"
+            
     llm_args, pipeline_args = load_args(
         folder,
         lora,

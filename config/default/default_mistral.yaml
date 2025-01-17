@@ -20,7 +20,6 @@ pipeline:
   embedder_name: Mistral7B
   trainable_embedder: true
   n_truncated_layers: 8
-  normalize_embeddings: true
   do_pool: true
   cross_att: true
   cross_att_layers: null

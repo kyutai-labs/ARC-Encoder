@@ -527,6 +527,7 @@ def _train(
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
 
+  
             output = model.forward(
                 x=x,
                 embeddings=embeddings,

@@ -352,7 +352,7 @@ def sequence_iterator_one_task_4_all(
 
     while cur_pos < len(x):
         
-        if len(x) - cur_pos >= max_embeds * seq_len - 10:
+        if len(x) - cur_pos >= (max_embeds + 1) * seq_len - 10:
             if max_embeds == 1:
                 to_embed_buffer.append(
                     {
@@ -390,7 +390,7 @@ def sequence_iterator_one_task_4_all(
             cur_pos += start_lm + size
             
         # If not enought to put seqlen in both embedding and x, split the rest in two parts
-        elif max_embeds == 1 and (len(x) - cur_pos)//2 > 10: # 10 of prefix + minimum 2 tokens to continue
+        elif max_embeds == 1 and (len(x) - cur_pos)//2 > 10 + 1: 
             end_embed = (len(x) - cur_pos)//2
             to_embed_buffer.append(
                 {
@@ -408,7 +408,7 @@ def sequence_iterator_one_task_4_all(
             sizes.append(size)
             cur_pos += start_lm + size
 
-        elif max_embeds > 1 and (len(x) - cur_pos) > 12 and (len(x) - cur_pos - 2)//max_embeds > 0 : 
+        elif max_embeds > 1 and (len(x) - cur_pos) > 12 + 1 and (len(x) - cur_pos - 2)//max_embeds > 0 : 
             # 10 of prefix + minimum 2 tokens to continue
             nb_embed = np.random.randint(1, max_embeds + 1)
             end_embed = len(x) - cur_pos - 2
