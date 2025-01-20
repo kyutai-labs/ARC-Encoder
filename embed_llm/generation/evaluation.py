@@ -84,7 +84,7 @@ def create_prompt(prefix: str, doc: str | list[str], query: str, wdoc: bool = Tr
     
 
 
-def load_pipeline(run_name: str, tmp_path: str, llm_path: str, device:str, max_bs: int, pipeline: EmbedAugPipeline | Transformer | None = None, mistral: bool = False, max_seq_len: int = 256) -> EmbedAugPipeline | Transformer:
+def load_pipeline(run_name: str, tmp_path: str, llm_path: str, device:str, max_bs: int, pipeline: EmbedAugPipeline | Transformer | None = None, mistral: bool = False, max_seq_len: int = 256, ckpt: int | None = None) -> EmbedAugPipeline | Transformer:
      if not mistral:
         if pipeline is None:
             # Get last checkpoint
@@ -112,6 +112,7 @@ def load_pipeline(run_name: str, tmp_path: str, llm_path: str, device:str, max_b
             print("Evaluating checkpoint", ckpt)
         else:
             pipeline: EmbedAugPipeline = pipeline
+            ckpt = ckpt
 
         if max_seq_len != pipeline.pipeline_args.max_seq_len:
             print(
@@ -1080,97 +1081,102 @@ if __name__ == "__main__":
                 max_multi_passage=args.multi_passages,
             )
 
-    for run_name in ['nopref_pretrain_nollm_trained_cont_singpassage_5darr64']:
+    # for run_name in ['nopref_pretrain_nollm_trained_cont_singpassage_5darr64']:
 
-        pipeline, ckpt = evaluate_QA(
-            run_name,
-            temps= temp_tests,             
-            benchmarks= ["NQ","TRIVIAQA"], 
-            max_bs = args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=0,
-            w_embeds=False,
-            icl_w_context = False,
-        )
+        # pipeline, ckpt = evaluate_QA(
+        #     run_name,
+        #     temps= temp_tests,             
+        #     benchmarks= ["NQ","TRIVIAQA"], 
+        #     max_bs = args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=0,
+        #     w_embeds=False,
+        #     icl_w_context = False,
+        # )
 
-        pipeline, ckpt = evaluate_QA(
-            run_name,
-            temps = temp_tests,
-            benchmarks= ["NQ","TRIVIAQA"], 
-            max_bs = args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=2,
-            w_embeds = False,
-            icl_w_context = False,
-        )
+        # pipeline, ckpt = evaluate_QA(
+        #     run_name,
+        #     temps = temp_tests,
+        #     benchmarks= ["NQ","TRIVIAQA"], 
+        #     max_bs = args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=2,
+        #     w_embeds = False,
+        #     icl_w_context = False,
+        # )
 
-        pipeline, ckpt = evaluate_QA(
-            run_name,
-            temps = temp_tests,
-            benchmarks= ["NQ","TRIVIAQA"], 
-            max_bs = args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=5,
-            pipeline=pipeline,
-            ckpt=ckpt,
-            w_embeds = False,
-            icl_w_context = False,
-        )
+        # pipeline, ckpt = evaluate_QA(
+        #     run_name,
+        #     temps = temp_tests,
+        #     benchmarks= ["NQ","TRIVIAQA"], 
+        #     max_bs = args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=5,
+        #     # pipeline=pipeline,
+        #     # ckpt=ckpt,
+        #     w_embeds = False,
+        #     icl_w_context = False,
+        # )
 
-        torch.cuda.empty_cache()
-        print("Finished run Mistral no RAG")
+        # torch.cuda.empty_cache()
+        # print("Finished run Mistral no RAG")
 
-    pipeline, ckpt = evaluate_QA(
-        run_name,
-         ["NQ","TRIVIAQA"],
-        temps = temp_tests,
-        max_bs = args.bs,
-        output_file=output_file,
-        n_samples=n_passages,
-        max_seq_len=max_seq_len,
-        tmp_path=tmp_path,
-        icl_examples=0,
-        w_embeds=False,
-    )
+        # pipeline, ckpt = evaluate_QA(
+        #     run_name,
+        #     ["NQ","TRIVIAQA"],
+        #     temps = temp_tests,
+        #     max_bs = args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=0,
+        #     w_embeds=False,
+        #     query_w_context = True,
+        # )
 
-    pipeline, ckpt = evaluate_QA(
-        run_name,
-        ["NQ","TRIVIAQA"],
-        temps = temp_tests,
-        max_bs = args.bs,
-        output_file=output_file,
-        n_samples=n_passages,
-        max_seq_len=max_seq_len,
-        tmp_path=tmp_path,
-        icl_examples=2,
-        w_embeds = False,
-    )
+        # pipeline, ckpt = evaluate_QA(
+        #     run_name,
+        #     ["NQ","TRIVIAQA"],
+        #     temps = temp_tests,
+        #     max_bs = args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=2,
+        #     pipeline=pipeline,
+        #     ckpt=ckpt,
+        #     w_embeds = False,
+        #     query_w_context = True,
+        # )
 
-    torch.cuda.empty_cache()
-    pipeline, ckpt = evaluate_QA(
-        run_name,
-        ["NQ","TRIVIAQA"],
-        temps = temp_tests,
-        max_bs = args.bs,
-        output_file=output_file,
-        n_samples=n_passages,
-        max_seq_len=max_seq_len,
-        tmp_path=tmp_path,
-        icl_examples=5,
-        pipeline=pipeline,
-        ckpt=ckpt,
-        w_embeds = False,
-    )
+        # torch.cuda.empty_cache()
+        # pipeline, ckpt = evaluate_QA(
+        #     run_name,
+        #     ["NQ","TRIVIAQA"],
+        #     temps = temp_tests,
+        #     max_bs = args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=5,
+        #     pipeline=pipeline,
+        #     ckpt=ckpt,
+        #     w_embeds = False,
+        #     query_w_context = True,
+        # )
 
-    torch.cuda.empty_cache()
-    print("Finished run Mistral RAG")
+        # torch.cuda.empty_cache()
+        # print("Finished run Mistral RAG")
 

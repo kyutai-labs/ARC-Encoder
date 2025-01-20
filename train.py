@@ -103,7 +103,6 @@ def train(train_config: str | dict, data_config: str = None):
         args: TrainArgs = TrainArgs(**train_params)
         args.optim = OptimArgs(**args.optim)
         args.lora = LoraArgs(**args.lora)
-        args.pipeline = EmbedAugArgs(**args.pipeline)
         args.instruct_tuning = InstructionTuningArgs(**args.instruct_tuning)
 
     else:
@@ -303,7 +302,7 @@ def _train(
             else:
                 eval_batches.append(batch)
 
-        if args.continuation > 0.0 or args.hybrid_task.do:
+        if (args.continuation > 0.0 or args.hybrid_task.do) and not args.instruct_tuning.do:
             eval_data_loader_4cont = build_data_loader(
                 tokenizer=pipeline.tokenizer,
                 args=args.data,

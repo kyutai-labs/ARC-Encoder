@@ -17,10 +17,15 @@ def create_data_args(params_path: str):
     eval_data = ""
     adapt_seq_len = False
     n_datasets = 0
-
     with open(params_path, "r") as f:
         for i, line in enumerate(f):
-            params = json.loads(line)
+            try:
+                if line.strip():
+                    params = json.loads(line)
+                else:
+                    continue
+            except json.JSONDecodeError:
+                print(f"Error in line {i}: {line}")
             if i == 0:
                 adapt_seq_len = params["adapt_seq_len"]
                 data_types = [params["data_types"]]

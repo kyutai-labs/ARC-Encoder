@@ -36,7 +36,7 @@ def encode(
 
 
 def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
-    if "instruct_data" in data_path:
+    if "instruct_data" in data_path.lower() or "qa" in data_path.lower():
 
         question = data["question"]
 
@@ -67,7 +67,7 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
         assert isinstance(question, str), question
 
         # Add question prompt
-        if "QA" in data_path:
+        if "qa" in data_path.lower():
             question = random.choice(templates_for_qa).format(question=question)
 
         q_tokens = tokenizer.encode(question, bos=True, eos=False)

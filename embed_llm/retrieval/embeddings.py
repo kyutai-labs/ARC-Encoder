@@ -7,6 +7,7 @@ import torch
 from tqdm.auto import tqdm
 import json
 import numpy as np
+import pickle
 import argparse
 
 def mean_pooling(model_output, attention_mask):
@@ -120,7 +121,7 @@ def generate_embeddings(
     with open(dataset_path, "r") as f:
         dataset = [json.loads(line) for line in f]
         
-    model = get_pretrained_embedder(model_name)
+    model = get_pretrained_embedder(model_name, device_map="cuda")
     os.makedirs(os.path.join(output_path, model_name), exist_ok=True)
 
     size_partition = len(dataset) // n_gpu
@@ -137,20 +138,22 @@ def generate_embeddings(
         elif i >= end_partition:
             break
         else:
-            for passage in row["text"]:  # All passages must be useful
-                # Truncate passages on the char level to 1024
-                used_texts.append(passage[:1024])
+            # All passages must be useful
+            if len(row['text']) < 20:
+                continue
+            # Truncate passages on the char level to 2048
+            used_texts.append(row['text'][:2048].strip())
     count = 0
     embeddings_array = []
     text_passages = []
     for ind, i in tqdm(enumerate(range(0, len(used_texts), bs))):
         passages = used_texts[i : i + bs]
-        embeddings = encode_text(passages, model_name=model_name, model=model)
+        embeddings = encode_text(passages, model_name=model_name, model=model, query_embedding=False, device="cuda")
         embeddings = (
             F.normalize(embeddings, p=2, dim=1)
             if model_name == "NVEmbed"
             else embeddings
-        )
+        ).detach().cpu().numpy()
 
         text_passages.extend(passages)
         embeddings_array.append(embeddings)
@@ -158,12 +161,13 @@ def generate_embeddings(
         if ind % (checkpoint) == 0 and ind != 0:
             embeddings_array = np.concatenate(embeddings_array, axis=0)
             assert embeddings_array.shape[0] == len(text_passages)
-            np.save(
-                os.path.join(
-                    output_path, model_name, f"{partition}_embeddings_{count}.npy"
-                ),
-                embeddings_array,
-            )
+            with open(os.path.join(
+                    output_path, model_name, f"{partition}_embeddings_{count}.pkl"
+                ), 'wb') as f:
+                np.save(
+                    f,
+                    embeddings_array, allow_pickle=True
+                )
             with open(
                 os.path.join(
                     output_path, model_name, f"{partition}_embeddings_{count}.jsonl"
@@ -178,10 +182,13 @@ def generate_embeddings(
             count += 1
     embeddings_array = np.concatenate(embeddings_array, axis=0)
     assert embeddings_array.shape[0] == len(text_passages)
-    np.save(
-        os.path.join(output_path, model_name, f"{partition}_embeddings_{count}.npy"),
-        embeddings_array,
-    )
+    with open(os.path.join(
+            output_path, model_name, f"{partition}_embeddings_{count}.pkl"
+        ), 'wb') as f:
+        np.save(
+            f,
+            embeddings_array, allow_pickle=True
+        )
     with open(
         os.path.join(output_path, model_name, f"{partition}_embeddings_{count}.jsonl"),
         "w",
@@ -211,7 +218,7 @@ if __name__ == '__main__':
     output_path = args.save_output_path
     data_path = args.data_name_to_load
     bs = args.batch_size
-    output_path = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/NVEmbed"
+    output_path = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/"
     data_path = '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl'
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     generate_embeddings("NVEmbed", output_path, bs, data_path, n_gpu=args.num_gpus, partition=args.partition)
