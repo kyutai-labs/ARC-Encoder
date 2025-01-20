@@ -463,7 +463,7 @@ class EmbedAugPipeline(nn.Module):
         prompt_post_embed: str | list[str] = "",
         max_tokens: int = 100,
         temperature: float = 0.6,
-        truncate_double_space: bool = False,
+        truncate_line: bool = False,
         device_generation: str | None = None,
         embed_seqlens: list[int] | None = None,
         **kwargs,
@@ -624,11 +624,11 @@ class EmbedAugPipeline(nn.Module):
             for i in range(len(generated_tokens))
         ]
 
-        if truncate_double_space:
+        if truncate_line:
             final_texts = []
             for text in produced_text:
-                if "\n\n" in text:
-                    text = text.split("\n\n")[0]
+                if "\n" in text:
+                    text = text.split("\n")[0].strip()
                 final_texts.append(text)
         else:
             final_texts = produced_text

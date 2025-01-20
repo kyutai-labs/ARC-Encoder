@@ -7,7 +7,7 @@ import torch
 from tqdm.auto import tqdm
 import json
 import numpy as np
-
+import argparse
 
 def mean_pooling(model_output, attention_mask):
     # First element of model_output contains all token embeddings
@@ -112,11 +112,14 @@ def generate_embeddings(
     model_name: str,
     output_path: str,
     bs: int,
-    dataset,
+    dataset_path: str,
     n_gpu: int = 1,
     partition: int = 0,
     checkpoint: int = 1000,
 ):
+    with open(dataset_path, "r") as f:
+        dataset = [json.loads(line) for line in f]
+        
     model = get_pretrained_embedder(model_name)
     os.makedirs(os.path.join(output_path, model_name), exist_ok=True)
 
@@ -187,3 +190,29 @@ def generate_embeddings(
             json.dump({"text": passage}, f)
             f.write("\n")
     print("Saving embedding dataset with embeddings to", output_path)
+
+
+def arg_parser():
+    parser = argparse.ArgumentParser(description='Prepare data for training')
+    parser.add_argument('-outpath', '--save_output_path',
+                        type=str,default = None, help='Path to save the output')
+    parser.add_argument('-data_path', '--data_name_to_load',
+                        type=str, default = None, help='Name of the dataset to load')
+    parser.add_argument('-bs', '--batch_size',
+                        type=int, default = 32, help='Batch size for embedding generation')
+    parser.add_argument('-n_gpus', '--num_gpus',type = int, default = 1, help = 'Number of GPUs on which the dataset is split')
+    parser.add_argument('-partition', '--partition',type = int, default = 0, help = 'Partition of the dataset to process')
+    return parser
+
+if __name__ == '__main__':
+    # Create index for different datasets
+    parser = arg_parser()
+    args = parser.parse_args()
+    output_path = args.save_output_path
+    data_path = args.data_name_to_load
+    bs = args.batch_size
+    output_path = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/NVEmbed"
+    data_path = '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl'
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    generate_embeddings("NVEmbed", output_path, bs, data_path, n_gpu=args.num_gpus, partition=args.partition)
+    print("Embeddings generated for NVEmbed")

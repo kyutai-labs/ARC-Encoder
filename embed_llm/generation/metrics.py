@@ -2,72 +2,11 @@ from torcheval.metrics import BLEUScore
 from nltk.translate import meteor_score
 import re
 import string
-import regex
 import numpy as np
 from collections import Counter
-import unicodedata
-import nltk
 
 # nltk.download("wordnet")
 
-
-class SimpleTokenizer(object):
-    ALPHA_NUM = r"[\p{L}\p{N}\p{M}]+"
-    NON_WS = r"[^\p{Z}\p{C}]"
-
-    def __init__(self):
-        """
-        Args:
-            annotators: None or empty set (only tokenizes).
-        """
-        self._regexp = regex.compile(
-            "(%s)|(%s)" % (self.ALPHA_NUM, self.NON_WS),
-            flags=regex.IGNORECASE + regex.UNICODE + regex.MULTILINE,
-        )
-
-    def tokenize(self, text, uncased=False):
-        matches = [m for m in self._regexp.finditer(text)]
-        if uncased:
-            tokens = [m.group().lower() for m in matches]
-        else:
-            tokens = [m.group() for m in matches]
-        return tokens
-
-
-def check_answer(example, tokenizer) -> list[bool]:
-    """Search through all the top docs to see if they have any of the answers."""
-    answers = example["answer"]
-    ctxs = example["passage"]
-
-    hits = []
-
-    for _, text in enumerate(ctxs):
-
-        if text is None:  # cannot find the document for some reason
-            hits.append(False)
-            continue
-
-        hits.append(has_answer(answers, text, tokenizer))
-
-    return hits
-
-
-def _normalize(text):
-    return unicodedata.normalize("NFD", text)
-
-
-def has_answer(answers, text, tokenizer=SimpleTokenizer()) -> bool:
-    """Check if a document contains an answer string."""
-    text = _normalize(text)
-    text = tokenizer.tokenize(text, uncased=True)
-
-    for answer in answers:
-        answer = _normalize(answer)
-        answer = tokenizer.tokenize(answer, uncased=True)
-        for i in range(0, len(text) - len(answer) + 1):
-            if answer == text[i : i + len(answer)]:
-                return True
-    return False
 
 
 def word_overlap(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
@@ -165,6 +104,7 @@ def normalize_answer(s):
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
 
+
 def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
     scores_for_ground_truths = []
     for ground_truth in ground_truths:
@@ -172,48 +112,6 @@ def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
         scores_for_ground_truths.append(score)
     return max(scores_for_ground_truths)
 
-
-def eval_fact_checking(outputs, answers):
-
-    tokenizer = SimpleTokenizer()
-
-    results = []
-    acc_count = 0
-    answer_lengths = []
-    for output, answer in zip(outputs, answers):
-
-        if answer == "False":
-            answer = ["refutes", "no", "false"]
-        if answer == "True":
-            answer = ["supports", "yes", "true"]
-        assert answer == ["refutes", "no", "false"] or answer == [
-            "supports",
-            "yes",
-            "true",
-        ]
-
-        if has_answer(answer, output, tokenizer):
-            acc_count += 1
-            results.append(1.0)
-        else:
-            results.append(0.0)
-
-        answer_lengths.append(len(output.split()))
-
-    acc = round(sum(results) / len(results), 4)
-    return acc, results
-
-
-def get_rougel_score(prediction, ground_truth):
-    from rouge import Rouge
-
-    rouge = Rouge()
-    # no normalization
-    try:
-        scores = rouge.get_scores(prediction, ground_truth, avg=True)
-    except ValueError:  # "Hypothesis is empty."
-        return 0.0
-    return scores["rouge-l"]["f"]
 
 
 def get_f1_score(prediction, ground_truth):
@@ -269,67 +167,175 @@ def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> flo
         return meteor_avg_score / len(ground_truth)
 
 
-def get_unigram_f1(text: str, answers: list[str]) -> float:
-    """Calculate unigram f1 score between the text and reference answers."""
 
-    def _get_unigram_f1(text, answers):
-        if isinstance(answers, str):
-            answers = [answers]
-        norm_pred = normalize_answer(text)
-        norm_answers = [normalize_answer(ans) for ans in answers]
-        common_tokens = [
-            Counter(norm_pred) & Counter(norm_ans) for norm_ans in norm_answers
-        ]
-        num_same = [sum(common.values()) for common in common_tokens]
+# import regex
+# import unicodedata
+# import nltk
 
-        score_list = []
-        for i, num in enumerate(num_same):
-            if num == 0:
-                score_list.append(0.0)
-            else:
-                p = 1.0 * num / len(norm_pred)
-                r = 1.0 * num / len(norm_answers[i])
-                f1 = 2 * p * r / (p + r)
-                score_list.append(f1)
-        return max(score_list)
+# class SimpleTokenizer(object):
+#     ALPHA_NUM = r"[\p{L}\p{N}\p{M}]+"
+#     NON_WS = r"[^\p{Z}\p{C}]"
 
-    unigram_f1 = [_get_unigram_f1(t, a) for t, a in zip(text, answers)]
+#     def __init__(self):
+#         """
+#         Args:
+#             annotators: None or empty set (only tokenizes).
+#         """
+#         self._regexp = regex.compile(
+#             "(%s)|(%s)" % (self.ALPHA_NUM, self.NON_WS),
+#             flags=regex.IGNORECASE + regex.UNICODE + regex.MULTILINE,
+#         )
 
-    return sum(unigram_f1) / len(unigram_f1), unigram_f1
-
-
-def eval_multiple_choice(generated_answers, answers):
-    ret = []
-    assert len(generated_answers) == len(answers)
-    for g_answer, answer in zip(generated_answers, answers):
-        ret.append(float(g_answer == answer))
-    return round(sum(ret) / len(ret), 3), ret
+#     def tokenize(self, text, uncased=False):
+#         matches = [m for m in self._regexp.finditer(text)]
+#         if uncased:
+#             tokens = [m.group().lower() for m in matches]
+#         else:
+#             tokens = [m.group() for m in matches]
+#         return tokens
 
 
-def get_substring_match_score(outputs, answers):
-    """
-    outputs: [string1,string2]
-    answers: [
-                [string1_1,string1_2],
-                [string2_1,string2_2]
-             ]
-    """
-    import numpy as np
+# def check_answer(example, tokenizer) -> list[bool]:
+#     """Search through all the top docs to see if they have any of the answers."""
+#     answers = example["answer"]
+#     ctxs = example["passage"]
 
-    assert len(outputs) == len(answers)
-    if not isinstance(answers[0], list):
-        answers = [[x] for x in answers]
-    substring_match_scores = []
-    answer_lengths = []
-    for output, answer in zip(outputs, answers):
-        if has_answer(answer, output):  # EM evaluation
-            substring_match_scores.append(1.0)
-        else:
-            substring_match_scores.append(0.0)
+#     hits = []
 
-        answer_lengths.append(len(output.split()))
+#     for _, text in enumerate(ctxs):
 
-    substring_match = round(sum(substring_match_scores) / len(outputs), 4)
-    lens = round(np.mean(answer_lengths), 4)
+#         if text is None:  # cannot find the document for some reason
+#             hits.append(False)
+#             continue
 
-    return substring_match, substring_match_scores
+#         hits.append(has_answer(answers, text, tokenizer))
+
+#     return hits
+
+
+# def _normalize(text):
+#     return unicodedata.normalize("NFD", text)
+
+
+# def has_answer(answers, text, tokenizer=SimpleTokenizer()) -> bool:
+#     """Check if a document contains an answer string."""
+#     text = _normalize(text)
+#     text = tokenizer.tokenize(text, uncased=True)
+
+#     for answer in answers:
+#         answer = _normalize(answer)
+#         answer = tokenizer.tokenize(answer, uncased=True)
+#         for i in range(0, len(text) - len(answer) + 1):
+#             if answer == text[i : i + len(answer)]:
+#                 return True
+#     return False
+
+
+# def get_unigram_f1(text: str, answers: list[str]) -> float:
+#     """Calculate unigram f1 score between the text and reference answers."""
+
+#     def _get_unigram_f1(text, answers):
+#         if isinstance(answers, str):
+#             answers = [answers]
+#         norm_pred = normalize_answer(text)
+#         norm_answers = [normalize_answer(ans) for ans in answers]
+#         common_tokens = [
+#             Counter(norm_pred) & Counter(norm_ans) for norm_ans in norm_answers
+#         ]
+#         num_same = [sum(common.values()) for common in common_tokens]
+
+#         score_list = []
+#         for i, num in enumerate(num_same):
+#             if num == 0:
+#                 score_list.append(0.0)
+#             else:
+#                 p = 1.0 * num / len(norm_pred)
+#                 r = 1.0 * num / len(norm_answers[i])
+#                 f1 = 2 * p * r / (p + r)
+#                 score_list.append(f1)
+#         return max(score_list)
+
+#     unigram_f1 = [_get_unigram_f1(t, a) for t, a in zip(text, answers)]
+
+#     return sum(unigram_f1) / len(unigram_f1), unigram_f1
+
+
+# def eval_multiple_choice(generated_answers, answers):
+#     ret = []
+#     assert len(generated_answers) == len(answers)
+#     for g_answer, answer in zip(generated_answers, answers):
+#         ret.append(float(g_answer == answer))
+#     return round(sum(ret) / len(ret), 3), ret
+
+
+# def get_substring_match_score(outputs, answers):
+#     """
+#     outputs: [string1,string2]
+#     answers: [
+#                 [string1_1,string1_2],
+#                 [string2_1,string2_2]
+#              ]
+#     """
+#     import numpy as np
+
+#     assert len(outputs) == len(answers)
+#     if not isinstance(answers[0], list):
+#         answers = [[x] for x in answers]
+#     substring_match_scores = []
+#     answer_lengths = []
+#     for output, answer in zip(outputs, answers):
+#         if has_answer(answer, output):  # EM evaluation
+#             substring_match_scores.append(1.0)
+#         else:
+#             substring_match_scores.append(0.0)
+
+#         answer_lengths.append(len(output.split()))
+
+#     substring_match = round(sum(substring_match_scores) / len(outputs), 4)
+#     lens = round(np.mean(answer_lengths), 4)
+
+#     return substring_match, substring_match_scores
+
+
+
+# def eval_fact_checking(outputs, answers):
+
+#     tokenizer = SimpleTokenizer()
+
+#     results = []
+#     acc_count = 0
+#     answer_lengths = []
+#     for output, answer in zip(outputs, answers):
+
+#         if answer == "False":
+#             answer = ["refutes", "no", "false"]
+#         if answer == "True":
+#             answer = ["supports", "yes", "true"]
+#         assert answer == ["refutes", "no", "false"] or answer == [
+#             "supports",
+#             "yes",
+#             "true",
+#         ]
+
+#         if has_answer(answer, output, tokenizer):
+#             acc_count += 1
+#             results.append(1.0)
+#         else:
+#             results.append(0.0)
+
+#         answer_lengths.append(len(output.split()))
+
+#     acc = round(sum(results) / len(results), 4)
+#     return acc, results
+
+
+# def get_rougel_score(prediction, ground_truth):
+#     from rouge import Rouge
+
+#     rouge = Rouge()
+#     # no normalization
+#     try:
+#         scores = rouge.get_scores(prediction, ground_truth, avg=True)
+#     except ValueError:  # "Hypothesis is empty."
+#         return 0.0
+#     return scores["rouge-l"]["f"]

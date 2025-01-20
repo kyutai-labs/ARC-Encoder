@@ -86,3 +86,4 @@ class Indexer(object):
         self.index_id_to_db_id = np.concatenate(
             (self.index_id_to_db_id, new_ids), axis=0
         )
+

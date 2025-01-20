@@ -176,8 +176,128 @@ def create_similar_passage_ds(
                     logger.info(f"Saved results to {output_path}")
                     passages = []
 
+def retrieved_passage_4QA(
+    path_QA: str,
+    output_path: str,
+    n_retrieved_doc: int,
+    embed_dim: int = 4096,
+    n_subquantizers: int = 8,
+    n_bits: int = 8,
+    indexing_batch_size: int = 1024,
+    pathname_embeddings=r"^/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/NVEmbed/(\d{1,3})_embeddings_(\d{1,2})\.npy$",
+    save_or_load_index: bool = True,
+    model_name: str = "NVEmbed",
+    split: str = "train",
+    batch_size: int = 16,
+):
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    model = get_pretrained_embedder(model_name)
+    index = Indexer(embed_dim, n_subquantizers, n_bits)
+    # index all passages
+    input_paths = glob.glob(pathname_embeddings)
+    input_paths = sorted(input_paths)
+    embeddings_dir = Path(input_paths[0]).parent
+    (embeddings_dir / Path(split)).mkdir(parents=True, exist_ok=True)
+    index_path = embeddings_dir / Path(split) / "index.faiss"
+
+    if save_or_load_index and index_path.exists():
+        index.deserialize_from(embeddings_dir / Path(split))
+    else:
+        logger.info(f"Indexing passages from files {input_paths}")
+        start_time_indexing = time.time()
+        allpassages_ids = index_encoded_data(index, input_paths, indexing_batch_size)
+        with open(embeddings_dir / Path(split) / "allpassages.jsonl", "w") as fout:
+            for passage_id in allpassages_ids:
+                json.dump(passage_id, fout)
+                fout.write("\n")
+
+        logger.info(f"Indexing time: {time.time()-start_time_indexing:.1f} s.")
+        if save_or_load_index:
+            index.serialize(embeddings_dir / Path(split))
+
+
+    total_QA = 0
+    with open(path_QA, "r") as file:
+        for line in file:
+            total_QA += 1
+
+    queries = []
+    answers = []
+    with open(path_QA, "r") as file:
+        for i, line in tqdm(
+            enumerate(file), desc="Retrieving similar passages", total=total_QA
+        ):
+            data = json.loads(line)
+            queries.append(data["question"])
+            answers.append(data["answer"])
+            if len(queries) >= batch_size:
+                
+                embeds = encode_text(
+                    queries,
+                    model_name=model_name,
+                    model=model,
+                    query_embedding=True,
+                    device=model.device,
+                    cross_att=False,
+                )
+                embeds = F.normalize(embeds, p=2, dim=1)
+
+                # get top k results
+                start_time_retrieval = time.time()
+                top_ids_and_scores = index.search_knn(
+                    embeds.cpu().numpy(), n_retrieved_doc
+                )
+                logger.info(
+                    f"Search time: {time.time()-start_time_retrieval:.1f} s."
+                )
+
+                paired_passages = []
+                for (doc_ids, _), query, answer in zip(top_ids_and_scores, queries, answers):
+                    paired_passage = []
+                    doc_ids = [str(doc_id) for doc_id in doc_ids]
+                    with open(
+                        embeddings_dir / Path(split) / "allpassages.jsonl", "r"
+                    ) as fin:
+                        for line in fin:
+                            dict_content = json.loads(line)
+                            id = str(list(dict_content.keys())[0])
+
+                            if id in doc_ids:
+                                paired_passage.append(dict_content[id])
+                                doc_ids.remove(id)
+
+                            if len(doc_ids) == 0:
+                                break
+
+                        paired_passages.append(
+                            {"question": query, "passages": paired_passage, 'answer': answer}
+                        )
+
+                    with open(output_path, "a") as fout:
+                        for entry in paired_passages:
+                            json.dump(entry, fout)
+                            fout.write("\n")
+
+                    logger.info(f"Saved results to {output_path}")
+                    queries = []
+                    answers = []
 
 if __name__ == "__main__":
+    
+    
+    #path =    freebase_qa.jsonl  msmarco_qa.jsonl web_qa.jsonl  wiki_qa_good_answer.jsonl  wiki_qa.jsonl  yahoo_qa.jsonl
+    # '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/commonsense_qa.jsonl'
+    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/eval.jsonl
+    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl
+    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/test.jsonl
+    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/train.jsonl
+    
+    # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA'
+    # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages'
+    
     path = "/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl"
     create_similar_passage_ds(
         path,
@@ -187,7 +307,7 @@ if __name__ == "__main__":
         n_subquantizers=8,
         n_bits=8,
         indexing_batch_size=9984,
-        pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/NVEmbed/*_embeddings_*.pkl",
+        pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
         save_or_load_index=True,
         model_name="NVEmbed",
         split="train",

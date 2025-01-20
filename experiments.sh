@@ -1,10 +1,10 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=3-13 #42
+#SBATCH --array=1,4 #42
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s04dgx20,par2dc5-ai-prd-cl02s01dgx01,par2dc5-ai-prd-cl02s04dgx24,par2dc5-ai-prd-cl02s01dgx09
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s04dgx20,par2dc5-ai-prd-cl02s01dgx01,par2dc5-ai-prd-cl02s04dgx24,par2dc5-ai-prd-cl02s01dgx09,par2dc5-ai-prd-cl02s04dgx11
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
