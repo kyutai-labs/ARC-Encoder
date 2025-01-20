@@ -176,6 +176,7 @@ def create_similar_passage_ds(
                     logger.info(f"Saved results to {output_path}")
                     passages = []
 
+
 def retrieved_passage_4QA(
     path_QA: str,
     output_path: str,
@@ -218,7 +219,6 @@ def retrieved_passage_4QA(
         if save_or_load_index:
             index.serialize(embeddings_dir / Path(split))
 
-
     total_QA = 0
     with open(path_QA, "r") as file:
         for line in file:
@@ -234,7 +234,7 @@ def retrieved_passage_4QA(
             queries.append(data["question"])
             answers.append(data["answer"])
             if len(queries) >= batch_size:
-                
+
                 embeds = encode_text(
                     queries,
                     model_name=model_name,
@@ -250,12 +250,12 @@ def retrieved_passage_4QA(
                 top_ids_and_scores = index.search_knn(
                     embeds.cpu().numpy(), n_retrieved_doc
                 )
-                logger.info(
-                    f"Search time: {time.time()-start_time_retrieval:.1f} s."
-                )
+                logger.info(f"Search time: {time.time()-start_time_retrieval:.1f} s.")
 
                 paired_passages = []
-                for (doc_ids, _), query, answer in zip(top_ids_and_scores, queries, answers):
+                for (doc_ids, _), query, answer in zip(
+                    top_ids_and_scores, queries, answers
+                ):
                     paired_passage = []
                     doc_ids = [str(doc_id) for doc_id in doc_ids]
                     with open(
@@ -273,7 +273,11 @@ def retrieved_passage_4QA(
                                 break
 
                         paired_passages.append(
-                            {"question": query, "passages": paired_passage, 'answer': answer}
+                            {
+                                "question": query,
+                                "passages": paired_passage,
+                                "answer": answer,
+                            }
                         )
 
                     with open(output_path, "a") as fout:
@@ -285,19 +289,19 @@ def retrieved_passage_4QA(
                     queries = []
                     answers = []
 
+
 if __name__ == "__main__":
-    
-    
-    #path =    freebase_qa.jsonl  msmarco_qa.jsonl web_qa.jsonl  wiki_qa_good_answer.jsonl  wiki_qa.jsonl  yahoo_qa.jsonl
+
+    # path =    freebase_qa.jsonl  msmarco_qa.jsonl web_qa.jsonl  wiki_qa_good_answer.jsonl  wiki_qa.jsonl  yahoo_qa.jsonl
     # '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/commonsense_qa.jsonl'
     # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/eval.jsonl
     # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl
     # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/test.jsonl
     # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/train.jsonl
-    
+
     # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA'
     # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages'
-    
+
     path = "/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl"
     create_similar_passage_ds(
         path,

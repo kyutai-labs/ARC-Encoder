@@ -114,8 +114,7 @@ def evaluate(
                 assert torch.equal(
                     torch.masked_select(ground_truth, mask), y
                 ), "Ground truth and mask should be the same"
-                
-                
+
                 output_wo_embed = model.forward(
                     x=input_ids, embeddings=None, seqlens=seqlens
                 )

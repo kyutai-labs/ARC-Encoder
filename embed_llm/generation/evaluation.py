@@ -29,6 +29,7 @@ EVAL_DATA_PATH = {
 
 METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em}
 
+
 # Profiling memory
 def get_gpu_memory():
     command = "nvidia-smi"
@@ -59,33 +60,50 @@ def ensure_reproducibility(seed=42):
 
     # Environment variables
     os.environ["PYTHONHASHSEED"] = str(seed)
-    
-    
-def create_prompt_prefix(queries: list[str], answers: list[str], docs: list[str] | None = None, max_examples: int | None = None) -> tuple[str]:
+
+
+def create_prompt_prefix(
+    queries: list[str],
+    answers: list[str],
+    docs: list[str] | None = None,
+    max_examples: int | None = None,
+) -> tuple[str]:
     max_examples = max_examples if max_examples is not None else len(queries)
-    
+
     prompt = ""
-    
+
     if docs is not None:
         for query, answer, doc, _ in zip(queries, answers, docs, range(max_examples)):
             prompt += f"Document: {doc}\nQuery: {query}\nAnswer: {answer}\n\n"
-    else:       
+    else:
         for query, answer, _ in zip(queries, answers, range(max_examples)):
-            prompt += f"Query: {query}\nAnswer: {answer}\n\n"    
+            prompt += f"Query: {query}\nAnswer: {answer}\n\n"
     return prompt
 
-def create_prompt(prefix: str, doc: str | list[str], query: str, wdoc: bool = True) -> str:
+
+def create_prompt(
+    prefix: str, doc: str | list[str], query: str, wdoc: bool = True
+) -> str:
     if isinstance(doc, list):
         doc = "\n".join(doc)
     if wdoc:
         return prefix + f"Document: {doc}\nQuery: {query}\nAnswer:"
     else:
         return prefix + f"Query: {query}\nAnswer:"
-    
 
 
-def load_pipeline(run_name: str, tmp_path: str, llm_path: str, device:str, max_bs: int, pipeline: EmbedAugPipeline | Transformer | None = None, mistral: bool = False, max_seq_len: int = 256, ckpt: int | None = None) -> EmbedAugPipeline | Transformer:
-     if not mistral:
+def load_pipeline(
+    run_name: str,
+    tmp_path: str,
+    llm_path: str,
+    device: str,
+    max_bs: int,
+    pipeline: EmbedAugPipeline | Transformer | None = None,
+    mistral: bool = False,
+    max_seq_len: int = 256,
+    ckpt: int | None = None,
+) -> EmbedAugPipeline | Transformer:
+    if not mistral:
         if pipeline is None:
             # Get last checkpoint
             last_ckpt = sorted(
@@ -122,20 +140,18 @@ def load_pipeline(run_name: str, tmp_path: str, llm_path: str, device:str, max_b
                 )
             )
         return pipeline, ckpt
-     else:
-         if pipeline is None:
+    else:
+        if pipeline is None:
             mistral_model = Transformer.from_folder(
                 "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/",
                 device=device,
                 max_batch_size=max_bs,
                 dtype=torch.float32,
             )
-         else:
+        else:
             mistral_model = pipeline
 
-
-         return mistral_model, None
-     
+        return mistral_model, None
 
 
 def evaluate_QA(
@@ -157,33 +173,33 @@ def evaluate_QA(
     max_multi_passage: int = 1,
     kilt: bool = False,
 ):
-    
-    
-    """ Load the pipeline and evaluate it on the QA benchmarks"""
-    
+    """Load the pipeline and evaluate it on the QA benchmarks"""
+
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
-    
+
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
-    
-    pipeline, ckpt = load_pipeline(run_name = run_name, tmp_path = tmp_path, llm_path = llm_path, 
-                                   device = device, 
-                                   max_bs = max_bs, 
-                                   pipeline = pipeline, 
-                                   mistral = mistral,
-                                   max_seq_len = max_seq_len)
-    
-    
-    if mistral: 
+
+    pipeline, ckpt = load_pipeline(
+        run_name=run_name,
+        tmp_path=tmp_path,
+        llm_path=llm_path,
+        device=device,
+        max_bs=max_bs,
+        pipeline=pipeline,
+        mistral=mistral,
+        max_seq_len=max_seq_len,
+    )
+
+    if mistral:
         mistral_tokenizer = MistralTokenizer.from_file(
-                "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3"
-            ).instruct_tokenizer.tokenizer
+            "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3"
+        ).instruct_tokenizer.tokenizer
         mistral_model = pipeline
 
     results = {benchmark: {} for benchmark in benchmarks}
 
     # Loading model
 
-   
     device_count = torch.cuda.device_count()
     other_device = torch.device("cuda:1") if device_count > 1 else device
 
@@ -218,36 +234,43 @@ def evaluate_QA(
                     context.append(data["passages"][0].strip())
                 else:
                     context.append(data["passages"][:max_multi_passage])
-        
-        if benchmark == "NQ" and kilt:  
+
+        if benchmark == "NQ" and kilt:
             test_pairs = []
-            with open('/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/pair_NVembed_test_NQ.json', 'r') as f:
-                for i, line in enumerate(f): 
+            with open(
+                "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/pair_NVembed_test_NQ.json",
+                "r",
+            ) as f:
+                for i, line in enumerate(f):
                     test_pairs.append(json.loads(line))
-                    
-            questions = [pair['query'] for pair in test_pairs]
-            answers = [pair['answer'] for pair in test_pairs]
-            context = [pair['doc'] for pair in test_pairs]
+
+            questions = [pair["query"] for pair in test_pairs]
+            answers = [pair["answer"] for pair in test_pairs]
+            context = [pair["doc"] for pair in test_pairs]
 
         c = list(zip(questions, context, answers))
         random.shuffle(c, random=lambda: 0.42)
         questions, context, answers = zip(*c)
 
         print("Evaluation dataset loaded for", benchmark)
-        
+
         if isinstance(context[0], list):
             context = ["\n".join(doc) for doc in context]
-        
+
         if icl_w_context:
-           prompt_prefix = create_prompt_prefix(queries = questions, 
-                                                answers = [answer[0] for answer in answers], 
-                                                docs = context, max_examples=icl_examples)
+            prompt_prefix = create_prompt_prefix(
+                queries=questions,
+                answers=[answer[0] for answer in answers],
+                docs=context,
+                max_examples=icl_examples,
+            )
         else:
-            prompt_prefix = create_prompt_prefix(queries = questions, 
-                                                answers = [answer[0] for answer in answers], 
-                                                docs = None, max_examples=icl_examples)
-        
-        
+            prompt_prefix = create_prompt_prefix(
+                queries=questions,
+                answers=[answer[0] for answer in answers],
+                docs=None,
+                max_examples=icl_examples,
+            )
 
         new_context, new_questions, new_answers = (
             list(context[icl_examples:]),
@@ -258,22 +281,32 @@ def evaluate_QA(
         new_context.reverse()
         new_questions.reverse()
         new_answers.reverse()
-        
+
         for temp in temps:
             generated_sequences = []
             n_samples = len(new_questions) if n_samples is None else n_samples
             for i in trange(0, n_samples, max_bs):
 
                 if w_embeds:
-                    
-                    no_context_prompt = [create_prompt(
-                        prefix = prompt_prefix, doc = '', query = query, wdoc = False
-                    ) for query in new_questions[i : i + max_bs]]
-                    
-                    context_prompt = [create_prompt(
-                        prefix = " answer the question following the examples:\n\n" + prompt_prefix, doc = '', query = query, wdoc = False
-                    ) for query in new_questions[i : i + max_bs]]
-                    
+
+                    no_context_prompt = [
+                        create_prompt(
+                            prefix=prompt_prefix, doc="", query=query, wdoc=False
+                        )
+                        for query in new_questions[i : i + max_bs]
+                    ]
+
+                    context_prompt = [
+                        create_prompt(
+                            prefix=" answer the question following the examples:\n\n"
+                            + prompt_prefix,
+                            doc="",
+                            query=query,
+                            wdoc=False,
+                        )
+                        for query in new_questions[i : i + max_bs]
+                    ]
+
                 else:
                     if query_w_context:
 
@@ -282,7 +315,7 @@ def evaluate_QA(
                                 prefix=prompt_prefix,
                                 doc=doc,
                                 query=query,
-                                wdoc= True,
+                                wdoc=True,
                             )
                             for query, doc in zip(
                                 new_questions[i : i + max_bs],
@@ -293,9 +326,9 @@ def evaluate_QA(
                         no_context_prompt = [
                             create_prompt(
                                 prefix=prompt_prefix,
-                                doc='',
+                                doc="",
                                 query=query,
-                                wdoc= False,
+                                wdoc=False,
                             )
                             for query in new_questions[i : i + max_bs]
                         ]
@@ -349,25 +382,19 @@ def evaluate_QA(
                     )
 
             if METRIC_EVALUATION[benchmark] == get_em:
-                value_em = (
-                    sum(
-                        [
-                            metric_max_over_ground_truths(get_em, pred, gts)
-                            for pred, gts in zip(generated_sequences, new_answers)
-                        ]
-                    )
-                    / len(generated_sequences)
-                )
+                value_em = sum(
+                    [
+                        metric_max_over_ground_truths(get_em, pred, gts)
+                        for pred, gts in zip(generated_sequences, new_answers)
+                    ]
+                ) / len(generated_sequences)
 
-                value_approx = (
-                    sum(
-                        [
-                            metric_max_over_ground_truths(get_approx_em, pred, gts)
-                            for pred, gts in zip(generated_sequences, new_answers)
-                        ]
-                    )
-                    / len(generated_sequences)
-                )
+                value_approx = sum(
+                    [
+                        metric_max_over_ground_truths(get_approx_em, pred, gts)
+                        for pred, gts in zip(generated_sequences, new_answers)
+                    ]
+                ) / len(generated_sequences)
 
                 if "EM" not in metrics[benchmark].keys():
                     metrics[benchmark]["EM"] = {}
@@ -384,7 +411,9 @@ def evaluate_QA(
                                 metric_max_over_ground_truths(
                                     get_approx_em, "\n".join(cont), gts
                                 )
-                                for cont, gts in zip(list(new_context)[:n_samples], new_answers)
+                                for cont, gts in zip(
+                                    list(new_context)[:n_samples], new_answers
+                                )
                             ]
                         )
                         / n_samples
@@ -394,7 +423,9 @@ def evaluate_QA(
                         sum(
                             [
                                 metric_max_over_ground_truths(get_approx_em, cont, gts)
-                                for cont, gts in zip(list(new_context)[:n_samples], new_answers)
+                                for cont, gts in zip(
+                                    list(new_context)[:n_samples], new_answers
+                                )
                             ]
                         )
                         / n_samples
@@ -404,7 +435,7 @@ def evaluate_QA(
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
                     "w_context_in_examples": icl_w_context,
-                    'w_context_w_query':query_w_context,
+                    "w_context_w_query": query_w_context,
                     "Metric": value_em,
                     "approx_Metric": value_approx,
                     "Prop context containing the answer": n_answer_in_context,
@@ -423,7 +454,7 @@ def evaluate_QA(
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
                     "w_context_in_examples": icl_w_context,
-                    'w_context_w_query':query_w_context,
+                    "w_context_w_query": query_w_context,
                     "Metric": value_f1,
                 }
                 print(
@@ -565,12 +596,16 @@ def evaluate_reconstruction_model(
 
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
 
-    pipeline, ckpt = load_pipeline(run_name = run_name, tmp_path = tmp_path, llm_path = llm_path, 
-                                device = device, 
-                                max_bs = max_batch_size, 
-                                pipeline = pipeline, 
-                                mistral = False,
-                                max_seq_len = max_seq_len)
+    pipeline, ckpt = load_pipeline(
+        run_name=run_name,
+        tmp_path=tmp_path,
+        llm_path=llm_path,
+        device=device,
+        max_bs=max_batch_size,
+        pipeline=pipeline,
+        mistral=False,
+        max_seq_len=max_seq_len,
+    )
 
     if max_seq_len != pipeline.pipeline_args.max_seq_len:
         print(
@@ -802,9 +837,7 @@ if __name__ == "__main__":
     n_passages = args.n_passages
 
     if args.mistral:
-        
-     
-        
+
         # mistral_model = evaluate_QA(
         #     "",
         #     ["NQ"],
@@ -821,7 +854,7 @@ if __name__ == "__main__":
         #     w_embeds=False,
         #     kilt = True
         # )
-        
+
         # mistral_model = evaluate_QA(
         #     "",
         #     ["NQ"],
@@ -838,7 +871,7 @@ if __name__ == "__main__":
         #     w_embeds=False,
         #     kilt = True
         # )
-        
+
         # mistral_model = evaluate_QA(
         #     "",
         #     ["NQ"],
@@ -856,8 +889,7 @@ if __name__ == "__main__":
         #     w_embeds=False,
         #     kilt = True
         # )
-        
-        
+
         assert (
             not args.eval_reconstruction
         ), "Cannot evaluate reconstruction with Mistral"
@@ -934,9 +966,7 @@ if __name__ == "__main__":
                 pipeline=mistral_model,
             )
             torch.cuda.empty_cache()
-            
-            
-   
+
         print("EVALUATING WITH CONTEXT but not in ICL")
         mistral_model = evaluate_QA(
             "",
@@ -954,26 +984,25 @@ if __name__ == "__main__":
             w_embeds=False,
         )
         torch.cuda.empty_cache()
-            
+
         for icl_ex in icl_tests[2:]:
             mistral_model = evaluate_QA(
-            "",
-            ["NQ", "TRIVIAQA"],
-            temps=temp_tests,
-            max_bs=args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=icl_ex,
-            pipeline=mistral_model,
-            mistral=True,
-            icl_w_context=False,
-            query_w_context=True,
-            w_embeds=False,
+                "",
+                ["NQ", "TRIVIAQA"],
+                temps=temp_tests,
+                max_bs=args.bs,
+                output_file=output_file,
+                n_samples=n_passages,
+                max_seq_len=max_seq_len,
+                tmp_path=tmp_path,
+                icl_examples=icl_ex,
+                pipeline=mistral_model,
+                mistral=True,
+                icl_w_context=False,
+                query_w_context=True,
+                w_embeds=False,
             )
             torch.cuda.empty_cache()
-
 
     else:
         if args.eval_reconstruction:
@@ -1083,100 +1112,99 @@ if __name__ == "__main__":
 
     # for run_name in ['nopref_pretrain_nollm_trained_cont_singpassage_5darr64']:
 
-        # pipeline, ckpt = evaluate_QA(
-        #     run_name,
-        #     temps= temp_tests,             
-        #     benchmarks= ["NQ","TRIVIAQA"], 
-        #     max_bs = args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=0,
-        #     w_embeds=False,
-        #     icl_w_context = False,
-        # )
+    # pipeline, ckpt = evaluate_QA(
+    #     run_name,
+    #     temps= temp_tests,
+    #     benchmarks= ["NQ","TRIVIAQA"],
+    #     max_bs = args.bs,
+    #     output_file=output_file,
+    #     n_samples=n_passages,
+    #     max_seq_len=max_seq_len,
+    #     tmp_path=tmp_path,
+    #     icl_examples=0,
+    #     w_embeds=False,
+    #     icl_w_context = False,
+    # )
 
-        # pipeline, ckpt = evaluate_QA(
-        #     run_name,
-        #     temps = temp_tests,
-        #     benchmarks= ["NQ","TRIVIAQA"], 
-        #     max_bs = args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=2,
-        #     w_embeds = False,
-        #     icl_w_context = False,
-        # )
+    # pipeline, ckpt = evaluate_QA(
+    #     run_name,
+    #     temps = temp_tests,
+    #     benchmarks= ["NQ","TRIVIAQA"],
+    #     max_bs = args.bs,
+    #     output_file=output_file,
+    #     n_samples=n_passages,
+    #     max_seq_len=max_seq_len,
+    #     tmp_path=tmp_path,
+    #     icl_examples=2,
+    #     w_embeds = False,
+    #     icl_w_context = False,
+    # )
 
-        # pipeline, ckpt = evaluate_QA(
-        #     run_name,
-        #     temps = temp_tests,
-        #     benchmarks= ["NQ","TRIVIAQA"], 
-        #     max_bs = args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=5,
-        #     # pipeline=pipeline,
-        #     # ckpt=ckpt,
-        #     w_embeds = False,
-        #     icl_w_context = False,
-        # )
+    # pipeline, ckpt = evaluate_QA(
+    #     run_name,
+    #     temps = temp_tests,
+    #     benchmarks= ["NQ","TRIVIAQA"],
+    #     max_bs = args.bs,
+    #     output_file=output_file,
+    #     n_samples=n_passages,
+    #     max_seq_len=max_seq_len,
+    #     tmp_path=tmp_path,
+    #     icl_examples=5,
+    #     # pipeline=pipeline,
+    #     # ckpt=ckpt,
+    #     w_embeds = False,
+    #     icl_w_context = False,
+    # )
 
-        # torch.cuda.empty_cache()
-        # print("Finished run Mistral no RAG")
+    # torch.cuda.empty_cache()
+    # print("Finished run Mistral no RAG")
 
-        # pipeline, ckpt = evaluate_QA(
-        #     run_name,
-        #     ["NQ","TRIVIAQA"],
-        #     temps = temp_tests,
-        #     max_bs = args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=0,
-        #     w_embeds=False,
-        #     query_w_context = True,
-        # )
+    # pipeline, ckpt = evaluate_QA(
+    #     run_name,
+    #     ["NQ","TRIVIAQA"],
+    #     temps = temp_tests,
+    #     max_bs = args.bs,
+    #     output_file=output_file,
+    #     n_samples=n_passages,
+    #     max_seq_len=max_seq_len,
+    #     tmp_path=tmp_path,
+    #     icl_examples=0,
+    #     w_embeds=False,
+    #     query_w_context = True,
+    # )
 
-        # pipeline, ckpt = evaluate_QA(
-        #     run_name,
-        #     ["NQ","TRIVIAQA"],
-        #     temps = temp_tests,
-        #     max_bs = args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=2,
-        #     pipeline=pipeline,
-        #     ckpt=ckpt,
-        #     w_embeds = False,
-        #     query_w_context = True,
-        # )
+    # pipeline, ckpt = evaluate_QA(
+    #     run_name,
+    #     ["NQ","TRIVIAQA"],
+    #     temps = temp_tests,
+    #     max_bs = args.bs,
+    #     output_file=output_file,
+    #     n_samples=n_passages,
+    #     max_seq_len=max_seq_len,
+    #     tmp_path=tmp_path,
+    #     icl_examples=2,
+    #     pipeline=pipeline,
+    #     ckpt=ckpt,
+    #     w_embeds = False,
+    #     query_w_context = True,
+    # )
 
-        # torch.cuda.empty_cache()
-        # pipeline, ckpt = evaluate_QA(
-        #     run_name,
-        #     ["NQ","TRIVIAQA"],
-        #     temps = temp_tests,
-        #     max_bs = args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=5,
-        #     pipeline=pipeline,
-        #     ckpt=ckpt,
-        #     w_embeds = False,
-        #     query_w_context = True,
-        # )
+    # torch.cuda.empty_cache()
+    # pipeline, ckpt = evaluate_QA(
+    #     run_name,
+    #     ["NQ","TRIVIAQA"],
+    #     temps = temp_tests,
+    #     max_bs = args.bs,
+    #     output_file=output_file,
+    #     n_samples=n_passages,
+    #     max_seq_len=max_seq_len,
+    #     tmp_path=tmp_path,
+    #     icl_examples=5,
+    #     pipeline=pipeline,
+    #     ckpt=ckpt,
+    #     w_embeds = False,
+    #     query_w_context = True,
+    # )
 
-        # torch.cuda.empty_cache()
-        # print("Finished run Mistral RAG")
-
+    # torch.cuda.empty_cache()
+    # print("Finished run Mistral RAG")

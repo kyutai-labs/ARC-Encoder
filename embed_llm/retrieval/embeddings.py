@@ -10,6 +10,7 @@ import numpy as np
 import pickle
 import argparse
 
+
 def mean_pooling(model_output, attention_mask):
     # First element of model_output contains all token embeddings
     token_embeddings = model_output
@@ -120,7 +121,7 @@ def generate_embeddings(
 ):
     with open(dataset_path, "r") as f:
         dataset = [json.loads(line) for line in f]
-        
+
     model = get_pretrained_embedder(model_name, device_map="cuda")
     os.makedirs(os.path.join(output_path, model_name), exist_ok=True)
 
@@ -139,21 +140,32 @@ def generate_embeddings(
             break
         else:
             # All passages must be useful
-            if len(row['text']) < 20:
+            if len(row["text"]) < 20:
                 continue
             # Truncate passages on the char level to 2048
-            used_texts.append(row['text'][:2048].strip())
+            used_texts.append(row["text"][:2048].strip())
     count = 0
     embeddings_array = []
     text_passages = []
     for ind, i in tqdm(enumerate(range(0, len(used_texts), bs))):
         passages = used_texts[i : i + bs]
-        embeddings = encode_text(passages, model_name=model_name, model=model, query_embedding=False, device="cuda")
+        embeddings = encode_text(
+            passages,
+            model_name=model_name,
+            model=model,
+            query_embedding=False,
+            device="cuda",
+        )
         embeddings = (
-            F.normalize(embeddings, p=2, dim=1)
-            if model_name == "NVEmbed"
-            else embeddings
-        ).detach().cpu().numpy()
+            (
+                F.normalize(embeddings, p=2, dim=1)
+                if model_name == "NVEmbed"
+                else embeddings
+            )
+            .detach()
+            .cpu()
+            .numpy()
+        )
 
         text_passages.extend(passages)
         embeddings_array.append(embeddings)
@@ -161,13 +173,13 @@ def generate_embeddings(
         if ind % (checkpoint) == 0 and ind != 0:
             embeddings_array = np.concatenate(embeddings_array, axis=0)
             assert embeddings_array.shape[0] == len(text_passages)
-            with open(os.path.join(
+            with open(
+                os.path.join(
                     output_path, model_name, f"{partition}_embeddings_{count}.pkl"
-                ), 'wb') as f:
-                np.save(
-                    f,
-                    embeddings_array, allow_pickle=True
-                )
+                ),
+                "wb",
+            ) as f:
+                np.save(f, embeddings_array, allow_pickle=True)
             with open(
                 os.path.join(
                     output_path, model_name, f"{partition}_embeddings_{count}.jsonl"
@@ -182,13 +194,11 @@ def generate_embeddings(
             count += 1
     embeddings_array = np.concatenate(embeddings_array, axis=0)
     assert embeddings_array.shape[0] == len(text_passages)
-    with open(os.path.join(
-            output_path, model_name, f"{partition}_embeddings_{count}.pkl"
-        ), 'wb') as f:
-        np.save(
-            f,
-            embeddings_array, allow_pickle=True
-        )
+    with open(
+        os.path.join(output_path, model_name, f"{partition}_embeddings_{count}.pkl"),
+        "wb",
+    ) as f:
+        np.save(f, embeddings_array, allow_pickle=True)
     with open(
         os.path.join(output_path, model_name, f"{partition}_embeddings_{count}.jsonl"),
         "w",
@@ -200,18 +210,46 @@ def generate_embeddings(
 
 
 def arg_parser():
-    parser = argparse.ArgumentParser(description='Prepare data for training')
-    parser.add_argument('-outpath', '--save_output_path',
-                        type=str,default = None, help='Path to save the output')
-    parser.add_argument('-data_path', '--data_name_to_load',
-                        type=str, default = None, help='Name of the dataset to load')
-    parser.add_argument('-bs', '--batch_size',
-                        type=int, default = 32, help='Batch size for embedding generation')
-    parser.add_argument('-n_gpus', '--num_gpus',type = int, default = 1, help = 'Number of GPUs on which the dataset is split')
-    parser.add_argument('-partition', '--partition',type = int, default = 0, help = 'Partition of the dataset to process')
+    parser = argparse.ArgumentParser(description="Prepare data for training")
+    parser.add_argument(
+        "-outpath",
+        "--save_output_path",
+        type=str,
+        default=None,
+        help="Path to save the output",
+    )
+    parser.add_argument(
+        "-data_path",
+        "--data_name_to_load",
+        type=str,
+        default=None,
+        help="Name of the dataset to load",
+    )
+    parser.add_argument(
+        "-bs",
+        "--batch_size",
+        type=int,
+        default=32,
+        help="Batch size for embedding generation",
+    )
+    parser.add_argument(
+        "-n_gpus",
+        "--num_gpus",
+        type=int,
+        default=1,
+        help="Number of GPUs on which the dataset is split",
+    )
+    parser.add_argument(
+        "-partition",
+        "--partition",
+        type=int,
+        default=0,
+        help="Partition of the dataset to process",
+    )
     return parser
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Create index for different datasets
     parser = arg_parser()
     args = parser.parse_args()
@@ -219,7 +257,14 @@ if __name__ == '__main__':
     data_path = args.data_name_to_load
     bs = args.batch_size
     output_path = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/"
-    data_path = '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl'
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    generate_embeddings("NVEmbed", output_path, bs, data_path, n_gpu=args.num_gpus, partition=args.partition)
+    data_path = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    generate_embeddings(
+        "NVEmbed",
+        output_path,
+        bs,
+        data_path,
+        n_gpu=args.num_gpus,
+        partition=args.partition,
+    )
     print("Embeddings generated for NVEmbed")

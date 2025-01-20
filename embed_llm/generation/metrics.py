@@ -8,7 +8,6 @@ from collections import Counter
 # nltk.download("wordnet")
 
 
-
 def word_overlap(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
     if isinstance(ground_truth, str) and isinstance(predicted, str):
         ground_truth = set(ground_truth.split(" "))
@@ -104,14 +103,12 @@ def normalize_answer(s):
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
 
-
 def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
     scores_for_ground_truths = []
     for ground_truth in ground_truths:
         score = metric_fn(prediction, ground_truth)
         scores_for_ground_truths.append(score)
     return max(scores_for_ground_truths)
-
 
 
 def get_f1_score(prediction, ground_truth):
@@ -165,7 +162,6 @@ def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> flo
                 l_ground_truth, l_predicted
             )
         return meteor_avg_score / len(ground_truth)
-
 
 
 # import regex
@@ -295,7 +291,6 @@ def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> flo
 #     lens = round(np.mean(answer_lengths), 4)
 
 #     return substring_match, substring_match_scores
-
 
 
 # def eval_fact_checking(outputs, answers):

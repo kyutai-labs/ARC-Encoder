@@ -279,29 +279,25 @@ def sequence_iterator(
                     to_embed_buffer, useless_embed_continuation = res
                     continue
             else:
-                
-            
 
                 tokens, mask = sample.tokens, sample.masks[1:]
                 cur_pos = 0
 
                 while cur_pos < len(tokens[:-1]):
                     res = sequence_iterator_one_task_4_all(
-                                            mask=mask,
-                                            tokens = tokens,
-                                            seq_len=seq_len,
-                                            tokenizer=tokenizer,
-                                            cur_pos=cur_pos,
-                                            max_embeds=hybrid_task.max_embeds,
-                                        )
+                        mask=mask,
+                        tokens=tokens,
+                        seq_len=seq_len,
+                        tokenizer=tokenizer,
+                        cur_pos=cur_pos,
+                        max_embeds=hybrid_task.max_embeds,
+                    )
                     if res is None:
                         break
-                    
+
                     else:
                         yield res[0]
                         cur_pos = res[1]
-
-       
 
     if is_finite:
         # if dataloader is in eval, pad to seq length

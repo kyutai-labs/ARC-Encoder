@@ -201,18 +201,23 @@ def sequence_iterator_hybrid(
 
 def sequence_iterator_one_task_4_all(
     tokens: list[int],
-    mask: Mask, 
+    mask: Mask,
     cur_pos: int,
     seq_len: int,
     tokenizer: Tokenizer,
     max_embeds: int = 1,
 ) -> SequenceEmbedMaskAndSizes:
-   
-    x_buffer, y_buffer, to_embed_buffer, mask_buffer, sizes, n_prefixes = [], [], [], [], [], []
+
+    x_buffer, y_buffer, to_embed_buffer, mask_buffer, sizes, n_prefixes = (
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
 
     x, y = tokens[:-1], tokens[1:]
-
-
 
     if len(x) - cur_pos >= (max_embeds + 1) * seq_len - 10:
         if max_embeds == 1:
@@ -265,10 +270,10 @@ def sequence_iterator_one_task_4_all(
 
         start_lm = np.random.randint(1, end_embed - 10)
         n_prefixes.append(end_embed - start_lm)
-        x_buffer.extend(x[start_lm + cur_pos :start_lm + cur_pos + seq_len])
-        y_buffer.extend(y[start_lm + cur_pos :start_lm + cur_pos + seq_len])
-        mask_buffer.extend(mask[start_lm + cur_pos :start_lm + cur_pos + seq_len])
-        size = len(x[start_lm + cur_pos :start_lm + cur_pos + seq_len])
+        x_buffer.extend(x[start_lm + cur_pos : start_lm + cur_pos + seq_len])
+        y_buffer.extend(y[start_lm + cur_pos : start_lm + cur_pos + seq_len])
+        mask_buffer.extend(mask[start_lm + cur_pos : start_lm + cur_pos + seq_len])
+        size = len(x[start_lm + cur_pos : start_lm + cur_pos + seq_len])
         sizes.append(size)
         cur_pos += start_lm + size
 
@@ -319,26 +324,27 @@ def sequence_iterator_one_task_4_all(
 
     else:
         return None
-    
+
     assert (
         len(mask_buffer) == len(x_buffer) == len(y_buffer)
     ), f"{len(mask_buffer)} == {len(x_buffer)} == {len(y_buffer)}"
     assert sum(sizes) <= seq_len, f"{sum(sizes)} <= {seq_len}"
-    assert len(to_embed_buffer) == len(
-        sizes
-    ), f"{len(to_embed_buffer)} == {len(sizes)}"
+    assert len(to_embed_buffer) == len(sizes), f"{len(to_embed_buffer)} == {len(sizes)}"
 
     # we don't want to yield sequences with a mask filled with False
     if any(mask_buffer):
-        return SequenceEmbedMaskAndSizes(
-            x=x_buffer,
-            y=y_buffer,
-            to_embed=to_embed_buffer,
-            mask=mask_buffer,
-            sizes=sizes,
-            data_type="one_4_all",
-            n_prefixes=n_prefixes,
-        ), cur_pos
+        return (
+            SequenceEmbedMaskAndSizes(
+                x=x_buffer,
+                y=y_buffer,
+                to_embed=to_embed_buffer,
+                mask=mask_buffer,
+                sizes=sizes,
+                data_type="one_4_all",
+                n_prefixes=n_prefixes,
+            ),
+            cur_pos,
+        )
     else:
         return None
 
@@ -534,4 +540,3 @@ def sequence_iterator_continuation(
             if adapt_seq_len:
                 break
     return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes
-

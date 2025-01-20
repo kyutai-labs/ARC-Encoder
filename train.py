@@ -302,7 +302,9 @@ def _train(
             else:
                 eval_batches.append(batch)
 
-        if (args.continuation > 0.0 or args.hybrid_task.do) and not args.instruct_tuning.do:
+        if (
+            args.continuation > 0.0 or args.hybrid_task.do
+        ) and not args.instruct_tuning.do:
             eval_data_loader_4cont = build_data_loader(
                 tokenizer=pipeline.tokenizer,
                 args=args.data,
@@ -416,7 +418,6 @@ def _train(
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
 
-                
             # Avoid OOM due to too many embeddings for the same batch
             while len(batch.sizes) > 70:
                 batch = next(train_data_loader)

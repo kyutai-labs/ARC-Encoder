@@ -36,7 +36,7 @@ def generate(
     # Cache
     cache_window = (
         max(seqlens) + max_tokens + 3 if concat else max(seqlens) + max_tokens
-    ) # 3 maximum number of embedding tokens for now
+    )  # 3 maximum number of embedding tokens for now
 
     cache = BufferCache(
         model.n_local_layers,
