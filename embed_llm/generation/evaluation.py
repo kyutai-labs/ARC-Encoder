@@ -23,8 +23,8 @@ from embed_llm.generation.metrics import (
 
 
 EVAL_DATA_PATH = {
-    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA/nq_open_hf.jsonl",  # nq_data.jsonl
-    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA/triviaqa_data.jsonl",
+    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/nq_open_hf.jsonl",  # nq_data.jsonl
+    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/triviaqa_data.jsonl",
 }
 
 METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em}

@@ -14,6 +14,7 @@ import time
 import json
 import torch.nn.functional as F
 from tqdm import tqdm
+import argparse
 
 logger = logging.getLogger(__name__)
 
@@ -290,8 +291,32 @@ def retrieved_passage_4QA(
                     answers = []
 
 
-if __name__ == "__main__":
 
+
+def arg_parser():
+    parser = argparse.ArgumentParser(description="Prepare data for training")
+    parser.add_argument(
+        "-outpath",
+        "--save_output_path",
+        type=str,
+        default=None,
+        help="Path to save the output",
+    )
+    parser.add_argument(
+        "-data_path",
+        "--data_name_to_load",
+        type=str,
+        default=None,
+        help="Name of the dataset to load",
+    )
+
+    return parser
+
+
+if __name__ == "__main__":
+    # Create index for different datasets
+    parser = arg_parser()
+    args = parser.parse_args()
     # path =    freebase_qa.jsonl  msmarco_qa.jsonl web_qa.jsonl  wiki_qa_good_answer.jsonl  wiki_qa.jsonl  yahoo_qa.jsonl
     # '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/commonsense_qa.jsonl'
     # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/eval.jsonl
@@ -302,11 +327,13 @@ if __name__ == "__main__":
     # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA'
     # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages'
 
-    path = "/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl"
-    create_similar_passage_ds(
-        path,
-        output_path="/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/similar_passages.jsonl",
-        n_retrieved_doc=4,
+    output_path = args.outpath
+    datapath = args.data_path
+    
+    retrieved_passage_4QA(
+        path_QA = datapath,
+        output_path=output_path,
+        n_retrieved_doc=5,
         embed_dim=4096,
         n_subquantizers=8,
         n_bits=8,
@@ -314,5 +341,19 @@ if __name__ == "__main__":
         pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
         save_or_load_index=True,
         model_name="NVEmbed",
-        split="train",
+        split="all_indexed",
     )
+    
+    # create_similar_passage_ds(
+    #     path,
+    #     output_path="/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/similar_passages.jsonl",
+    #     n_retrieved_doc=4,
+    #     embed_dim=4096,
+    #     n_subquantizers=8,
+    #     n_bits=8,
+    #     indexing_batch_size=9984,
+    #     pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
+    #     save_or_load_index=True,
+    #     model_name="NVEmbed",
+    #     split="train",
+    # )
