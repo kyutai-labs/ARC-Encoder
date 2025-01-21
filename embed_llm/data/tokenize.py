@@ -67,7 +67,7 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
         assert isinstance(question, str), question
 
         # Add question prompt
-        if "qa" in data_path.lower():
+        if "qa" in data_path.lower() or 'reading_comp' in data_path.lower():
             question = random.choice(templates_for_qa).format(question=question)
 
         q_tokens = tokenizer.encode(question, bos=True, eos=False)

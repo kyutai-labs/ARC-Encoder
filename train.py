@@ -28,7 +28,7 @@ from embed_llm.models.wrapped_models_training import (
     load_training_model_from_ckpt,
 )
 from embed_llm.retrieval.embeddings import get_pretrained_embedder
-from embed_llm.training.args import TrainArgs, OptimArgs, InstructionTuningArgs
+from embed_llm.training.args import TrainArgs, OptimArgs, InstructionTuningArgs, WandbArgs
 from embed_llm.models.args import LoraArgs, EmbedAugArgs
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.data.data_loader import build_data_loader
@@ -100,6 +100,7 @@ def train(train_config: str | dict, data_config: str = None):
             train_params = yaml.safe_load(f)
         data_args = create_data_args(data_config)
         train_params["data"] = data_args
+        train_params["wandb"] = WandbArgs(**train_params["wandb"])
         args: TrainArgs = TrainArgs(**train_params)
         args.optim = OptimArgs(**args.optim)
         args.lora = LoraArgs(**args.lora)
@@ -157,8 +158,8 @@ def _train(
         args.pipeline.param_dtype = "float32" if args.mixed_precision else "bfloat16"
         args.save(args_path)
 
-    # if args.instruct_tuning.do:
-    #     assert args.data.adapt_seq_len, "Adapt seq len should be set to True"
+    if args.instruct_tuning.do:
+        assert args.data.adapt_seq_len, "Adapt seq len should be set to True"
 
     # 3. Get loggers
     metrics_logger: MetricsLogger = MetricsLogger(
@@ -367,6 +368,7 @@ def _train(
         num_ckpt_keep=args.num_ckpt_keep,
         pipeline=pipeline,
         llm_name=args.llm_name,
+        instruction_tuning=args.instruct_tuning,
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
@@ -382,6 +384,7 @@ def _train(
             model.tokenized_prompts["reconstruction"].append(
                 {"prefix": prefix, "suffix": suffix}
             )
+        # There is already a template prompt with each dataset (in tokenizer for Read Comp and QA and in the data for the rest)
         model.tokenized_prompts["instruct"] = []
         for prompt in INSTRUCT_PROMPT:
             prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)

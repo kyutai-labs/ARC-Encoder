@@ -4,7 +4,7 @@
 #SBATCH --array=0-5 #42
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx14,par2dc5-ai-prd-cl02s01dgx02,par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s04dgx20,par2dc5-ai-prd-cl02s01dgx01,par2dc5-ai-prd-cl02s04dgx24,par2dc5-ai-prd-cl02s01dgx09,par2dc5-ai-prd-cl02s04dgx11
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s01dgx20
 #SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm

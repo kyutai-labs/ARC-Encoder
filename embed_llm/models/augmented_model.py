@@ -17,7 +17,7 @@ import yaml
 import os
 from embed_llm.retrieval.embeddings import encode_text, get_pretrained_embedder
 from embed_llm.data.data_loader import Batch
-from embed_llm.models.loading import load_args, load_llm_model, load_state_dict
+from embed_llm.models.loading import load_args, load_llm_model, load_state_dict, get_instruct_ckpts_paths
 from embed_llm.models.args import MistralModelArgs, EmbedAugArgs, LoraArgs
 
 from embed_llm.training.args import InstructionTuningArgs
@@ -295,20 +295,21 @@ class EmbedAugPipeline(nn.Module):
     @staticmethod
     def load_inference_model(
         llm_path: str,
-        ckpt_path: str,
+        ckpt_path: str | None,
         device: str,
         llm_name: str = "mistral7B",
         embed_model_name: str | None = None,
         max_batch_size: int = 4,
         param_dtype: torch.dtype = torch.float32,
+        instruct_ckpt: str | None = None,
     ):
 
-        lora_path = (
-            ckpt_path + "/" + llm_name.lower() + "/consolidated/lora.safetensors"
-        )
-
-        mlp_path = ckpt_path + "/" + "MLP_projector"
-
+        if instruct_ckpt is not None and ckpt_path is None:
+            with open(os.path.join(instruct_ckpt, "../../args.yaml"), "r") as f:
+                train_args = yaml.safe_load(f)
+            ckpt_path = train_args['start_from_ckpt_path'] 
+            
+             
         with open(os.path.join(ckpt_path, "../../args.yaml"), "r") as f:
             train_args = yaml.safe_load(f)
         lora = LoraArgs(train_args["lora"])
@@ -319,6 +320,15 @@ class EmbedAugPipeline(nn.Module):
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
         )
+        
+        
+        lora_path = (
+            ckpt_path + "/" + llm_name.lower() + "/consolidated/lora.safetensors"
+        )
+
+        mlp_path = ckpt_path + "/" + "MLP_projector"    
+        
+    
 
         if pipeline_args.trainable_embedder:
             assert Path(
@@ -335,6 +345,20 @@ class EmbedAugPipeline(nn.Module):
             embedding_model = get_pretrained_embedder(
                 embed_model_name, device_map=device
             )
+            
+        if instruct_ckpt is not None:
+        
+            (embedder_lora_state_dict_path, 
+                pooling_state_dict_path, 
+                mlp_state_dict_path, 
+                ca_state_dict_path, 
+                llm_lora_state_dict_path) = get_instruct_ckpts_paths(instruct_ckpt=instruct_ckpt, 
+                                                                    pipeline_args=pipeline_args,
+                                                                    llm_name=llm_name.lower())
+            
+            mlp_path =  mlp_state_dict_path if mlp_state_dict_path is not None else mlp_path
+            ca_state_dict_path = ca_state_dict_path if ca_state_dict_path is not None else lora_path
+            pooling_module_path = pooling_state_dict_path if pooling_state_dict_path is not None else pooling_module_path
 
         if not pipeline_args.trainable_llm:
             llm_args.lora = None
@@ -352,7 +376,12 @@ class EmbedAugPipeline(nn.Module):
 
         if pipeline_args.cross_att:
             print("Loading cross att state dict")
-            state_dict = safetensors.torch.load_file(Path(lora_path))
+            
+            if instruct_ckpt is not None:
+                state_dict = safetensors.torch.load_file(Path(ca_state_dict_path))
+            else:
+                state_dict = safetensors.torch.load_file(Path(lora_path))
+                
             cross_att_state_dicts = {
                 k: v.to(param_dtype)
                 for k, v in state_dict.items()
@@ -360,9 +389,13 @@ class EmbedAugPipeline(nn.Module):
             }
 
             llm.load_state_dict(cross_att_state_dicts, assign=True, strict=False)
-
-        if Path(lora_path).exists():
+        
+        if instruct_ckpt is not None and llm_lora_state_dict_path is not None:
+            llm.load_lora(Path(llm_lora_state_dict_path), cross_att=pipeline_args.cross_att)
+            
+        elif Path(lora_path).exists():     
             llm.load_lora(Path(lora_path), cross_att=pipeline_args.cross_att)
+    
 
         llm = llm.to(device)
         llm.eval()
@@ -395,9 +428,14 @@ class EmbedAugPipeline(nn.Module):
 
             llm_embedder.n_layers = llm_embedder.n_layers - n_truncated_layers
             if not pipeline_args.train_only_pooling:
-                llm_embedder.load_lora(
-                    Path(trainable_embedder_path + "/lora.safetensors"), cross_att=False
-                )
+                if instruct_ckpt is not None and embedder_lora_state_dict_path is not None:
+                    llm_embedder.load_lora(
+                        Path(embedder_lora_state_dict_path  + "/lora.safetensors"), cross_att=False
+                    )
+                else:
+                    llm_embedder.load_lora(
+                        Path(trainable_embedder_path + "/lora.safetensors"), cross_att=False
+                    )
             embedding_model = llm_embedder.to(device)
             embedding_model.eval()
 

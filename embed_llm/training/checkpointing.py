@@ -8,7 +8,7 @@ import safetensors.torch
 import torch
 from torch.distributed import barrier
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
-
+from embed_llm.training.args import InstructionTuningArgs
 from embed_llm.models.lora import LoRALinear
 from embed_llm.training.distributed import get_rank, get_world_size
 from embed_llm.training.utils import TrainState
@@ -33,6 +33,7 @@ class Checkpointer:
         optimizer: torch.optim.Optimizer | None = None,
         num_ckpt_keep: int | None = None,
         pipeline: object | None = None,
+        instruction_tuning: None | InstructionTuningArgs = None,
     ):
         self.llm: nn.Module = model.llm
         self.mlp_project: nn.Module | None = model.mlp_project
@@ -45,6 +46,7 @@ class Checkpointer:
         self.run_dir = Path(run_dir)
         self.rank = get_rank()
         self.num_ckpt_keep = num_ckpt_keep
+        self.instruction_tuning = None if instruction_tuning is None or not instruction_tuning.do else instruction_tuning
 
     @property
     def ckpt_dir(self) -> Path:
@@ -97,9 +99,12 @@ class Checkpointer:
                 -1
             ]
             f.write(json.dumps(pipeline_args, indent=4))
-            if self.pipeline.instruct_args is not None:
-                instruct_pipeline_args = self.pipeline.instruct_args.to_dict()
-                f.write("\n" + json.dumps(instruct_pipeline_args, indent=4))
+            
+        instruct_path = tmp_dst / "instruct.json"
+        if self.instruction_tuning is not None:
+            instruct_pipeline_args = self.instruction_tuning.to_dict()
+            with open(instruct_path, "w") as f:
+                f.write(json.dumps(instruct_pipeline_args, indent=4))
 
     def write_llm_params_info(self, tmp_dst: Path):
         params_path = tmp_dst / "params.json"
@@ -187,7 +192,7 @@ class Checkpointer:
                 if is_trainable_fsdp(m)
             }
 
-        if self.trainable_embedder is None:
+        if self.trainable_embedder is None or (self.instruction_tuning is not None and not self.instruction_tuning.tune_embedder):
             trainable_embedder_modules = {}
             pooling_modules = {}
         else:
@@ -332,7 +337,7 @@ class Checkpointer:
         if self.mlp_project is not None and self.mlp_project.n_layers > 0:
             tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
 
-        if self.trainable_embedder is not None:
+        if self.trainable_embedder is not None and (self.instruction_tuning is None or self.instruction_tuning.tune_embedder):
             if not self.pipeline.pipeline_args.train_only_pooling:
                 tmp_trainable_embedder_dst = self._tmp(
                     llm_dst.parent / "trainable_embedder"
@@ -379,7 +384,7 @@ class Checkpointer:
                     ),  # always use safetensors for checkpointing
                 )
 
-            if self.trainable_embedder is not None:
+            if self.trainable_embedder is not None or (self.instruction_tuning is not None and self.instruction_tuning.tune_embedder):
                 if not self.pipeline.pipeline_args.train_only_pooling:
                     safetensors.torch.save_file(
                         trainable_embedder_states,
@@ -418,7 +423,7 @@ class Checkpointer:
             if self.mlp_project is not None and self.mlp_project.n_layers > 0:
                 tmp_mlp_project_dst.rename(self.dst_dir(type="mlp_project"))
 
-            if self.trainable_embedder is not None:
+            if self.trainable_embedder is not None or (self.instruction_tuning is not None and self.instruction_tuning.tune_embedder):
                 if not self.pipeline.pipeline_args.train_only_pooling:
                     tmp_trainable_embedder_dst.rename(
                         self.dst_dir(type="trainable_embedder")

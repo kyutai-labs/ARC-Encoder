@@ -93,7 +93,7 @@ def create_prompt(
 
 
 def load_pipeline(
-    run_name: str,
+    run_name: str | None,
     tmp_path: str,
     llm_path: str,
     device: str,
@@ -102,30 +102,59 @@ def load_pipeline(
     mistral: bool = False,
     max_seq_len: int = 256,
     ckpt: int | None = None,
+    instruct_name: str = None,
 ) -> EmbedAugPipeline | Transformer:
     if not mistral:
         if pipeline is None:
             # Get last checkpoint
-            last_ckpt = sorted(
-                [
-                    ckpt_name
-                    for ckpt_name in os.listdir(tmp_path + run_name + "/checkpoints/")
-                    if (
-                        Path(tmp_path + run_name + "/checkpoints/")
-                        / ckpt_name
-                        / "params.json"
-                    ).exists()
-                ]
-            )[-1]
+            if instruct_name is None:
+                assert run_name is not None
+                last_ckpt = sorted(
+                    [
+                        ckpt_name
+                        for ckpt_name in os.listdir(tmp_path + run_name + "/checkpoints/")
+                        if (
+                            Path(tmp_path + run_name + "/checkpoints/")
+                            / ckpt_name
+                            / "params.json"
+                        ).exists()
+                    ]
+                )[-1]
+            
 
-            pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
-                llm_path=llm_path,
-                ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
-                device=device,
-                llm_name="Mistral7B",
-                embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
-                max_batch_size=max_bs,
-            )
+                pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
+                    llm_path=llm_path,
+                    ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
+                    device=device,
+                    llm_name="Mistral7B",
+                    embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
+                    max_batch_size=max_bs,
+                    instruct_ckpt=None,
+                )
+            else:
+                last_ckpt = sorted(
+                    [
+                        ckpt_name
+                        for ckpt_name in os.listdir(tmp_path + instruct_name + "/checkpoints/")
+                        if (
+                            Path(tmp_path + instruct_name + "/checkpoints/")
+                            / ckpt_name
+                            / "params.json"
+                        ).exists()
+                    ]
+                )[-1]
+            
+
+                pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
+                    llm_path=llm_path,
+                    ckpt_path= None,
+                    device=device,
+                    llm_name="Mistral7B",
+                    embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
+                    max_batch_size=max_bs,
+                    instruct_ckpt=tmp_path + instruct_name + "/checkpoints/" + last_ckpt,
+                )
+            
             ckpt = int(last_ckpt.split("_")[-1])
             print("Evaluating checkpoint", ckpt)
         else:
@@ -172,6 +201,7 @@ def evaluate_QA(
     mistral: bool = False,
     max_multi_passage: int = 1,
     kilt: bool = False,
+    instruct_name: str = None,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
@@ -188,6 +218,7 @@ def evaluate_QA(
         pipeline=pipeline,
         mistral=mistral,
         max_seq_len=max_seq_len,
+        instruct_name = instruct_name,
     )
 
     if mistral:
@@ -569,6 +600,7 @@ def evaluate_reconstruction_model(
     eval_data_type: str = "atlas",
     n_passages: int = 100,
     max_multi_passage: int = 1,
+    instruct_name: str = None,
 ):
 
     reconstruct_benchmarks = [
@@ -604,6 +636,7 @@ def evaluate_reconstruction_model(
         max_bs=max_batch_size,
         pipeline=pipeline,
         mistral=False,
+        instruct_name = instruct_name,
         max_seq_len=max_seq_len,
     )
 
@@ -809,6 +842,7 @@ def arg_parser():
     parser.add_argument("--multi_passages", type=int, default=1)
     parser.add_argument("--reconstruct_seq_len", type=int, default=256)
     parser.add_argument("--reconstruct_npassages", type=int, default=500)
+    parser.add_argument("--instruct_name", type=str, default=None)
 
     return parser.parse_args()
 
@@ -1015,6 +1049,7 @@ if __name__ == "__main__":
                     tmp_path=tmp_path,
                     n_passages=args.reconstruct_npassages,
                     max_multi_passage=args.multi_passages,
+                    instruct_name=args.instruct_name,
                 )
                 torch.cuda.empty_cache()
             else:
@@ -1027,6 +1062,7 @@ if __name__ == "__main__":
                     tmp_path=tmp_path,
                     eval_data_type="standard_dump",
                     n_passages=args.reconstruct_npassages,
+                    instruct_name=args.instruct_name,
                 )
                 torch.cuda.empty_cache()
                 print("Atlas")
@@ -1040,6 +1076,7 @@ if __name__ == "__main__":
                     pipeline=pipeline,
                     ckpt=ckpt,
                     n_passages=args.reconstruct_npassages,
+                    instruct_name=args.instruct_name,
                 )
                 torch.cuda.empty_cache()
 
@@ -1056,6 +1093,7 @@ if __name__ == "__main__":
             w_embeds=args.wo_embeds,
             icl_w_context=False,
             max_multi_passage=args.multi_passages,
+            instruct_name=args.instruct_name,
         )
 
         pipeline, ckpt = evaluate_QA(
@@ -1073,6 +1111,7 @@ if __name__ == "__main__":
             pipeline=pipeline,
             ckpt=ckpt,
             max_multi_passage=args.multi_passages,
+            instruct_name=args.instruct_name,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -1091,6 +1130,7 @@ if __name__ == "__main__":
                 pipeline=pipeline,
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
+                instruct_name=args.instruct_name,
             )
 
             pipeline, ckpt = evaluate_QA(
@@ -1108,103 +1148,5 @@ if __name__ == "__main__":
                 pipeline=pipeline,
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
+                instruct_name=args.instruct_name,
             )
-
-    # for run_name in ['nopref_pretrain_nollm_trained_cont_singpassage_5darr64']:
-
-    # pipeline, ckpt = evaluate_QA(
-    #     run_name,
-    #     temps= temp_tests,
-    #     benchmarks= ["NQ","TRIVIAQA"],
-    #     max_bs = args.bs,
-    #     output_file=output_file,
-    #     n_samples=n_passages,
-    #     max_seq_len=max_seq_len,
-    #     tmp_path=tmp_path,
-    #     icl_examples=0,
-    #     w_embeds=False,
-    #     icl_w_context = False,
-    # )
-
-    # pipeline, ckpt = evaluate_QA(
-    #     run_name,
-    #     temps = temp_tests,
-    #     benchmarks= ["NQ","TRIVIAQA"],
-    #     max_bs = args.bs,
-    #     output_file=output_file,
-    #     n_samples=n_passages,
-    #     max_seq_len=max_seq_len,
-    #     tmp_path=tmp_path,
-    #     icl_examples=2,
-    #     w_embeds = False,
-    #     icl_w_context = False,
-    # )
-
-    # pipeline, ckpt = evaluate_QA(
-    #     run_name,
-    #     temps = temp_tests,
-    #     benchmarks= ["NQ","TRIVIAQA"],
-    #     max_bs = args.bs,
-    #     output_file=output_file,
-    #     n_samples=n_passages,
-    #     max_seq_len=max_seq_len,
-    #     tmp_path=tmp_path,
-    #     icl_examples=5,
-    #     # pipeline=pipeline,
-    #     # ckpt=ckpt,
-    #     w_embeds = False,
-    #     icl_w_context = False,
-    # )
-
-    # torch.cuda.empty_cache()
-    # print("Finished run Mistral no RAG")
-
-    # pipeline, ckpt = evaluate_QA(
-    #     run_name,
-    #     ["NQ","TRIVIAQA"],
-    #     temps = temp_tests,
-    #     max_bs = args.bs,
-    #     output_file=output_file,
-    #     n_samples=n_passages,
-    #     max_seq_len=max_seq_len,
-    #     tmp_path=tmp_path,
-    #     icl_examples=0,
-    #     w_embeds=False,
-    #     query_w_context = True,
-    # )
-
-    # pipeline, ckpt = evaluate_QA(
-    #     run_name,
-    #     ["NQ","TRIVIAQA"],
-    #     temps = temp_tests,
-    #     max_bs = args.bs,
-    #     output_file=output_file,
-    #     n_samples=n_passages,
-    #     max_seq_len=max_seq_len,
-    #     tmp_path=tmp_path,
-    #     icl_examples=2,
-    #     pipeline=pipeline,
-    #     ckpt=ckpt,
-    #     w_embeds = False,
-    #     query_w_context = True,
-    # )
-
-    # torch.cuda.empty_cache()
-    # pipeline, ckpt = evaluate_QA(
-    #     run_name,
-    #     ["NQ","TRIVIAQA"],
-    #     temps = temp_tests,
-    #     max_bs = args.bs,
-    #     output_file=output_file,
-    #     n_samples=n_passages,
-    #     max_seq_len=max_seq_len,
-    #     tmp_path=tmp_path,
-    #     icl_examples=5,
-    #     pipeline=pipeline,
-    #     ckpt=ckpt,
-    #     w_embeds = False,
-    #     query_w_context = True,
-    # )
-
-    # torch.cuda.empty_cache()
-    # print("Finished run Mistral RAG")
