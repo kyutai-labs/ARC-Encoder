@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 import logging
 import pickle
+import torch
 import glob
 from pathlib import Path
 import numpy as np
@@ -23,15 +24,17 @@ def index_encoded_data(index, embedding_files, indexing_batch_size):
     allids = []
     allembeddings = np.array([])
     allpassages_ids = []
-
+    count = 0
     for i, file_path in tqdm(
         enumerate(embedding_files), desc="Indexing data", total=len(embedding_files)
     ):
         logger.info(f"Loading file {file_path}")
         with open(file_path, "rb") as fin:
-            dic = pickle.load(fin)
-            ids, embeddings = dic["ids"], dic["embeddings"]
-
+            embeddings = np.load(fin)
+         
+        ids = [count + i for i in range(embeddings.shape[0])]
+        count += embeddings.shape[0]
+        
         with open(file_path.replace("pkl", "jsonl"), "r") as text_file:
             passages = [json.loads(line)["text"] for line in text_file]
 
@@ -227,17 +230,21 @@ def retrieved_passage_4QA(
 
     queries = []
     answers = []
+    batch_query = []
+    embeddings = []
     with open(path_QA, "r") as file:
         for i, line in tqdm(
-            enumerate(file), desc="Retrieving similar passages", total=total_QA
+            enumerate(file), desc="Embed queries", total=total_QA
         ):
             data = json.loads(line)
-            queries.append(data["question"])
+            queries.append(data["question"]) 
+            batch_query.append(data["question"].split('\n\n')[0]) # If multi_option question, only take the first question
             answers.append(data["answer"])
-            if len(queries) >= batch_size:
-
+            
+            if i % batch_size == 0:
+                
                 embeds = encode_text(
-                    queries,
+                    batch_query,
                     model_name=model_name,
                     model=model,
                     query_embedding=True,
@@ -245,50 +252,51 @@ def retrieved_passage_4QA(
                     cross_att=False,
                 )
                 embeds = F.normalize(embeds, p=2, dim=1)
+                embeddings.append(embeds)
+                batch_query = []
+    
+    embeds = torch.cat(embeddings, dim=0)
+    # get top k results
+    start_time_retrieval = time.time()
+    top_ids_and_scores = index.search_knn(
+        embeds.cpu().numpy(), n_retrieved_doc
+    )
+    logger.info(f"Search time: {time.time()-start_time_retrieval:.1f} s.")
 
-                # get top k results
-                start_time_retrieval = time.time()
-                top_ids_and_scores = index.search_knn(
-                    embeds.cpu().numpy(), n_retrieved_doc
-                )
-                logger.info(f"Search time: {time.time()-start_time_retrieval:.1f} s.")
 
-                paired_passages = []
-                for (doc_ids, _), query, answer in zip(
-                    top_ids_and_scores, queries, answers
-                ):
-                    paired_passage = []
-                    doc_ids = [str(doc_id) for doc_id in doc_ids]
-                    with open(
-                        embeddings_dir / Path(split) / "allpassages.jsonl", "r"
-                    ) as fin:
-                        for line in fin:
-                            dict_content = json.loads(line)
-                            id = str(list(dict_content.keys())[0])
+    
+    with open(
+        embeddings_dir / Path(split) / "allpassages.jsonl", "r"
+    ) as fin:
+        all_passages =  {k:v for line in fin for k, v in json.loads(line).items()}
+ 
 
-                            if id in doc_ids:
-                                paired_passage.append(dict_content[id])
-                                doc_ids.remove(id)
+    paired_passages = []
+    for (doc_ids, _), query, answer in tqdm(zip(
+        top_ids_and_scores, queries, answers), desc="Retrieving similar passages", total=total_QA
+    ):
+        paired_passage = []
+        doc_ids = [str(doc_id) for doc_id in doc_ids]
+ 
+        for id in doc_ids:
+            paired_passage.append(all_passages[id])
 
-                            if len(doc_ids) == 0:
-                                break
 
-                        paired_passages.append(
-                            {
-                                "question": query,
-                                "passages": paired_passage,
-                                "answer": answer,
-                            }
-                        )
+        paired_passages.append(
+            {
+                "question": query,
+                "passages": paired_passage,
+                "answer": answer,
+            }
+        )
 
-                    with open(output_path, "a") as fout:
-                        for entry in paired_passages:
-                            json.dump(entry, fout)
-                            fout.write("\n")
+    with open(output_path, "w") as fout:
+        for entry in paired_passages:
+            json.dump(entry, fout)
+            fout.write("\n")
 
-                    logger.info(f"Saved results to {output_path}")
-                    queries = []
-                    answers = []
+    logger.info(f"Saved results to {output_path}")
+            
 
 
 
@@ -309,6 +317,14 @@ def arg_parser():
         default=None,
         help="Name of the dataset to load",
     )
+    
+    parser.add_argument(
+        "-bs",
+        "--batch_size",
+        type=int,
+        default=32,
+        help="Batch size for encoding queries")
+        
 
     return parser
 
@@ -327,21 +343,22 @@ if __name__ == "__main__":
     # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA'
     # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages'
 
-    output_path = args.outpath
-    datapath = args.data_path
+    output_path = args.save_output_path
+    datapath = args.data_name_to_load
     
     retrieved_passage_4QA(
         path_QA = datapath,
         output_path=output_path,
         n_retrieved_doc=5,
         embed_dim=4096,
-        n_subquantizers=8,
+        n_subquantizers=0,
         n_bits=8,
-        indexing_batch_size=9984,
+        indexing_batch_size=50000,
         pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
         save_or_load_index=True,
         model_name="NVEmbed",
         split="all_indexed",
+        batch_size = args.batch_size,
     )
     
     # create_similar_passage_ds(

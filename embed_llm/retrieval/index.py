@@ -42,7 +42,7 @@ class Indexer(object):
         query_vectors = query_vectors.astype("float32")
         result = []
         nbatch = (len(query_vectors) - 1) // index_batch_size + 1
-        for k in tqdm(range(nbatch)):
+        for k in range(nbatch):
             start_idx = k * index_batch_size
             end_idx = min((k + 1) * index_batch_size, len(query_vectors))
             q = query_vectors[start_idx:end_idx]

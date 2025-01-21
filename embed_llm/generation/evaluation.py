@@ -23,8 +23,10 @@ from embed_llm.generation.metrics import (
 
 
 EVAL_DATA_PATH = {
-    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/nq_open_hf.jsonl",  # nq_data.jsonl
-    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/triviaqa_data.jsonl",
+    # "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/nq_open_hf.jsonl",  # nq_data.jsonl
+    # "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/triviaqa_data.jsonl",
+    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
+    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",
 }
 
 METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em}
@@ -219,6 +221,7 @@ def evaluate_QA(
         mistral=mistral,
         max_seq_len=max_seq_len,
         instruct_name = instruct_name,
+        ckpt=ckpt,
     )
 
     if mistral:
@@ -638,6 +641,7 @@ def evaluate_reconstruction_model(
         mistral=False,
         instruct_name = instruct_name,
         max_seq_len=max_seq_len,
+        ckpt    = ckpt
     )
 
     if max_seq_len != pipeline.pipeline_args.max_seq_len:
@@ -857,7 +861,7 @@ if __name__ == "__main__":
     ensure_reproducibility(29)
 
     output_file = (
-        "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/eval_QA_mistral.json"
+        "/home/hippolytepilchen/code/embed_llm/results/mistral/eval_QA_mistral.json"
         if args.out_file is None
         else args.out_file
     )
@@ -872,77 +876,26 @@ if __name__ == "__main__":
 
     if args.mistral:
 
-        # mistral_model = evaluate_QA(
-        #     "",
-        #     ["NQ"],
-        #     temps=[0],
-        #     max_bs=args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples = 0,
-        #     mistral=True,
-        #     icl_w_context=True,
-        #     query_w_context=True,
-        #     w_embeds=False,
-        #     kilt = True
-        # )
-
-        # mistral_model = evaluate_QA(
-        #     "",
-        #     ["NQ"],
-        #     temps=[0],
-        #     max_bs=args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=2,
-        #     mistral=True,
-        #     icl_w_context=True,
-        #     query_w_context=True,
-        #     w_embeds=False,
-        #     kilt = True
-        # )
-
-        # mistral_model = evaluate_QA(
-        #     "",
-        #     ["NQ"],
-        #     temps=[0],
-        #     max_bs=args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=5,
-        #     pipeline = mistral_model,
-        #     mistral=True,
-        #     icl_w_context=True,
-        #     query_w_context=True,
-        #     w_embeds=False,
-        #     kilt = True
-        # )
 
         assert (
             not args.eval_reconstruction
         ), "Cannot evaluate reconstruction with Mistral"
-        print("EVALUATING WITHOUT CONTEXT")
-        mistral_model = evaluate_QA(
-            "",
-            ["NQ", "TRIVIAQA"],
-            temps=temp_tests,
-            max_bs=args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=icl_tests[0],
-            mistral=True,
-            icl_w_context=False,
-            query_w_context=False,
-            w_embeds=False,
-        )
+        # print("EVALUATING WITHOUT CONTEXT")
+        # mistral_model = evaluate_QA(
+        #     "",
+        #     ["NQ", "TRIVIAQA"],
+        #     temps=temp_tests,
+        #     max_bs=args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=icl_tests[0],
+        #     mistral=True,
+        #     icl_w_context=False,
+        #     query_w_context=False,
+        #     w_embeds=False,
+        # )
         torch.cuda.empty_cache()
         print("EVALUATING WITH CONTEXT")
         mistral_model = evaluate_QA(
@@ -959,28 +912,27 @@ if __name__ == "__main__":
             icl_w_context=True,
             query_w_context=True,
             w_embeds=False,
-            pipeline=mistral_model,
         )
         torch.cuda.empty_cache()
 
         for icl_ex in icl_tests[1:]:
-            print("EVALUATING WITHOUT CONTEXT")
-            mistral_model = evaluate_QA(
-                "",
-                ["NQ", "TRIVIAQA"],
-                temps=temp_tests,
-                max_bs=args.bs,
-                output_file=output_file,
-                n_samples=n_passages,
-                max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
-                icl_examples=icl_ex,
-                mistral=True,
-                icl_w_context=False,
-                query_w_context=False,
-                w_embeds=False,
-                pipeline=mistral_model,
-            )
+            # print("EVALUATING WITHOUT CONTEXT")
+            # mistral_model = evaluate_QA(
+            #     "",
+            #     ["NQ", "TRIVIAQA"],
+            #     temps=temp_tests,
+            #     max_bs=args.bs,
+            #     output_file=output_file,
+            #     n_samples=n_passages,
+            #     max_seq_len=max_seq_len,
+            #     tmp_path=tmp_path,
+            #     icl_examples=icl_ex,
+            #     mistral=True,
+            #     icl_w_context=False,
+            #     query_w_context=False,
+            #     w_embeds=False,
+            #     pipeline=mistral_model,
+            # )
             torch.cuda.empty_cache()
             print("EVALUATING WITH CONTEXT")
             mistral_model = evaluate_QA(

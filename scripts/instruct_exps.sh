@@ -4,7 +4,7 @@
 #SBATCH --array=0 
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s01dgx20
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx14
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
@@ -48,7 +48,7 @@ RUN_NAME=$(basename "$CONFIG" .yaml)
 echo "Starting evaluation of run $RUN_NAME"
 
 srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/eval_instruct.json \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json \
     --n_passages 1000 --max_seq_len 64 --instruct_name $RUN_NAME 
    
 echo "Finished at: $(date)"
