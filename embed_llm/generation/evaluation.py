@@ -114,7 +114,9 @@ def load_pipeline(
                 last_ckpt = sorted(
                     [
                         ckpt_name
-                        for ckpt_name in os.listdir(tmp_path + run_name + "/checkpoints/")
+                        for ckpt_name in os.listdir(
+                            tmp_path + run_name + "/checkpoints/"
+                        )
                         if (
                             Path(tmp_path + run_name + "/checkpoints/")
                             / ckpt_name
@@ -122,7 +124,6 @@ def load_pipeline(
                         ).exists()
                     ]
                 )[-1]
-            
 
                 pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
                     llm_path=llm_path,
@@ -137,7 +138,9 @@ def load_pipeline(
                 last_ckpt = sorted(
                     [
                         ckpt_name
-                        for ckpt_name in os.listdir(tmp_path + instruct_name + "/checkpoints/")
+                        for ckpt_name in os.listdir(
+                            tmp_path + instruct_name + "/checkpoints/"
+                        )
                         if (
                             Path(tmp_path + instruct_name + "/checkpoints/")
                             / ckpt_name
@@ -145,18 +148,20 @@ def load_pipeline(
                         ).exists()
                     ]
                 )[-1]
-            
 
                 pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
                     llm_path=llm_path,
-                    ckpt_path= None,
+                    ckpt_path=None,
                     device=device,
                     llm_name="Mistral7B",
                     embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
                     max_batch_size=max_bs,
-                    instruct_ckpt=tmp_path + instruct_name + "/checkpoints/" + last_ckpt,
+                    instruct_ckpt=tmp_path
+                    + instruct_name
+                    + "/checkpoints/"
+                    + last_ckpt,
                 )
-            
+
             ckpt = int(last_ckpt.split("_")[-1])
             print("Evaluating checkpoint", ckpt)
         else:
@@ -220,7 +225,7 @@ def evaluate_QA(
         pipeline=pipeline,
         mistral=mistral,
         max_seq_len=max_seq_len,
-        instruct_name = instruct_name,
+        instruct_name=instruct_name,
         ckpt=ckpt,
     )
 
@@ -639,9 +644,9 @@ def evaluate_reconstruction_model(
         max_bs=max_batch_size,
         pipeline=pipeline,
         mistral=False,
-        instruct_name = instruct_name,
+        instruct_name=instruct_name,
         max_seq_len=max_seq_len,
-        ckpt    = ckpt
+        ckpt=ckpt,
     )
 
     if max_seq_len != pipeline.pipeline_args.max_seq_len:
@@ -875,7 +880,6 @@ if __name__ == "__main__":
     n_passages = args.n_passages
 
     if args.mistral:
-
 
         assert (
             not args.eval_reconstruction

@@ -208,51 +208,45 @@ def get_instruct_ckpts_paths(
     instruct_ckpt: str,
     pipeline_args: EmbedAugArgs,
     llm_name: str,
-) -> tuple[str,str,str,str,str]:
-    
-        
+) -> tuple[str, str, str, str, str]:
+
     embedder_lora_state_dict_path = None
     llm_lora_state_dict_path = None
     pooling_state_dict_path = None
     mlp_state_dict_path = None
     ca_state_dict_path = None
-    
-    
-    ca_and_lora_path = (
-        instruct_ckpt + "/" + llm_name + "/consolidated/lora.safetensors"
-    )
-    
-    trainable_embedder_path = (
-                instruct_ckpt + "/" + llm_name + "/trainable_embedder"
-            )
-    mlp_path = instruct_ckpt + "/" + "MLP_projector"
-    
 
-    
+    ca_and_lora_path = instruct_ckpt + "/" + llm_name + "/consolidated/lora.safetensors"
+
+    trainable_embedder_path = instruct_ckpt + "/" + llm_name + "/trainable_embedder"
+    mlp_path = instruct_ckpt + "/" + "MLP_projector"
+
     with open(instruct_ckpt + "/instruct.json", "r") as f:
         instruct_args = json.loads(f.read())
-    
-    instruct_args = InstructionTuningArgs(**instruct_args)
 
+    instruct_args = InstructionTuningArgs(**instruct_args)
 
     if pipeline_args.trainable_embedder and instruct_args.tune_embedder:
         logger.info("Loading trainable embedder from " + trainable_embedder_path)
         embedder_lora_state_dict_path = trainable_embedder_path
-        
+
     if Path(instruct_ckpt + "/" + llm_name + "/pooling_module").exists():
         pooling_state_dict_path = instruct_ckpt + "/" + llm_name + "/pooling_module"
-        
-    
+
     if pipeline_args.mlp_project.n_layers > 0:
         logger.info("Loading MLP projector from " + mlp_path)
         mlp_state_dict_path = mlp_path
-        
+
     if pipeline_args.cross_att:
         ca_state_dict_path = ca_and_lora_path
-        
+
     if pipeline_args.trainable_llm and instruct_args.tune_llm:
         llm_lora_state_dict_path = ca_and_lora_path
-        
-    return embedder_lora_state_dict_path, pooling_state_dict_path, mlp_state_dict_path, ca_state_dict_path, llm_lora_state_dict_path
-        
-    
+
+    return (
+        embedder_lora_state_dict_path,
+        pooling_state_dict_path,
+        mlp_state_dict_path,
+        ca_state_dict_path,
+        llm_lora_state_dict_path,
+    )

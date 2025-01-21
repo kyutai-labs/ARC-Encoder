@@ -28,7 +28,12 @@ from embed_llm.models.wrapped_models_training import (
     load_training_model_from_ckpt,
 )
 from embed_llm.retrieval.embeddings import get_pretrained_embedder
-from embed_llm.training.args import TrainArgs, OptimArgs, InstructionTuningArgs, WandbArgs
+from embed_llm.training.args import (
+    TrainArgs,
+    OptimArgs,
+    InstructionTuningArgs,
+    WandbArgs,
+)
 from embed_llm.models.args import LoraArgs, EmbedAugArgs
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.data.data_loader import build_data_loader

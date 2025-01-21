@@ -31,10 +31,10 @@ def index_encoded_data(index, embedding_files, indexing_batch_size):
         logger.info(f"Loading file {file_path}")
         with open(file_path, "rb") as fin:
             embeddings = np.load(fin)
-         
+
         ids = [count + i for i in range(embeddings.shape[0])]
         count += embeddings.shape[0]
-        
+
         with open(file_path.replace("pkl", "jsonl"), "r") as text_file:
             passages = [json.loads(line)["text"] for line in text_file]
 
@@ -233,16 +233,16 @@ def retrieved_passage_4QA(
     batch_query = []
     embeddings = []
     with open(path_QA, "r") as file:
-        for i, line in tqdm(
-            enumerate(file), desc="Embed queries", total=total_QA
-        ):
+        for i, line in tqdm(enumerate(file), desc="Embed queries", total=total_QA):
             data = json.loads(line)
-            queries.append(data["question"]) 
-            batch_query.append(data["question"].split('\n\n')[0]) # If multi_option question, only take the first question
+            queries.append(data["question"])
+            batch_query.append(
+                data["question"].split("\n\n")[0]
+            )  # If multi_option question, only take the first question
             answers.append(data["answer"])
-            
+
             if i % batch_size == 0:
-                
+
                 embeds = encode_text(
                     batch_query,
                     model_name=model_name,
@@ -254,33 +254,27 @@ def retrieved_passage_4QA(
                 embeds = F.normalize(embeds, p=2, dim=1)
                 embeddings.append(embeds)
                 batch_query = []
-    
+
     embeds = torch.cat(embeddings, dim=0)
     # get top k results
     start_time_retrieval = time.time()
-    top_ids_and_scores = index.search_knn(
-        embeds.cpu().numpy(), n_retrieved_doc
-    )
+    top_ids_and_scores = index.search_knn(embeds.cpu().numpy(), n_retrieved_doc)
     logger.info(f"Search time: {time.time()-start_time_retrieval:.1f} s.")
 
-
-    
-    with open(
-        embeddings_dir / Path(split) / "allpassages.jsonl", "r"
-    ) as fin:
-        all_passages =  {k:v for line in fin for k, v in json.loads(line).items()}
- 
+    with open(embeddings_dir / Path(split) / "allpassages.jsonl", "r") as fin:
+        all_passages = {k: v for line in fin for k, v in json.loads(line).items()}
 
     paired_passages = []
-    for (doc_ids, _), query, answer in tqdm(zip(
-        top_ids_and_scores, queries, answers), desc="Retrieving similar passages", total=total_QA
+    for (doc_ids, _), query, answer in tqdm(
+        zip(top_ids_and_scores, queries, answers),
+        desc="Retrieving similar passages",
+        total=total_QA,
     ):
         paired_passage = []
         doc_ids = [str(doc_id) for doc_id in doc_ids]
- 
+
         for id in doc_ids:
             paired_passage.append(all_passages[id])
-
 
         paired_passages.append(
             {
@@ -296,9 +290,6 @@ def retrieved_passage_4QA(
             fout.write("\n")
 
     logger.info(f"Saved results to {output_path}")
-            
-
-
 
 
 def arg_parser():
@@ -317,14 +308,14 @@ def arg_parser():
         default=None,
         help="Name of the dataset to load",
     )
-    
+
     parser.add_argument(
         "-bs",
         "--batch_size",
         type=int,
         default=32,
-        help="Batch size for encoding queries")
-        
+        help="Batch size for encoding queries",
+    )
 
     return parser
 
@@ -345,9 +336,9 @@ if __name__ == "__main__":
 
     output_path = args.save_output_path
     datapath = args.data_name_to_load
-    
+
     retrieved_passage_4QA(
-        path_QA = datapath,
+        path_QA=datapath,
         output_path=output_path,
         n_retrieved_doc=5,
         embed_dim=4096,
@@ -358,9 +349,9 @@ if __name__ == "__main__":
         save_or_load_index=True,
         model_name="NVEmbed",
         split="all_indexed",
-        batch_size = args.batch_size,
+        batch_size=args.batch_size,
     )
-    
+
     # create_similar_passage_ds(
     #     path,
     #     output_path="/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/similar_passages.jsonl",
