@@ -84,7 +84,7 @@ class TrainArgs(Serializable):
     # If True, no checkpoint will be saved. This is useful for development.
     no_ckpt: bool = False
     start_from_ckpt_path: str | None = None
-    num_ckpt_keep: int = 2
+    num_ckpt_keep: int = 3
     eval_freq: int = 0
     no_eval: bool = True
 

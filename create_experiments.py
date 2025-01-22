@@ -197,7 +197,7 @@ def arg_parser():
         "--eval_freq", type=int, default=100, help="Evaluation frequency"
     )
     parser.add_argument(
-        "--ckpt_freq", type=int, default=500, help="Checkpoint frequency"
+        "--ckpt_freq", type=int, default=5000, help="Checkpoint frequency"
     )
     parser.add_argument(
         "--prefix", type=str, default=None, help="Prefix for the experiment"

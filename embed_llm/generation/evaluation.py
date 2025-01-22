@@ -2,6 +2,7 @@ import os
 import torch
 import json
 import numpy as np
+import pandas as pd
 import random
 from tqdm import tqdm, trange
 import argparse
@@ -95,7 +96,6 @@ def create_prompt(
     else:
         return prefix + f"Query: {query}\nAnswer:"
 
-
 def load_pipeline(
     run_name: str | None,
     tmp_path: str,
@@ -125,7 +125,7 @@ def load_pipeline(
                             / "params.json"
                         ).exists()
                     ]
-                )[-1]
+                )[-1] if ckpt is None else f"checkpoint_{ckpt:06d}"
 
                 pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
                     llm_path=llm_path,
@@ -847,6 +847,7 @@ def arg_parser():
         type=str,
         default=None,
     )
+    parser.add_argument("--ckpt", type=int, default=None)
     parser.add_argument("--eval_reconstruction", action="store_true")
     parser.add_argument("--out_file", type=str, default=None)
     parser.add_argument("--n_passages", type=int, default=500)
@@ -861,15 +862,17 @@ def arg_parser():
     parser.add_argument("--not_colbert", action="store_false")
     parser.add_argument("--benchmarks", type = str, default="all")
 
+
     return parser.parse_args()
 
 
 if __name__ == "__main__":
 
     icl_tests = [0, 2, 5]
-    temp_tests = [0]
+    temp_tests = [0, 0.5]
 
     args = arg_parser()
+    
     if args.benchmarks == 'all':
         benchmarks = ["NQ", "TRIVIAQA"]
     else:
@@ -891,6 +894,7 @@ if __name__ == "__main__":
     max_seq_len = args.max_seq_len
     n_passages = args.n_passages
 
+    # Evaluate Mistral using their code
     if args.mistral:
 
         assert (
@@ -1015,6 +1019,7 @@ if __name__ == "__main__":
             if args.multi_passages > 1:
                 pipeline, ckpt = evaluate_reconstruction_model(
                     args.run_name,
+                    ckpt = args.ckpt,
                     output_file=output_file,
                     temperatures=temp_tests,
                     max_seq_len=args.reconstruct_seq_len,
@@ -1029,6 +1034,7 @@ if __name__ == "__main__":
                 pipeline, ckpt = evaluate_reconstruction_model(
                     args.run_name,
                     output_file=output_file,
+                    ckpt = args.ckpt,
                     temperatures=temp_tests,
                     max_seq_len=args.reconstruct_seq_len,
                     tmp_path=tmp_path,
@@ -1055,6 +1061,7 @@ if __name__ == "__main__":
         pipeline, ckpt = evaluate_QA(
             args.run_name,
             benchmarks,
+            ckpt=args.ckpt,
             temps=temp_tests,
             max_bs=args.bs,
             output_file=output_file,
@@ -1089,21 +1096,3 @@ if __name__ == "__main__":
                 colbert = args.not_colbert,
             )
 
-            # pipeline, ckpt = evaluate_QA(
-            #     args.run_name,
-            #     benchmarks,
-            #     temps=temp_tests,
-            #     max_bs=args.bs,
-            #     output_file=output_file,
-            #     n_samples=n_passages,
-            #     max_seq_len=max_seq_len,
-            #     tmp_path=tmp_path,
-            #     icl_examples=icl_ex,
-            #     w_embeds=args.wo_embeds,
-            #     icl_w_context=True,
-            #     pipeline=pipeline,
-            #     ckpt=ckpt,
-            #     max_multi_passage=args.multi_passages,
-            #     instruct_name=args.instruct_name,
-            #     colbert = args.not_colbert,
-            # )

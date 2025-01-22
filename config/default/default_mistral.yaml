@@ -67,7 +67,7 @@ seed: 0
 log_freq: 100
 eval_freq: 500
 no_eval: False
-ckpt_freq: 500
+ckpt_freq: 5000
 save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not working for now 
 
 # Monitoring
