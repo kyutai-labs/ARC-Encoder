@@ -42,17 +42,10 @@ def main(args):
 
     if args.do_hybrid_task:
         config["hybrid_task"] = {}
-        config["hybrid_task"]["do"] = args.do_hybrid_task
-        config["hybrid_task"]["max_n_prefixes"] = args.max_n_prefixes
-        config["hybrid_task"]["min_n_prefixes"] = args.min_n_prefixes
-        config["hybrid_task"]["prop_continuation"] = args.prop_continuation
+        config["hybrid_task"]["do"] = not args.not_do_hybrid_task
         config["hybrid_task"][
             "prop_noembed_continuation"
         ] = args.prop_noembed_continuation
-        config["hybrid_task"][
-            "prop_uselessembed_continuation"
-        ] = args.prop_uselessembed_continuation
-        config["hybrid_task"]["one_task_4_all"] = args.one_task_4_all
         config["hybrid_task"]["max_embeds"] = args.max_embeds
 
     if not args.not_cross_att:
@@ -219,11 +212,7 @@ def arg_parser():
     parser.add_argument(
         "--embedder_name", type=str, default="NVEmbed", help="Embedder name"
     )
-    parser.add_argument(
-        "--train_embedder",
-        action="store_true",
-        help="Whether to train the embedder, if True embedder_name = llm_name",
-    )
+
     parser.add_argument(
         "--pooling",
         type=str,
@@ -284,14 +273,42 @@ def arg_parser():
     parser.add_argument("--mlm", action="store_true", help="Whether to use MLM loss")
 
     parser.add_argument(
-        "--not_pooled_cross_att",
-        action="store_true",
-        help="Whether to use pooled cross-attention",
-    )
-    parser.add_argument(
         "--prefix_prompt",
         action="store_true",
         help="Whether to use a prefix prompt",
+    )
+    parser.add_argument(
+        "--train_only_pooling",
+        action="store_true",
+        help="Whether to use a LLM embedder but with trainable pooling",
+    )
+
+    parser.add_argument(
+        "--max_n_prefixes",
+        type=int,
+        default=1,
+        help="Maximum number of prefixes",
+    )
+
+    parser.add_argument(
+        "--min_n_prefixes",
+        type=int,
+        default=0,
+        help="Minimum number of prefixes",
+    )
+
+    parser.add_argument(
+        "--prop_continuation",
+        type=float,
+        default=0.0,
+        help="Proportion of continuation",
+    )
+
+    parser.add_argument(
+        "--gate_bottleneck",
+        type=int,
+        default=8,
+        help="Gate bottleneck",
     )
 
     parser.add_argument(
@@ -331,45 +348,38 @@ def arg_parser():
         action="store_true",
         help="Whether to not use data params inside config file",
     )
-
+    
+    parser.add_argument(
+        "--not_do_hybrid_task",
+        action="store_true",
+        help="Whether to use a hybrid task",
+    )
+    
     parser.add_argument(
         "--not_train_llm",
         action="store_true",
         help="Whether to train the llm",
     )
+    
     parser.add_argument(
-        "--train_only_pooling",
+        "--train_embedder",
         action="store_true",
-        help="Whether to use a LLM embedder but with trainable pooling",
+        help="Whether to train the embedder, if True embedder_name = llm_name",
     )
-
+    
     parser.add_argument(
-        "--do_hybrid_task",
-        action="store_true",
-        help="Whether to use a hybrid task",
-    )
-
-    parser.add_argument(
-        "--max_n_prefixes",
+        "--max_embeds",
         type=int,
         default=1,
-        help="Maximum number of prefixes",
+        help="Maximum number of embeddings",
     )
-
+    
     parser.add_argument(
-        "--min_n_prefixes",
-        type=int,
-        default=0,
-        help="Minimum number of prefixes",
+        "--not_pooled_cross_att",
+        action="store_true",
+        help="Whether to use pooled cross-attention",
     )
-
-    parser.add_argument(
-        "--prop_continuation",
-        type=float,
-        default=0.0,
-        help="Proportion of continuation",
-    )
-
+    
     parser.add_argument(
         "--prop_noembed_continuation",
         type=float,
@@ -377,32 +387,6 @@ def arg_parser():
         help="Proportion of noembed continuation",
     )
 
-    parser.add_argument(
-        "--prop_uselessembed_continuation",
-        type=float,
-        default=0.0,
-        help="Proportion of uselessembed continuation",
-    )
-
-    parser.add_argument(
-        "--one_task_4_all",
-        action="store_true",
-        help="Whether to use one task for all",
-    )
-
-    parser.add_argument(
-        "--max_embeds",
-        type=int,
-        default=0,
-        help="Maximum number of embeddings",
-    )
-
-    parser.add_argument(
-        "--gate_bottleneck",
-        type=int,
-        default=8,
-        help="Gate bottleneck",
-    )
     return parser.parse_args()
 
 

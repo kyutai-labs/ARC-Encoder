@@ -189,7 +189,7 @@ def retrieved_passage_4QA(
     n_subquantizers: int = 8,
     n_bits: int = 8,
     indexing_batch_size: int = 1024,
-    pathname_embeddings=r"^/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/NVEmbed/(\d{1,3})_embeddings_(\d{1,2})\.npy$",
+    pathname_embeddings: str = "",
     save_or_load_index: bool = True,
     model_name: str = "NVEmbed",
     split: str = "train",

@@ -476,80 +476,28 @@ def _train(
                     < args.hybrid_task.prop_noembed_continuation
                     and args.hybrid_task.do
                 ):
-                    if batch.data_type == "continuation":
-                        x = []
-                        y = []
-                        seqlens = []
-                        y_mask = []
-                        ind = 0
-                        for to_embed, size, n_prefix in zip(
-                            batch.to_embed, batch.sizes, batch.n_prefixes
-                        ):
-                            x.extend(to_embed["tokens"][0])
-                            x.extend(batch.x[ind + n_prefix : ind + size])
-                            y.extend(to_embed["tokens"][0])
-                            y.extend(batch.y[ind + n_prefix : ind + size])
-                            seqlens.append(len(to_embed["tokens"][0]) + size - n_prefix)
-                            ind += size
-                            y_mask.extend([False] * len(to_embed["tokens"][0]))
-                            y_mask.extend([True] * (size - n_prefix))
+                    x = []
+                    y = []
+                    seqlens = []
+                    y_mask = []
+                    ind = 0
+                    for to_embed, size in zip(
+                        batch.to_embed, batch.sizes
+                    ):
+                        tokens = sum(to_embed["tokens"], [])
+                        x.extend(tokens[:-1])
+                        y.extend(tokens[1:])
+                        seqlens.append(len(tokens) - 1)
+                        y_mask.extend(
+                            [False] * ((len(tokens) - 1) // 2)
+                            + [True] * (len(tokens) - 1 - ((len(tokens) - 1) // 2))
+                        )
 
-                        x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
-                        y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
-                        y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
-                        batch.data_type = "noembed_continuation"
+                    x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
+                    y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
+                    y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
+                    batch.data_type = "noembed_continuation"
 
-                    elif batch.data_type == "reconstruction":
-                        x = []
-                        y = []
-                        seqlens = []
-                        y_mask = []
-                        for to_embed, size, n_prefix in zip(
-                            batch.to_embed, batch.sizes, batch.n_prefixes
-                        ):
-                            x.extend(to_embed["tokens"][0])
-                            y.extend(to_embed["tokens"][0])
-                            seqlens.append(len(to_embed["tokens"][0]))
-                            y_mask.extend([False] * (len(to_embed["tokens"][0]) // 2))
-                            y_mask.extend(
-                                [True]
-                                * (
-                                    len(to_embed["tokens"][0])
-                                    - len(to_embed["tokens"][0]) // 2
-                                )
-                            )
-                        x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
-                        y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
-                        y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
-                        batch.data_type = "noembed_reconstruction"
-                        embeddings = None
-
-                    elif batch.data_type == "one_4_all":
-                        x = []
-                        y = []
-                        seqlens = []
-                        y_mask = []
-                        ind = 0
-                        for to_embed, size, n_prefix in zip(
-                            batch.to_embed, batch.sizes, batch.n_prefixes
-                        ):
-                            tokens = sum(to_embed["tokens"], [])
-                            x.extend(tokens[:-1])
-                            y.extend(tokens[1:])
-                            seqlens.append(len(tokens) - 1)
-                            y_mask.extend(
-                                [False] * ((len(tokens) - 1) // 2)
-                                + [True] * (len(tokens) - 1 - ((len(tokens) - 1) // 2))
-                            )
-
-                        x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
-                        y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
-                        y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
-                        batch.data_type = "noembed_continuation"
-
-                    else:  # text continuation where the sample is not helpful
-                        batch.data_type = "noembed_reconstruction"
-                        embeddings = None
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:

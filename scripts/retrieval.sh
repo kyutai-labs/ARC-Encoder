@@ -10,13 +10,14 @@
 #SBATCH --array=0-11
 #SBATCH --job-name=retrieve_passages
 #SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx07,par2dc5-ai-prd-cl02s04dgx14
-#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/nvembed/slurm_embeddings_%A_%a.log 
+#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/retrieval/slurm_embeddings_%A_%a.log 
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 # Get the configuration file for this job
 DATA_PATHS=(
+/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/commonsense_qa.jsonl
 /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl
 /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/train.jsonl
 /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/train.jsonl
@@ -32,6 +33,7 @@ DATA_PATHS=(
 )
 
 OUT_PATHS=(
+/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/commonsense_qa.jsonl
 /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl
 /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_data_old.jsonl
 /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/triviaqa_data.jsonl

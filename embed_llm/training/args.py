@@ -50,14 +50,7 @@ class InstructionTuningArgs(Serializable):
 @dataclass
 class HybridTask(Serializable):
     do: bool = False
-    # Not used arguments TODO Remove
-    max_n_prefixes: int = 1
-    min_n_prefixes: int = 0
-    prop_continuation: float = 0.0
     prop_noembed_continuation: float = 0.0
-    prop_uselessembed_continuation: float = 0.0
-    # Real hybrid task
-    one_task_4_all: bool = True
     max_embeds: int = 1  # Works only with one_task_4_all=True
 
 

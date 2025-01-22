@@ -13,7 +13,6 @@ from embed_llm.data.tokenize import Mask, TokenSample, encode, Tokenizer
 from embed_llm.data.sequence_iterators import (
     sequence_iterator_continuation,
     sequence_iterator_reconstruction,
-    sequence_iterator_hybrid,
     sequence_iterator_one_task_4_all,
     SequenceEmbedMaskAndSizes,
 )
@@ -168,7 +167,6 @@ def sequence_iterator(
     sizes: list[int] = []
     n_prefixes: list[int] = []
     n_missing = seq_len
-    useless_embed_continuation = False
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
         if hybrid_task is None or not hybrid_task.do:
@@ -245,59 +243,26 @@ def sequence_iterator(
                     ) = res
                     continue
         else:
-            if not hybrid_task.one_task_4_all:
-                assert adapt_seq_len, "Hybrid task only works with adapt_seq_len=True"
-                res = sequence_iterator_hybrid(
-                    sample=sample,
-                    x_buffer=x_buffer,
-                    y_buffer=y_buffer,
-                    mask_buffer=mask_buffer,
-                    to_embed_buffer=to_embed_buffer,
-                    n_prefixes=n_prefixes,
-                    sizes=sizes,
+
+
+            tokens, mask = sample.tokens, sample.masks[1:]
+            cur_pos = 0
+
+            while cur_pos < len(tokens[:-1]):
+                res = sequence_iterator_one_task_4_all(
+                    mask=mask,
+                    tokens=tokens,
                     seq_len=seq_len,
                     tokenizer=tokenizer,
-                    max_n_prefixes=hybrid_task.max_n_prefixes,
-                    min_n_prefixes=hybrid_task.min_n_prefixes,
-                    prop_continuation=hybrid_task.prop_continuation,
-                    prop_uselessembed_continuation=hybrid_task.prop_uselessembed_continuation,
-                    useless_embed_continuation=useless_embed_continuation,
+                    cur_pos=cur_pos,
+                    max_embeds=hybrid_task.max_embeds,
                 )
+                if res is None:
+                    break
 
-                if isinstance(res, SequenceEmbedMaskAndSizes):
-                    yield res
-                    n_prefixes = []
-                    x_buffer, y_buffer = [], []
-                    mask_buffer = []
-                    to_embed_buffer = []
-                    sizes = []
-                    useless_embed_continuation = False
-                elif res is None:
-                    useless_embed_continuation = False
-                    continue
                 else:
-                    to_embed_buffer, useless_embed_continuation = res
-                    continue
-            else:
-
-                tokens, mask = sample.tokens, sample.masks[1:]
-                cur_pos = 0
-
-                while cur_pos < len(tokens[:-1]):
-                    res = sequence_iterator_one_task_4_all(
-                        mask=mask,
-                        tokens=tokens,
-                        seq_len=seq_len,
-                        tokenizer=tokenizer,
-                        cur_pos=cur_pos,
-                        max_embeds=hybrid_task.max_embeds,
-                    )
-                    if res is None:
-                        break
-
-                    else:
-                        yield res[0]
-                        cur_pos = res[1]
+                    yield res[0]
+                    cur_pos = res[1]
 
     if is_finite:
         # if dataloader is in eval, pad to seq length

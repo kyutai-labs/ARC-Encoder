@@ -21,10 +21,12 @@ from embed_llm.generation.metrics import (
     get_approx_em,
 )
 
-
+EVAL_DATA_PATH_COLBERT = {
+    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/nq_open_hf.jsonl",  # nq_data.jsonl
+    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/triviaqa_data.jsonl",
+}
 EVAL_DATA_PATH = {
-    # "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/nq_open_hf.jsonl",  # nq_data.jsonl
-    # "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/triviaqa_data.jsonl",
+
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",
 }
@@ -209,6 +211,7 @@ def evaluate_QA(
     max_multi_passage: int = 1,
     kilt: bool = False,
     instruct_name: str = None,
+    colbert: bool = False,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
@@ -250,7 +253,7 @@ def evaluate_QA(
     ):
 
         metrics[benchmark] = {}
-        eval_data = EVAL_DATA_PATH[benchmark]
+        eval_data = EVAL_DATA_PATH[benchmark] if not colbert else EVAL_DATA_PATH_COLBERT[benchmark]
         context = []
         questions = []
         answers = []
@@ -272,7 +275,7 @@ def evaluate_QA(
                 if max_multi_passage <= 1:
                     context.append(data["passages"][0].strip())
                 else:
-                    context.append(data["passages"][:max_multi_passage])
+                    context.append(list(data["passages"][:max_multi_passage]))
 
         if benchmark == "NQ" and kilt:
             test_pairs = []
@@ -478,6 +481,7 @@ def evaluate_QA(
                     "Metric": value_em,
                     "approx_Metric": value_approx,
                     "Prop context containing the answer": n_answer_in_context,
+                    "n_passages": max_multi_passage,
                 }
                 value_f1 = (
                     sum(
@@ -495,6 +499,7 @@ def evaluate_QA(
                     "w_context_in_examples": icl_w_context,
                     "w_context_w_query": query_w_context,
                     "Metric": value_f1,
+                    "n_passages": max_multi_passage,
                 }
                 print(
                     "Context |  query | gen sequence | answer:",
@@ -536,6 +541,7 @@ def evaluate_QA(
                     "icl_examples": icl_examples,
                     "Metric": value,
                     "w_context_in_examples": icl_w_context,
+                    "n_passages": max_multi_passage,
                 }
 
     if run_name != "":
@@ -852,6 +858,8 @@ def arg_parser():
     parser.add_argument("--reconstruct_seq_len", type=int, default=256)
     parser.add_argument("--reconstruct_npassages", type=int, default=500)
     parser.add_argument("--instruct_name", type=str, default=None)
+    parser.add_argument("--not_colbert", action="store_false")
+    parser.add_argument("--benchmarks", type = str, default="all")
 
     return parser.parse_args()
 
@@ -862,6 +870,10 @@ if __name__ == "__main__":
     temp_tests = [0]
 
     args = arg_parser()
+    if args.benchmarks == 'all':
+        benchmarks = ["NQ", "TRIVIAQA"]
+    else:
+        benchmarks = [args.benchmarks]
 
     ensure_reproducibility(29)
 
@@ -904,7 +916,7 @@ if __name__ == "__main__":
         print("EVALUATING WITH CONTEXT")
         mistral_model = evaluate_QA(
             "",
-            ["NQ", "TRIVIAQA"],
+            benchmarks,
             temps=temp_tests,
             max_bs=args.bs,
             output_file=output_file,
@@ -916,6 +928,7 @@ if __name__ == "__main__":
             icl_w_context=True,
             query_w_context=True,
             w_embeds=False,
+            colbert = args.not_colbert,
         )
         torch.cuda.empty_cache()
 
@@ -941,7 +954,7 @@ if __name__ == "__main__":
             print("EVALUATING WITH CONTEXT")
             mistral_model = evaluate_QA(
                 "",
-                ["NQ", "TRIVIAQA"],
+                benchmarks,
                 temps=temp_tests,
                 max_bs=args.bs,
                 output_file=output_file,
@@ -954,13 +967,14 @@ if __name__ == "__main__":
                 query_w_context=True,
                 w_embeds=False,
                 pipeline=mistral_model,
+                colbert = args.not_colbert,
             )
             torch.cuda.empty_cache()
 
         print("EVALUATING WITH CONTEXT but not in ICL")
         mistral_model = evaluate_QA(
             "",
-            ["NQ", "TRIVIAQA"],
+            benchmarks,
             temps=temp_tests,
             max_bs=args.bs,
             output_file=output_file,
@@ -972,6 +986,7 @@ if __name__ == "__main__":
             icl_w_context=False,
             query_w_context=True,
             w_embeds=False,
+            colbert = args.not_colbert,
         )
         torch.cuda.empty_cache()
 
@@ -991,6 +1006,7 @@ if __name__ == "__main__":
                 icl_w_context=False,
                 query_w_context=True,
                 w_embeds=False,
+                colbert = args.not_colbert,
             )
             torch.cuda.empty_cache()
 
@@ -1038,7 +1054,7 @@ if __name__ == "__main__":
 
         pipeline, ckpt = evaluate_QA(
             args.run_name,
-            ["NQ", "TRIVIAQA"],
+            benchmarks,
             temps=temp_tests,
             max_bs=args.bs,
             output_file=output_file,
@@ -1050,30 +1066,13 @@ if __name__ == "__main__":
             icl_w_context=False,
             max_multi_passage=args.multi_passages,
             instruct_name=args.instruct_name,
-        )
-
-        pipeline, ckpt = evaluate_QA(
-            args.run_name,
-            ["NQ", "TRIVIAQA"],
-            temps=temp_tests,
-            max_bs=args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=icl_tests[0],
-            w_embeds=args.wo_embeds,
-            icl_w_context=True,
-            pipeline=pipeline,
-            ckpt=ckpt,
-            max_multi_passage=args.multi_passages,
-            instruct_name=args.instruct_name,
+            colbert = args.not_colbert,
         )
 
         for icl_ex in icl_tests[1:]:
             pipeline, ckpt = evaluate_QA(
                 args.run_name,
-                ["NQ", "TRIVIAQA"],
+                benchmarks,
                 temps=temp_tests,
                 max_bs=args.bs,
                 output_file=output_file,
@@ -1087,22 +1086,24 @@ if __name__ == "__main__":
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
                 instruct_name=args.instruct_name,
+                colbert = args.not_colbert,
             )
 
-            pipeline, ckpt = evaluate_QA(
-                args.run_name,
-                ["NQ", "TRIVIAQA"],
-                temps=temp_tests,
-                max_bs=args.bs,
-                output_file=output_file,
-                n_samples=n_passages,
-                max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
-                icl_examples=icl_ex,
-                w_embeds=args.wo_embeds,
-                icl_w_context=True,
-                pipeline=pipeline,
-                ckpt=ckpt,
-                max_multi_passage=args.multi_passages,
-                instruct_name=args.instruct_name,
-            )
+            # pipeline, ckpt = evaluate_QA(
+            #     args.run_name,
+            #     benchmarks,
+            #     temps=temp_tests,
+            #     max_bs=args.bs,
+            #     output_file=output_file,
+            #     n_samples=n_passages,
+            #     max_seq_len=max_seq_len,
+            #     tmp_path=tmp_path,
+            #     icl_examples=icl_ex,
+            #     w_embeds=args.wo_embeds,
+            #     icl_w_context=True,
+            #     pipeline=pipeline,
+            #     ckpt=ckpt,
+            #     max_multi_passage=args.multi_passages,
+            #     instruct_name=args.instruct_name,
+            #     colbert = args.not_colbert,
+            # )
