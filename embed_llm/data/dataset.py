@@ -256,6 +256,7 @@ def sequence_iterator(
                     tokenizer=tokenizer,
                     cur_pos=cur_pos,
                     max_embeds=hybrid_task.max_embeds,
+                    start_point=hybrid_task.start_point,
                 )
                 if res is None:
                     break

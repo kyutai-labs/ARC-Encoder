@@ -52,6 +52,7 @@ class HybridTask(Serializable):
     do: bool = False
     prop_noembed_continuation: float = 0.0
     max_embeds: int = 1  # Works only with one_task_4_all=True
+    start_point: float = 0.0
 
 
 @dataclass

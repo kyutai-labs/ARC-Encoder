@@ -47,6 +47,7 @@ def main(args):
             "prop_noembed_continuation"
         ] = args.prop_noembed_continuation
         config["hybrid_task"]["max_embeds"] = args.max_embeds
+        config["hybrid_task"]["start_point"] = args.start_point
 
     if not args.not_cross_att:
         config["pipeline"]["do_both"] = not args.not_do_both
@@ -83,24 +84,18 @@ def main(args):
     # To perform gradient accumulation
     config["num_microbatches"] = args.grad_acum_steps
 
-    name = (
-        args.llm_name
-        + args.embedder_name
-        + str(args.proj_n_layers)
-        + str(args.n_truncated_layers)
-        + str(args.not_cross_att)
-        + str(args.cross_att_layers)
-        + str(args.shared_kv)
-        + str(args.not_do_both)
-        + str(args.every_cross_att)
-        + str(args.mlm)
-        + str(args.continuation)
-        + str(args.instruct_tune)
-        + str(args.cross_entropy)
-        + str(args.kl)
-        + str(args.alpha)
-        + str(args.temp)
+    name = (str(args.instruct_tune) +
+        str(args.cross_entropy) +
+        str(args.kl) + str(args.alpha) +
+        str(args.temp) + str(args.no_data)+
+        str(args.not_do_hybrid_task) + str(args.not_train_llm)+
+        str(args.train_embedder) +
+        str(args.max_embeds) +
+        str(args.not_pooled_cross_att) +
+        str(args.prop_noembed_continuation) +
+        str(args.start_point)
     )
+    
 
     if args.prefix:
         config["exp_name"] = args.prefix + sha1(name.encode("utf8")).hexdigest()[:8]
@@ -108,35 +103,16 @@ def main(args):
             args.prefix + sha1(name.encode("utf8")).hexdigest()[:8]
         )
     else:
-        n_trunc = (
-            str(args.n_truncated_layers) + "_TRUNC_" if args.train_embedder else ""
-        )
-        if not args.not_cross_att and args.cross_att_layers:
-            cross_att = str(args.cross_att_layers) + "_CAL_atend_"
-        elif not args.not_cross_att and args.every_cross_att:
-            cross_att = str(args.every_cross_att) + "_CAL_every_"
-
-        if args.mlm:
-            learn_type = "MLM"
-        elif args.continuation:
-            learn_type = "CONT"
-        else:
-            learn_type = ""
 
         name = (
-            "LT_FN_"
+            "Hybrid_LLM_" + str(not args.not_train_llm) + "_Emb_"
             + str(args.train_embedder)
-            + (str(args.pooling) if args.train_embedder else "")
-            + "_"
-            + str(args.proj_n_layers)
-            + "_MLP_"
-            + n_trunc
-            + str(args.not_cross_att)
-            + "_CA_"
-            + cross_att
-            + str(args.not_do_both)
-            + "_DB"
-            + learn_type
+            + "_MaxEmb_"
+            + str(args.max_embeds)
+            + "_PNoEmbed_"
+            + str(args.prop_noembed_continuation)
+            + "_StartPoint_"
+            + str(args.start_point)
         )
 
         config["exp_name"] = name
@@ -386,6 +362,12 @@ def arg_parser():
         default=0.0,
         help="Proportion of noembed continuation",
     )
+    
+    parser.add_argument(
+        "--start_point",
+        type=float,
+        default=0.0,
+        help="Start gen point for hybrid task")
 
     return parser.parse_args()
 
