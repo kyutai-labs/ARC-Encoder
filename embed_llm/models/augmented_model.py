@@ -217,7 +217,7 @@ class EmbedAugPipeline(nn.Module):
                                 model=self.embedding_model,
                                 query_embedding=False,
                                 device=self.embedding_model.device,
-                                cross_att=True,
+                                no_pool=True,
                             )
                             # We keep all tokens so we can concatenate embeddings into one long sequence.
                             embed_seqlens.extend(emb_seqlens)
@@ -233,7 +233,7 @@ class EmbedAugPipeline(nn.Module):
                                 model=self.embedding_model,
                                 query_embedding=False,
                                 device=self.embedding_model.device,
-                                cross_att=False,
+                                no_pool=False,
                             )
 
                         embeddings.append(embeds.type(self.pipeline_args.param_dtype))
@@ -247,7 +247,7 @@ class EmbedAugPipeline(nn.Module):
                             model=self.embedding_model,
                             query_embedding=False,
                             device=self.embedding_model.device,
-                            cross_att=True,
+                            no_pool=True,
                         )
                         # We keep all tokens so we can concatenate embeddings into one long sequence.
                         subbatch = [" ".join(sublist) for sublist in subbatch]
@@ -263,7 +263,7 @@ class EmbedAugPipeline(nn.Module):
                             model=self.embedding_model,
                             query_embedding=False,
                             device=self.embedding_model.device,
-                            cross_att=False,
+                            no_pool=False,
                         )
                     embeddings.append(embeds.type(self.pipeline_args.param_dtype))
                 embeddings = torch.concatenate(embeddings, dim=0)
@@ -564,7 +564,7 @@ class EmbedAugPipeline(nn.Module):
                     self.embedding_model,
                     query_embedding=False,
                     device=device,
-                    cross_att=True,
+                    no_pool=True,
                 )
             else:
                 embeddings = encode_text(
@@ -577,6 +577,7 @@ class EmbedAugPipeline(nn.Module):
                     self.embedding_model,
                     query_embedding=False,
                     device=device,
+                    no_pool = False
                 )
                 embed_seqlens = [len(l_text) for l_text in text_conditioning]
 

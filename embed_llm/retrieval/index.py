@@ -12,6 +12,9 @@ import faiss
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
+import torch
+from typing import Union
+
 
 logger = logging.getLogger()
 
@@ -31,15 +34,16 @@ class Indexer(object):
         self._update_id_mapping(ids)
         embeddings = embeddings.astype("float32")
         if not self.index.is_trained:
+            logger.info(f'Training index on {embeddings.shape[0]} vectors')
             self.index.train(embeddings)
         self.index.add(embeddings)
 
-        logger.info(f"Total data indexed {len(self.index_id_to_db_id)}")
+        # logger.info(f"Total data indexed {len(self.index_id_to_db_id)}")
 
     def search_knn(
-        self, query_vectors: np.array, top_docs: int, index_batch_size=1024
+        self, query_vectors: Union[np.array,torch.Tensor], top_docs: int, index_batch_size=1024
     ) -> list[tuple[list[object], list[float]]]:
-        query_vectors = query_vectors.astype("float32")
+        query_vectors = query_vectors.cpu().numpy().astype("float32") 
         result = []
         nbatch = (len(query_vectors) - 1) // index_batch_size + 1
         for k in range(nbatch):
@@ -71,6 +75,8 @@ class Indexer(object):
         logger.info(f"Loading index from {index_file}, meta data from {meta_file}")
 
         self.index = faiss.read_index(Path(index_file).as_posix())
+   
+        
         logger.info(
             "Loaded index of type %s and size %d", type(self.index), self.index.ntotal
         )
@@ -80,6 +86,7 @@ class Indexer(object):
         assert (
             len(self.index_id_to_db_id) == self.index.ntotal
         ), "Deserialized index_id_to_db_id should match faiss index size"
+ 
 
     def _update_id_mapping(self, db_ids: list):
         new_ids = np.array(db_ids, dtype=np.int64)

@@ -26,7 +26,7 @@ def format_results(results: dict, benchmark: str):
                                         {
                                             "run_name": run_name,
                                             "ckpt": int(ckpt),
-                                            "temp": int(temp),
+                                            "temp": float(temp),
                                             metric: res["Metric"],
                                             "n_samples": res["n_samples"],
                                             "eval_data_type": res["eval_data_type"]  
@@ -42,29 +42,29 @@ def format_results(results: dict, benchmark: str):
                                         {
                                             "run_name": run_name,
                                             "ckpt": int(ckpt),
-                                            "temp": int(temp),
+                                            "temp": float(temp),
                                             "n_samples": res["n_samples"],
                                             "icl_examples": res["icl_examples"],
                                             "context_in_examples": res["w_context_in_examples"],
                                             "context_w_query": res["w_context_w_query"],
                                             "EM Metric": res["Metric"],
                                             "EM approx_Metric": res["approx_Metric"],
-                                            "Prop context containing the answer": getattr(res,"Prop context containing the answer",None),
-                                            "n_passages": getattr(res,"n_passages",1)
+                                            "Prop_a_in_cont": res.get("Prop context containing the answer",None),
+                                            "n_passages":  res.get("n_passages",1)
                                         }, index = [0])])
                             else:
                                 formated_results = pd.concat([formated_results, pd.DataFrame(
                                         {
                                             "run_name": run_name,
                                             "ckpt": int(ckpt),
-                                            "temp": int(temp),
+                                            "temp": float(temp),
                                             "n_samples": res["n_samples"],
                                             "icl_examples": res["icl_examples"],
                                             "context_in_examples": res["w_context_in_examples"],
                                             "context_w_query": res["w_context_w_query"],
                                             "F1": res["Metric"],
-                                            "Prop_a_in_cont": getattr(res,"Prop context containing the answer",None),
-                                            "n_passages":  getattr(res,"n_passages",1)
+                                            "Prop_a_in_cont": res.get("Prop context containing the answer",None),
+                                            "n_passages":  res.get("n_passages",1)
                                         }, index = [0])])
                 formated_results = formated_results.groupby(["run_name", "ckpt", "temp", "n_samples", "icl_examples", "context_in_examples", "context_w_query", "n_passages"]).first().reset_index()
     return formated_results

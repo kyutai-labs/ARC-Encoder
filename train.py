@@ -711,7 +711,7 @@ def _train(
                 instruct_kl=kl_loss_avg,
                 batch_type=batch.data_type,
             )
-            main_logger_info(train_log_msg(state, logs=train_logs, loss=avg_loss))
+            main_logger_info(train_log_msg(state, logs=train_logs, loss=avg_loss, seen_tokens=state.n_seen_tokens))
             metrics_logger.log(train_logs, step=state.step)
             train_ppl = torch.tensor([0.0], device="cuda")
 

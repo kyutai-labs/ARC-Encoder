@@ -482,6 +482,7 @@ def evaluate_QA(
                     "approx_Metric": value_approx,
                     "Prop context containing the answer": n_answer_in_context,
                     "n_passages": max_multi_passage,
+                    'colbert': colbert
                 }
                 value_f1 = (
                     sum(
@@ -500,6 +501,7 @@ def evaluate_QA(
                     "w_context_w_query": query_w_context,
                     "Metric": value_f1,
                     "n_passages": max_multi_passage,
+                    'colbert': colbert
                 }
                 print(
                     "Context |  query | gen sequence | answer:",
@@ -542,6 +544,7 @@ def evaluate_QA(
                     "Metric": value,
                     "w_context_in_examples": icl_w_context,
                     "n_passages": max_multi_passage,
+                    'colbert': colbert
                 }
 
     if run_name != "":
@@ -859,7 +862,7 @@ def arg_parser():
     parser.add_argument("--reconstruct_seq_len", type=int, default=256)
     parser.add_argument("--reconstruct_npassages", type=int, default=500)
     parser.add_argument("--instruct_name", type=str, default=None)
-    parser.add_argument("--not_colbert", action="store_false")
+    parser.add_argument("--colbert", action="store_true")
     parser.add_argument("--benchmarks", type = str, default="all")
 
 
@@ -881,7 +884,7 @@ if __name__ == "__main__":
     ensure_reproducibility(29)
 
     output_file = (
-        "/home/hippolytepilchen/code/embed_llm/results/mistral/eval_QA_mistral.json"
+        "/home/hippolytepilchen/code/embed_llm/results/NVEmbed/mistral/eval_mistral_RAG_QA.json"
         if args.out_file is None
         else args.out_file
     )
@@ -932,7 +935,7 @@ if __name__ == "__main__":
             icl_w_context=True,
             query_w_context=True,
             w_embeds=False,
-            colbert = args.not_colbert,
+            colbert = args.colbert,
         )
         torch.cuda.empty_cache()
 
@@ -971,7 +974,7 @@ if __name__ == "__main__":
                 query_w_context=True,
                 w_embeds=False,
                 pipeline=mistral_model,
-                colbert = args.not_colbert,
+                colbert = args.colbert,
             )
             torch.cuda.empty_cache()
 
@@ -990,7 +993,7 @@ if __name__ == "__main__":
             icl_w_context=False,
             query_w_context=True,
             w_embeds=False,
-            colbert = args.not_colbert,
+            colbert = args.colbert,
         )
         torch.cuda.empty_cache()
 
@@ -1010,7 +1013,7 @@ if __name__ == "__main__":
                 icl_w_context=False,
                 query_w_context=True,
                 w_embeds=False,
-                colbert = args.not_colbert,
+                colbert = args.colbert,
             )
             torch.cuda.empty_cache()
 
@@ -1073,7 +1076,7 @@ if __name__ == "__main__":
             icl_w_context=False,
             max_multi_passage=args.multi_passages,
             instruct_name=args.instruct_name,
-            colbert = args.not_colbert,
+            colbert = args.colbert,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -1093,6 +1096,6 @@ if __name__ == "__main__":
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
                 instruct_name=args.instruct_name,
-                colbert = args.not_colbert,
+            colbert = args.colbert,
             )
 

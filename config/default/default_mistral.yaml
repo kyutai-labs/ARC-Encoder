@@ -37,10 +37,10 @@ pipeline:
 
 # Data
 data:
-  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
-  eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
-  shuffle: False
-  adapt_seq_len: true
+  adapt_seq_len: false
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
+  shuffle: false
+  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
 
 
 # Training and Optim

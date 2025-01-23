@@ -40,7 +40,7 @@ def main(args):
     else:
         del config["pipeline"]["pooling_module"]
 
-    if args.do_hybrid_task:
+    if not args.not_do_hybrid_task:
         config["hybrid_task"] = {}
         config["hybrid_task"]["do"] = not args.not_do_hybrid_task
         config["hybrid_task"][
@@ -55,7 +55,7 @@ def main(args):
         config["pipeline"]["cross_att"] = not args.not_cross_att
         config["pipeline"]["cross_att_layers"] = args.cross_att_layers
         config["pipeline"]["every_cross_att"] = args.every_cross_att
-        config["pipeline"]["pooled_cross_att"] = not args.not_pooled_cross_att
+        config["pipeline"]["pooled_cross_att"] = (not args.not_pooled_cross_att) and (args.max_embeds == 1)
 
         if args.mlm:
             config["pipeline"]["mlm"] = args.mlm
@@ -84,16 +84,17 @@ def main(args):
     # To perform gradient accumulation
     config["num_microbatches"] = args.grad_acum_steps
 
-    name = (str(args.instruct_tune) +
+    name = (
+        str(args.instruct_tune) +
         str(args.cross_entropy) +
         str(args.kl) + str(args.alpha) +
         str(args.temp) + str(args.no_data)+
-        str(args.not_do_hybrid_task) + str(args.not_train_llm)+
+        str(args.not_do_hybrid_task) + str(args.not_train_llm) +
         str(args.train_embedder) +
         str(args.max_embeds) +
         str(args.not_pooled_cross_att) +
         str(args.prop_noembed_continuation) +
-        str(args.start_point)
+        str(args.start_point) + str(args.batch_size) 
     )
     
 
@@ -112,7 +113,8 @@ def main(args):
             + "_PNoEmbed_"
             + str(args.prop_noembed_continuation)
             + "_StartPoint_"
-            + str(args.start_point)
+            + str(args.start_point) + "_" + str(args.batch_size)
+            + "BS"
         )
 
         config["exp_name"] = name
@@ -149,7 +151,6 @@ def arg_parser():
         help="Number of layers of the projection MLP",
     )
 
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument(
         "--max_lr", type=float, default=5e-5, help="Maximum learning rate"
     )
@@ -178,7 +179,6 @@ def arg_parser():
     parser.add_argument(
         "--prefix", type=str, default=None, help="Prefix for the experiment"
     )
-    parser.add_argument("--seq_len", type=int, default=128, help="Sequence length")
     parser.add_argument(
         "--grad_acum_steps",
         type=int,
@@ -270,7 +270,7 @@ def arg_parser():
         "--min_n_prefixes",
         type=int,
         default=0,
-        help="Minimum number of prefixes",
+        help="Minimum number of prefixes", 
     )
 
     parser.add_argument(
@@ -369,6 +369,9 @@ def arg_parser():
         default=0.0,
         help="Start gen point for hybrid task")
 
+
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
+    parser.add_argument("--seq_len", type=int, default=256, help="Sequence length")
     return parser.parse_args()
 
 
@@ -384,9 +387,6 @@ if __name__ == "__main__":
     #     if filename.endswith(".yaml"):
     #         with open(path_config+filename,'r') as file:
     #             config = yaml.safe_load(file)
-    #         config['exp_name'] = config['exp_name'].replace('pretrain_','nopref_pretrain_')
-    #         config['wandb']['run_name'] = config['wandb']['run_name'].replace('pretrain_','nopref_pretrain_')
-    #         del config['prefix_prompt']
-    #         config['pipeline']['w_prefix_prompt'] = False
+    #         config['seq_len'] = 256
     #         with open(path_config+filename.replace('pretrain_','nopref_pretrain_'), 'w') as file:
     #             yaml.dump(config, file)

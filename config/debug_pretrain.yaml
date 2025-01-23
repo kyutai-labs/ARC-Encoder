@@ -9,42 +9,43 @@ lora:
   scaling: 2.0
   enable: true
 
-hybrid_task:
-  do: true
-  max_embeds: 3
-  max_n_prefixes: 1
-  min_n_prefixes: 0
-  one_task_4_all: true
-  prop_continuation: 0.0
-  prop_noembed_continuation: 0.05
-  prop_uselessembed_continuation: 0.0
-
 pipeline:
+  w_embeds: true
+  embedder_name: Mistral7B
+  trainable_embedder: true
+  n_truncated_layers: 8
+  do_pool: true
   cross_att: true
   cross_att_layers: 16
-  do_both: true
-  do_pool: true
-  embedder_name: NVEmbed
-  every_cross_att: null
-  gate_bottleneck: 8
   mlp_project:
-    act: gelu
     hidden_dim: 4096
     n_layers: 1
+    act: gelu
     type: mlp
-  n_truncated_layers: 8
-  pooled_cross_att: false
-  w_prefix_prompt: false
+  do_both: true
   shared_kv: false
-  train_only_pooling: false
-  trainable_embedder: false
+  pooling_module:
+    type: latent_attention
+    r: 512
+    n_heads: 8
+  prefix_prompt: false
   trainable_llm: true
-  w_embeds: true
-
+  train_only_pooling: false
+  gate_bottleneck: 8
+  every_cross_att: null
+  pooled_cross_att: false
 data:
+  adapt_seq_len: false
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
-  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
   shuffle: false
+  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
+
+
+hybrid_task:
+  do: true
+  prop_noembed_continuation: 0.01
+  max_embeds: 3
+  start_point: 0.5
 
 seq_len: 128
 batch_size: 32

@@ -6,7 +6,6 @@
 import logging
 import pickle
 import torch
-import faiss
 import glob
 from pathlib import Path
 import numpy as np
@@ -25,22 +24,14 @@ logger = logging.getLogger(__name__)
 def index_encoded_data(index, embedding_files, indexing_batch_size):
     allids = []
     allembeddings = np.array([])
-    allpassages_ids = []
-    count = 0
+
     for file_path in tqdm(
         embedding_files, desc="Indexing data", total=len(embedding_files)
     ):
-        # logger.info(f"Loading file {file_path}")
+        logger.info(f"Loading file {file_path}")
         with open(file_path, "rb") as fin:
-            embeddings = np.load(fin)
-
-        ids = []
-        with open(file_path.replace("pkl", "jsonl"), "r") as text_file:
-            for i, line in enumerate(text_file):
-                allpassages_ids.append({str(count + i): json.loads(line)["text"]})
-                ids.append(count + i)
-                
-        count += embeddings.shape[0]
+            dico = pickle.load(fin)
+        ids, embeddings = dico["ids"], dico["embeddings"]
         
         allids.extend(ids)
         allembeddings = (
@@ -59,7 +50,6 @@ def index_encoded_data(index, embedding_files, indexing_batch_size):
         )
 
     logger.info("Data indexing completed.")
-    return allpassages_ids
 
 
 def add_embeddings(index, embeddings, ids, indexing_batch_size):
@@ -74,8 +64,8 @@ def add_embeddings(index, embeddings, ids, indexing_batch_size):
 
 
 def retrieved_passage_4QA(
-    path_QA: str | list[str],
-    output_path: str | list[str],
+    path_QA: str,
+    output_path: str,
     n_retrieved_doc: int,
     embed_dim: int = 4096,
     n_subquantizers: int = 8,
@@ -86,6 +76,7 @@ def retrieved_passage_4QA(
     model_name: str = "NVEmbed",
     split: str = "train",
     batch_size: int = 16,
+    passages_path: str = "",
 ):
 
     if isinstance(output_path,str):
@@ -110,20 +101,11 @@ def retrieved_passage_4QA(
     else:
         logger.info(f"Indexing passages from files {input_paths}")
         start_time_indexing = time.time()
-        allpassages_ids = index_encoded_data(index, input_paths, indexing_batch_size)
-        with open(embeddings_dir / Path(split) / "allpassages.jsonl", "w") as fout:
-            for passage_id in allpassages_ids:
-                json.dump(passage_id, fout)
-                fout.write("\n")
-
+        index_encoded_data(index, input_paths, indexing_batch_size)
+   
         logger.info(f"Indexing time: {time.time()-start_time_indexing:.1f} s.")
         if save_or_load_index:
             index.serialize(embeddings_dir / Path(split))
-            
-    index.gpu_index = False if not torch.cuda.is_available() else True
-    # if index.gpu_index:
-    #     index.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), 0, index.index)
-        
 
 
     if isinstance(path_QA,str):
@@ -131,14 +113,9 @@ def retrieved_passage_4QA(
         
     assert len(path_QA) == len(output_path)
     
-    logger.info(f"Loading passages from {embeddings_dir / Path(split) / 'allpassages.jsonl'}")
-    with open(embeddings_dir / Path(split) / "allpassages.jsonl", "r") as fin:
-        all_passages = {k: v for line in fin for k, v in json.loads(line).items()}
-    
     for qa_path, out_path in zip(path_QA, output_path):
-        
+    
         logger.info(f"Embedding questions from {qa_path}")
-        
         # Embed questions
         total_QA = 0
         with open(qa_path, "r") as file:
@@ -158,7 +135,7 @@ def retrieved_passage_4QA(
                 )  # If multi_option question, only take the question and not the possible answers
                 answers.append(data["answer"])
 
-                if (i+1) % batch_size == 0:
+                if i % batch_size == 0:
 
                     embeds = encode_text(
                         batch_query,
@@ -166,7 +143,7 @@ def retrieved_passage_4QA(
                         model=model,
                         query_embedding=True,
                         device=model.device,
-                        no_pool=False,
+                        pool=False,
                     )
                     embeds = F.normalize(embeds, p=2, dim=1)
                     embeddings.append(embeds)
@@ -187,15 +164,15 @@ def retrieved_passage_4QA(
                 batch_query = []
                 
         embeds = torch.cat(embeddings, dim=0)
-        
-        assert embeds.shape[0] == len(queries)
-        
+
         # get top k results
         start_time_retrieval = time.time()
         top_ids_and_scores = index.search_knn(query_vectors=embeds, top_docs = n_retrieved_doc,
                                             index_batch_size=indexing_batch_size)
         logger.info(f"Search time: {time.time()-start_time_retrieval:.1f} s.")
 
+        with open(passages_path, "r") as fin:
+            all_passages = {dic['id']: dic['text'] for line in fin for dic in json.loads(line)}
 
         paired_passages = []
         for results_and_scores, query, answer in tqdm(
@@ -217,12 +194,13 @@ def retrieved_passage_4QA(
                 }
             )
 
-        with open(out_path, "w") as fout:
+
+        with open(output_path, "w") as fout:
             for entry in paired_passages:
                 json.dump(entry, fout)
                 fout.write("\n")
 
-        logger.info(f"Saved results to {out_path}")
+        logger.info(f"Saved results to {output_path}")
 
 
 def arg_parser():
@@ -246,21 +224,10 @@ def arg_parser():
         "-bs",
         "--batch_size",
         type=int,
-        default=64,
+        default=32,
         help="Batch size for encoding queries",
     )
 
-    parser.add_argument(
-        "--n_subquantizers",
-        type=int,
-        default=0)
-    
-    
-    parser.add_argument(
-        "--idx_bs",
-        type=int,
-        default=50000)
-    
     return parser
 
 
@@ -268,56 +235,33 @@ if __name__ == "__main__":
     # Create index for different datasets
     parser = arg_parser()
     args = parser.parse_args()
-    
-    datapath = [
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/eval.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/test.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/test.jsonl',   
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/commonsense_qa.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/freebase_qa.jsonl',   
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/web_qa.jsonl',  
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa_good_answer.jsonl',  
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa.jsonl',  
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/yahoo_qa.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/train.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/train.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/msmarco_qa.jsonl',]
-    
-    output_path = [
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_data_old.jsonl', 
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/commonsense_qa.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/freebase_qa.jsonl  ',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/web_qa.jsonl  ',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa_good_answer.jsonl  ',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa.jsonl  ',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/yahoo_qa.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_data_old.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/triviaqa_data.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/msmarco_qa.jsonl ',]
+    # path =    freebase_qa.jsonl  msmarco_qa.jsonl web_qa.jsonl  wiki_qa_good_answer.jsonl  wiki_qa.jsonl  yahoo_qa.jsonl
+    # '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/commonsense_qa.jsonl'
+    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/eval.jsonl
+    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl
+    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/test.jsonl
+    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/train.jsonl
 
+    # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA'
+    # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages'
     set_logger(logging.INFO)
-    output_path = args.save_output_path if args.save_output_path is not None else output_path
-    datapath = args.data_name_to_load if args.data_name_to_load is not None else datapath
+    output_path = args.save_output_path
+    datapath = args.data_name_to_load
 
     retrieved_passage_4QA(
         path_QA=datapath,
         output_path=output_path,
         n_retrieved_doc=5,
         embed_dim=4096,
-        n_subquantizers=args.n_subquantizers,
+        n_subquantizers=8,
         n_bits=8,
-        indexing_batch_size=args.idx_bs, # Should use a large enough batch to train the IndexPQ
+        indexing_batch_size=50000,
         pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
         save_or_load_index=True,
         model_name="NVEmbed",
         split="all_indexed",
         batch_size=args.batch_size,
+        passages_path = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl"
     )
-
-
 
 
