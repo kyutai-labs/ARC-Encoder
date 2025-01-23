@@ -55,7 +55,9 @@ def main(args):
         config["pipeline"]["cross_att"] = not args.not_cross_att
         config["pipeline"]["cross_att_layers"] = args.cross_att_layers
         config["pipeline"]["every_cross_att"] = args.every_cross_att
-        config["pipeline"]["pooled_cross_att"] = (not args.not_pooled_cross_att) and (args.max_embeds == 1)
+        config["pipeline"]["pooled_cross_att"] = (not args.not_pooled_cross_att) and (
+            args.max_embeds == 1
+        )
 
         if args.mlm:
             config["pipeline"]["mlm"] = args.mlm
@@ -85,18 +87,21 @@ def main(args):
     config["num_microbatches"] = args.grad_acum_steps
 
     name = (
-        str(args.instruct_tune) +
-        str(args.cross_entropy) +
-        str(args.kl) + str(args.alpha) +
-        str(args.temp) + str(args.no_data)+
-        str(args.not_do_hybrid_task) + str(args.not_train_llm) +
-        str(args.train_embedder) +
-        str(args.max_embeds) +
-        str(args.not_pooled_cross_att) +
-        str(args.prop_noembed_continuation) +
-        str(args.start_point) + str(args.batch_size) 
+        str(args.instruct_tune)
+        + str(args.cross_entropy)
+        + str(args.kl)
+        + str(args.alpha)
+        + str(args.temp)
+        + str(args.no_data)
+        + str(args.not_do_hybrid_task)
+        + str(args.not_train_llm)
+        + str(args.train_embedder)
+        + str(args.max_embeds)
+        + str(args.not_pooled_cross_att)
+        + str(args.prop_noembed_continuation)
+        + str(args.start_point)
+        + str(args.batch_size)
     )
-    
 
     if args.prefix:
         config["exp_name"] = args.prefix + sha1(name.encode("utf8")).hexdigest()[:8]
@@ -106,14 +111,18 @@ def main(args):
     else:
 
         name = (
-            "Hybrid_LLM_" + str(not args.not_train_llm) + "_Emb_"
+            "Hybrid_LLM_"
+            + str(not args.not_train_llm)
+            + "_Emb_"
             + str(args.train_embedder)
             + "_MaxEmb_"
             + str(args.max_embeds)
             + "_PNoEmbed_"
             + str(args.prop_noembed_continuation)
             + "_StartPoint_"
-            + str(args.start_point) + "_" + str(args.batch_size)
+            + str(args.start_point)
+            + "_"
+            + str(args.batch_size)
             + "BS"
         )
 
@@ -270,7 +279,7 @@ def arg_parser():
         "--min_n_prefixes",
         type=int,
         default=0,
-        help="Minimum number of prefixes", 
+        help="Minimum number of prefixes",
     )
 
     parser.add_argument(
@@ -324,51 +333,48 @@ def arg_parser():
         action="store_true",
         help="Whether to not use data params inside config file",
     )
-    
+
     parser.add_argument(
         "--not_do_hybrid_task",
         action="store_true",
         help="Whether to use a hybrid task",
     )
-    
+
     parser.add_argument(
         "--not_train_llm",
         action="store_true",
         help="Whether to train the llm",
     )
-    
+
     parser.add_argument(
         "--train_embedder",
         action="store_true",
         help="Whether to train the embedder, if True embedder_name = llm_name",
     )
-    
+
     parser.add_argument(
         "--max_embeds",
         type=int,
         default=1,
         help="Maximum number of embeddings",
     )
-    
+
     parser.add_argument(
         "--not_pooled_cross_att",
         action="store_true",
         help="Whether to use pooled cross-attention",
     )
-    
+
     parser.add_argument(
         "--prop_noembed_continuation",
         type=float,
         default=0.0,
         help="Proportion of noembed continuation",
     )
-    
-    parser.add_argument(
-        "--start_point",
-        type=float,
-        default=0.0,
-        help="Start gen point for hybrid task")
 
+    parser.add_argument(
+        "--start_point", type=float, default=0.0, help="Start gen point for hybrid task"
+    )
 
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
     parser.add_argument("--seq_len", type=int, default=256, help="Sequence length")

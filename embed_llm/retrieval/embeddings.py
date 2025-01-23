@@ -95,7 +95,9 @@ def encode_text(
                 )
             else:
                 # If needs a pooled embedding used the HF code (reduce possible mismatch between model and encode function)
-                embedding = model.encode(text, instruction = instruction, max_length = 32768)
+                embedding = model.encode(
+                    text, instruction=instruction, max_length=32768
+                )
 
         if device == "cpu":
             return (
@@ -144,13 +146,13 @@ def generate_embeddings(
             #     continue
             # Truncate passages on the char level to 2048
             # used_texts.append(row["text"][:2048].strip())
-             used_ids_texts.append({'id': row['id'], 'text':row["text"].strip()})
+            used_ids_texts.append({"id": row["id"], "text": row["text"].strip()})
     count = 0
     embeddings_array = []
     ids = []
     for ind, i in tqdm(enumerate(range(0, len(used_ids_texts), bs))):
         passages = []
-        
+
         for dic in used_ids_texts[i : i + bs]:
             passages.append(dic["text"])
             ids.append(dic["id"])
@@ -183,21 +185,27 @@ def generate_embeddings(
                 ),
                 "wb",
             ) as f:
-                pickle.dump({"embeddings": embeddings_array, "ids": ids}, f, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(
+                    {"embeddings": embeddings_array, "ids": ids},
+                    f,
+                    protocol=pickle.HIGHEST_PROTOCOL,
+                )
 
             ids = []
             embeddings_array = []
             count += 1
-            
+
     embeddings_array = np.concatenate(embeddings_array, axis=0)
     assert len(ids) == embeddings_array.shape[0]
     with open(
-        os.path.join(
-            output_path, model_name, f"{partition}_embeddings_{count}.pkl"
-        ),
+        os.path.join(output_path, model_name, f"{partition}_embeddings_{count}.pkl"),
         "wb",
     ) as f:
-        pickle.dump({"embeddings": embeddings_array, "ids": ids}, f, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(
+            {"embeddings": embeddings_array, "ids": ids},
+            f,
+            protocol=pickle.HIGHEST_PROTOCOL,
+        )
 
     print("Saving embedding dataset with embeddings to", output_path)
 

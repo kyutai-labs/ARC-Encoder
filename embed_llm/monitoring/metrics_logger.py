@@ -100,14 +100,16 @@ def get_eval_logs(
     return eval_dict
 
 
-def train_log_msg(state: TrainState, logs: dict[str, float | int], loss: float, seen_tokens: int) -> str:
+def train_log_msg(
+    state: TrainState, logs: dict[str, float | int], loss: float, seen_tokens: int
+) -> str:
     metrics: dict[str, float | int | datetime] = dict(logs)  # shallow copy
     metrics.pop("eta_in_seconds")
 
     metrics["eta"] = datetime.now() + timedelta(seconds=state.eta)
     metrics["step"] = state.step
     metrics["loss"] = loss
-    metrics['seen_tokens'] = seen_tokens
+    metrics["seen_tokens"] = seen_tokens
 
     parts = []
     for key, fmt, new_name in [

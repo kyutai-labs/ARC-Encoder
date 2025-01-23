@@ -244,7 +244,6 @@ def sequence_iterator(
                     continue
         else:
 
-
             tokens, mask = sample.tokens, sample.masks[1:]
             cur_pos = 0
 

@@ -77,8 +77,9 @@ def sequence_iterator_one_task_4_all(
             )
             end_embed = n_embed_toks
 
-
-        start_lm = np.random.randint(min(max(1,start_point*end_embed),end_embed - 11) , end_embed - 10)
+        start_lm = np.random.randint(
+            min(max(1, start_point * end_embed), end_embed - 11), end_embed - 10
+        )
         n_prefixes.append(end_embed - start_lm)
         x_buffer.extend(x[start_lm + cur_pos : start_lm + cur_pos + seq_len])
         y_buffer.extend(y[start_lm + cur_pos : start_lm + cur_pos + seq_len])
@@ -97,7 +98,9 @@ def sequence_iterator_one_task_4_all(
             }
         )
 
-        start_lm = np.random.randint(min(max(1,start_point*end_embed),end_embed - 11), end_embed - 10)
+        start_lm = np.random.randint(
+            min(max(1, start_point * end_embed), end_embed - 11), end_embed - 10
+        )
         n_prefixes.append(end_embed - start_lm)
         x_buffer.extend(x[start_lm + cur_pos : start_lm + cur_pos + seq_len])
         y_buffer.extend(y[start_lm + cur_pos : start_lm + cur_pos + seq_len])
@@ -142,7 +145,9 @@ def sequence_iterator_one_task_4_all(
         # In case there is a rest to the euclidean div
         end_embed = n_embed_toks
 
-        start_lm = np.random.randint(min(max(1,start_point*end_embed),end_embed - 11), end_embed - 10)
+        start_lm = np.random.randint(
+            min(max(1, start_point * end_embed), end_embed - 11), end_embed - 10
+        )
         n_prefixes.append(end_embed - start_lm)
         x_buffer.extend(x[start_lm + cur_pos : start_lm + cur_pos + seq_len])
         y_buffer.extend(y[start_lm + cur_pos : start_lm + cur_pos + seq_len])
@@ -369,4 +374,3 @@ def sequence_iterator_continuation(
             if adapt_seq_len:
                 break
     return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes
-

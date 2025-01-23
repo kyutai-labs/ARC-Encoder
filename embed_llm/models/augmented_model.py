@@ -577,7 +577,7 @@ class EmbedAugPipeline(nn.Module):
                     self.embedding_model,
                     query_embedding=False,
                     device=device,
-                    no_pool = False
+                    no_pool=False,
                 )
                 embed_seqlens = [len(l_text) for l_text in text_conditioning]
 

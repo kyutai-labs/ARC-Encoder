@@ -27,7 +27,6 @@ EVAL_DATA_PATH_COLBERT = {
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/triviaqa_data.jsonl",
 }
 EVAL_DATA_PATH = {
-
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",
 }
@@ -96,6 +95,7 @@ def create_prompt(
     else:
         return prefix + f"Query: {query}\nAnswer:"
 
+
 def load_pipeline(
     run_name: str | None,
     tmp_path: str,
@@ -113,19 +113,23 @@ def load_pipeline(
             # Get last checkpoint
             if instruct_name is None:
                 assert run_name is not None
-                last_ckpt = sorted(
-                    [
-                        ckpt_name
-                        for ckpt_name in os.listdir(
-                            tmp_path + run_name + "/checkpoints/"
-                        )
-                        if (
-                            Path(tmp_path + run_name + "/checkpoints/")
-                            / ckpt_name
-                            / "params.json"
-                        ).exists()
-                    ]
-                )[-1] if ckpt is None else f"checkpoint_{ckpt:06d}"
+                last_ckpt = (
+                    sorted(
+                        [
+                            ckpt_name
+                            for ckpt_name in os.listdir(
+                                tmp_path + run_name + "/checkpoints/"
+                            )
+                            if (
+                                Path(tmp_path + run_name + "/checkpoints/")
+                                / ckpt_name
+                                / "params.json"
+                            ).exists()
+                        ]
+                    )[-1]
+                    if ckpt is None
+                    else f"checkpoint_{ckpt:06d}"
+                )
 
                 pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
                     llm_path=llm_path,
@@ -253,7 +257,11 @@ def evaluate_QA(
     ):
 
         metrics[benchmark] = {}
-        eval_data = EVAL_DATA_PATH[benchmark] if not colbert else EVAL_DATA_PATH_COLBERT[benchmark]
+        eval_data = (
+            EVAL_DATA_PATH[benchmark]
+            if not colbert
+            else EVAL_DATA_PATH_COLBERT[benchmark]
+        )
         context = []
         questions = []
         answers = []
@@ -482,7 +490,7 @@ def evaluate_QA(
                     "approx_Metric": value_approx,
                     "Prop context containing the answer": n_answer_in_context,
                     "n_passages": max_multi_passage,
-                    'colbert': colbert
+                    "colbert": colbert,
                 }
                 value_f1 = (
                     sum(
@@ -501,7 +509,7 @@ def evaluate_QA(
                     "w_context_w_query": query_w_context,
                     "Metric": value_f1,
                     "n_passages": max_multi_passage,
-                    'colbert': colbert
+                    "colbert": colbert,
                 }
                 print(
                     "Context |  query | gen sequence | answer:",
@@ -544,7 +552,7 @@ def evaluate_QA(
                     "Metric": value,
                     "w_context_in_examples": icl_w_context,
                     "n_passages": max_multi_passage,
-                    'colbert': colbert
+                    "colbert": colbert,
                 }
 
     if run_name != "":
@@ -863,8 +871,7 @@ def arg_parser():
     parser.add_argument("--reconstruct_npassages", type=int, default=500)
     parser.add_argument("--instruct_name", type=str, default=None)
     parser.add_argument("--colbert", action="store_true")
-    parser.add_argument("--benchmarks", type = str, default="all")
-
+    parser.add_argument("--benchmarks", type=str, default="all")
 
     return parser.parse_args()
 
@@ -875,8 +882,8 @@ if __name__ == "__main__":
     temp_tests = [0, 0.5]
 
     args = arg_parser()
-    
-    if args.benchmarks == 'all':
+
+    if args.benchmarks == "all":
         benchmarks = ["NQ", "TRIVIAQA"]
     else:
         benchmarks = [args.benchmarks]
@@ -935,7 +942,7 @@ if __name__ == "__main__":
             icl_w_context=True,
             query_w_context=True,
             w_embeds=False,
-            colbert = args.colbert,
+            colbert=args.colbert,
         )
         torch.cuda.empty_cache()
 
@@ -974,7 +981,7 @@ if __name__ == "__main__":
                 query_w_context=True,
                 w_embeds=False,
                 pipeline=mistral_model,
-                colbert = args.colbert,
+                colbert=args.colbert,
             )
             torch.cuda.empty_cache()
 
@@ -993,7 +1000,7 @@ if __name__ == "__main__":
             icl_w_context=False,
             query_w_context=True,
             w_embeds=False,
-            colbert = args.colbert,
+            colbert=args.colbert,
         )
         torch.cuda.empty_cache()
 
@@ -1013,7 +1020,7 @@ if __name__ == "__main__":
                 icl_w_context=False,
                 query_w_context=True,
                 w_embeds=False,
-                colbert = args.colbert,
+                colbert=args.colbert,
             )
             torch.cuda.empty_cache()
 
@@ -1022,7 +1029,7 @@ if __name__ == "__main__":
             if args.multi_passages > 1:
                 pipeline, ckpt = evaluate_reconstruction_model(
                     args.run_name,
-                    ckpt = args.ckpt,
+                    ckpt=args.ckpt,
                     output_file=output_file,
                     temperatures=temp_tests,
                     max_seq_len=args.reconstruct_seq_len,
@@ -1037,7 +1044,7 @@ if __name__ == "__main__":
                 pipeline, ckpt = evaluate_reconstruction_model(
                     args.run_name,
                     output_file=output_file,
-                    ckpt = args.ckpt,
+                    ckpt=args.ckpt,
                     temperatures=temp_tests,
                     max_seq_len=args.reconstruct_seq_len,
                     tmp_path=tmp_path,
@@ -1076,7 +1083,7 @@ if __name__ == "__main__":
             icl_w_context=False,
             max_multi_passage=args.multi_passages,
             instruct_name=args.instruct_name,
-            colbert = args.colbert,
+            colbert=args.colbert,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -1096,6 +1103,5 @@ if __name__ == "__main__":
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
                 instruct_name=args.instruct_name,
-            colbert = args.colbert,
+                colbert=args.colbert,
             )
-

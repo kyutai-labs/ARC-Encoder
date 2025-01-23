@@ -39,15 +39,15 @@ def index_encoded_data(index, embedding_files, indexing_batch_size):
             for i, line in enumerate(text_file):
                 allpassages_ids.append({str(count + i): json.loads(line)["text"]})
                 ids.append(count + i)
-                
+
         count += embeddings.shape[0]
-        
+
         allids.extend(ids)
         allembeddings = (
             np.vstack((allembeddings, embeddings)) if allembeddings.size else embeddings
         )
         assert allembeddings.shape[0] == len(allids)
-        
+
         while allembeddings.shape[0] > indexing_batch_size:
             allembeddings, allids = add_embeddings(
                 index, allembeddings, allids, indexing_batch_size
@@ -72,7 +72,6 @@ def add_embeddings(index, embeddings, ids, indexing_batch_size):
     return embeddings, ids
 
 
-
 def retrieved_passage_4QA(
     path_QA: str | list[str],
     output_path: str | list[str],
@@ -88,13 +87,11 @@ def retrieved_passage_4QA(
     batch_size: int = 16,
 ):
 
-    if isinstance(output_path,str):
+    if isinstance(output_path, str):
         output_path = [output_path]
-    
-    
+
     for out_path in output_path:
-          Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
 
     model = get_pretrained_embedder(model_name)
     index = Indexer(embed_dim, n_subquantizers, n_bits)
@@ -120,25 +117,27 @@ def retrieved_passage_4QA(
         if save_or_load_index:
             index.serialize(embeddings_dir / Path(split))
 
-    if isinstance(path_QA,str):
+    if isinstance(path_QA, str):
         path_QA = [path_QA]
-        
+
     assert len(path_QA) == len(output_path)
-    
-    logger.info(f"Loading passages from {embeddings_dir / Path(split) / 'allpassages.jsonl'}")
+
+    logger.info(
+        f"Loading passages from {embeddings_dir / Path(split) / 'allpassages.jsonl'}"
+    )
     with open(embeddings_dir / Path(split) / "allpassages.jsonl", "r") as fin:
         all_passages = {k: v for line in fin for k, v in json.loads(line).items()}
-    
+
     for qa_path, out_path in zip(path_QA, output_path):
-        
+
         logger.info(f"Embedding questions from {qa_path}")
-        
+
         # Embed questions
         total_QA = 0
         with open(qa_path, "r") as file:
             for line in file:
                 total_QA += 1
-                
+
         queries = []
         answers = []
         batch_query = []
@@ -152,7 +151,7 @@ def retrieved_passage_4QA(
                 )  # If multi_option question, only take the question and not the possible answers
                 answers.append(data["answer"])
 
-                if (i+1) % batch_size == 0:
+                if (i + 1) % batch_size == 0:
 
                     embeds = encode_text(
                         batch_query,
@@ -165,7 +164,7 @@ def retrieved_passage_4QA(
                     embeds = F.normalize(embeds, p=2, dim=1)
                     embeddings.append(embeds)
                     batch_query = []
-                    
+
             if len(batch_query) > 0:
                 embeds = encode_text(
                     batch_query,
@@ -175,21 +174,23 @@ def retrieved_passage_4QA(
                     device=model.device,
                     no_pool=False,
                 )
-                
+
                 embeds = F.normalize(embeds, p=2, dim=1)
                 embeddings.append(embeds)
                 batch_query = []
-                
+
         embeds = torch.cat(embeddings, dim=0)
-        
+
         assert embeds.shape[0] == len(queries)
-        
+
         # get top k results
         start_time_retrieval = time.time()
-        top_ids_and_scores = index.search_knn(query_vectors=embeds, top_docs = n_retrieved_doc,
-                                            index_batch_size=indexing_batch_size)
+        top_ids_and_scores = index.search_knn(
+            query_vectors=embeds,
+            top_docs=n_retrieved_doc,
+            index_batch_size=indexing_batch_size,
+        )
         logger.info(f"Search time: {time.time()-start_time_retrieval:.1f} s.")
-
 
         paired_passages = []
         for results_and_scores, query, answer in tqdm(
@@ -244,26 +245,14 @@ def arg_parser():
         help="Batch size for encoding queries",
     )
 
-    parser.add_argument(
-        "--n_subquantizers",
-        type=int,
-        default=1024)
-    
-    parser.add_argument(
-        "--n_bits",
-        type=int,
-        default=8)
-    
-    parser.add_argument(
-        "--idx_bs",
-        type=int,
-        default=100000)
-    
-    parser.add_argument(
-        "--n_retrieved_doc",
-        type=int,
-        default=5)
-    
+    parser.add_argument("--n_subquantizers", type=int, default=1024)
+
+    parser.add_argument("--n_bits", type=int, default=8)
+
+    parser.add_argument("--idx_bs", type=int, default=100000)
+
+    parser.add_argument("--n_retrieved_doc", type=int, default=5)
+
     return parser
 
 
@@ -271,40 +260,46 @@ if __name__ == "__main__":
     # Create index for different datasets
     parser = arg_parser()
     args = parser.parse_args()
-    
+
     datapath = [
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/eval.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/test.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/test.jsonl',   
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/commonsense_qa.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/freebase_qa.jsonl',   
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/web_qa.jsonl',  
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa_good_answer.jsonl',  
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa.jsonl',  
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/yahoo_qa.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/train.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/dùatasets/Question_Answering/triviaqa_data/train.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/msmarco_qa.jsonl',]
-    
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/eval.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/test.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/test.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/commonsense_qa.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/freebase_qa.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/web_qa.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa_good_answer.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/yahoo_qa.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/train.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/dùatasets/Question_Answering/triviaqa_data/train.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/msmarco_qa.jsonl",
+    ]
+
     output_path = [
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_data_old.jsonl', 
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/commonsense_qa.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/freebase_qa.jsonl  ',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/web_qa.jsonl  ',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa_good_answer.jsonl  ',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa.jsonl  ',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/yahoo_qa.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_data_old.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/triviaqa_data.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/msmarco_qa.jsonl ',]
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_data_old.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/commonsense_qa.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/freebase_qa.jsonl  ",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/web_qa.jsonl  ",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa_good_answer.jsonl  ",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa.jsonl  ",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/yahoo_qa.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_data_old.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/triviaqa_data.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/msmarco_qa.jsonl ",
+    ]
 
     set_logger(logging.INFO)
-    output_path = args.save_output_path if args.save_output_path is not None else output_path
-    datapath = args.data_name_to_load if args.data_name_to_load is not None else datapath
+    output_path = (
+        args.save_output_path if args.save_output_path is not None else output_path
+    )
+    datapath = (
+        args.data_name_to_load if args.data_name_to_load is not None else datapath
+    )
 
     retrieved_passage_4QA(
         path_QA=datapath,
@@ -313,14 +308,10 @@ if __name__ == "__main__":
         embed_dim=4096,
         n_subquantizers=args.n_subquantizers,
         n_bits=args.n_bits,
-        indexing_batch_size=args.idx_bs, # Should use a large enough batch to train the IndexPQ
+        indexing_batch_size=args.idx_bs,  # Should use a large enough batch to train the IndexPQ
         pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
         save_or_load_index=True,
         model_name="NVEmbed",
         split="all_indexed_PQ",
         batch_size=args.batch_size,
     )
-
-
-
-

@@ -481,9 +481,7 @@ def _train(
                     seqlens = []
                     y_mask = []
                     ind = 0
-                    for to_embed, size in zip(
-                        batch.to_embed, batch.sizes
-                    ):
+                    for to_embed, size in zip(batch.to_embed, batch.sizes):
                         tokens = sum(to_embed["tokens"], [])
                         x.extend(tokens[:-1])
                         y.extend(tokens[1:])
@@ -497,7 +495,6 @@ def _train(
                     y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
                     y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
                     batch.data_type = "noembed_continuation"
-
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
@@ -711,7 +708,14 @@ def _train(
                 instruct_kl=kl_loss_avg,
                 batch_type=batch.data_type,
             )
-            main_logger_info(train_log_msg(state, logs=train_logs, loss=avg_loss, seen_tokens=state.n_seen_tokens))
+            main_logger_info(
+                train_log_msg(
+                    state,
+                    logs=train_logs,
+                    loss=avg_loss,
+                    seen_tokens=state.n_seen_tokens,
+                )
+            )
             metrics_logger.log(train_logs, step=state.step)
             train_ppl = torch.tensor([0.0], device="cuda")
 
