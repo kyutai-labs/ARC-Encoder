@@ -113,6 +113,10 @@ def retrieved_passage_4QA(
         
     assert len(path_QA) == len(output_path)
     
+    logger.info(f"Loading passages from {passages_path}")
+    with open(passages_path, "r") as fin:
+        all_passages = {dic['id']: dic['text'] for line in fin for dic in json.loads(line)}
+        
     for qa_path, out_path in zip(path_QA, output_path):
     
         logger.info(f"Embedding questions from {qa_path}")
@@ -135,7 +139,7 @@ def retrieved_passage_4QA(
                 )  # If multi_option question, only take the question and not the possible answers
                 answers.append(data["answer"])
 
-                if i % batch_size == 0:
+                if (i+1) % batch_size == 0:
 
                     embeds = encode_text(
                         batch_query,
@@ -171,8 +175,6 @@ def retrieved_passage_4QA(
                                             index_batch_size=indexing_batch_size)
         logger.info(f"Search time: {time.time()-start_time_retrieval:.1f} s.")
 
-        with open(passages_path, "r") as fin:
-            all_passages = {dic['id']: dic['text'] for line in fin for dic in json.loads(line)}
 
         paired_passages = []
         for results_and_scores, query, answer in tqdm(
@@ -224,10 +226,30 @@ def arg_parser():
         "-bs",
         "--batch_size",
         type=int,
-        default=32,
+        default=64,
         help="Batch size for encoding queries",
     )
 
+    parser.add_argument(
+        "--n_subquantizers",
+        type=int,
+        default=64)
+    
+    parser.add_argument(
+        "--n_bits",
+        type=int,
+        default=8)
+    
+    parser.add_argument(
+        "--idx_bs",
+        type=int,
+        default=100000)
+    
+    parser.add_argument(
+        "--n_retrieved_doc",
+        type=int,
+        default=5)
+    
     return parser
 
 
@@ -235,33 +257,56 @@ if __name__ == "__main__":
     # Create index for different datasets
     parser = arg_parser()
     args = parser.parse_args()
-    # path =    freebase_qa.jsonl  msmarco_qa.jsonl web_qa.jsonl  wiki_qa_good_answer.jsonl  wiki_qa.jsonl  yahoo_qa.jsonl
-    # '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/commonsense_qa.jsonl'
-    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/eval.jsonl
-    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl
-    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/test.jsonl
-    # /lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/train.jsonl
+    
+    datapath = [
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/eval.jsonl',
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/test.jsonl',
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/test.jsonl',   
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/commonsense_qa.jsonl',
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/freebase_qa.jsonl',   
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/web_qa.jsonl',  
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa_good_answer.jsonl',  
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa.jsonl',  
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/yahoo_qa.jsonl',
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl',
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/train.jsonl',
+            '/lustre/scwpod02/client/kyutai-interns/hippop/dùatasets/Question_Answering/triviaqa_data/train.jsonl',
+            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/msmarco_qa.jsonl',]
+    
+    output_path = [
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed_PQ/nq_open_data.jsonl',
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed_PQ/triviaqa_data.jsonl',
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed_PQ/nq_data_old.jsonl', 
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed_PQ/commonsense_qa.jsonl',
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed_PQ/freebase_qa.jsonl  ',
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed_PQ/web_qa.jsonl  ',
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed_PQ/wiki_qa_good_answer.jsonl  ',
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed_PQ/wiki_qa.jsonl  ',
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed_PQ/yahoo_qa.jsonl',
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed_PQ/nq_open_data.jsonl',
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed_PQ/nq_data_old.jsonl',
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed_PQ/triviaqa_data.jsonl',
+        '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed_PQ/msmarco_qa.jsonl ',]
 
-    # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA'
-    # output_path = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages'
     set_logger(logging.INFO)
-    output_path = args.save_output_path
-    datapath = args.data_name_to_load
+    output_path = args.save_output_path if args.save_output_path is not None else output_path
+    datapath = args.data_name_to_load if args.data_name_to_load is not None else datapath
 
     retrieved_passage_4QA(
         path_QA=datapath,
         output_path=output_path,
-        n_retrieved_doc=5,
+        n_retrieved_doc=args.n_retrieved_doc,
         embed_dim=4096,
-        n_subquantizers=8,
-        n_bits=8,
-        indexing_batch_size=50000,
+        n_subquantizers=args.n_subquantizers,
+        n_bits=args.n_bits,
+        indexing_batch_size=args.idx_bs, # Should use a large enough batch to train the IndexPQ
         pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
         save_or_load_index=True,
         model_name="NVEmbed",
-        split="all_indexed",
+        split="all_indexed_PQ",
         batch_size=args.batch_size,
-        passages_path = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl"
     )
+
+
 
 

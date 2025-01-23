@@ -119,12 +119,6 @@ def retrieved_passage_4QA(
         logger.info(f"Indexing time: {time.time()-start_time_indexing:.1f} s.")
         if save_or_load_index:
             index.serialize(embeddings_dir / Path(split))
-            
-    index.gpu_index = False if not torch.cuda.is_available() else True
-    # if index.gpu_index:
-    #     index.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), 0, index.index)
-        
-
 
     if isinstance(path_QA,str):
         path_QA = [path_QA]
@@ -253,13 +247,22 @@ def arg_parser():
     parser.add_argument(
         "--n_subquantizers",
         type=int,
-        default=0)
+        default=1024)
     
+    parser.add_argument(
+        "--n_bits",
+        type=int,
+        default=8)
     
     parser.add_argument(
         "--idx_bs",
         type=int,
-        default=50000)
+        default=100000)
+    
+    parser.add_argument(
+        "--n_retrieved_doc",
+        type=int,
+        default=5)
     
     return parser
 
@@ -281,7 +284,7 @@ if __name__ == "__main__":
             '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/yahoo_qa.jsonl',
             '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl',
             '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/train.jsonl',
-            '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/train.jsonl',
+            '/lustre/scwpod02/client/kyutai-interns/hippop/dùatasets/Question_Answering/triviaqa_data/train.jsonl',
             '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/msmarco_qa.jsonl',]
     
     output_path = [
@@ -306,15 +309,15 @@ if __name__ == "__main__":
     retrieved_passage_4QA(
         path_QA=datapath,
         output_path=output_path,
-        n_retrieved_doc=5,
+        n_retrieved_doc=args.n_retrieved_doc,
         embed_dim=4096,
         n_subquantizers=args.n_subquantizers,
-        n_bits=8,
+        n_bits=args.n_bits,
         indexing_batch_size=args.idx_bs, # Should use a large enough batch to train the IndexPQ
         pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
         save_or_load_index=True,
         model_name="NVEmbed",
-        split="all_indexed",
+        split="all_indexed_PQ",
         batch_size=args.batch_size,
     )
 
