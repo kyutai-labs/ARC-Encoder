@@ -111,7 +111,6 @@ def encode_text(
         raise ValueError(f"Unknown model name {model_name}")
 
 
-# Maybe modify truncation
 def generate_embeddings(
     model_name: str,
     output_path: str,
@@ -121,6 +120,7 @@ def generate_embeddings(
     partition: int = 0,
     checkpoint: int = 1000,
 ):
+
     with open(dataset_path, "r") as f:
         dataset = [json.loads(line) for line in f]
 
@@ -128,34 +128,35 @@ def generate_embeddings(
     os.makedirs(os.path.join(output_path, model_name), exist_ok=True)
 
     size_partition = len(dataset) // n_gpu
-    used_ids_texts = []
+    used_texts = []
+
 
     if partition == n_gpu - 1:
         end_partition = len(dataset)
     else:
         end_partition = size_partition * (partition + 1)
-
     for i, row in tqdm(enumerate(dataset)):
         if i < size_partition * partition:
             continue
         elif i >= end_partition:
             break
         else:
+            for passage in row["text"]:  # All passages must be useful
+                # Truncate passages on the char level to 1024
+                used_texts.append(passage[:1024])
             # All passages must be useful, atlas should already be preprocessed
             # if len(row["text"]) < 20:
             #     continue
             # Truncate passages on the char level to 2048
             # used_texts.append(row["text"][:2048].strip())
-            used_ids_texts.append({"id": row["id"], "text": row["text"].strip()})
+            used_texts.append({"id": row["id"], "text": row["text"].strip()})
     count = 0
     embeddings_array = []
-    ids = []
-    for ind, i in tqdm(enumerate(range(0, len(used_ids_texts), bs))):
-        passages = []
+    text_passages = []
+    for ind, i in tqdm(enumerate(range(0, len(used_texts), bs))):
+        passages = used_texts[i : i + bs]
 
-        for dic in used_ids_texts[i : i + bs]:
-            passages.append(dic["text"])
-            ids.append(dic["id"])
+
 
         embeddings = encode_text(
             passages,
@@ -175,40 +176,48 @@ def generate_embeddings(
             .numpy()
         )
 
+        text_passages.extend(passages)
         embeddings_array.append(embeddings)
 
         if ind % (checkpoint) == 0 and ind != 0:
             embeddings_array = np.concatenate(embeddings_array, axis=0)
+            assert embeddings_array.shape[0] == len(text_passages)
+            np.save(
+                os.path.join(
+                    output_path, model_name, f"{partition}_embeddings_{count}.npy"
+                ),
+                embeddings_array,
+            )
             with open(
                 os.path.join(
-                    output_path, model_name, f"{partition}_embeddings_{count}.pkl"
+                    output_path, model_name, f"{partition}_embeddings_{count}.jsonl"
                 ),
-                "wb",
+                "w",
             ) as f:
-                pickle.dump(
-                    {"embeddings": embeddings_array, "ids": ids},
-                    f,
-                    protocol=pickle.HIGHEST_PROTOCOL,
-                )
+                for passage in text_passages:
+                    json.dump({"text": passage}, f)
+                    f.write("\n")
 
-            ids = []
             embeddings_array = []
+            text_passages = []
             count += 1
 
     embeddings_array = np.concatenate(embeddings_array, axis=0)
-    assert len(ids) == embeddings_array.shape[0]
+    assert embeddings_array.shape[0] == len(text_passages)
+    np.save(
+        os.path.join(output_path, model_name, f"{partition}_embeddings_{count}.npy"),
+        embeddings_array,
+    )
+
     with open(
-        os.path.join(output_path, model_name, f"{partition}_embeddings_{count}.pkl"),
-        "wb",
+        os.path.join(output_path, model_name, f"{partition}_embeddings_{count}.jsonl"),
+        "w",
     ) as f:
-        pickle.dump(
-            {"embeddings": embeddings_array, "ids": ids},
-            f,
-            protocol=pickle.HIGHEST_PROTOCOL,
-        )
+        for passage in text_passages:
+            json.dump({"text": passage}, f)
+            f.write("\n")
 
     print("Saving embedding dataset with embeddings to", output_path)
-
 
 def arg_parser():
     parser = argparse.ArgumentParser(description="Prepare data for training")

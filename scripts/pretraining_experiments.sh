@@ -1,13 +1,14 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-23%6
+#SBATCH --array=8-23%9
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=pretraining_embed_llm
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s01dgx10,par2dc5-ai-prd-cl02s03dgx17,par2dc5-ai-prd-cl02s01dgx01,par2dc5-ai-prd-cl02s04dgx05,par2dc5-ai-prd-cl02s02dgx18,par2dc5-ai-prd-cl02s01dgx30,par2dc5-ai-prd-cl02s03dgx32,par2dc5-ai-prd-cl02s02dgx03,par2dc5-ai-prd-cl02s04dgx23
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/embed_llm_out/embed_llm_%A_%a.out
 
 

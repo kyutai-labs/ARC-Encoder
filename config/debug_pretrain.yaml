@@ -45,7 +45,7 @@ hybrid_task:
   do: true
   prop_noembed_continuation: 0.01
   max_embeds: 3
-  start_point: 0.5
+  start_point: 0.1
 
 seq_len: 128
 batch_size: 32

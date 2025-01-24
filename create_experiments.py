@@ -164,7 +164,7 @@ def arg_parser():
         "--max_lr", type=float, default=5e-5, help="Maximum learning rate"
     )
     parser.add_argument(
-        "--max_steps", type=int, default=10000, help="Maximum number of steps"
+        "--max_steps", type=int, default=40000, help="Maximum number of steps"
     )
     parser.add_argument(
         "--warm_up_steps",
@@ -385,14 +385,14 @@ if __name__ == "__main__":
     args = arg_parser()
     main(args)
 
-    # import os
-    # import yaml
-    # path_config = '/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/'
-    # filenames =  [file for file in os.listdir(path_config)]
-    # for filename in filenames:
-    #     if filename.endswith(".yaml"):
-    #         with open(path_config+filename,'r') as file:
-    #             config = yaml.safe_load(file)
-    #         config['seq_len'] = 256
-    #         with open(path_config+filename.replace('pretrain_','nopref_pretrain_'), 'w') as file:
-    #             yaml.dump(config, file)
+    import os
+    import yaml
+    path_config = '/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/'
+    filenames =  [file for file in os.listdir(path_config)]
+    for filename in filenames:
+        if filename.endswith(".yaml"):
+            with open(path_config+filename,'r') as file:
+                config = yaml.safe_load(file)
+            config['max_steps'] = 40000
+            with open(path_config+filename.replace('pretrain_','nopref_pretrain_'), 'w') as file:
+                yaml.dump(config, file)

@@ -20,7 +20,6 @@ from embed_llm.training.args import TrainArgs, InstructionTuningArgs
 from embed_llm.training.distributed import (
     get_rank,
 )
-from embed_llm.models.utils import is_cross_att
 
 # Mistral specifics
 from embed_llm.models.mistral.cross_att_transformer import (
