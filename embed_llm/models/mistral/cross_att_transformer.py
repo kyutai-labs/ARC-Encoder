@@ -48,32 +48,6 @@ class SimpleInputMetadata:
         )
 
 
-# Double MLP like
-# class Pooled_Cross_Attention(nn.Module):
-#     def __init__(
-#         self,
-#         dim: int,
-#         n_heads: int,
-#         head_dim: int,
-#         n_kv_heads: int,
-#     ):
-#         super().__init__()
-#         bottleneck = n_heads // n_kv_heads
-#         self.up = nn.Linear(dim, dim//bottleneck, bias=False)
-#         self.down = nn.Linear(dim//bottleneck, dim, bias=False)
-
-#     def forward(
-#         self,
-#         embedding: torch.Tensor,
-#         seqlen: list[int],
-#         mask: BlockDiagonalMask | None = None,
-#     ) -> torch.Tensor:
-#         x = self.up(embedding)
-#         output = self.down(x)
-#         output = torch.repeat_interleave(
-#             output, repeats=torch.tensor(seqlen).to(output.device), dim=0
-#         )
-#         return output
 
 
 class Pooled_Cross_Attention(nn.Module):
