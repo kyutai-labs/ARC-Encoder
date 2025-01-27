@@ -48,8 +48,6 @@ class SimpleInputMetadata:
         )
 
 
-
-
 class Pooled_Cross_Attention(nn.Module):
     def __init__(
         self,

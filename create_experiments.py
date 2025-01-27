@@ -387,12 +387,17 @@ if __name__ == "__main__":
 
     import os
     import yaml
-    path_config = '/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/'
-    filenames =  [file for file in os.listdir(path_config)]
+
+    path_config = (
+        "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/"
+    )
+    filenames = [file for file in os.listdir(path_config)]
     for filename in filenames:
         if filename.endswith(".yaml"):
-            with open(path_config+filename,'r') as file:
+            with open(path_config + filename, "r") as file:
                 config = yaml.safe_load(file)
-            config['max_steps'] = 40000
-            with open(path_config+filename.replace('pretrain_','nopref_pretrain_'), 'w') as file:
+            config["max_steps"] = 40000
+            with open(
+                path_config + filename.replace("pretrain_", "nopref_pretrain_"), "w"
+            ) as file:
                 yaml.dump(config, file)
