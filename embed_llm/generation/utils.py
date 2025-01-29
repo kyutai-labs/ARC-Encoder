@@ -1,5 +1,6 @@
 import pandas as pd
-
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 def format_results(results: dict, benchmark: str):
 
@@ -17,6 +18,7 @@ def format_results(results: dict, benchmark: str):
             "F1",
             "Prop_a_in_cont",
             "n_passages",
+            "colbert",
         ]
     elif benchmark.lower() == "reconstruction":
         key_list = [
@@ -50,23 +52,22 @@ def format_results(results: dict, benchmark: str):
                 ]:
                     for temp in results[run_name][ckpt][metric].keys():
                         for result in results[run_name][ckpt][metric][temp]:
-                            for res in result:
-                                formated_results = pd.concat(
-                                    [
-                                        formated_results,
-                                        pd.DataFrame(
-                                            {
-                                                "run_name": run_name,
-                                                "ckpt": int(ckpt),
-                                                "temp": float(temp),
-                                                metric: res["Metric"],
-                                                "n_samples": res["n_samples"],
-                                                "eval_data_type": res["eval_data_type"],
-                                            },
-                                            index=[0],
-                                        ),
-                                    ]
-                                )
+                            formated_results = pd.concat(
+                                [
+                                    formated_results,
+                                    pd.DataFrame(
+                                        {
+                                            "run_name": run_name,
+                                            "ckpt": int(ckpt),
+                                            "temp": float(temp),
+                                            metric: result["Metric"],
+                                            "n_samples": result["n_samples"],
+                                            "eval_data_type": result["eval_data_type"],
+                                        },
+                                        index=[0],
+                                    ),
+                                ]
+                            )
                 formated_results = (
                     formated_results.groupby(
                         ["run_name", "ckpt", "temp", "n_samples", "eval_data_type"]
@@ -105,16 +106,14 @@ def format_results(results: dict, benchmark: str):
                                                     None,
                                                 ),
                                                 "n_passages": res.get("n_passages", 1),
+                                                "colbert": res.get("colbert", None),
                                             },
                                             index=[0],
                                         ),
                                     ]
                                 )
                             else:
-                                formated_results = pd.concat(
-                                    [
-                                        formated_results,
-                                        pd.DataFrame(
+                                df_res = pd.DataFrame(
                                             {
                                                 "run_name": run_name,
                                                 "ckpt": int(ckpt),
@@ -133,11 +132,14 @@ def format_results(results: dict, benchmark: str):
                                                     None,
                                                 ),
                                                 "n_passages": res.get("n_passages", 1),
+                                                "colbert": res.get("colbert", None),
                                             },
                                             index=[0],
-                                        ),
-                                    ]
-                                )
+                                        )
+        
+                                    
+                                formated_results = pd.concat([formated_results, df_res])
+                                
                 formated_results = (
                     formated_results.groupby(
                         [

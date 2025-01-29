@@ -23,7 +23,7 @@ from embed_llm.models.mistral.transformer_layers import (
 from embed_llm.models.mistral.rope import precompute_freqs_cis
 
 from embed_llm.models.embedding_modules import MLP_block
-from embed_llm.models.lora import maybe_lora
+
 from embed_llm.training.args import LoraArgs
 from embed_llm.models.mistral.cache import (
     BufferCache,

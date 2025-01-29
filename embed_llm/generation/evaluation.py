@@ -299,6 +299,10 @@ def evaluate_QA(
             context = [pair["doc"] for pair in test_pairs]
 
         c = list(zip(questions, context, answers))
+
+        # fixed_random = random.Random()
+        # fixed_random.seed(42)
+        # fixed_random.shuffle(c)
         random.shuffle(c, random=lambda: 0.42)
         questions, context, answers = zip(*c)
 
@@ -462,7 +466,7 @@ def evaluate_QA(
                                     get_approx_em, "\n".join(cont), gts
                                 )
                                 for cont, gts in zip(
-                                    list(new_context)[:n_samples], new_answers
+                                    list(new_context), new_answers[:n_samples]
                                 )
                             ]
                         )
@@ -556,13 +560,22 @@ def evaluate_QA(
                 }
 
     if run_name != "":
-        with open(
-            "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-            + run_name
-            + "/results_generation.json",
-            "a",
-        ) as f:
-            json.dump(results, f)
+        if run_name is not None:
+            with open(
+                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                + run_name
+                + "/results_generation.json",
+                "a",
+            ) as f:
+                json.dump(results, f)
+        elif instruct_name is not None:
+            with open(
+                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                + instruct_name
+                + "/results_generation.json",
+                "a",
+            ) as f:
+                json.dump(results, f)
 
     with open(
         output_file,
@@ -577,6 +590,7 @@ def evaluate_QA(
         run_name = "Mistral_no_RAG"
         ckpt = 0
 
+    run_name = instruct_name if instruct_name is not None and run_name is None else run_name
     if run_name not in overall_results.keys():
         overall_results[run_name] = {}
     if str(ckpt) not in overall_results[run_name].keys():
@@ -879,7 +893,7 @@ def arg_parser():
 if __name__ == "__main__":
 
     icl_tests = [0, 2, 5]
-    temp_tests = [0, 0.5]
+    temp_tests = [0]
 
     args = arg_parser()
 
@@ -943,6 +957,7 @@ if __name__ == "__main__":
             query_w_context=True,
             w_embeds=False,
             colbert=args.colbert,
+            max_multi_passage=args.multi_passages,
         )
         torch.cuda.empty_cache()
 
@@ -982,47 +997,48 @@ if __name__ == "__main__":
                 w_embeds=False,
                 pipeline=mistral_model,
                 colbert=args.colbert,
+                max_multi_passage=args.multi_passages,
             )
             torch.cuda.empty_cache()
 
-        print("EVALUATING WITH CONTEXT but not in ICL")
-        mistral_model = evaluate_QA(
-            "",
-            benchmarks,
-            temps=temp_tests,
-            max_bs=args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=icl_tests[1],
-            mistral=True,
-            icl_w_context=False,
-            query_w_context=True,
-            w_embeds=False,
-            colbert=args.colbert,
-        )
-        torch.cuda.empty_cache()
+        # print("EVALUATING WITH CONTEXT but not in ICL")
+        # mistral_model = evaluate_QA(
+        #     "",
+        #     benchmarks,
+        #     temps=temp_tests,
+        #     max_bs=args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=icl_tests[1],
+        #     mistral=True,
+        #     icl_w_context=False,
+        #     query_w_context=True,
+        #     w_embeds=False,
+        #     colbert=args.colbert,
+        # )
+        # torch.cuda.empty_cache()
 
-        for icl_ex in icl_tests[2:]:
-            mistral_model = evaluate_QA(
-                "",
-                ["NQ", "TRIVIAQA"],
-                temps=temp_tests,
-                max_bs=args.bs,
-                output_file=output_file,
-                n_samples=n_passages,
-                max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
-                icl_examples=icl_ex,
-                pipeline=mistral_model,
-                mistral=True,
-                icl_w_context=False,
-                query_w_context=True,
-                w_embeds=False,
-                colbert=args.colbert,
-            )
-            torch.cuda.empty_cache()
+        # for icl_ex in icl_tests[2:]:
+        #     mistral_model = evaluate_QA(
+        #         "",
+        #         ["NQ", "TRIVIAQA"],
+        #         temps=temp_tests,
+        #         max_bs=args.bs,
+        #         output_file=output_file,
+        #         n_samples=n_passages,
+        #         max_seq_len=max_seq_len,
+        #         tmp_path=tmp_path,
+        #         icl_examples=icl_ex,
+        #         pipeline=mistral_model,
+        #         mistral=True,
+        #         icl_w_context=False,
+        #         query_w_context=True,
+        #         w_embeds=False,
+        #         colbert=args.colbert,
+        #     )
+        #     torch.cuda.empty_cache()
 
     else:
         if args.eval_reconstruction:

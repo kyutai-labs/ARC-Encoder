@@ -129,6 +129,7 @@ def main(args):
         config["exp_name"] = name
         config["wandb"]["run_name"] = name
 
+    print(config["exp_name"])
     if args.llm_name == "Mistral7B":
         with open(
             f'/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/{config["exp_name"]}.yaml',
@@ -385,19 +386,22 @@ if __name__ == "__main__":
     args = arg_parser()
     main(args)
 
-    import os
-    import yaml
+    # import os
+    # import yaml
 
-    path_config = (
-        "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/"
-    )
-    filenames = [file for file in os.listdir(path_config)]
-    for filename in filenames:
-        if filename.endswith(".yaml"):
-            with open(path_config + filename, "r") as file:
-                config = yaml.safe_load(file)
-            config["max_steps"] = 40000
-            with open(
-                path_config + filename.replace("pretrain_", "nopref_pretrain_"), "w"
-            ) as file:
-                yaml.dump(config, file)
+    # path_config = (
+    #     "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/"
+    # )
+    
+    
+    # filenames = [file for file in os.listdir(path_config)] 
+
+    # for filename in filenames:
+    #     if filename.endswith(".yaml"):
+    #         with open(path_config + filename, "r") as file:
+    #             config = yaml.safe_load(file) 
+    #         config["max_steps"] = 30000
+    #         with open(
+    #             path_config + filename, "w"
+    #         ) as file:
+    #             yaml.dump(config, file)

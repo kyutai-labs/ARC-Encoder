@@ -308,7 +308,6 @@ class EmbedAugPipeline(nn.Module):
         param_dtype: torch.dtype = torch.float32,
         instruct_ckpt: str | None = None,
     ):
-
         if instruct_ckpt is not None and ckpt_path is None:
             with open(os.path.join(instruct_ckpt, "../../args.yaml"), "r") as f:
                 train_args = yaml.safe_load(f)
