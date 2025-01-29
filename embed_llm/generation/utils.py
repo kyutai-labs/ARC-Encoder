@@ -2,6 +2,13 @@ import pandas as pd
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
+from models.utils import is_torchrun
+import torch
+
+def main_logger_info(logger, message: str) -> None:
+    if not is_torchrun() or torch.distributed.get_rank() == 0:
+        logger.info(message)
+
 def format_results(results: dict, benchmark: str):
 
     if benchmark.lower() == "nq" or benchmark.lower() == "triviaqa":

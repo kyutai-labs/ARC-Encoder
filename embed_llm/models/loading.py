@@ -166,21 +166,22 @@ def load_llm_model(
     param_dtype: torch.dtype,
     for_embedding: bool = False,
     parll: bool = True,
+    pipeline_rank: int = 0,
+    num_pipeline_rank: int = 1,
 ) -> tuple[torch.nn.Module, Tokenizer, int]:
-
     tokenizer = load_mistral_tokenizer(folder).instruct_tokenizer.tokenizer
     with torch.device("meta"):
         # Remove cross-attention if for trainable embedder
         if for_embedding:
             llm_args.start_cross_att = -1
             llm_args.every_cross_att = -1
-        model = MistralTransformer(args=llm_args, checkpoint=checkpoint)
+        model = MistralTransformer(args=llm_args, checkpoint=checkpoint, pipeline_rank=pipeline_rank, num_pipeline_ranks=num_pipeline_rank)
 
     embed_dim = model.args.dim
-    if not parll or get_rank() == 0:
+    
+    if not parll or (get_rank() == 0 or num_pipeline_rank > 1):
         state_dict = load_state_dict(folder, dtype=param_dtype)
         model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
-        logger.info("Loaded model on cpu!")
 
     if pipeline_args.mlp_project.n_layers == 0 and not for_embedding:
         logger.info("Embedder dim must match model dim if no MLP projector.")

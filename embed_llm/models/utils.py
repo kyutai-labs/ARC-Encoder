@@ -6,7 +6,7 @@ import torch
 import torch.distributed.fsdp.wrap as torch_wrap
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 
-
+import os
 from embed_llm.training.distributed import (
     get_rank,
 )
@@ -29,6 +29,9 @@ def main_logger_info(message: str) -> None:
     if get_rank() == 0:
         logger.info(message)
 
+def is_torchrun() -> bool:
+    required_vars = ["MASTER_ADDR", "MASTER_PORT", "RANK", "WORLD_SIZE"]
+    return all(var in os.environ for var in required_vars)
 
 def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     """

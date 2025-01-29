@@ -155,7 +155,6 @@ class LoRALoaderMixin:
         # move tensors to device
         # type: ignore[attr-defined]
         lora_state_dict = {k: v.to(self.device) for k, v in lora_state_dict.items()}
-
         state_dict = self.state_dict()  # type: ignore[attr-defined]
 
         if self.args.lora is None:  # type: ignore[attr-defined]
@@ -165,12 +164,27 @@ class LoRALoaderMixin:
             named_modules = dict(self.named_modules())
             for name, module in named_modules.items():
                 if isinstance(module, nn.Linear) and not is_cross_att(name):
-
                     # type: ignore[attr-defined]
                     if "output" not in name and name.split(".")[1] not in self.layers:
-                        print("Skipping parameter", name)
+                        logging.debug(
+                            "Skipping parameter %s at pipeline rank %d",
+                            k,
+                            self.pipeline_rank,  # type: ignore[attr-defined]
+                        )
+                            
+                    elif 'output' in name and self.pipeline_rank == self.num_pipeline_ranks - 1 and (name + ".lora_B.weight") in lora_state_dict:
+                        weight = (
+                            module.weight
+                            + (
+                                lora_state_dict[name + ".lora_B.weight"]
+                                @ lora_state_dict[name + ".lora_A.weight"]
+                            )
+                            * scaling
+                        )
 
-                    elif (name + ".lora_B.weight") in lora_state_dict:
+                        state_dict[name + ".weight"] = weight
+
+                    elif (name + ".lora_B.weight") in lora_state_dict and name.split(".")[1] in self.layers:
                         weight = (
                             module.weight
                             + (
@@ -182,17 +196,22 @@ class LoRALoaderMixin:
 
                         state_dict[name + ".weight"] = weight
             # type: ignore[attr-defined]
-
             self.load_state_dict(state_dict, strict=True)
         else:
             print("Loading LoRA weights...")
             for k, v in lora_state_dict.items():
                 state_dict.update(lora_state_dict)
 
-                if "output" in k or k.split(".")[1] in self.layers:  # type: ignore[attr-defined]
+                if k.split(".")[1] in self.layers:  # type: ignore[attr-defined]
+                    state_dict[k] = v
+                elif "output" in k and self.pipeline_rank == self.num_pipeline_ranks - 1:
                     state_dict[k] = v
                 else:
-                    print("Skipping parameter", k)
+                    logging.debug(
+                        "Skipping parameter %s at pipeline rank %d",
+                        k,
+                        self.pipeline_rank,  # type: ignore[attr-defined]
+                    )
             # type: ignore[attr-defined]
             self.load_state_dict(state_dict, strict=True, assign=True)
 
