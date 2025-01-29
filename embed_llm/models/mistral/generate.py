@@ -1,7 +1,7 @@
 import torch
 from embed_llm.models.mistral.cache import BufferCache
-from embed_llm.models.mistral.cross_att_transformer import Transformer
-
+from models.mistral.cross_att_transformer import Transformer
+from models.utils import is_torchrun
 
 @torch.inference_mode()
 def generate(
@@ -46,11 +46,11 @@ def generate(
         model.args.head_dim,
         model.args.sliding_window,
     )
-    model.pos_to_keep = []
     cache.to(device=model.device, dtype=model.dtype)
     cache.reset()
 
     last_token_prelogits = None
+
 
     # Put in cache if trained with prefix prompt
     if sum([len(p) for p in prompt_pre_embed]) > 0:
@@ -69,6 +69,7 @@ def generate(
     max_prompt_len = max(seqlens)
     if chunk_size is None:
         chunk_size = max_prompt_len
+
 
     # Encode prompt by chunks
     for s in range(0, max_prompt_len, chunk_size):
@@ -99,7 +100,7 @@ def generate(
             - 1,
         )
         assert last_token_prelogits.shape == (B, V)
-
+        
     # decode
     generated_tensors = []
     is_finished = torch.tensor([False for _ in range(B)])

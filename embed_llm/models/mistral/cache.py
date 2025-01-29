@@ -173,6 +173,13 @@ class CrossAttCache:
         return BlockDiagonalMask.from_seqlens(
             q_seqlen=q_seqlens, kv_seqlen=self.kv_seqlens
         )
+        
+    def to(self, device: torch.device, dtype: torch.dtype) -> "CrossAttCache":
+        
+        self.cache_k = self.cache_k.to(device=device, dtype=dtype)
+        self.cache_v = self.cache_v.to(device=device, dtype=dtype)
+
+        return self
 
 
 class BufferCache:

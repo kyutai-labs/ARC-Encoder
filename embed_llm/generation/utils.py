@@ -1,5 +1,11 @@
 import pandas as pd
+from models.utils import is_torchrun
+import logging
+import torch
 
+def main_logger_info(logger, message: str) -> None:
+    if not is_torchrun() or torch.distributed.get_rank() == 0:
+        logger.info(message)
 
 def format_results(results: dict, benchmark: str):
 

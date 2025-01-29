@@ -6,13 +6,20 @@ import pandas as pd
 import random
 from tqdm import tqdm, trange
 import argparse
+import logging
 import subprocess as sp
 from pathlib import Path
-from embed_llm.models.augmented_model import EmbedAugPipeline
 from mistral_inference.transformer import Transformer
 from mistral_inference.generate import generate
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-from embed_llm.generation.metrics import (
+
+import sys
+sys.path.append("/home/hippolytepilchen/code/Parallel_inference/embed_llm")
+from generation.utils import main_logger_info
+from models.augmented_model import EmbedAugPipeline
+from models.utils import is_torchrun
+from monitoring.utils import set_logger
+from generation.metrics import (
     word_overlap,
     get_bleu_score,
     get_meteor,
@@ -34,12 +41,13 @@ EVAL_DATA_PATH = {
 METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em}
 
 
+logger = logging.getLogger(__name__)
+
 # Profiling memory
 def get_gpu_memory():
     command = "nvidia-smi"
     memory_free_info = sp.check_output(command.split()).decode("ascii")
     return memory_free_info
-
 
 def set_global_seed(seed=42):
     # Python's random module
@@ -108,6 +116,14 @@ def load_pipeline(
     ckpt: int | None = None,
     instruct_name: str = None,
 ) -> EmbedAugPipeline | Transformer:
+    if pipeline is None and is_torchrun():
+            torch.distributed.init_process_group()
+            torch.cuda.set_device(torch.distributed.get_rank())
+            device = "cuda"
+            num_pipeline_ranks = torch.distributed.get_world_size()
+    else:
+        num_pipeline_ranks = 1
+     
     if not mistral:
         if pipeline is None:
             # Get last checkpoint
@@ -130,7 +146,7 @@ def load_pipeline(
                     if ckpt is None
                     else f"checkpoint_{ckpt:06d}"
                 )
-
+    
                 pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
                     llm_path=llm_path,
                     ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
@@ -139,6 +155,7 @@ def load_pipeline(
                     embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
                     max_batch_size=max_bs,
                     instruct_ckpt=None,
+                    num_pipeline_ranks=num_pipeline_ranks,
                 )
             else:
                 last_ckpt = sorted(
@@ -166,16 +183,17 @@ def load_pipeline(
                     + instruct_name
                     + "/checkpoints/"
                     + last_ckpt,
+                    num_pipeline_ranks=num_pipeline_ranks,
                 )
 
             ckpt = int(last_ckpt.split("_")[-1])
-            print("Evaluating checkpoint", ckpt)
+            main_logger_info(logger,f"Evaluating checkpoint {ckpt}")
         else:
             pipeline: EmbedAugPipeline = pipeline
             ckpt = ckpt
 
         if max_seq_len != pipeline.pipeline_args.max_seq_len:
-            print(
+            main_logger_info(logger,
                 "Warning: max_seq_len during model training \
                 ({}) is different from the one provided ({})".format(
                     pipeline.pipeline_args.max_seq_len, max_seq_len
@@ -189,6 +207,7 @@ def load_pipeline(
                 device=device,
                 max_batch_size=max_bs,
                 dtype=torch.float32,
+                num_pipeline_ranks=num_pipeline_ranks,
             )
         else:
             mistral_model = pipeline
@@ -221,6 +240,7 @@ def evaluate_QA(
 
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
+
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
 
     pipeline, ckpt = load_pipeline(
@@ -245,9 +265,11 @@ def evaluate_QA(
     results = {benchmark: {} for benchmark in benchmarks}
 
     # Loading model
-
-    device_count = torch.cuda.device_count()
-    other_device = torch.device("cuda:1") if device_count > 1 else device
+    if not is_torchrun():
+        device_count = torch.cuda.device_count()
+        other_device = torch.device("cuda:1") if device_count > 1 else device
+    else:
+        other_device = None
 
     # Creating dataset
     metrics = {}
@@ -299,10 +321,13 @@ def evaluate_QA(
             context = [pair["doc"] for pair in test_pairs]
 
         c = list(zip(questions, context, answers))
-        random.shuffle(c, random=lambda: 0.42)
+        fixed_random = random.Random()
+        fixed_random.seed(42)
+        fixed_random.shuffle(c)
+
         questions, context, answers = zip(*c)
 
-        print("Evaluation dataset loaded for", benchmark)
+        main_logger_info(logger,f"Evaluation dataset loaded for {benchmark}")
 
         if isinstance(context[0], list):
             context = ["\n".join(doc) for doc in context]
@@ -346,8 +371,7 @@ def evaluate_QA(
                         for query in new_questions[i : i + max_bs]
                     ]
 
-                    context_prompt = [
-                        create_prompt(
+                    context_prompt = [create_prompt(
                             prefix=" answer the question following the examples:\n\n"
                             + prompt_prefix,
                             doc="",
@@ -406,7 +430,7 @@ def evaluate_QA(
                         max_tokens=max_seq_len,
                         truncate_line=True,
                         device=device,
-                        device_generation=other_device,
+                        device_generation = other_device,
                     )
                     generated_sequences.extend(generated_sequence)
                 else:
@@ -511,27 +535,12 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "colbert": colbert,
                 }
-                print(
-                    "Context |  query | gen sequence | answer:",
-                    list(
-                        zip(
-                            new_context, new_questions, generated_sequences, new_answers
-                        )
-                    )[-1],
+                main_logger_info(logger,
+                    f"Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}"
                 )
 
-                print(
-                    "Temperature:",
-                    temp,
-                    "w_context_in_examples",
-                    icl_w_context,
-                    benchmark + " EM: ",
-                    value_em,
-                    benchmark + " Approx EM: ",
-                    value_approx,
-                    benchmark + " F1: ",
-                    value_f1,
-                )
+                main_logger_info(logger,
+                    f"Temperature: {temp}, bench: {benchmark},  EM {value_em}, Approx EM {value_approx}, F1 {value_f1}")
             else:
                 value = (
                     sum(
@@ -544,7 +553,7 @@ def evaluate_QA(
                     )
                     / n_samples
                 )
-                print("Temperature:", temp, benchmark + ": ", value)
+                main_logger_info(logger,f"Temperature: {temp} {benchmark}  {value}")
 
                 metrics[benchmark][str(temp)] = {
                     "n_samples": n_samples,
@@ -555,57 +564,58 @@ def evaluate_QA(
                     "colbert": colbert,
                 }
 
-    if run_name != "":
+    if not is_torchrun() or torch.distributed.get_rank() == 0:
+        if run_name != "":
+            with open(
+                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                + run_name
+                + "/results_generation.json",
+                "a",
+            ) as f:
+                json.dump(results, f)
+
         with open(
-            "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-            + run_name
-            + "/results_generation.json",
-            "a",
+            output_file,
+            "r",
         ) as f:
-            json.dump(results, f)
+            overall_results = json.load(f)
 
-    with open(
-        output_file,
-        "r",
-    ) as f:
-        overall_results = json.load(f)
+        if mistral and query_w_context:
+            run_name = "Mistral_RAG"
+            ckpt = 0
+        elif mistral and not query_w_context:
+            run_name = "Mistral_no_RAG"
+            ckpt = 0
 
-    if mistral and query_w_context:
-        run_name = "Mistral_RAG"
-        ckpt = 0
-    elif mistral and not query_w_context:
-        run_name = "Mistral_no_RAG"
-        ckpt = 0
+        if run_name not in overall_results.keys():
+            overall_results[run_name] = {}
+        if str(ckpt) not in overall_results[run_name].keys():
+            overall_results[run_name][str(ckpt)] = {}
+        for benchmark in benchmarks:
+            if benchmark not in overall_results[run_name][str(ckpt)].keys():
+                overall_results[run_name][str(ckpt)][benchmark] = {}
 
-    if run_name not in overall_results.keys():
-        overall_results[run_name] = {}
-    if str(ckpt) not in overall_results[run_name].keys():
-        overall_results[run_name][str(ckpt)] = {}
-    for benchmark in benchmarks:
-        if benchmark not in overall_results[run_name][str(ckpt)].keys():
-            overall_results[run_name][str(ckpt)][benchmark] = {}
+        for benchmark in metrics.keys():
+            for metric in metrics[benchmark].keys():
+                if metric not in overall_results[run_name][str(ckpt)][benchmark].keys():
+                    overall_results[run_name][str(ckpt)][benchmark][metric] = {}
+                for temp in metrics[benchmark][metric].keys():
+                    if (
+                        temp
+                        not in overall_results[run_name][str(ckpt)][benchmark][
+                            metric
+                        ].keys()
+                    ):
+                        overall_results[run_name][str(ckpt)][benchmark][metric][temp] = []
+                    overall_results[run_name][str(ckpt)][benchmark][metric][temp].append(
+                        metrics[benchmark][metric][temp]
+                    )
 
-    for benchmark in metrics.keys():
-        for metric in metrics[benchmark].keys():
-            if metric not in overall_results[run_name][str(ckpt)][benchmark].keys():
-                overall_results[run_name][str(ckpt)][benchmark][metric] = {}
-            for temp in metrics[benchmark][metric].keys():
-                if (
-                    temp
-                    not in overall_results[run_name][str(ckpt)][benchmark][
-                        metric
-                    ].keys()
-                ):
-                    overall_results[run_name][str(ckpt)][benchmark][metric][temp] = []
-                overall_results[run_name][str(ckpt)][benchmark][metric][temp].append(
-                    metrics[benchmark][metric][temp]
-                )
-
-    with open(
-        output_file,
-        "w",
-    ) as f:
-        json.dump(overall_results, f)
+        with open(
+            output_file,
+            "w",
+        ) as f:
+            json.dump(overall_results, f)
 
     if mistral:
         return mistral_model
@@ -649,7 +659,8 @@ def evaluate_reconstruction_model(
     if max_multi_passage > 1:
         eval_data = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_50_30_20.jsonl"
 
-    print("RUN NAME => ", run_name)
+    main_logger_info(logger, "RUN NAME => ".format(run_name))
+    
 
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
 
@@ -667,7 +678,7 @@ def evaluate_reconstruction_model(
     )
 
     if max_seq_len != pipeline.pipeline_args.max_seq_len:
-        print(
+        main_logger_info(logger, 
             "Warning: max_seq_len during model training \
             ({}) is different from the one provided ({})".format(
                 pipeline.pipeline_args.max_seq_len, max_seq_len
@@ -716,10 +727,14 @@ def evaluate_reconstruction_model(
     assert n_passages == len(valid_passage)
 
     device_count = torch.cuda.device_count()
-    other_device = device if device_count <= 1 else torch.device("cuda:1")
+    
+    if not is_torchrun():
+        other_device = device if device_count <= 1 else torch.device("cuda:1")
+    else:
+        other_device = None
 
     for temp in temperatures:
-        print(f"Temperature: {temp}")
+        main_logger_info(logger, f"Temperature: {temp}")
         generated_sequences = []
         for i in range(0, n_passages, max_batch_size):
 
@@ -739,8 +754,8 @@ def evaluate_reconstruction_model(
                 temperature=temp,
                 max_tokens=max_tokens,
                 truncate_line=False,
-                device=device,
-                device_generation=other_device,
+                device=device if not is_torchrun() else 'cuda',
+                device_generation= other_device ,
             )
 
             generated_sequences.extend(generated_sequence)
@@ -798,18 +813,10 @@ def evaluate_reconstruction_model(
             "eval_data_type": eval_data_type,
         }
 
-        print(
-            f"CKPT: {ckpt}, Temperature: {temp}, Overlap: {overlap}",
-            "Bleu Score:",
-            bleu_score,
-            "Truncated output Bleu score:",
-            trunc_bleu_score,
-            "EM:",
-            em,
-            "Meteor:",
-            meteor_score,
-            "Bleu Score Avg:",
-            bleu_score_avg,
+        main_logger_info(logger,
+            f"CKPT: {ckpt}, Temperature: {temp}, Overlap: {overlap}  \
+            Bleu Score: {bleu_score} Truncated Bleu Score: {trunc_bleu_score} \
+            EM: {em} Meteor: {meteor_score} Bleu Score Avg: {bleu_score_avg}"
         )
 
     with open(
@@ -877,9 +884,9 @@ def arg_parser():
 
 
 if __name__ == "__main__":
-
+    set_logger(logging.INFO)
     icl_tests = [0, 2, 5]
-    temp_tests = [0, 0.5]
+    temp_tests = [0]
 
     args = arg_parser()
 
@@ -927,7 +934,7 @@ if __name__ == "__main__":
         #     w_embeds=False,
         # )
         torch.cuda.empty_cache()
-        print("EVALUATING WITH CONTEXT")
+        main_logger_info(logger, "EVALUATING WITH CONTEXT")
         mistral_model = evaluate_QA(
             "",
             benchmarks,
@@ -965,7 +972,7 @@ if __name__ == "__main__":
             #     pipeline=mistral_model,
             # )
             torch.cuda.empty_cache()
-            print("EVALUATING WITH CONTEXT")
+            main_logger_info(logger, "EVALUATING WITH CONTEXT")
             mistral_model = evaluate_QA(
                 "",
                 benchmarks,
@@ -985,7 +992,7 @@ if __name__ == "__main__":
             )
             torch.cuda.empty_cache()
 
-        print("EVALUATING WITH CONTEXT but not in ICL")
+        main_logger_info(logger, "EVALUATING WITH CONTEXT but not in ICL")
         mistral_model = evaluate_QA(
             "",
             benchmarks,
@@ -1040,7 +1047,7 @@ if __name__ == "__main__":
                 )
                 torch.cuda.empty_cache()
             else:
-                print("Standard Dump")
+                main_logger_info(logger, "Standard Dump")
                 pipeline, ckpt = evaluate_reconstruction_model(
                     args.run_name,
                     output_file=output_file,
@@ -1053,7 +1060,7 @@ if __name__ == "__main__":
                     instruct_name=args.instruct_name,
                 )
                 torch.cuda.empty_cache()
-                print("Atlas")
+                main_logger_info(logger, "Atlas")
                 pipeline, ckpt = evaluate_reconstruction_model(
                     args.run_name,
                     output_file=output_file,

@@ -2,12 +2,12 @@ model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_instruct
-start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/nopref_pretrain_nollm_trained_cont_singpassage_5darr64/checkpoints/checkpoint_040000
+start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.0_16BS/checkpoints/checkpoint_030000
 
 lora:
   rank: 64
   scaling: 2.0
-  enable: true
+  enable: false
 
 
 instruct_tuning:
@@ -17,8 +17,7 @@ instruct_tuning:
   alpha: 2.0
   temp: 1.0
   tune_llm: false
-  tune_embedder: true
-
+  tune_embedder: false
 
 # data:
 #   # train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
@@ -41,7 +40,7 @@ optim:
 seed: 0
 log_freq: 5
 eval_freq: 100
-no_eval: false
+no_eval: Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0
 ckpt_freq: 5
 save_adapters: true
 

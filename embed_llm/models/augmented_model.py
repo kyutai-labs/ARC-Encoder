@@ -1,13 +1,14 @@
 import torch
+import torch.distributed
 import torch.nn as nn
 from pathlib import Path
 import safetensors.torch
-
+import subprocess as sp
 import safetensors
 import logging
 import numpy as np
 import torch.nn.functional as F
-from embed_llm.models.embedding_modules import (
+from models.embedding_modules import (
     MLP_project,
     PoolingModule,
     ReversedLatentAttention,
@@ -15,26 +16,28 @@ from embed_llm.models.embedding_modules import (
 )
 import yaml
 import os
-from embed_llm.retrieval.embeddings import encode_text, get_pretrained_embedder
-from embed_llm.data.data_loader import Batch
-from embed_llm.models.loading import (
+import sys
+sys.path.append("/home/hippolytepilchen/code/Parallel_inference/embed_llm")
+from retrieval.embeddings import encode_text, get_pretrained_embedder
+from data.data_loader import Batch
+from models.loading import (
     load_args,
     load_llm_model,
     load_state_dict,
     get_instruct_ckpts_paths,
 )
-from embed_llm.models.args import MistralModelArgs, EmbedAugArgs, LoraArgs
+from models.args import MistralModelArgs, EmbedAugArgs, LoraArgs
 
-from embed_llm.training.args import InstructionTuningArgs
+from training.args import InstructionTuningArgs
 
-from embed_llm.models.utils import is_cross_att
+from models.utils import is_cross_att, is_torchrun
 
 # Mistral specifics
-from embed_llm.models.mistral.cross_att_transformer import (
+from models.mistral.cross_att_transformer import (
     Transformer as MistralTransformer,
 )
-
-from embed_llm.models.mistral.generate import generate as mistral_generate
+from generation.utils import main_logger_info
+from models.mistral.generate import generate as mistral_generate
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 
 
@@ -307,8 +310,10 @@ class EmbedAugPipeline(nn.Module):
         max_batch_size: int = 4,
         param_dtype: torch.dtype = torch.float32,
         instruct_ckpt: str | None = None,
+        num_pipeline_ranks: int = 1,
     ):
 
+            
         if instruct_ckpt is not None and ckpt_path is None:
             with open(os.path.join(instruct_ckpt, "../../args.yaml"), "r") as f:
                 train_args = yaml.safe_load(f)
@@ -343,9 +348,13 @@ class EmbedAugPipeline(nn.Module):
             assert Path(ckpt_path + "/" + llm_name.lower() + "/pooling_module").exists()
             pooling_module_path = ckpt_path + "/" + llm_name.lower() + "/pooling_module"
         else:
-            embedding_model = get_pretrained_embedder(
-                embed_model_name, device_map=device
-            )
+
+            if is_torchrun() and torch.distributed.get_rank() != 0:
+                embedding_model = None
+            else:
+                embedding_model = get_pretrained_embedder(
+                    embed_model_name, device_map= device
+                )
 
         if instruct_ckpt is not None:
 
@@ -376,19 +385,28 @@ class EmbedAugPipeline(nn.Module):
         if not pipeline_args.trainable_llm:
             llm_args.lora = None
 
+        if num_pipeline_ranks > 1 and is_torchrun():
+            pipeline_rank = torch.distributed.get_rank()
+        else:
+            pipeline_rank = 0
+        
         llm, tokenizer, embed_dim = load_llm_model(
             llm_args=llm_args,
             pipeline_args=pipeline_args,
             folder=Path(llm_path),
             checkpoint=False,
             param_dtype=param_dtype,
-            parll=False,
+            parll= is_torchrun(),
+            num_pipeline_rank=num_pipeline_ranks,
+            pipeline_rank=pipeline_rank,
         )
+        
+
         if pipeline_args.cross_att_layers == -1 and pipeline_args.every_cross_att == -1:
             assert not pipeline_args.cross_att, "Cross attention layers not specified"
 
         if pipeline_args.cross_att:
-            print("Loading cross att state dict")
+            main_logger_info(logger, "Loading cross att state dict")
 
             if instruct_ckpt is not None:
                 state_dict = safetensors.torch.load_file(Path(ca_state_dict_path))
@@ -402,62 +420,70 @@ class EmbedAugPipeline(nn.Module):
             }
 
             llm.load_state_dict(cross_att_state_dicts, assign=True, strict=False)
-
+            
         if instruct_ckpt is not None and llm_lora_state_dict_path is not None:
             llm.load_lora(
                 Path(llm_lora_state_dict_path), cross_att=pipeline_args.cross_att
             )
-
-        elif Path(lora_path).exists():
+        
+        elif Path(lora_path).exists() and pipeline_args.trainable_llm:
             llm.load_lora(Path(lora_path), cross_att=pipeline_args.cross_att)
-
+        
         llm = llm.to(device)
         llm.eval()
-
+        
         if pipeline_args.trainable_embedder or pipeline_args.train_only_pooling:
             llm_args.lora = lora
             if pipeline_args.train_only_pooling:
                 llm_args.lora = None
 
-            llm_embedder, _, llm_embed_dim = load_llm_model(
-                llm_args=llm_args,
-                pipeline_args=pipeline_args,
-                folder=Path(llm_path),
-                checkpoint=False,
-                param_dtype=param_dtype,
-                for_embedding=True,
-                parll=False,
-            )
+            if is_torchrun() and pipeline_rank > 0:
+                embedding_model = None
+            else:
+                llm_embedder, _, llm_embed_dim = load_llm_model(
+                    llm_args=llm_args,
+                    pipeline_args=pipeline_args,
+                    folder=Path(llm_path),
+                    checkpoint=False,
+                    param_dtype=param_dtype,
+                    for_embedding=True,
+                    num_pipeline_rank=1,
+                    pipeline_rank=0,
+                    parll = is_torchrun(),
+                )
 
-            n_truncated_layers = pipeline_args.n_truncated_layers
+                n_truncated_layers = pipeline_args.n_truncated_layers
 
-            try:
-                del llm_embedder.output
-            except AttributeError:
-                print("No output to delete")
-            for i in range(llm_embedder.n_layers):
-                if i > llm_embedder.n_layers - (n_truncated_layers + 1):
-                    module = llm_embedder.layers.pop(str(i))
-                    del module
+                try:
+                    del llm_embedder.output
+                except AttributeError:
+                    print("No output to delete")
+                for i in range(llm_embedder.n_layers):
+                    if i > llm_embedder.n_layers - (n_truncated_layers + 1):
+                        if str(i) in llm_embedder.layers:
+                            module = llm_embedder.layers.pop(str(i))
+                            del module
 
-            llm_embedder.n_layers = llm_embedder.n_layers - n_truncated_layers
-            if not pipeline_args.train_only_pooling:
-                if (
-                    instruct_ckpt is not None
-                    and embedder_lora_state_dict_path is not None
-                ):
-                    llm_embedder.load_lora(
-                        Path(embedder_lora_state_dict_path + "/lora.safetensors"),
-                        cross_att=False,
-                    )
-                else:
-                    llm_embedder.load_lora(
-                        Path(trainable_embedder_path + "/lora.safetensors"),
-                        cross_att=False,
-                    )
-            embedding_model = llm_embedder.to(device)
-            embedding_model.eval()
-
+                llm_embedder.n_layers = llm_embedder.n_layers - n_truncated_layers
+                if not pipeline_args.train_only_pooling:
+                    if (
+                        instruct_ckpt is not None
+                        and embedder_lora_state_dict_path is not None
+                    ):
+                        llm_embedder.load_lora(
+                            Path(embedder_lora_state_dict_path + "/lora.safetensors"),
+                            cross_att=False,
+                        )
+                    else:
+                        llm_embedder.load_lora(
+                            Path(trainable_embedder_path + "/lora.safetensors"),
+                            cross_att=False,
+                        )
+                
+                embedding_model = llm_embedder.to(device)
+            
+                embedding_model.eval()
+            
         augmented_pipeline = EmbedAugPipeline(
             pipeline_args=pipeline_args,
             embed_model_name=(
@@ -471,44 +497,47 @@ class EmbedAugPipeline(nn.Module):
             embedding_model=embedding_model,
             tokenizer=tokenizer,
         )
-
         # Experiment using full cross-attention
         if pipeline_args.cross_att and not pipeline_args.do_pool:
             augmented_pipeline.pipeline_args.pooling_module = None
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
 
-        if (
-            pipeline_args.trainable_embedder or pipeline_args.train_only_pooling
-        ) and pipeline_args.do_pool:
+        if pipeline_rank == 0:
             if (
-                pipeline_args.do_pool
-                and "attention" in augmented_pipeline.pipeline_args.pooling_module.type
-            ):
-                state_dict = load_state_dict(
-                    Path(pooling_module_path), dtype=param_dtype
+                pipeline_args.trainable_embedder or pipeline_args.train_only_pooling
+            ) and pipeline_args.do_pool:
+                if (
+                    pipeline_args.do_pool
+                    and "attention" in augmented_pipeline.pipeline_args.pooling_module.type
+                ):
+                    state_dict = load_state_dict(
+                        Path(pooling_module_path), dtype=param_dtype
+                    )
+                    
+                    
+                    augmented_pipeline.model.pooling_module.process.load_state_dict(
+                        state_dict
+                    )
+                    
+                    augmented_pipeline.model.pooling_module.process = (
+                        augmented_pipeline.model.pooling_module.process.to(device)
+                    )
+            if pipeline_args.mlp_project.n_layers > 0:
+                print("Loading MLP projector")
+                augmented_pipeline.model.mlp_project.load_state_dict(
+                    safetensors.torch.load_file(mlp_path + "/consolidated.safetensors")
                 )
-                augmented_pipeline.model.pooling_module.process.load_state_dict(
-                    state_dict
-                )
-                augmented_pipeline.model.pooling_module.process = (
-                    augmented_pipeline.model.pooling_module.process.to(device)
+                augmented_pipeline.model.mlp_project = (
+                    augmented_pipeline.model.mlp_project.to(device)
                 )
 
-        if pipeline_args.mlp_project.n_layers > 0:
-            print("Loading MLP projector")
-            augmented_pipeline.model.mlp_project.load_state_dict(
-                safetensors.torch.load_file(mlp_path + "/consolidated.safetensors")
-            )
-            augmented_pipeline.model.mlp_project = (
-                augmented_pipeline.model.mlp_project.to(device)
-            )
-
-        augmented_pipeline.model = augmented_pipeline.model.to(device)
+        if not is_torchrun():
+            augmented_pipeline.model = augmented_pipeline.model.to(device)
+            
         augmented_pipeline.model.eval()
-
         augmented_pipeline.generate = augmented_pipeline.generate_mistral
-
+            
         return augmented_pipeline
 
     @torch.inference_mode()
@@ -525,8 +554,10 @@ class EmbedAugPipeline(nn.Module):
         embed_seqlens: list[int] | None = None,
         **kwargs,
     ):
-
-        device_generation = device if device_generation is None else device_generation
+        if not is_torchrun():
+            device_generation = device if device_generation is None else device_generation
+        else:
+            device_generation = None
 
         if isinstance(prompt_pre_embed, str):
             prompt_pre_embed = [prompt_pre_embed]
@@ -549,83 +580,98 @@ class EmbedAugPipeline(nn.Module):
         else:
             w_embeds = self.pipeline_args.w_embeds
 
-        if w_embeds and (
-            not self.pipeline_args.trainable_embedder
-            and not self.pipeline_args.train_only_pooling
-        ):
-            if self.pipeline_args.cross_att and not self.pipeline_args.do_pool:
-                embeddings, embed_seqlens = encode_text(
-                    (
-                        sum(text_conditioning, [])
-                        if isinstance(text_conditioning, list)
-                        else text_conditioning
-                    ),
-                    self.embed_model_name,
-                    self.embedding_model,
-                    query_embedding=False,
-                    device=device,
-                    no_pool=True,
-                )
-            else:
-                embeddings = encode_text(
-                    (
-                        sum(text_conditioning, [])
-                        if isinstance(text_conditioning, list)
-                        else text_conditioning
-                    ),
-                    self.embed_model_name,
-                    self.embedding_model,
-                    query_embedding=False,
-                    device=device,
-                    no_pool=False,
-                )
-                embed_seqlens = [len(l_text) for l_text in text_conditioning]
-
-        elif w_embeds and (
-            self.pipeline_args.trainable_embedder
-            or self.pipeline_args.train_only_pooling
-        ):
-
-            x = [
-                self.tokenizer.encode(text, bos=True, eos=True)
-                for l_text in text_conditioning
-                for text in l_text
-            ]
-            seqlens = [len(tokens) for tokens in x]
-            x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
-                device
-            )
-            embeddings = self.model.trainable_embedder(
-                input_ids=x, embeddings=None, seqlens=seqlens
-            )
-
-            if self.pipeline_args.do_pool:
-                embeddings = self.model.pooling_module(x=embeddings, seqlens=seqlens)
-
-            embed_seqlens = [len(l_text) for l_text in text_conditioning]
-        else:
-            embeddings = None
-            embed_seqlens = None
-            cat_embeddings = None
-
-        if embeddings is not None:
-            embeddings = F.normalize(embeddings, p=2, dim=-1)
-
-            if self.model.mlp_project is not None:
-                if self.pipeline_args.mlp_project.type == "mlp":
-                    cat_embeddings = self.model.mlp_project(
-                        embeddings.to(self.pipeline_args.param_dtype)
+        if not is_torchrun() or torch.distributed.get_rank()==0:
+            if w_embeds and (
+                not self.pipeline_args.trainable_embedder
+                and not self.pipeline_args.train_only_pooling
+            ):
+                if self.pipeline_args.cross_att and not self.pipeline_args.do_pool:
+                    embeddings, embed_seqlens = encode_text(
+                        (
+                            sum(text_conditioning, [])
+                            if isinstance(text_conditioning, list)
+                            else text_conditioning
+                        ),
+                        self.embed_model_name,
+                        self.embedding_model,
+                        query_embedding=False,
+                        device=device,
+                        no_pool=True,
                     )
                 else:
-                    cat_embeddings = self.model.mlp_project(
-                        embeddings.to(self.pipeline_args.param_dtype),
-                        seqlens=embed_seqlens,
+                    embeddings = encode_text(
+                        (
+                            sum(text_conditioning, [])
+                            if isinstance(text_conditioning, list)
+                            else text_conditioning
+                        ),
+                        self.embed_model_name,
+                        self.embedding_model,
+                        query_embedding=False,
+                        device=device,
+                        no_pool=False,
                     )
+                    embed_seqlens = [len(l_text) for l_text in text_conditioning]
+
+            elif w_embeds and (
+                self.pipeline_args.trainable_embedder
+                or self.pipeline_args.train_only_pooling
+            ):
+
+                x = [
+                    self.tokenizer.encode(text, bos=True, eos=True)
+                    for l_text in text_conditioning
+                    for text in l_text
+                ]
+                seqlens = [len(tokens) for tokens in x]
+                x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
+                    device
+                )
+                embeddings = self.model.trainable_embedder(
+                    input_ids=x, embeddings=None, seqlens=seqlens
+                )
+                
+       
+                if self.pipeline_args.do_pool:
+                    embeddings = self.model.pooling_module(x=embeddings.to(self.pipeline_args.param_dtype), seqlens=seqlens)
+                embed_seqlens = [len(l_text) for l_text in text_conditioning]
             else:
-                cat_embeddings = embeddings
+                embeddings = None
+                embed_seqlens = None
+                cat_embeddings = None
+    
+            if embeddings is not None:
+                embeddings = F.normalize(embeddings, p=2, dim=-1) 
 
-            embeddings = cat_embeddings
+                if self.model.mlp_project is not None:
+                    
+                    if self.pipeline_args.mlp_project.type == "mlp":
+                        cat_embeddings = self.model.mlp_project(
+                            embeddings.to(self.pipeline_args.param_dtype)
+                        )
+                    else:
+                        cat_embeddings = self.model.mlp_project(
+                            embeddings.to(self.pipeline_args.param_dtype),
+                            seqlens=embed_seqlens,
+                        )
+                else:
+                    cat_embeddings = embeddings
+                    
+                embeddings = cat_embeddings if device_generation is None else cat_embeddings.to(device_generation)
 
+        
+        if is_torchrun() and w_embeds:
+            assert  self.pipeline_args.do_pool, "Cannot use distributed pipeline if not pooling for now"
+            if torch.distributed.get_rank()>0:
+                embed_seqlens = [len(l_text) for l_text in text_conditioning]
+                cat_embeddings = torch.empty((sum(embed_seqlens),self.model.llm.args.dim), device=self.model.llm.device, dtype=self.model.llm.dtype)
+                embeddings = torch.empty((sum(embed_seqlens),self.model.llm.args.dim), device=self.model.llm.device, dtype=self.model.llm.dtype)
+            torch.distributed.broadcast(cat_embeddings, src=0)
+            torch.distributed.broadcast(embeddings, src=0)
+        elif not w_embeds:
+            cat_embeddings = None
+            embeddings = None
+        
         encoded_pre_embed_prompts = []
         encoded_post_embed_prompts = []
 
@@ -654,15 +700,20 @@ class EmbedAugPipeline(nn.Module):
                 )
 
         eos_id = self.tokenizer.eos_id
+        
+        if is_torchrun():
+            torch.distributed.barrier()
+            
+
         generated_tokens = mistral_generate(
             prompt_pre_embed=encoded_pre_embed_prompts,
             prompt_post_embed=encoded_post_embed_prompts,
             embeddings=(
                 None
                 if embeddings is None or not self.pipeline_args.cross_att
-                else embeddings.to(device_generation)
+                else embeddings
             ),
-            model=self.model.llm.to(device_generation),
+            model = self.model.llm if device_generation is None else self.model.llm.to(device_generation),
             max_tokens=max_tokens,
             temperature=temperature,
             chunk_size=None,
@@ -672,7 +723,7 @@ class EmbedAugPipeline(nn.Module):
                 None
                 if cat_embeddings is None
                 or (not self.pipeline_args.do_both and self.pipeline_args.cross_att)
-                else cat_embeddings.to(device_generation)
+                else cat_embeddings
             ),
             **kwargs,
         )

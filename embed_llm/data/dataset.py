@@ -165,7 +165,7 @@ def sequence_iterator(
     to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]] = []
     mask_buffer: Mask = []
     sizes: list[int] = []
-    n_prefixes: list[int] = []
+
     n_missing = seq_len
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
@@ -191,6 +191,7 @@ def sequence_iterator(
                     adapt_seq_len=adapt_seq_len,
                     n_missing=n_missing,
                     data_type="continuation",
+                    is_eval=is_finite,
                 )
                 if isinstance(res, SequenceEmbedMaskAndSizes):
                     yield res
@@ -222,6 +223,7 @@ def sequence_iterator(
                     tokenizer=tokenizer,
                     adapt_seq_len=adapt_seq_len,
                     n_missing=n_missing,
+                    is_eval=is_finite,
                 )
 
                 if isinstance(res, SequenceEmbedMaskAndSizes):
@@ -284,7 +286,6 @@ def sequence_iterator(
                     if int(continuation) == 1 or isinstance(continuation, float)
                     else "reconstruction"
                 ),
-                n_prefixes=n_prefixes,
             )
 
 

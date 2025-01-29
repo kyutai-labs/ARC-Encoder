@@ -60,11 +60,6 @@ def load_training_model(
             not train_args.pipeline.trainable_embedder
         ), "Can't have both trainable embedder and train only pooling"
 
-    if train_args.seq_len != train_args.pipeline.max_seq_len:
-        main_logger_info(
-            "Using SEQ LEN from train_args as Max Seq Len since different in pipeline args !!!"
-        )
-        train_args.pipeline.max_seq_len = train_args.seq_len
 
     if train_args.hybrid_task.do:
         assert train_args.continuation == 0.0, "Continuation must be 0 for hybrid task"

@@ -19,10 +19,7 @@ import time
 from torch.autograd.profiler import profile, record_function
 import subprocess as sp
 
-# from embed_llm.generation.evaluation import (
-#     evaluate_reconstruction_model,
-#     evaluate_QA,
-# )
+sys.path.append("/home/hippolytepilchen/code/Parallel_inference/embed_llm")
 from embed_llm.models.wrapped_models_training import (
     load_training_model,
     load_training_model_from_ckpt,
@@ -105,7 +102,8 @@ def train(train_config: str | dict, data_config: str = None):
             train_params = yaml.safe_load(f)
         data_args = create_data_args(data_config)
         train_params["data"] = data_args
-        train_params["wandb"] = WandbArgs(**train_params["wandb"])
+        if train_params.get("wandb", None) is not None:
+            train_params["wandb"] = WandbArgs(**train_params["wandb"])
         args: TrainArgs = TrainArgs(**train_params)
         args.optim = OptimArgs(**args.optim)
         args.lora = LoraArgs(**args.lora)
