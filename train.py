@@ -434,8 +434,6 @@ def _train(
             # start_time = time.time()
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
 
-<<<<<<< HEAD
-=======
             # if get_rank() == 0:
             #     to_gen = [int(tok) for tok in batch.x[:batch.sizes[0]]]
             #     embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"][0]]
@@ -447,7 +445,6 @@ def _train(
             #     print("To generate", pipeline.tokenizer.decode(to_gen)[:100])
                 
 
->>>>>>> 21270a1 (even cleaner)
             if args.textual_continuation * args.continuation > 0.0 or (
                 args.hybrid_task.prop_noembed_continuation > 0.0 and args.hybrid_task.do
             ):
