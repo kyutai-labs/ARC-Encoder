@@ -174,13 +174,6 @@ def load_pipeline(
             pipeline: EmbedAugPipeline = pipeline
             ckpt = ckpt
 
-        if max_seq_len != pipeline.pipeline_args.max_seq_len:
-            print(
-                "Warning: max_seq_len during model training \
-                ({}) is different from the one provided ({})".format(
-                    pipeline.pipeline_args.max_seq_len, max_seq_len
-                )
-            )
         return pipeline, ckpt
     else:
         if pipeline is None:
@@ -680,13 +673,6 @@ def evaluate_reconstruction_model(
         ckpt=ckpt,
     )
 
-    if max_seq_len != pipeline.pipeline_args.max_seq_len:
-        print(
-            "Warning: max_seq_len during model training \
-            ({}) is different from the one provided ({})".format(
-                pipeline.pipeline_args.max_seq_len, max_seq_len
-            )
-        )
 
     lim_toks = max_seq_len
     valid_passage = []

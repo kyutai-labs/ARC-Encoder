@@ -37,7 +37,6 @@ class EmbedAugArgs(Serializable):
     shared_kv: bool = True
     trainable_llm: bool = True
     w_prefix_prompt: bool = False
-    max_seq_len: int = 256
     gate_bottleneck: int = 8
 
     # Could be simplified
