@@ -326,9 +326,9 @@ def _train(
                 continuation=True,
                 hybrid_task=None,
             )
-
+            
             # pre-load all eval batches, 40 batches * n_gpus * batch_size // n_gpus
-
+            # print('EVAL DATA LOADER LEN',len(list(eval_data_loader_4cont)))
             eval_batches_4cont = []
             while len(eval_batches_4cont) < 40:
                 batch = next(eval_data_loader_4cont)
@@ -437,12 +437,16 @@ def _train(
             # start_time = time.time()
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
 
-            # if get_rank() == 0:
-            #     to_gen = [int(tok) for tok in batch.x[:batch.sizes[0]]]
-            #     embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"][0]]
-
-            #     print("To embed", pipeline.tokenizer.decode(embed))
-            #     print("To generate", pipeline.tokenizer.decode(to_gen))
+            if get_rank() == 0:
+                to_gen = [int(tok) for tok in batch.x[:batch.sizes[0]]]
+                embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"][0]]
+                # print('N_prefix', batch.n_prefixes[0])
+                print('Sizes', batch.sizes)
+                print("Embed seqlens", embed_seqlens)
+                print("Embed", batch.y_mask[:batch.sizes[0]])
+                print("To embed", pipeline.tokenizer.decode(embed)[-100:])
+                print("To generate", pipeline.tokenizer.decode(to_gen)[:100])
+                
 
             if args.textual_continuation * args.continuation > 0.0 or (
                 args.hybrid_task.prop_noembed_continuation > 0.0 and args.hybrid_task.do

@@ -346,7 +346,8 @@ def load_training_model_from_ckpt(
         assert (
             not tune_embedder
         ), "If no trainable embedder, embedder model can't be instruct tuned"
-    if not old_pipeline_args.trainable_llm or not tune_llm:
+        
+    if not tune_llm:
         assert not tune_llm, "If no trainable llm, llm model can't be instruct tuned"
         llm_args.lora = None
 
@@ -467,9 +468,13 @@ def load_training_model_from_ckpt(
             else:
                 augmented_model.llm.args.lora = lora
 
-            augmented_model.llm.load_lora(
-                Path(lora_path), cross_att=old_pipeline_args.cross_att
-            )
+            if old_pipeline_args.trainable_llm:
+                augmented_model.llm.load_lora(
+                    Path(lora_path), cross_att=old_pipeline_args.cross_att
+                )
+                
+            elif tune_llm:
+                initialize_lora_parameters(augmented_model.llm, param_dtype)
 
         param_init_fn = None
 
