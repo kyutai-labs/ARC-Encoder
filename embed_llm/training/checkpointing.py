@@ -393,9 +393,8 @@ class Checkpointer:
                     ),  # always use safetensors for checkpointing
                 )
 
-            if self.trainable_embedder is not None or (
-                self.instruction_tuning is not None
-                and self.instruction_tuning.tune_embedder
+            if self.trainable_embedder is not None and (
+                self.instruction_tuning is None or self.instruction_tuning.tune_embedder
             ):
                 if not self.pipeline.pipeline_args.train_only_pooling:
                     safetensors.torch.save_file(
@@ -435,9 +434,8 @@ class Checkpointer:
             if self.mlp_project is not None and self.mlp_project.n_layers > 0:
                 tmp_mlp_project_dst.rename(self.dst_dir(type="mlp_project"))
 
-            if self.trainable_embedder is not None or (
-                self.instruction_tuning is not None
-                and self.instruction_tuning.tune_embedder
+            if self.trainable_embedder is not None and (
+                self.instruction_tuning is None or self.instruction_tuning.tune_embedder
             ):
                 if not self.pipeline.pipeline_args.train_only_pooling:
                     tmp_trainable_embedder_dst.rename(

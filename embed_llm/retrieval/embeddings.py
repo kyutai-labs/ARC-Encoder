@@ -130,7 +130,6 @@ def generate_embeddings(
     size_partition = len(dataset) // n_gpu
     used_texts = []
 
-
     if partition == n_gpu - 1:
         end_partition = len(dataset)
     else:
@@ -155,8 +154,6 @@ def generate_embeddings(
     text_passages = []
     for ind, i in tqdm(enumerate(range(0, len(used_texts), bs))):
         passages = used_texts[i : i + bs]
-
-
 
         embeddings = encode_text(
             passages,
@@ -218,6 +215,7 @@ def generate_embeddings(
             f.write("\n")
 
     print("Saving embedding dataset with embeddings to", output_path)
+
 
 def arg_parser():
     parser = argparse.ArgumentParser(description="Prepare data for training")

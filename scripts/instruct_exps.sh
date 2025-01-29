@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=instruct_exps
-#SBATCH --dependency=afterok:644268_13 
+#SBATCH --dependency=afterok:647979_1
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
 
 
@@ -17,7 +17,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_hybrid_poolwollm_0noembed_3multi_054f63f8.yaml.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml
 )
 
 

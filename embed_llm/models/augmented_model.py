@@ -312,8 +312,6 @@ class EmbedAugPipeline(nn.Module):
         instruct_ckpt: str | None = None,
         num_pipeline_ranks: int = 1,
     ):
-
-            
         if instruct_ckpt is not None and ckpt_path is None:
             with open(os.path.join(instruct_ckpt, "../../args.yaml"), "r") as f:
                 train_args = yaml.safe_load(f)
