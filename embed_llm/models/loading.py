@@ -177,13 +177,10 @@ def load_llm_model(
         model = MistralTransformer(args=llm_args, checkpoint=checkpoint)
 
     embed_dim = model.args.dim
-    if parll and get_rank() == 0:
+    if not parll or get_rank() == 0:
         state_dict = load_state_dict(folder, dtype=param_dtype)
         model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
         logger.info("Loaded model on cpu!")
-    elif not parll:
-        state_dict = load_state_dict(folder, dtype=param_dtype)
-        model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
 
     if pipeline_args.mlp_project.n_layers == 0 and not for_embedding:
         logger.info("Embedder dim must match model dim if no MLP projector.")
