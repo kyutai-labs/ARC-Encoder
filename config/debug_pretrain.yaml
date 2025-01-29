@@ -41,11 +41,11 @@ data:
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
 
 
-hybrid_task:
-  do: true
-  prop_noembed_continuation: 0.01
-  max_embeds: 3
-  start_point: 0.8
+# hybrid_task:
+#   do: true
+#   prop_noembed_continuation: 0.01
+#   max_embeds: 3
+#   start_point: 0.8
 
 seq_len: 256
 batch_size: 32

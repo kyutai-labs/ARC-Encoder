@@ -211,13 +211,13 @@ def sequence_iterator_reconstruction(
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     embed_tokens = sample.passages.tokens
-    embed_text = sample.passages.text
     data_type = sample.data_type
     cur_pos = 0
 
     while cur_pos < len(x):
         size = len(x[cur_pos : cur_pos + n_missing])
         curr_mask = mask[cur_pos : cur_pos + n_missing]
+        
         if not any(curr_mask):
             cur_pos += size
             # we have a sequence with a mask filled with False
@@ -236,7 +236,6 @@ def sequence_iterator_reconstruction(
                     "tokens": [embed_tokens[0][cur_pos : cur_pos + n_missing]],
                 }
             )
-            print('We are gere')
         else:
             # If we want to reconstruct from several chunks of embedded text, we need to be able to reconstruct the full passage
             # To implement, prevent reconstruction of too long sequences
@@ -249,7 +248,9 @@ def sequence_iterator_reconstruction(
             curr_mask = [False] * (len(curr_mask)//10) + [True] * (len(curr_mask) - len(curr_mask)//10)
             
         mask_buffer.extend(curr_mask)
-        n_missing -= size
+        
+        if not adapt_seq_len:
+            n_missing -= size
 
         sizes.append(size)
 
@@ -369,7 +370,7 @@ def sequence_iterator_continuation(
             mask_buffer.extend([False]*len(mask[cur_pos + (upper_bound - cur_pos) // 3 : cur_pos + (upper_bound - cur_pos) // 2 ]) + 
                                mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
             
-            n_missing -= overall_size
+
 
             size = len(x[cur_pos + (upper_bound - cur_pos) // 3 : upper_bound])
 
@@ -392,6 +393,9 @@ def sequence_iterator_continuation(
             )
           
         cur_pos += overall_size
+
+        if not adapt_seq_len:
+           n_missing -= overall_size
 
         if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
             assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
