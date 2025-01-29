@@ -19,7 +19,10 @@ import time
 from torch.autograd.profiler import profile, record_function
 import subprocess as sp
 
-sys.path.append("/home/hippolytepilchen/code/Parallel_inference/embed_llm")
+# from embed_llm.generation.evaluation import (
+#     evaluate_reconstruction_model,
+#     evaluate_QA,
+# )
 from embed_llm.models.wrapped_models_training import (
     load_training_model,
     load_training_model_from_ckpt,
