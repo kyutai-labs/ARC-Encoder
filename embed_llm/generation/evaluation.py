@@ -451,33 +451,21 @@ def evaluate_QA(
                     metrics[benchmark]["F1"] = {}
                 metrics[benchmark]["F1"][str(temp)] = {}
 
-                if max_multi_passage > 1:
-                    n_answer_in_context = (
-                        sum(
-                            [
-                                metric_max_over_ground_truths(
-                                    get_approx_em, "\n".join(cont), gts
-                                )
-                                for cont, gts in zip(
-                                    list(new_context), new_answers[:n_samples]
-                                )
-                            ]
-                        )
-                        / n_samples
-                    )
-                else:
-                    n_answer_in_context = (
-                        sum(
-                            [
-                                metric_max_over_ground_truths(get_approx_em, cont, gts)
-                                for cont, gts in zip(
-                                    list(new_context)[:n_samples], new_answers
-                                )
-                            ]
-                        )
-                        / n_samples
-                    )
 
+                n_answer_in_context = (
+                    sum(
+                        [
+                            metric_max_over_ground_truths(
+                                get_approx_em, cont, gts
+                            )
+                            for cont, gts in zip(
+                                list(new_context), new_answers[:n_samples]
+                            )
+                        ]
+                    )
+                    / n_samples
+                )
+   
                 metrics[benchmark]["EM"][str(temp)] = {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
@@ -528,6 +516,7 @@ def evaluate_QA(
                     value_approx,
                     benchmark + " F1: ",
                     value_f1,
+                    'Avg Answer in context:', n_answer_in_context
                 )
             else:
                 value = (
