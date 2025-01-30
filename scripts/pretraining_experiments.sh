@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=13-24%8
+#SBATCH --array=0-2
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -18,31 +18,34 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml 
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.3_16BS.yaml 
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.5_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.8_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.3_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.5_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.8_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml # Not done
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.3_16BS.yaml 
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.5_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.8_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_1_PNoEmbed_0.01_StartPoint_0.0_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml  # TO 30k steps
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_1_PNoEmbed_0.01_StartPoint_0.3_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.3_16BS.yaml # NOT Done, new dataloader with text in between 
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_1_PNoEmbed_0.01_StartPoint_0.5_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.5_16BS.yaml  
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_1_PNoEmbed_0.01_StartPoint_0.8_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.8_16BS.yaml  
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_3_PNoEmbed_0.01_StartPoint_0.0_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_3_PNoEmbed_0.01_StartPoint_0.3_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_3_PNoEmbed_0.01_StartPoint_0.5_16BS.yaml 
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_3_PNoEmbed_0.01_StartPoint_0.8_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_v2_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.8_16BS_alternativeCA.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_v2_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.8_16BS.yaml   
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_True_MaxEmb_1_pure_reconstruct_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml 
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.3_16BS.yaml 
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.5_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.8_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.3_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.5_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.8_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml # Not done
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.3_16BS.yaml 
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.5_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.8_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_1_PNoEmbed_0.01_StartPoint_0.0_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml  # TO 30k steps
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_1_PNoEmbed_0.01_StartPoint_0.3_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.3_16BS.yaml # NOT Done, new dataloader with text in between 
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_1_PNoEmbed_0.01_StartPoint_0.5_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.5_16BS.yaml  
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_1_PNoEmbed_0.01_StartPoint_0.8_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.8_16BS.yaml  
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_3_PNoEmbed_0.01_StartPoint_0.0_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_3_PNoEmbed_0.01_StartPoint_0.3_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_3_PNoEmbed_0.01_StartPoint_0.5_16BS.yaml 
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_True_Emb_True_MaxEmb_3_PNoEmbed_0.01_StartPoint_0.8_16BS.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml
 )
 
 

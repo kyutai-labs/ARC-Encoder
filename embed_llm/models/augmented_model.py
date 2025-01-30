@@ -28,7 +28,8 @@ from embed_llm.models.args import MistralModelArgs, EmbedAugArgs, LoraArgs
 
 from embed_llm.training.args import InstructionTuningArgs
 
-from embed_llm.models.utils import is_cross_att, is_torchrun, main_logger_info
+from embed_llm.models.utils import is_cross_att, is_torchrun
+from embed_llm.generation.utils import eval_logger_info
 
 # Mistral specifics
 from embed_llm.models.mistral.cross_att_transformer import (
@@ -402,7 +403,7 @@ class EmbedAugPipeline(nn.Module):
             assert not pipeline_args.cross_att, "Cross attention layers not specified"
 
         if pipeline_args.cross_att:
-            main_logger_info(logger, "Loading cross att state dict")
+            eval_logger_info(logger, "Loading cross att state dict")
 
             if instruct_ckpt is not None:
                 state_dict = safetensors.torch.load_file(Path(ca_state_dict_path))

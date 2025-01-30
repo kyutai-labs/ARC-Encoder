@@ -2,10 +2,10 @@ import pandas as pd
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-from models.utils import is_torchrun
+from embed_llm.models.utils import is_torchrun
 import torch
 
-def main_logger_info(logger, message: str) -> None:
+def eval_logger_info(logger, message: str) -> None:
     if not is_torchrun() or torch.distributed.get_rank() == 0:
         logger.info(message)
 
@@ -56,7 +56,9 @@ def format_results(results: dict, benchmark: str):
                     "Meteor",
                     "EM",
                     "Overlap",
-                ]:
+                ]:  
+                    if metric not in results[run_name][ckpt].keys():
+                        continue
                     for temp in results[run_name][ckpt][metric].keys():
                         for result in results[run_name][ckpt][metric][temp]:
                             formated_results = pd.concat(
@@ -85,6 +87,8 @@ def format_results(results: dict, benchmark: str):
 
             else:
                 for metric in ["EM", "F1"]:
+                    if metric not in results[run_name][ckpt].keys():
+                        continue
                     for temp in results[run_name][ckpt][benchmark][metric].keys():
                         for res in results[run_name][ckpt][benchmark][metric][temp]:
                             if metric == "EM":
