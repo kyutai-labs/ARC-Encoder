@@ -42,10 +42,15 @@ srun --gpus=$N_GPU micromamba run -n embed_llm torchrun --nproc-per-node $N_GPUS
 ```
 
 ### Evaluation & Generation
-Currently, evaluation and generation are supported on two GPUs:
+Currently, evaluation and generation are either supported on two GPUs or on several but using a Pipeline Parallel framework:
 
 ```bash
 srun --gpus=2 micromamba run -n embed_llm python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file results/eval_QA_reconstruct.jsonl \
+--n_passages 500 --max_seq_len 64 --ckpt 30000 --reconstruct_seq_len 256 --multi_passages 3
+```
+
+```bash
+srun --gpus=2 micromamba run -n embed_llm torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT  embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file results/eval_QA_reconstruct.jsonl \
 --n_passages 500 --max_seq_len 64 --ckpt 30000 --reconstruct_seq_len 256 --multi_passages 3
 ```
 
