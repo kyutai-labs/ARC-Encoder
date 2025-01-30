@@ -1,14 +1,13 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-2
+#SBATCH --array=0-3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=pretraining_embed_llm
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s01dgx10,par2dc5-ai-prd-cl02s03dgx17,par2dc5-ai-prd-cl02s01dgx01,par2dc5-ai-prd-cl02s04dgx05,par2dc5-ai-prd-cl02s02dgx18,par2dc5-ai-prd-cl02s01dgx30,par2dc5-ai-prd-cl02s03dgx32,par2dc5-ai-prd-cl02s02dgx03,par2dc5-ai-prd-cl02s04dgx23
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/embed_llm_out/embed_llm_%A_%a.out
 
 
@@ -21,6 +20,7 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_v2_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.8_16BS_alternativeCA.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_v2_LLM_False_Emb_False_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.8_16BS.yaml   
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_True_MaxEmb_1_pure_reconstruct_16BS.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/PrefixToyPretraining_LLM_False_Emb_True_MaxEmb_1_pure_reconstruct_16BS.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml
 # /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml 
 # /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.3_16BS.yaml 
