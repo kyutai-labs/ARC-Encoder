@@ -760,7 +760,7 @@ def _train(
                 state=state,
                 instruction_tuning=args.instruct_tuning,
                 batches_cont=eval_batches_4cont,
-                tokenizer=pipeline.tokenizer,
+                train_llm = args.pipeline.trainable_llm or (args.instruct_tuning.do and args.instruct_tuning.tune_llm),
             )
 
             eval_logs = get_eval_logs(
