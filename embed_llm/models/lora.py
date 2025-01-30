@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 from functools import partial
 import safetensors.torch
 import torch
@@ -9,11 +9,20 @@ import torch.nn as nn
 from simple_parsing.helpers import Serializable
 
 
+def is_cross_att(module_name: str):
+    return (
+        "cross_attention" in module_name
+        or "gate" in module_name
+        or "to_k" in module_name
+        or "to_v" in module_name
+    )
+
+
 @dataclass
 class LoraArgs(Serializable):
-    enable: bool
-    rank: int
-    scaling: float
+    enable: bool = False
+    rank: int = 64
+    scaling: float = 2.0
 
     def __post_init__(self) -> None:
         if self.enable:
@@ -72,37 +81,27 @@ class LoRALinear(nn.Module):
 
         self.register_load_state_dict_post_hook(ignore_missing_keys)
 
-    # def merge_weight(self):
-    #     with torch.no_grad():
-    #         up_weight = self.lora_B.weight
-    #         down_weight = self.lora_A.weight
-    #         weight = up_weight @ down_weight * self.scaling
-    #         weight += self.linear.weight
-    #     return weight
-
     # type: ignore[no-untyped-def]
     def _load_from_state_dict(
         self, state_dict: dict[str, object], prefix: str, *args, **kwargs
     ) -> None:
         key_name = prefix + "weight"
 
-        # full checkpoint
+        # If lora args None does not go there
+
         if key_name in state_dict:
             w_ref = state_dict[key_name]
 
             # load frozen weights
             state_dict = {
                 "linear.weight": w_ref,
+                "lora_A.weight": self.lora_A.weight,
+                "lora_B.weight": self.lora_B.weight,
             }
-            self.load_state_dict(state_dict, assign=True, strict=True)
+            # print('Key name', key_name)
+            # print('Self Lora A', self.lora_A.weight)
+            # print('Self Lora B', self.lora_B.weight)
 
-        if prefix + "lora_A.weight" in state_dict:
-            lora_a = state_dict[prefix + "lora_A.weight"]
-            lora_b = state_dict[prefix + "lora_B.weight"]
-            state_dict = {
-                "lora_A.weight": lora_a,
-                "lora_B.weight": lora_b,
-            }
             self.load_state_dict(state_dict, assign=True, strict=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -112,7 +111,9 @@ class LoRALinear(nn.Module):
 
 
 class LoRALoaderMixin:
-    def load_lora(self, lora_path: Path | str, scaling: float = 2.0) -> None:
+    def load_lora(
+        self, lora_path: Path | str, scaling: float = 2.0, cross_att: bool = False
+    ) -> None:
         """Loads LoRA checkpoint"""
 
         lora_path = Path(lora_path)
@@ -120,10 +121,13 @@ class LoRALoaderMixin:
 
         state_dict = safetensors.torch.load_file(lora_path)
 
-        self._load_lora_state_dict(state_dict, scaling=scaling)
+        self._load_lora_state_dict(state_dict, scaling=scaling, cross_att=cross_att)
 
     def _load_lora_state_dict(
-        self, lora_state_dict: dict[str, torch.Tensor], scaling: float = 2.0
+        self,
+        lora_state_dict: dict[str, torch.Tensor],
+        scaling: float = 2.0,
+        cross_att: bool = False,
     ) -> None:
         """Loads LoRA state_dict"""
         lora_dtypes = set([p.dtype for p in lora_state_dict.values()])
@@ -135,28 +139,40 @@ class LoRALoaderMixin:
         assert (
             lora_dtype == self.dtype
         ), f"LoRA weights dtype differs from model's dtype {lora_dtype} != {self.dtype}"
-        assert all("lora" in key for key in lora_state_dict.keys())
 
+        if not all("lora" in key for key in lora_state_dict.keys()):
+            if cross_att:
+                print(
+                    "Not only LoRA weights found in the checkpoint. Skipping other weights."
+                )
+                lora_state_dict = {
+                    k: v for k, v in lora_state_dict.items() if "lora" in k
+                }
+            else:
+                raise ValueError(
+                    "Not only LoRA weights found in the checkpoint. Skipping other weights."
+                )
         # move tensors to device
         # type: ignore[attr-defined]
         lora_state_dict = {k: v.to(self.device) for k, v in lora_state_dict.items()}
-
         state_dict = self.state_dict()  # type: ignore[attr-defined]
 
         if self.args.lora is None:  # type: ignore[attr-defined]
-            logging.info("Loading and merging LoRA weights...")
+            print("Loading and merging LoRA weights...")
 
-            # replace every nn.Linear with a LoRALinear with 'meta' device except the output layer
             # type: ignore[attr-defined]
             named_modules = dict(self.named_modules())
             for name, module in named_modules.items():
-                if isinstance(module, nn.Linear) and name != "output":
-                    layer_id = name.split(".")[1]
+                if isinstance(module, nn.Linear) and not is_cross_att(name):
                     # type: ignore[attr-defined]
-                    if layer_id not in self.layers:
-                        print("Skipping parameter", name)
-
-                    elif (name + ".lora_B.weight") in lora_state_dict:
+                    if "output" not in name and name.split(".")[1] not in self.layers:
+                        logging.debug(
+                            "Skipping parameter %s at pipeline rank %d",
+                            k,
+                            self.pipeline_rank,  # type: ignore[attr-defined]
+                        )
+                            
+                    elif 'output' in name and self.pipeline_rank == self.num_pipeline_ranks - 1 and (name + ".lora_B.weight") in lora_state_dict:
                         weight = (
                             module.weight
                             + (
@@ -167,19 +183,37 @@ class LoRALoaderMixin:
                         )
 
                         state_dict[name + ".weight"] = weight
+
+                    elif (name + ".lora_B.weight") in lora_state_dict and name.split(".")[1] in self.layers:
+                        weight = (
+                            module.weight
+                            + (
+                                lora_state_dict[name + ".lora_B.weight"]
+                                @ lora_state_dict[name + ".lora_A.weight"]
+                            )
+                            * scaling
+                        )
+
+                        state_dict[name + ".weight"] = weight
+            # type: ignore[attr-defined]
+            self.load_state_dict(state_dict, strict=True)
         else:
-            logging.info("Loading LoRA weights...")
+            print("Loading LoRA weights...")
             for k, v in lora_state_dict.items():
                 state_dict.update(lora_state_dict)
 
-                layer_id = k.split(".")[1]
-                if layer_id in self.layers:  # type: ignore[attr-defined]
+                if k.split(".")[1] in self.layers:  # type: ignore[attr-defined]
+                    state_dict[k] = v
+                elif "output" in k and self.pipeline_rank == self.num_pipeline_ranks - 1:
                     state_dict[k] = v
                 else:
-                    print("Skipping parameter", name)
-
-        # type: ignore[attr-defined]
-        self.load_state_dict(state_dict, strict=True)
+                    logging.debug(
+                        "Skipping parameter %s at pipeline rank %d",
+                        k,
+                        self.pipeline_rank,  # type: ignore[attr-defined]
+                    )
+            # type: ignore[attr-defined]
+            self.load_state_dict(state_dict, strict=True, assign=True)
 
 
 def maybe_lora(

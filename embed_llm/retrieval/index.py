@@ -11,6 +11,9 @@ import pickle
 import faiss
 import numpy as np
 from tqdm import tqdm
+from pathlib import Path
+import torch
+from typing import Union
 
 logger = logging.getLogger()
 
@@ -30,18 +33,22 @@ class Indexer(object):
         self._update_id_mapping(ids)
         embeddings = embeddings.astype("float32")
         if not self.index.is_trained:
+            logger.info(f"Training index on {embeddings.shape[0]} vectors")
             self.index.train(embeddings)
         self.index.add(embeddings)
 
-        logger.info(f"Total data indexed {len(self.index_id_to_db_id)}")
+        # logger.info(f"Total data indexed {len(self.index_id_to_db_id)}")
 
     def search_knn(
-        self, query_vectors: np.array, top_docs: int, index_batch_size=1024
+        self,
+        query_vectors: Union[np.array, torch.Tensor],
+        top_docs: int,
+        index_batch_size=1024,
     ) -> list[tuple[list[object], list[float]]]:
-        query_vectors = query_vectors.astype("float32")
+        query_vectors = query_vectors.cpu().numpy().astype("float32")
         result = []
         nbatch = (len(query_vectors) - 1) // index_batch_size + 1
-        for k in tqdm(range(nbatch)):
+        for k in range(nbatch):
             start_idx = k * index_batch_size
             end_idx = min((k + 1) * index_batch_size, len(query_vectors))
             q = query_vectors[start_idx:end_idx]
@@ -58,8 +65,9 @@ class Indexer(object):
         index_file = dir_path / "index.faiss"
         meta_file = dir_path / "index_meta.dpr"
         logger.info(f"Serializing index to {index_file}, meta data to {meta_file}")
-
-        faiss.write_index(self.index, index_file)
+        faiss.write_index(
+            faiss.index_gpu_to_cpu(self.index), Path(index_file).as_posix()
+        )
         with open(meta_file, mode="wb") as f:
             pickle.dump(self.index_id_to_db_id, f)
 
@@ -68,7 +76,8 @@ class Indexer(object):
         meta_file = dir_path / "index_meta.dpr"
         logger.info(f"Loading index from {index_file}, meta data from {meta_file}")
 
-        self.index = faiss.read_index(index_file)
+        self.index = faiss.read_index(Path(index_file).as_posix())
+
         logger.info(
             "Loaded index of type %s and size %d", type(self.index), self.index.ntotal
         )

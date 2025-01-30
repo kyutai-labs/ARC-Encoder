@@ -152,6 +152,36 @@ class CacheView:
         return self.metadata.mask
 
 
+class CrossAttCache:
+    def __init__(self, batch_size, n_kv_heads, head_dim, kv_seqlens):
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
+
+        self.cache_k = torch.empty((batch_size, n_kv_heads * head_dim))
+        self.cache_v = torch.empty((batch_size, n_kv_heads * head_dim))
+        self.mask = None
+        # holds the valid length for each batch element in the cache
+        self.kv_seqlens = kv_seqlens
+        self.full = False
+
+    def fill(self, xk, xv):
+        self.cache_k = xk
+        self.cache_v = xv
+        self.full = True
+
+    def get_mask(self, q_seqlens):
+        return BlockDiagonalMask.from_seqlens(
+            q_seqlen=q_seqlens, kv_seqlen=self.kv_seqlens
+        )
+        
+    def to(self, device: torch.device, dtype: torch.dtype) -> "CrossAttCache":
+        
+        self.cache_k = self.cache_k.to(device=device, dtype=dtype)
+        self.cache_v = self.cache_v.to(device=device, dtype=dtype)
+
+        return self
+
+
 class BufferCache:
     """
     This is an example that implements a buffer cache, allowing for variable length sequences.

@@ -11,41 +11,64 @@ def main(args):
             "/home/hippolytepilchen/code/embed_llm/config/default/default_mistral.yaml"
         ) as file:
             config = yaml.safe_load(file)
-    # elif args.llm_name == "Gemma7B":
-    #     with open(
-    #         "/home/hippolytepilchen/code/embed_llm/config/default/default_gemma.yaml"
-    #     ) as file:
-    #         config = yaml.safe_load(file)
-    # elif args.llm_name == "Llama3.2-3B":
-    #     with open(
-    #         "/home/hippolytepilchen/code/embed_llm/config/default/default_llama.yaml"
-    #     ) as file:
-    #         config = yaml.safe_load(file)
     else:
         raise ValueError(f"{args.llm_name} not supported yet !")
 
-    config["llm_name"] = args.llm_name
-    config["w_embeds"] = not args.wo_embeds
-    config["norm_wo_embeds"] = args.norm_wo_embeds
     config["continuation"] = args.continuation
-    config["projector"]["hidden_dim"] = args.proj_hidden_dim
-    config["projector"]["n_layers"] = args.proj_n_layers
-    config["projector"]["act"] = args.proj_act
+    config["pipeline"]["prefix_prompt"] = args.prefix_prompt
+    config["llm_name"] = args.llm_name
 
-    config["embedder"]["name"] = (
-        args.embedder_name if not args.train_embedder else args.llm_name
-    )
-    config["embedder"]["train"] = args.train_embedder
+    config["pipeline"]["trainable_llm"] = not args.not_train_llm
+    config["pipeline"]["train_only_pooling"] = args.train_only_pooling
+    config["pipeline"]["w_embeds"] = not args.wo_embeds
+    config["pipeline"]["mlp_project"]["n_layers"] = args.proj_n_layers
+    config["pipeline"]["n_truncated_layers"] = args.n_truncated_layers
+    config["pipeline"]["gate_bottleneck"] = args.gate_bottleneck
+    assert args.embedder_name == "NVEmbed"
+    config["pipeline"]["do_pool"] = args.not_pool
+    config["pipeline"]["trainable_llm"] = not args.not_train_llm
+
+    if args.no_data:
+        if "data" in config.keys():
+            del config["data"]
+
     if args.train_embedder:
-        config["embedder"]["causal"] = not args.not_causal
-        config["embedder"]['pooling_module']["n_truncated_layers"] = args.n_truncated_layers
-        config["embedder"]["pooling_module"]["type"] = args.pooling
-        config["embedder"]["pooling_module"]["r"] = args.latent_dim
-        config["embedder"]["pooling_module"]["n_heads"] = args.n_heads
-    else:
-        del config["embedder"]["causal"]
-        del config["embedder"]["pooling_module"]
+        config["pipeline"]["embedder_name"] = args.llm_name
+        config["pipeline"]["trainable_embedder"] = True
+        config["pipeline"]["pooling_module"]["type"] = args.pooling
 
+    else:
+        del config["pipeline"]["pooling_module"]
+
+    if not args.not_do_hybrid_task:
+        config["hybrid_task"] = {}
+        config["hybrid_task"]["do"] = not args.not_do_hybrid_task
+        config["hybrid_task"][
+            "prop_noembed_continuation"
+        ] = args.prop_noembed_continuation
+        config["hybrid_task"]["max_embeds"] = args.max_embeds
+        config["hybrid_task"]["start_point"] = args.start_point
+
+    if not args.not_cross_att:
+        config["pipeline"]["do_both"] = not args.not_do_both
+        config["pipeline"]["shared_kv"] = args.shared_kv
+        config["pipeline"]["cross_att"] = not args.not_cross_att
+        config["pipeline"]["cross_att_layers"] = args.cross_att_layers
+        config["pipeline"]["every_cross_att"] = args.every_cross_att
+        config["pipeline"]["pooled_cross_att"] = (not args.not_pooled_cross_att) and (
+            args.max_embeds == 1
+        )
+
+        if args.mlm:
+            config["pipeline"]["mlm"] = args.mlm
+
+    if args.instruct_tune:
+        config["instruct_tuning"] = {}
+        config["instruct_tuning"]["do"] = args.instruct_tune
+        config["instruct_tuning"]["cross_entropy"] = args.cross_entropy
+        config["instruct_tuning"]["kl"] = args.kl
+        config["instruct_tuning"]["alpha"] = args.alpha
+        config["instruct_tuning"]["temp"] = args.temp
 
     config["batch_size"] = args.batch_size
     config["max_steps"] = args.max_steps
@@ -64,80 +87,55 @@ def main(args):
     config["num_microbatches"] = args.grad_acum_steps
 
     name = (
-        args.llm_name
-        + str(args.wo_embeds)
-        + str(args.norm_wo_embeds)
-        + str(args.proj_hidden_dim)
-        + str(args.proj_n_layers)
-        + args.proj_act
+        str(args.instruct_tune)
+        + str(args.cross_entropy)
+        + str(args.kl)
+        + str(args.alpha)
+        + str(args.temp)
+        + str(args.no_data)
+        + str(args.not_do_hybrid_task)
+        + str(args.not_train_llm)
+        + str(args.train_embedder)
+        + str(args.max_embeds)
+        + str(args.not_pooled_cross_att)
+        + str(args.prop_noembed_continuation)
+        + str(args.start_point)
         + str(args.batch_size)
-        + str(args.max_steps)
-        + str(args.seq_len)
-        + str(args.max_lr)
-        + str(args.warm_up_steps)
-        + str(args.initial_lr)
-        + str(args.final_lr)
-        + str(args.log_freq)
-        + str(args.eval_freq)
-        + str(args.ckpt_freq)
     )
 
-    if args.prefix == "lr":
-        config["exp_name"] = args.prefix + str(args.max_lr) + args.llm_name
-        config["wandb"]["run_name"] = args.prefix + str(args.max_lr) + args.llm_name
-
-    elif args.prefix == "bs":
-        config["exp_name"] = args.prefix + str(args.batch_size) + args.llm_name
-        config["wandb"]["run_name"] = args.prefix + str(args.batch_size) + args.llm_name
-
-    elif args.prefix == "n_layers":
-        config["exp_name"] = args.prefix + str(args.proj_n_layers) + args.llm_name
+    if args.prefix:
+        config["exp_name"] = args.prefix + sha1(name.encode("utf8")).hexdigest()[:8]
         config["wandb"]["run_name"] = (
-            args.prefix + str(args.proj_n_layers) + args.llm_name
+            args.prefix + sha1(name.encode("utf8")).hexdigest()[:8]
         )
-
-    elif args.prefix == "hidden_dim":
-        config["exp_name"] = args.prefix + str(args.proj_hidden_dim) + args.llm_name
-        config["wandb"]["run_name"] = (
-            args.prefix + str(args.proj_hidden_dim) + args.llm_name
-        )
-
-    elif args.prefix == "act":
-        config["exp_name"] = args.prefix + args.proj_act + args.llm_name
-        config["wandb"]["run_name"] = args.prefix + args.proj_act + args.llm_name
-
-    elif args.prefix == "norm_wo_embeds":
-        config["exp_name"] = args.prefix + str(args.norm_wo_embeds) + args.llm_name
-        config["wandb"]["run_name"] = (
-            args.prefix + str(args.norm_wo_embeds) + args.llm_name
-        )
-
     else:
-        config["exp_name"] = (
-            args.prefix + args.llm_name + sha1(name.encode("utf8")).hexdigest()[:20]
-        )
-        config["wandb"]["run_name"] = (
-            args.prefix + args.llm_name + sha1(name.encode("utf8")).hexdigest()[:20]
+
+        name = (
+            "Hybrid_LLM_"
+            + str(not args.not_train_llm)
+            + "_Emb_"
+            + str(args.train_embedder)
+            + "_MaxEmb_"
+            + str(args.max_embeds)
+            + "_PNoEmbed_"
+            + str(args.prop_noembed_continuation)
+            + "_StartPoint_"
+            + str(args.start_point)
+            + "_"
+            + str(args.batch_size)
+            + "BS"
         )
 
+        config["exp_name"] = name
+        config["wandb"]["run_name"] = name
+
+    print(config["exp_name"])
     if args.llm_name == "Mistral7B":
         with open(
-            f'/home/hippolytepilchen/code/embed_llm/config/experiments/mistral/{config["exp_name"]}.yaml',
+            f'/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/{config["exp_name"]}.yaml',
             "w",
         ) as file:
             yaml.dump(config, file, sort_keys=False)
-    # elif args.llm_name == "Gemma7B":
-    #     with open(
-    #         f'/home/hippolytepilchen/code/embed_llm/config/experiments/gemma/{config["exp_name"]}.yaml',
-    #         "w",
-    #     ) as file:
-    #         yaml.dump(config, file, sort_keys=False)
-    # elif args.llm_name == "Llama3.2-3B":
-    #     with open(
-    #         f'/home/hippolytepilchen/code/embed_llm/config/experiments/llama/{config["exp_name"]}.yaml',
-    #         "w",
-    #     ) as file:
-    #         yaml.dump(config, file, sort_keys=False)
     else:
         raise ValueError(f"{args.llm_name} not supported yet !")
 
@@ -155,36 +153,19 @@ def arg_parser():
         action="store_true",
         help="Whether to use word embeddings as preconditioning",
     )
-    parser.add_argument(
-        "--norm_wo_embeds",
-        action="store_true",
-        help="Whether to normalize without word embeddings if using w_embeds",
-    )
-    parser.add_argument(
-        "--proj_hidden_dim",
-        type=int,
-        default=4096,
-        help="Hidden dimension of the projection MLP",
-    )
+
     parser.add_argument(
         "--proj_n_layers",
         type=int,
-        default=3,
+        default=1,
         help="Number of layers of the projection MLP",
     )
-    parser.add_argument(
-        "--proj_act",
-        type=str,
-        default="gelu",
-        help="Activation function of the projection MLP",
-        choices=["id", "gelu", "relu"],
-    )
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
+
     parser.add_argument(
         "--max_lr", type=float, default=5e-5, help="Maximum learning rate"
     )
     parser.add_argument(
-        "--max_steps", type=int, default=10000, help="Maximum number of steps"
+        "--max_steps", type=int, default=40000, help="Maximum number of steps"
     )
     parser.add_argument(
         "--warm_up_steps",
@@ -203,12 +184,11 @@ def arg_parser():
         "--eval_freq", type=int, default=100, help="Evaluation frequency"
     )
     parser.add_argument(
-        "--ckpt_freq", type=int, default=500, help="Checkpoint frequency"
+        "--ckpt_freq", type=int, default=5000, help="Checkpoint frequency"
     )
     parser.add_argument(
-        "--prefix", type=str, default="default", help="Prefix for the experiment"
+        "--prefix", type=str, default=None, help="Prefix for the experiment"
     )
-    parser.add_argument("--seq_len", type=int, default=512, help="Sequence length")
     parser.add_argument(
         "--grad_acum_steps",
         type=int,
@@ -218,50 +198,187 @@ def arg_parser():
     parser.add_argument(
         "--embedder_name", type=str, default="NVEmbed", help="Embedder name"
     )
-    parser.add_argument(
-        "--train_embedder",
-        action="store_true",
-        help="Whether to train the embedder, if True embedder_name = llm_name",
-    )
+
     parser.add_argument(
         "--pooling",
         type=str,
-        default="mean",
+        default="latent_attention",
         help="Pooling method",
-        choices=["mean", "eos", "latent_attention"],
-    )
-    parser.add_argument(
-        "--latent_dim",
-        type=int,
-        default=512,
-        help="Latent dimension for latent attention pooling",
-    )
-    parser.add_argument(
-        "--n_heads",
-        type=int,
-        default=8,
-        help="Number of heads for latent attention pooling",
+        choices=["mean", "eos", "latent_attention", "reversed_latent_attention"],
     )
     parser.add_argument(
         "-n_trunc",
         "--n_truncated_layers",
         type=int,
-        default=4,
+        default=8,
         help="Number of truncated layers to extract embedding",
     )
 
-    parser.add_argument(
-        "--not_causal",
-        action="store_true",
-        help="Whether to use a causal embedder",
-    )
-    
     parser.add_argument(
         "--continuation",
         action="store_true",
         help="Whether to train on continuation task rather than next token prediction for reconstruction",
     )
-    
+    parser.add_argument(
+        "--not_cross_att",
+        action="store_true",
+        help="Whether to use cross-attention",
+    )
+    parser.add_argument(
+        "--cross_att_layers",
+        type=int,
+        default=16,
+        help="Number of layers to apply cross-attention",
+    )
+
+    parser.add_argument(
+        "--not_pool",
+        action="store_false",
+        help="Whether to use pooling module",
+    )
+
+    parser.add_argument(
+        "--shared_kv",
+        action="store_true",
+        help="Whether to share keys and values in cross-attention",
+    )
+
+    parser.add_argument(
+        "--not_do_both",
+        action="store_true",
+        help="Whether to both cross-attended and concatenated embeddings",
+    )
+
+    parser.add_argument(
+        "--every_cross_att",
+        type=int,
+        default=None,
+        help="Every n layers to apply cross-attention",
+    )
+
+    parser.add_argument("--mlm", action="store_true", help="Whether to use MLM loss")
+
+    parser.add_argument(
+        "--prefix_prompt",
+        action="store_true",
+        help="Whether to use a prefix prompt",
+    )
+    parser.add_argument(
+        "--train_only_pooling",
+        action="store_true",
+        help="Whether to use a LLM embedder but with trainable pooling",
+    )
+
+    parser.add_argument(
+        "--max_n_prefixes",
+        type=int,
+        default=1,
+        help="Maximum number of prefixes",
+    )
+
+    parser.add_argument(
+        "--min_n_prefixes",
+        type=int,
+        default=0,
+        help="Minimum number of prefixes",
+    )
+
+    parser.add_argument(
+        "--prop_continuation",
+        type=float,
+        default=0.0,
+        help="Proportion of continuation",
+    )
+
+    parser.add_argument(
+        "--gate_bottleneck",
+        type=int,
+        default=8,
+        help="Gate bottleneck",
+    )
+
+    parser.add_argument(
+        "--instruct_tune",
+        action="store_true",
+        help="Whether to perform instruction tuning",
+    )
+
+    parser.add_argument(
+        "--cross_entropy",
+        action="store_true",
+        help="Whether to use cross entropy loss",
+    )
+
+    parser.add_argument(
+        "--kl",
+        action="store_true",
+        help="Whether to use KL loss",
+    )
+
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=2.0,
+        help="Alpha parameter for KL loss",
+    )
+
+    parser.add_argument(
+        "--temp",
+        type=float,
+        default=1.0,
+        help="Temperature parameter for KL loss",
+    )
+
+    parser.add_argument(
+        "--no_data",
+        action="store_true",
+        help="Whether to not use data params inside config file",
+    )
+
+    parser.add_argument(
+        "--not_do_hybrid_task",
+        action="store_true",
+        help="Whether to use a hybrid task",
+    )
+
+    parser.add_argument(
+        "--not_train_llm",
+        action="store_true",
+        help="Whether to train the llm",
+    )
+
+    parser.add_argument(
+        "--train_embedder",
+        action="store_true",
+        help="Whether to train the embedder, if True embedder_name = llm_name",
+    )
+
+    parser.add_argument(
+        "--max_embeds",
+        type=int,
+        default=1,
+        help="Maximum number of embeddings",
+    )
+
+    parser.add_argument(
+        "--not_pooled_cross_att",
+        action="store_true",
+        help="Whether to use pooled cross-attention",
+    )
+
+    parser.add_argument(
+        "--prop_noembed_continuation",
+        type=float,
+        default=0.0,
+        help="Proportion of noembed continuation",
+    )
+
+    parser.add_argument(
+        "--start_point", type=float, default=0.0, help="Start gen point for hybrid task"
+    )
+
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
+    parser.add_argument("--seq_len", type=int, default=256, help="Sequence length")
     return parser.parse_args()
 
 
@@ -271,11 +388,20 @@ if __name__ == "__main__":
 
     # import os
     # import yaml
-    # filenames =  ['mistral/'+file for file in os.listdir("config/experiments/mistral")]
+
+    # path_config = (
+    #     "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/"
+    # )
+    
+    
+    # filenames = [file for file in os.listdir(path_config)] 
+
     # for filename in filenames:
     #     if filename.endswith(".yaml"):
-    #         with open("config/experiments/"+filename,'r') as file:
-    #             config = yaml.safe_load(file)
-    #         config['batch_size'] = 32
-    #         with open("config/experiments/"+filename, 'w') as file:
+    #         with open(path_config + filename, "r") as file:
+    #             config = yaml.safe_load(file) 
+    #         config["max_steps"] = 30000
+    #         with open(
+    #             path_config + filename, "w"
+    #         ) as file:
     #             yaml.dump(config, file)

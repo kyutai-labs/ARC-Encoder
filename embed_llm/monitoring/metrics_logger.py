@@ -23,6 +23,9 @@ def get_train_logs(
     peak_allocated_mem: float,
     allocated_mem: float,
     train_args: TrainArgs,
+    instruct_cross_entropy: float | None = None,
+    instruct_kl: float | None = None,
+    batch_type: str = "reconstruction",
 ) -> dict[str, float | int]:
     metrics = {
         "lr": lr,
@@ -36,6 +39,9 @@ def get_train_logs(
         "wps": state.wps,
         "avg_wps": state.avg_wps,
         "eta_in_seconds": state.eta,
+        "instruct_cross_entropy": instruct_cross_entropy,
+        "instruct_kl": instruct_kl,
+        "batch_type": batch_type,
     }
 
     return metrics
@@ -44,26 +50,66 @@ def get_train_logs(
 def get_eval_logs(
     step: int,
     train_loss: float,
-    perplexity: float | None = None,
-    eval_loss: float | None = None,
+    perplexity_rec: float | None = None,
+    eval_loss_rec: float | None = None,
+    perplexity_textcont: float | None = None,
+    eval_loss_textcont: float | None = None,
+    perplexity_embcont: float | None = None,
+    eval_loss_embcont: float | None = None,
+    instruct_cross_entropy: float | None = None,
+    instruct_kl: float | None = None,
+    eval_kl_loss: float | None = None,
+    eval_loss_nocontext: float | None = None,
+    eval_perplexity_nocontext: float | None = None,
 ) -> dict[str, float | int]:
     eval_dict = {"step": step, "train_loss": train_loss}
 
-    if perplexity is not None:
-        eval_dict["perplexity"] = perplexity
+    if perplexity_rec is not None:
+        eval_dict["perplexity_rec"] = perplexity_rec
 
-    if eval_loss is not None:
-        eval_dict["eval_loss"] = eval_loss
+    if eval_loss_rec is not None:
+        eval_dict["eval_loss_rec"] = eval_loss_rec
+
+    if perplexity_textcont is not None:
+        eval_dict["perplexity_textcont"] = perplexity_textcont
+
+    if eval_loss_textcont is not None:
+        eval_dict["eval_loss_textcont"] = eval_loss_textcont
+
+    if perplexity_embcont is not None:
+        eval_dict["perplexity_embcont"] = perplexity_embcont
+
+    if eval_loss_embcont is not None:
+        eval_dict["eval_loss_embcont"] = eval_loss_embcont
+
+    if instruct_cross_entropy is not None:
+        eval_dict["instruct_cross_entropy"] = instruct_cross_entropy
+
+    if instruct_kl is not None:
+        eval_dict["instruct_kl"] = instruct_kl
+
+    if eval_kl_loss is not None:
+        eval_dict["eval_kl_loss"] = eval_kl_loss
+
+    if eval_loss_nocontext is not None:
+        eval_dict["eval_loss_nocontext"] = eval_loss_nocontext
+
+    if eval_perplexity_nocontext is not None:
+        eval_dict["eval_perplexity_nocontext"] = eval_perplexity_nocontext
+
     return eval_dict
 
 
-def train_log_msg(state: TrainState, logs: dict[str, float | int], loss: float) -> str:
+def train_log_msg(
+    state: TrainState, logs: dict[str, float | int], loss: float, seen_tokens: int
+) -> str:
     metrics: dict[str, float | int | datetime] = dict(logs)  # shallow copy
     metrics.pop("eta_in_seconds")
 
     metrics["eta"] = datetime.now() + timedelta(seconds=state.eta)
     metrics["step"] = state.step
     metrics["loss"] = loss
+    metrics["seen_tokens"] = seen_tokens
 
     parts = []
     for key, fmt, new_name in [
@@ -78,8 +124,14 @@ def train_log_msg(state: TrainState, logs: dict[str, float | int], loss: float) 
         ("wps", ".1f", "words_per_second"),
         ("avg_wps", ".1f", "avg_words_per_second"),
         ("eta", "%Y-%m-%d %H:%M:%S", "ETA"),
+        ("instruct_cross_entropy", ".3f", "instruct_cross_entropy"),
+        ("instruct_kl", ".3f", "instruct_kl"),
+        ("batch_type", "s", "Batch Type"),
+        ("seen_tokens", "d", "Seen Tokens"),
     ]:
         name = key if new_name is None else new_name
+        if metrics[key] is None:
+            continue
         try:
             parts.append(f"{name}: {metrics[key]:>{fmt}}")
         except KeyError:
@@ -93,13 +145,23 @@ def eval_log_msg(logs: dict[str, float | int]) -> str:
     parts = []
     for key, fmt, new_name in [
         ("step", "06", None),
-        ("perplexity", ".3f", "eval_perplexity"),
-        ("eval_loss", ".3f", None),
-        ("train_loss", ".3f", None),
+        ("perplexity_rec", ".3f", "Eval Reconstruction PPL"),
+        ("eval_loss_rec", ".3f", "Eval Reconstruction Loss"),
+        ("train_loss", ".3f", "Train Loss"),
+        ("perplexity_textcont", ".3f", "Eval Textcont PPL"),
+        ("eval_loss_textcont", ".3f", "Eval Textcont Loss"),
+        ("perplexity_embcont", ".3f", "Eval Embcont PPL"),
+        ("eval_loss_embcont", ".3f", "Eval Embcont Loss"),
+        ("instruct_cross_entropy", ".3f", "instruct_cross_entropy"),
+        ("instruct_kl", ".3f", "instruct_kl"),
+        ("eval_kl_loss", ".3f", "eval_kl_loss"),
+        ("eval_loss_nocontext", ".3f", "eval_loss_nocontext"),
+        ("eval_perplexity_nocontext", ".3f", "PPL continuation wo context"),
     ]:
         name = key if new_name is None else new_name
         if key in logs:
-            parts.append(f"{name}: {logs[key]:>{fmt}}")
+            if logs[key] is not None:
+                parts.append(f"{name}: {logs[key]:>{fmt}}")
 
     return " - ".join(parts)
 
@@ -156,10 +218,10 @@ class MetricsLogger:
         if not self.is_master:
             return
 
-        metrics_to_ignore = {"step"}
+        metrics_to_ignore = {"step", "batch_type"}
         assert self.summary_writer is not None
         for key, value in metrics.items():
-            if key in metrics_to_ignore:
+            if key in metrics_to_ignore or value is None:
                 continue
             assert isinstance(value, (int, float)), (key, value)
             self.summary_writer.add_scalar(

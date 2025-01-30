@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from simple_parsing.helpers import Serializable
-from embed_llm.models.args import LoraArgs, MLPProjectArgs, PoolingArgs
+from embed_llm.models.args import LoraArgs, EmbedAugArgs
 from embed_llm.data.args import DataArgs
 
 
@@ -37,12 +37,22 @@ class WandbArgs(Serializable):
 
 
 @dataclass
-class Embedder(Serializable):
-    dim: int = 4096
-    name: str = ""
-    train: bool = False
-    pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
-    causal: bool = True
+class InstructionTuningArgs(Serializable):
+    do: bool = False
+    cross_entropy: bool = True
+    kl: bool = False
+    alpha: float = 2.0
+    temp: float = 1.0
+    tune_llm: bool = False
+    tune_embedder: bool = False
+
+
+@dataclass
+class HybridTask(Serializable):
+    do: bool = False
+    prop_noembed_continuation: float = 0.0
+    max_embeds: int = 1  # Works only with one_task_4_all=True
+    start_point: float = 0.0
 
 
 @dataclass
@@ -71,10 +81,11 @@ class TrainArgs(Serializable):
 
     # Number of steps between each checkpoint saving. If inferior to 1, only the last checkpoint will be saved.
     ckpt_freq: int = 0
-    save_adapters: bool = True
+    save_adapters: bool = True  # Not used argument TODO Remove
     # If True, no checkpoint will be saved. This is useful for development.
     no_ckpt: bool = False
-    num_ckpt_keep: int = 2
+    start_from_ckpt_path: str | None = None
+    num_ckpt_keep: int = 3
     eval_freq: int = 0
     no_eval: bool = True
 
@@ -83,8 +94,6 @@ class TrainArgs(Serializable):
     checkpoint: bool = True
 
     world_size: int = field(init=False, default=None)
-
-    variant: str | None = None  # '7b', "2b", "2b-v2", "7b", "9b", "27b"
     quant: bool = False  # False
 
     # logging
@@ -93,16 +102,18 @@ class TrainArgs(Serializable):
     # LoRA
     lora: LoraArgs = field(default_factory=LoraArgs)
 
-    # mlp projector
-    projector: MLPProjectArgs = field(default_factory=MLPProjectArgs)
-
     # Pretrained embedder to use off the shelf
-    embedder: Embedder = field(default_factory=Embedder)
-
-    norm_wo_embeds: bool = False
-    w_embeds: bool = True
+    pipeline: EmbedAugArgs = field(default_factory=EmbedAugArgs)
+    instruct_tuning: InstructionTuningArgs = field(
+        default_factory=InstructionTuningArgs
+    )
+    prefix_prompt: bool = False
     mixed_precision: bool = True
-    continuation: bool = False
+
+    # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
+    continuation: float = 0.0
+    textual_continuation: float = 0.0
+    hybrid_task: HybridTask = field(default_factory=HybridTask)
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None

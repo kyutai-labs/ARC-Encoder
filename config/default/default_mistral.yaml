@@ -4,36 +4,43 @@ model_id_or_path : /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: Mistral_concat
-w_embeds: True
-norm_wo_embeds: False
+
+
 lora:
   rank: 64
   scaling : 2.0
   enable: True
 
-# Projector 
-projector:
-  hidden_dim: 4096
-  n_layers: 3
-  act: relu
-  
 
-# Embedder
-embedder:
-  dim: 4096
-  name: NVEmbed # put '' to use trainable embedder
-  train: false # put true to train embedder
-  causal: true
-  pooling_module: # see `embedders.py` for available pooling modules
-    type: mean # mean, cls ...
-    n_truncated_layers: 4 # number of layers to truncate from the base model
+
+# Embedding augmented LLM
+pipeline:
+  w_embeds: true
+  embedder_name: Mistral7B
+  trainable_embedder: true
+  n_truncated_layers: 8
+  do_pool: true
+  cross_att: true
+  cross_att_layers: null
+  mlp_project:
+    hidden_dim: 4096
+    n_layers: 1
+    act: gelu
+    type: mlp
+  do_both: true
+  shared_kv: false
+  pooling_module:
+    type: latent_attention
+    r: 512
+    n_heads: 8
   
 
 # Data
 data:
-  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
-  eval_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl
-  shuffle: False
+  adapt_seq_len: false
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
+  shuffle: false
+  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
 
 
 # Training and Optim
@@ -49,12 +56,18 @@ optim:
   final_lr: 1.e-10
 
 
+# Hybrid task
+hybrid_task: 
+  do: False
+  
+
+
 # other
 seed: 0
 log_freq: 100
 eval_freq: 500
 no_eval: False
-ckpt_freq: 500
+ckpt_freq: 5000
 save_adapters: True # save only trained LoRA adapters. Set to `False` to merge LoRA adapter into the base model and save full fine-tuned model, not working for now 
 
 # Monitoring

@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from simple_parsing.helpers import Serializable
 
@@ -22,6 +22,11 @@ class DataArgs(Serializable):
         ""  # Each line in the jsonl files inside the data source directories must be a dictionary with a "text" key. See Readme for more details. Can be left empty.
     )
     shuffle: bool = False
+    adapt_seq_len: bool = False
+    data_types: list[str] = field(default_factory=lambda: ["reconstruction"])
 
     def __post_init__(self) -> None:
+        assert len(self.train_data.strip().split(",")) == len(
+            self.data_types
+        ), f"Number of data sources {len(self.train_data.strip().split(','))} must match number of types {len(self.data_types)}."
         pass
