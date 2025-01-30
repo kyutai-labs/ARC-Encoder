@@ -141,7 +141,7 @@ def evaluate(
             )
             if not batch.is_pad_only:
                 eval_loss_rec += compute_ce_loss_with_mask(output, y, y_mask)
-                if instruction_tuning.kl:
+                if instruction_tuning.do and instruction_tuning.kl:
                     contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
                     x_rag = []
                     y_mask_rag = []

@@ -587,27 +587,27 @@ def evaluate_QA(
             if benchmark not in overall_results[run_name][str(ckpt)].keys():
                 overall_results[run_name][str(ckpt)][benchmark] = {}
 
-            for benchmark in metrics.keys():
-                for metric in metrics[benchmark].keys():
-                    if metric not in overall_results[run_name][str(ckpt)][benchmark].keys():
-                        overall_results[run_name][str(ckpt)][benchmark][metric] = {}
-                    for temp in metrics[benchmark][metric].keys():
-                        if (
-                            temp
-                            not in overall_results[run_name][str(ckpt)][benchmark][
-                                metric
-                            ].keys()
-                        ):
-                            overall_results[run_name][str(ckpt)][benchmark][metric][temp] = []
-                        overall_results[run_name][str(ckpt)][benchmark][metric][temp].append(
-                            metrics[benchmark][metric][temp]
-                        )
+        for benchmark in metrics.keys():
+            for metric in metrics[benchmark].keys():
+                if metric not in overall_results[run_name][str(ckpt)][benchmark].keys():
+                    overall_results[run_name][str(ckpt)][benchmark][metric] = {}
+                for temp in metrics[benchmark][metric].keys():
+                    if (
+                        temp
+                        not in overall_results[run_name][str(ckpt)][benchmark][
+                            metric
+                        ].keys()
+                    ):
+                        overall_results[run_name][str(ckpt)][benchmark][metric][temp] = []
+                    overall_results[run_name][str(ckpt)][benchmark][metric][temp].append(
+                        metrics[benchmark][metric][temp]
+                    )
 
-            with open(
-                output_file,
-                "w",
-            ) as f:
-                json.dump(overall_results, f)
+        with open(
+            output_file,
+            "w",
+        ) as f:
+            json.dump(overall_results, f)
 
     if mistral:
         return mistral_model

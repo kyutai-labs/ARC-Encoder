@@ -49,22 +49,22 @@ case $RUN_NAME in
 *_MaxEmb_1*)
     srun --gpus=$N_GPU \
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
-    --n_passages 500 --max_seq_len 64 --ckpt 40000 --reconstruct_seq_len 256
+    --n_passages 500 --max_seq_len 64 --ckpt 40000 #--reconstruct_seq_len 256 --eval_reconstruction
 
 
     srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
-    --n_passages 500 --max_seq_len 64 --ckpt 35000 --reconstruct_seq_len 256
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    --n_passages 500 --max_seq_len 64 --ckpt 35000 #--reconstruct_seq_len 256 --eval_reconstruction
 
 
     srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
-    --n_passages 500 --max_seq_len 64 --ckpt 30000 --reconstruct_seq_len 256
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    --n_passages 500 --max_seq_len 64 --ckpt 30000 #--reconstruct_seq_len 256 --eval_reconstruction
     ;;
 
 *)
     srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
     --n_passages 500 --max_seq_len 64 --ckpt 40000 --reconstruct_seq_len 256 --multi_passages 3
 
 
