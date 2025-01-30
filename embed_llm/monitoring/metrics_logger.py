@@ -23,8 +23,8 @@ def get_train_logs(
     peak_allocated_mem: float,
     allocated_mem: float,
     train_args: TrainArgs,
-    instruct_cross_entropy: float | None = None,
-    instruct_kl: float | None = None,
+    cross_entropy: float | None = None,
+    kl: float | None = None,
     batch_type: str = "reconstruction",
 ) -> dict[str, float | int]:
     metrics = {
@@ -39,8 +39,8 @@ def get_train_logs(
         "wps": state.wps,
         "avg_wps": state.avg_wps,
         "eta_in_seconds": state.eta,
-        "instruct_cross_entropy": instruct_cross_entropy,
-        "instruct_kl": instruct_kl,
+        "Cross_Entropy": cross_entropy,
+        "KL": kl,
         "batch_type": batch_type,
     }
 
@@ -124,8 +124,8 @@ def train_log_msg(
         ("wps", ".1f", "words_per_second"),
         ("avg_wps", ".1f", "avg_words_per_second"),
         ("eta", "%Y-%m-%d %H:%M:%S", "ETA"),
-        ("instruct_cross_entropy", ".3f", "instruct_cross_entropy"),
-        ("instruct_kl", ".3f", "instruct_kl"),
+        ("Cross_Entropy", ".3f", None),
+        ("KL", ".3f", "KL"),
         ("batch_type", "s", "Batch Type"),
         ("seen_tokens", "d", "Seen Tokens"),
     ]:

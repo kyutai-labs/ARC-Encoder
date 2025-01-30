@@ -54,7 +54,15 @@ class HybridTask(Serializable):
     max_embeds: int = 1  # Works only with one_task_4_all=True
     start_point: float = 0.0
 
-
+@dataclass
+class ToyTests(Serializable):
+    do: bool = False
+    kl_pretraining: bool = False
+    alpha: float = 2.0
+    temp: float = 1.0
+    decompress_usage: str = 'none'
+    
+    
 @dataclass
 class TrainArgs(Serializable):
 
@@ -114,6 +122,7 @@ class TrainArgs(Serializable):
     continuation: float = 0.0
     textual_continuation: float = 0.0
     hybrid_task: HybridTask = field(default_factory=HybridTask)
+    toy_tests: ToyTests = field(default_factory=ToyTests)
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None

@@ -251,7 +251,6 @@ def evaluate_QA(
         max_bs=max_bs,
         pipeline=pipeline,
         mistral=mistral,
-        max_seq_len=max_seq_len,
         instruct_name=instruct_name,
         ckpt=ckpt,
     )

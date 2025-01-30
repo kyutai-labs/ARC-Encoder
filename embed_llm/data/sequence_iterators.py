@@ -190,6 +190,7 @@ def sequence_iterator_reconstruction(
     y_buffer: list[int],
     to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]],
     mask_buffer: Mask,
+    cur_pos: int,
     n_missing: int,
     sizes: list[int],
     sample: TokenSample,
@@ -207,12 +208,11 @@ def sequence_iterator_reconstruction(
         assert n_missing == seq_len - len(
             x_buffer
         ), f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
-
+    
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     embed_tokens = sample.passages.tokens
     data_type = sample.data_type
-    cur_pos = 0
 
     while cur_pos < len(x):
         size = len(x[cur_pos : cur_pos + n_missing])
@@ -255,7 +255,6 @@ def sequence_iterator_reconstruction(
         sizes.append(size)
 
         cur_pos += size
-
         if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
             assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
             assert len(x_buffer) <= seq_len
@@ -274,7 +273,7 @@ def sequence_iterator_reconstruction(
                     mask=mask_buffer,
                     sizes=sizes,
                     data_type=data_type
-                )
+                ), cur_pos
 
             if adapt_seq_len:
                 break
@@ -289,6 +288,7 @@ def sequence_iterator_continuation(
     mask_buffer: Mask,
     sizes: list[int],
     sample: TokenSample,
+    cur_pos: int,
     seq_len: int,
     tokenizer: Tokenizer,
     adapt_seq_len: bool = False,
@@ -304,12 +304,9 @@ def sequence_iterator_continuation(
         len(embed_tokens) == 1
     ), "Continuation training only supports one passage per sample"
 
-    cur_pos = 0
-
     while cur_pos < len(x):
 
         overall_size = len(x[cur_pos : cur_pos + n_missing])
-        # print('Size:', overall_size, 'N missing:', n_missing, 'Cur pos:', cur_pos)
         curr_mask = mask[cur_pos : cur_pos + n_missing]
         if not any(curr_mask):
             cur_pos += overall_size
@@ -322,7 +319,7 @@ def sequence_iterator_continuation(
                 len(to_embed_buffer),
                 len(sizes),
             )
-
+            
             # we don't want to yield sequences with a mask filled with False
             if any(mask_buffer):
                 return SequenceEmbedMaskAndSizes(
@@ -332,17 +329,15 @@ def sequence_iterator_continuation(
                     mask=mask_buffer,
                     sizes=sizes,
                     data_type=data_type
-                )
+                ), len(x) # ensures that it does not come back to this sample
             else:
                 break
 
         upper_bound = min(cur_pos + n_missing, len(x))
-
         if not is_eval:
             x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
             y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
             mask_buffer.extend(mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
-            n_missing -= overall_size
 
             size = len(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
 
@@ -411,7 +406,7 @@ def sequence_iterator_continuation(
                     mask=mask_buffer,
                     sizes=sizes,
                     data_type=data_type
-                )
+                ), cur_pos
 
             if adapt_seq_len:
                 break

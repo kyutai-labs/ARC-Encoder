@@ -443,8 +443,8 @@ def _train(
             #     # print('N_prefix', batch.n_prefixes[0])
             #     print('Sizes', batch.sizes)
             #     print("Embed seqlens", embed_seqlens)
-            #     print("Embed", batch.y_mask[:batch.sizes[0]])
-            #     print("To embed", pipeline.tokenizer.decode(embed)[-100:])
+            #     # print("Embed", batch.y_mask[:batch.sizes[0]])
+            #     print("To embed", pipeline.tokenizer.decode(embed)[:])
             #     print("To generate", pipeline.tokenizer.decode(to_gen)[:100])
                 
 
@@ -518,16 +518,94 @@ def _train(
                 embed_seqlens=embed_seqlens,
                 batch_type=batch.data_type,
             )
-
+            
             if not args.instruct_tuning.do:
                 mb_loss = compute_ce_loss_with_mask(
                     logits=output, target=y, target_mask=y_mask
                 )
 
-                mb_loss.backward()
-                loss += mb_loss.item()
                 train_ppl += 2 ** (mb_loss.item())
 
+                if args.toy_tests.do and args.toy_tests.kl_pretraining:
+                   
+                    if args.continuation > 0.0 and batch.data_type == "continuation":
+                        contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
+                        x_wcontext = []
+                        y_mask_wcontext = []
+                        seqlens_wcontext = []
+
+                        ind = 0
+                        assert len(contexts) == len(
+                            batch.sizes
+                        ), "Contexts and batch sizes should be the same"
+
+                        for i, size in enumerate(batch.sizes):
+                            x_wcontext.extend(
+                                contexts[i][0] + batch.x[ind : ind + size].tolist()
+                            )
+                            seqlens_wcontext.append(size + len(contexts[i][0]))
+                            y_mask_wcontext.extend(
+                                [False] * len(contexts[i][0])
+                                + ([True]*len(batch.x[ind : ind + size]) if batch.y_mask is None else batch.y_mask[ind : ind + size].tolist()) 
+                            )
+
+                            ind += size
+
+                        x_wcontext = torch.from_numpy(np.array(x_wcontext)).cuda(non_blocking=True)
+                        y_mask_wcontext = torch.from_numpy(np.array(y_mask_wcontext)).cuda(
+                            non_blocking=True
+                        )
+
+                        assert len(x_wcontext) == len(
+                            y_mask_wcontext
+                        ), "x_wcontext and y_mask_wcontext should be the same length"
+
+                        with torch.no_grad():
+                            model.eval()
+                            llm_output = model.forward(
+                                x=x_wcontext,
+                                embeddings=None,
+                                seqlens=seqlens_wcontext,
+                                embed_seqlens=None,
+                                batch_type=batch.data_type,
+                            )
+                            # Get the logits for continuation of LLM with textual context
+                            model.train()
+                            
+                        target_mask = y_mask_wcontext
+                        pred_mask = y_mask
+
+                    else: # Full reconstruction
+                        with torch.no_grad():
+                            model.eval()
+                            llm_output = model.forward(
+                                x=x,
+                                embeddings=None,
+                                seqlens=seqlens,
+                                embed_seqlens=None,
+                                batch_type=batch.data_type,
+                            )
+                            model.train()
+                            
+                        target_mask = None
+                        pred_mask = y_mask
+    
+                    kl_dv_loss = compute_kl_loss_with_mask(
+                        target_logits=llm_output,
+                        pred_logits=output,
+                        target_mask=target_mask,
+                        pred_mask=pred_mask,
+                        temp=args.toy_tests.temp,
+                    )
+
+                    
+                    kl_loss += kl_dv_loss.item()
+                    cross_entropy_loss += mb_loss.item()
+                    mb_loss = mb_loss + args.toy_tests.alpha * kl_dv_loss
+
+                loss += mb_loss.item()
+                mb_loss.backward()
+                
             else:
 
                 instruct_cross_entropy = compute_ce_loss_with_mask(
@@ -582,9 +660,9 @@ def _train(
                         model.train()
 
                     kl_dv_loss = compute_kl_loss_with_mask(
-                        rag_logits=rag_output,
+                        target_logits=rag_output,
                         pred_logits=output,
-                        rag_mask=y_mask_rag,
+                        target_mask=y_mask_rag,
                         pred_mask=y_mask,
                         temp=args.instruct_tuning.temp,
                     )
@@ -595,7 +673,7 @@ def _train(
                 mb_loss.backward()
                 loss += mb_loss.item()
                 # print(prof.key_averages().table(sort_by="cuda_time_total"))
-
+                
             n_batch_tokens += x.numel()
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward
@@ -659,14 +737,15 @@ def _train(
         )
         kl_loss_avg = avg_aggregate(kl_loss_item)
 
-        if not args.instruct_tuning.do:
-            kl_loss_avg = None
-            cross_entropy_loss_avg = None
-        else:
-            if not args.instruct_tuning.cross_entropy:
-                cross_entropy_loss_avg = None
-            if not args.instruct_tuning.kl:
+        if not (args.toy_tests.do and args.toy_tests.kl_pretraining):
+            if not args.instruct_tuning.do:
                 kl_loss_avg = None
+                cross_entropy_loss_avg = None
+            else:
+                if not args.instruct_tuning.cross_entropy:
+                    cross_entropy_loss_avg = None
+                if not args.instruct_tuning.kl:
+                    kl_loss_avg = None
 
         if not args.no_eval and (
             (args.eval_freq > 0 and state.step % args.eval_freq == 0)
@@ -716,8 +795,8 @@ def _train(
                 peak_allocated_mem=torch.cuda.max_memory_allocated(),
                 allocated_mem=torch.cuda.memory_allocated(),
                 train_args=args,
-                instruct_cross_entropy=cross_entropy_loss_avg,
-                instruct_kl=kl_loss_avg,
+                cross_entropy=cross_entropy_loss_avg,
+                kl=kl_loss_avg,
                 batch_type=batch.data_type,
             )
             main_logger_info(

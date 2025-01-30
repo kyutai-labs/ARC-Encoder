@@ -165,11 +165,19 @@ def sequence_iterator(
     to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]] = []
     mask_buffer: Mask = []
     sizes: list[int] = []
-
+    n_missing_cont = seq_len * 2 
+    
+    x_buffer_cont: list[int] = []
+    y_buffer_cont: list[int] = []
+    to_embed_buffer_cont: list[dict[str, str | int | list[int] | list[str]]] = []
+    mask_buffer_cont: Mask = []
+    sizes_cont: list[int] = []
+    
+    cur_pos = 0
     n_missing = seq_len
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
-        if hybrid_task is None or not hybrid_task.do:
+        if hybrid_task is None or not hybrid_task.do:    
             rand_continue = np.random.rand()
             if (is_finite and continuation > 0) or continuation >= 1.0:
                 do_continuation = True
@@ -179,71 +187,80 @@ def sequence_iterator(
                 do_continuation = rand_continue < continuation
 
             if do_continuation:
-                res = sequence_iterator_continuation(
-                    sample=sample,
-                    x_buffer=x_buffer,
-                    y_buffer=y_buffer,
-                    mask_buffer=mask_buffer,
-                    to_embed_buffer=to_embed_buffer,
-                    sizes=sizes,
-                    seq_len=seq_len,
-                    tokenizer=tokenizer,
-                    adapt_seq_len=adapt_seq_len,
-                    n_missing=n_missing,
-                    data_type="continuation",
-                    is_eval=is_finite,
-                )
-                if isinstance(res, SequenceEmbedMaskAndSizes):
-                    yield res
+                while True:
+                    res = sequence_iterator_continuation(
+                        sample=sample,
+                        x_buffer=x_buffer_cont,
+                        y_buffer=y_buffer_cont,
+                        mask_buffer=mask_buffer_cont,
+                        to_embed_buffer=to_embed_buffer_cont,
+                        sizes=sizes_cont,
+                        seq_len=seq_len * 2, # To ensure max seq len to generate and max seq len to embed
+                        tokenizer=tokenizer,
+                        adapt_seq_len=adapt_seq_len,
+                        n_missing=n_missing_cont,
+                        data_type="continuation",
+                        is_eval=is_finite,
+                        cur_pos=cur_pos,
+                    )
+                    if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
+                        yield res[0]
 
-                    x_buffer, y_buffer = [], []
-                    mask_buffer = []
-                    to_embed_buffer = []
-                    sizes = []
-                    n_missing = seq_len
-                else:
-                    (
-                        x_buffer,
-                        y_buffer,
-                        to_embed_buffer,
-                        mask_buffer,
-                        n_missing,
-                        sizes,
-                    ) = res
-                    continue
+                        x_buffer_cont, y_buffer_cont = [], []
+                        mask_buffer_cont = []
+                        to_embed_buffer_cont = []
+                        sizes_cont = []
+                        n_missing_cont = seq_len * 2
+                        cur_pos = res[1]
+                    else:
+                        (
+                            x_buffer_cont,
+                            y_buffer_cont,
+                            to_embed_buffer_cont,
+                            mask_buffer_cont,
+                            n_missing_cont,
+                            sizes_cont,
+                        ) = res
+                        cur_pos = 0
+                        break
             else:
-                res = sequence_iterator_reconstruction(
-                    sample=sample,
-                    x_buffer=x_buffer,
-                    y_buffer=y_buffer,
-                    mask_buffer=mask_buffer,
-                    to_embed_buffer=to_embed_buffer,
-                    sizes=sizes,
-                    seq_len=seq_len,
-                    tokenizer=tokenizer,
-                    adapt_seq_len=adapt_seq_len,
-                    n_missing=n_missing,
-                    is_eval=is_finite,
-                )
+                
+                while True:
+                    res = sequence_iterator_reconstruction(
+                        sample=sample,
+                        x_buffer=x_buffer,
+                        y_buffer=y_buffer,
+                        mask_buffer=mask_buffer,
+                        to_embed_buffer=to_embed_buffer,
+                        sizes=sizes,
+                        seq_len=seq_len,
+                        tokenizer=tokenizer,
+                        adapt_seq_len=adapt_seq_len,
+                        n_missing=n_missing,
+                        is_eval=is_finite,
+                        cur_pos=cur_pos,
+                    )
 
-                if isinstance(res, SequenceEmbedMaskAndSizes):
-                    yield res
+                    if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
+                        yield res[0]
 
-                    x_buffer, y_buffer = [], []
-                    mask_buffer = []
-                    to_embed_buffer = []
-                    sizes = []
-                    n_missing = seq_len
-                else:
-                    (
-                        x_buffer,
-                        y_buffer,
-                        to_embed_buffer,
-                        mask_buffer,
-                        n_missing,
-                        sizes,
-                    ) = res
-                    continue
+                        x_buffer, y_buffer = [], []
+                        mask_buffer = []
+                        to_embed_buffer = []
+                        sizes = []
+                        n_missing = seq_len
+                        cur_pos = res[1]
+                    else:
+                        (
+                            x_buffer,
+                            y_buffer,
+                            to_embed_buffer,
+                            mask_buffer,
+                            n_missing,
+                            sizes,
+                        ) = res
+                        cur_pos = 0
+                        break
         else:
 
             tokens, mask = sample.tokens, sample.masks[1:]
