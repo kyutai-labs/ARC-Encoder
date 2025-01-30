@@ -202,18 +202,27 @@ def evaluate(
     state.this_eval_perplexity_rec = (2**eval_loss_rec).item()
 
     if batches_cont is not None:
-        dist.all_reduce(eval_loss_textcont, op=dist.ReduceOp.SUM)
+
         dist.all_reduce(eval_loss_embcont, op=dist.ReduceOp.SUM)
-        dist.all_reduce(eval_loss_nocontext, op=dist.ReduceOp.SUM)
-        eval_loss_textcont /= total_num_samples
         eval_loss_embcont /= total_num_samples
-        eval_loss_nocontext /= total_num_samples
-        state.this_eval_loss_textcont = eval_loss_textcont.item() if train_llm else None 
         state.this_eval_loss_embcont = eval_loss_embcont.item()
-        state.this_eval_loss_nocontext = eval_loss_nocontext.item() if train_llm else None
-        state.this_eval_perplexity_textcont = (2**eval_loss_textcont).item() if train_llm else None
         state.this_eval_perplexity_embcont = (2**eval_loss_embcont).item()
-        state.this_eval_perplexity_nocontext = (2**eval_loss_nocontext).item() if train_llm else None
+        
+        if train_llm:
+            dist.all_reduce(eval_loss_textcont, op=dist.ReduceOp.SUM)
+            dist.all_reduce(eval_loss_nocontext, op=dist.ReduceOp.SUM)
+            eval_loss_textcont /= total_num_samples
+            eval_loss_nocontext /= total_num_samples
+            state.this_eval_loss_nocontext = eval_loss_nocontext.item() 
+            state.this_eval_loss_textcont = eval_loss_textcont.item()  
+            state.this_eval_perplexity_textcont = (2**eval_loss_textcont).item() 
+            state.this_eval_perplexity_nocontext = (2**eval_loss_nocontext).item() 
+        else:
+            state.this_eval_loss_textcont = None
+            state.this_eval_loss_nocontext = None
+            state.this_eval_perplexity_textcont = None
+            state.this_eval_perplexity_nocontext = None
+            
         state.this_eval_kl_loss = None
 
     elif instruction_tuning.do and instruction_tuning.kl:
