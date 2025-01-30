@@ -579,36 +579,36 @@ def evaluate_QA(
             run_name = "Mistral_no_RAG"
             ckpt = 0
 
-    run_name = instruct_name if instruct_name is not None and run_name is None else run_name
-    if run_name not in overall_results.keys():
-        overall_results[run_name] = {}
-    if str(ckpt) not in overall_results[run_name].keys():
-        overall_results[run_name][str(ckpt)] = {}
-    for benchmark in benchmarks:
-        if benchmark not in overall_results[run_name][str(ckpt)].keys():
-            overall_results[run_name][str(ckpt)][benchmark] = {}
+        run_name = instruct_name if instruct_name is not None and run_name is None else run_name
+        if run_name not in overall_results.keys():
+            overall_results[run_name] = {}
+        if str(ckpt) not in overall_results[run_name].keys():
+            overall_results[run_name][str(ckpt)] = {}
+        for benchmark in benchmarks:
+            if benchmark not in overall_results[run_name][str(ckpt)].keys():
+                overall_results[run_name][str(ckpt)][benchmark] = {}
 
-        for benchmark in metrics.keys():
-            for metric in metrics[benchmark].keys():
-                if metric not in overall_results[run_name][str(ckpt)][benchmark].keys():
-                    overall_results[run_name][str(ckpt)][benchmark][metric] = {}
-                for temp in metrics[benchmark][metric].keys():
-                    if (
-                        temp
-                        not in overall_results[run_name][str(ckpt)][benchmark][
-                            metric
-                        ].keys()
-                    ):
-                        overall_results[run_name][str(ckpt)][benchmark][metric][temp] = []
-                    overall_results[run_name][str(ckpt)][benchmark][metric][temp].append(
-                        metrics[benchmark][metric][temp]
-                    )
+            for benchmark in metrics.keys():
+                for metric in metrics[benchmark].keys():
+                    if metric not in overall_results[run_name][str(ckpt)][benchmark].keys():
+                        overall_results[run_name][str(ckpt)][benchmark][metric] = {}
+                    for temp in metrics[benchmark][metric].keys():
+                        if (
+                            temp
+                            not in overall_results[run_name][str(ckpt)][benchmark][
+                                metric
+                            ].keys()
+                        ):
+                            overall_results[run_name][str(ckpt)][benchmark][metric][temp] = []
+                        overall_results[run_name][str(ckpt)][benchmark][metric][temp].append(
+                            metrics[benchmark][metric][temp]
+                        )
 
-        with open(
-            output_file,
-            "w",
-        ) as f:
-            json.dump(overall_results, f)
+            with open(
+                output_file,
+                "w",
+            ) as f:
+                json.dump(overall_results, f)
 
     if mistral:
         return mistral_model
@@ -810,42 +810,43 @@ def evaluate_reconstruction_model(
             Bleu Score: {bleu_score} Truncated Bleu Score: {trunc_bleu_score} \
             EM: {em} Meteor: {meteor_score} Bleu Score Avg: {bleu_score_avg}"
         )
+        
+    if not is_torchrun() or torch.distributed.get_rank() == 0:
+        with open(
+            "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+            + run_name
+            + "/results_generation.json",
+            "a",
+        ) as f:
+            json.dump(metrics, f)
 
-    with open(
-        "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-        + run_name
-        + "/results_generation.json",
-        "a",
-    ) as f:
-        json.dump(metrics, f)
+        with open(
+            output_file,
+            "r",
+        ) as f:
+            overall_results = json.load(f)
 
-    with open(
-        output_file,
-        "r",
-    ) as f:
-        overall_results = json.load(f)
+        if run_name not in overall_results.keys():
+            overall_results[run_name] = {}
+        if str(ckpt) not in list(overall_results[run_name].keys()):
+            overall_results[run_name][str(ckpt)] = {}
+        for benchmark in reconstruct_benchmarks:
+            if benchmark not in list(overall_results[run_name][str(ckpt)].keys()):
+                overall_results[run_name][str(ckpt)][benchmark] = {
+                    str(temp): [] for temp in temperatures
+                }
 
-    if run_name not in overall_results.keys():
-        overall_results[run_name] = {}
-    if str(ckpt) not in list(overall_results[run_name].keys()):
-        overall_results[run_name][str(ckpt)] = {}
-    for benchmark in reconstruct_benchmarks:
-        if benchmark not in list(overall_results[run_name][str(ckpt)].keys()):
-            overall_results[run_name][str(ckpt)][benchmark] = {
-                str(temp): [] for temp in temperatures
-            }
+        for benchmark in metrics.keys():
+            for temp in metrics[benchmark].keys():
+                overall_results[run_name][str(ckpt)][benchmark][temp].append(
+                    metrics[benchmark][temp]
+                )
 
-    for benchmark in metrics.keys():
-        for temp in metrics[benchmark].keys():
-            overall_results[run_name][str(ckpt)][benchmark][temp].append(
-                metrics[benchmark][temp]
-            )
-
-    with open(
-        output_file,
-        "w",
-    ) as f:
-        json.dump(overall_results, f)
+        with open(
+            output_file,
+            "w",
+        ) as f:
+            json.dump(overall_results, f)
 
     return pipeline, ckpt
 
