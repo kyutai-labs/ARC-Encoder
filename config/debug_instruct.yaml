@@ -7,7 +7,7 @@ start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/Hybrid_L
 lora:
   rank: 64
   scaling: 2.0
-  enable: false
+  enable: true
 
 toy_tests:
     do: true

@@ -528,6 +528,7 @@ def load_training_model_from_ckpt(
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
     torch.distributed.barrier()
+    
 
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
