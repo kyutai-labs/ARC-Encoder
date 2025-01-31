@@ -269,6 +269,10 @@ class Cross_AttTransformerBlock(nn.Module):
                     seqlen=seqlens,
                     mask=cross_att_mask,
                 )
+                # print(f'Gate*r values: MEAN {torch.mean(self.gate(h)*r)} STD {torch.std(self.gate(h)*r)} MAX {torch.max(self.gate(h)*r)} MIN {torch.min(self.gate(h)*r)}')
+                # print(f'H values: MEAN {torch.mean(h)} STD {torch.std(h)} MAX {torch.max(h)} MIN {torch.min(h)}')
+                # print(f'Relative gap: MEAN {torch.mean((self.gate(h)*r-h)/h)} STD {torch.std((self.gate(h)*r-h)/h)} MAX {torch.max((self.gate(h)*r-h)/h)} MIN {torch.min((self.gate(h)*r-h)/h)}')
+
                 h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
                 if show_attention:
                     cross_attn_mtx = None
@@ -793,7 +797,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 xk, xv = cross_att_cache.cache_k, cross_att_cache.cache_v
 
         for local_layer_id, (layer_id, layer) in enumerate(self.layers.items()):
-            
+            # print('Layer:', layer_id)
             if cache is not None:
                 assert input_metadata is not None
 

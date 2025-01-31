@@ -254,11 +254,11 @@ def _train(
             max_batch_size=args.batch_size,
             tune_embedder=(
                 (args.instruct_tuning.do and args.instruct_tuning.tune_embedder)
-                or (args.pipeline.trainable_embedder and not args.instruct_tuning.do)
+                or (args.toy_tests.do and args.toy_tests.tune_embedder)
             ),
             tune_llm=(
                 (args.instruct_tuning.do and args.instruct_tuning.tune_llm)
-                or (args.pipeline.trainable_llm and not args.instruct_tuning.do)
+                or (args.toy_tests.do and args.toy_tests.tune_llm)
             ),
         )
 

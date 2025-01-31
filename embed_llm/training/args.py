@@ -61,6 +61,8 @@ class ToyTests(Serializable):
     alpha: float = 2.0
     temp: float = 1.0
     decompress_usage: str = 'none'
+    tune_llm: bool = False
+    tune_embedder: bool = False
     
     
 @dataclass
