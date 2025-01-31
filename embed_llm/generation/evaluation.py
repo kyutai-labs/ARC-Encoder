@@ -225,6 +225,7 @@ def evaluate_QA(
     max_multi_passage: int = 1,
     kilt: bool = False,
     instruct_name: str = None,
+    prompt_before_embed: bool = False,
     colbert: bool = False,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
@@ -412,7 +413,7 @@ def evaluate_QA(
                     generated_sequence = pipeline.generate(
                         prompt_pre_embed=(
                             [""] * max_bs
-                            if not pipeline.pipeline_args.w_prefix_prompt
+                            if not prompt_before_embed
                             else ["Based on the context "] * max_bs
                         ),  # If model trained with task prefix before embedding
                         prompt_post_embed=(
@@ -628,6 +629,7 @@ def evaluate_reconstruction_model(
     n_passages: int = 100,
     max_multi_passage: int = 1,
     instruct_name: str = None,
+    prompt_before_embed: bool = False,
 ):
 
     reconstruct_benchmarks = [
@@ -733,7 +735,7 @@ def evaluate_reconstruction_model(
             generated_sequence = pipeline.generate(
                 prompt_pre_embed=(
                     [""] * len(passage)
-                    if not pipeline.pipeline_args.w_prefix_prompt
+                    if not prompt_before_embed  
                     else ["In other words, background: "] * len(passage)
                 ),
                 prompt_post_embed=(
@@ -871,6 +873,7 @@ def arg_parser():
     parser.add_argument("--instruct_name", type=str, default=None)
     parser.add_argument("--colbert", action="store_true")
     parser.add_argument("--benchmarks", type=str, default="all")
+    parser.add_argument("--prompt_before_embed", action="store_true")
 
     return parser.parse_args()
 
@@ -1038,6 +1041,7 @@ if __name__ == "__main__":
                     n_passages=args.reconstruct_npassages,
                     max_multi_passage=args.multi_passages,
                     instruct_name=args.instruct_name,
+                    prompt_before_embed=args.prompt_before_embed,
                 )
                 torch.cuda.empty_cache()
             else:
@@ -1052,6 +1056,7 @@ if __name__ == "__main__":
                     eval_data_type="standard_dump",
                     n_passages=args.reconstruct_npassages,
                     instruct_name=args.instruct_name,
+                    prompt_before_embed=args.prompt_before_embed,
                 )
                 torch.cuda.empty_cache()
                 eval_logger_info(logger, "Atlas")
@@ -1066,6 +1071,7 @@ if __name__ == "__main__":
                     ckpt=ckpt,
                     n_passages=args.reconstruct_npassages,
                     instruct_name=args.instruct_name,
+                    prompt_before_embed=args.prompt_before_embed,
                 )
                 torch.cuda.empty_cache()
 
@@ -1085,6 +1091,7 @@ if __name__ == "__main__":
             max_multi_passage=args.multi_passages,
             instruct_name=args.instruct_name,
             colbert=args.colbert,
+            prompt_before_embed=args.prompt_before_embed,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -1105,4 +1112,5 @@ if __name__ == "__main__":
                 max_multi_passage=args.multi_passages,
                 instruct_name=args.instruct_name,
                 colbert=args.colbert,
+                prompt_before_embed=args.prompt_before_embed,
             )

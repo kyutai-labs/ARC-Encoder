@@ -671,23 +671,27 @@ class EmbedAugPipeline(nn.Module):
         
         encoded_pre_embed_prompts = []
         encoded_post_embed_prompts = []
-
+        no_prefix = True
         for prompt_pre, prompt_post in zip(prompt_pre_embed, prompt_post_embed):
 
             # If not specified no prompt before embedding bos token is included after embedding
-            if prompt_pre == "" and not self.pipeline_args.w_prefix_prompt:
+            if prompt_pre == "":
                 encoded_pre_embed_prompts.append([])
+                
             elif len(prompt_pre) > 0 and not self.pipeline_args.w_prefix_prompt:
-                print("Including a prompt before embedding, not trained to do this")
+                eval_logger_info(logger, "Including a prompt before embedding, not trained to do this")
                 encoded_pre_embed_prompts.append(
                     self.tokenizer.encode(prompt_pre, bos=True, eos=False)
                 )
+                no_prefix = False
             else:
                 encoded_pre_embed_prompts.append(
                     self.tokenizer.encode(prompt_pre, bos=True, eos=False)
                 )
+                no_prefix = False
+                
             # If no prompt before embedding bos token is included
-            if not self.pipeline_args.w_prefix_prompt:
+            if no_prefix:
                 encoded_post_embed_prompts.append(
                     self.tokenizer.encode(prompt_post, bos=True, eos=False)
                 )

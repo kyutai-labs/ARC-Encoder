@@ -119,24 +119,48 @@ INSTRUCT_PROMPT = [
 
 CONTINUATION_PROMPT = [
     {
-        "prefix": "Here's the first part: ",
+        "prefix": "",
         "suffix": " Complete this thought by adding what logically follows: ",
     },
     {
-        "prefix": "Starting with: ",
-        "suffix": " provide the natural continuation of this statement. ",
+        "prefix": "",
+        "suffix": " provide the natural continuation of this statement: ",
     },
     {
-        "prefix": "Given this beginning: ",
-        "suffix": " what would be the most appropriate way to complete this? ",
+        "prefix": "",
+        "suffix": "What would be the most appropriate way to complete this?\n",
     },
     {
-        "prefix": "The initial portion states: ",
-        "suffix": " extend this statement to its full meaning. ",
+        "prefix": "",
+        "suffix": "Extend this statement to its full meaning:\n",
     },
     {
-        "prefix": "Based on this opening: ",
-        "suffix": " finish expressing the complete idea. ",
+        "prefix": "",
+        "suffix": "finish expressing the complete idea.",
+    },
+    {
+        "prefix": "",
+        "suffix": "Continue this sentence in a way that maintains coherence and relevance: ",
+    },
+     {
+        "prefix": "",
+        "suffix": " Carry on from here with what follows naturally: ",
+    },
+    {
+        "prefix": "",
+        "suffix": " develop this idea further with a logical continuation: ",
+    },
+    {
+        "prefix": "",
+        "suffix": "How would this statement logically proceed?\n",
+    },
+    {
+        "prefix": "",
+        "suffix": "What follows from this idea?\n",
+    },
+    {
+        "prefix": "",
+        "suffix": " expand on this thought to complete its meaning: ",
     },
 ]
 

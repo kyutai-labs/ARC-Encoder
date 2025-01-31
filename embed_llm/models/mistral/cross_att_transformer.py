@@ -487,6 +487,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
             for _ in range(len(seqlens)):
 
+                no_prefix = True
                 if (
                     tokenized_prompts.get(batch_type, False)
                     and len(tokenized_prompts[batch_type]) > 0
@@ -497,6 +498,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     num_supp_toks += len(tokenized_prompt["prefix"]) + len(
                         tokenized_prompt["suffix"]
                     )
+                    if len(tokenized_prompt["prefix"]) > 0:
+                        no_prefix = False
 
             h = torch.zeros(
                 (num_supp_toks + len(token_embeds), self.args.dim),
@@ -510,25 +513,43 @@ class Transformer(ModelBase, LoRALoaderMixin):
             for i, size in enumerate(seqlens):
                 assert size > 0
 
-                if len(prefixes) > 0:
-                    # Insert embedding at the beginning of the sequencep
-                    size_embed = len(prefixes[i]) + embed_seqlens[i] + len(suffixes[i])
-                    tok_before_embed = self.tok_embeddings(
-                        torch.tensor(prefixes[i], device=self.device)
-                    )
-                    tok_after_embed = self.tok_embeddings(
-                        torch.tensor(suffixes[i], device=self.device)
-                    )
-                    h[final_ind : size_embed + final_ind, :] = torch.cat(
-                        [
-                            tok_before_embed,
-                            cat_embeddings[
+                if len(suffixes) > 0:
+                    
+                    if no_prefix:        
+                        # Insert embedding at the beginning of the sequence
+                        size_embed = embed_seqlens[i] + len(suffixes[i])
+                        
+                        tok_after_embed = self.tok_embeddings(
+                            torch.tensor(suffixes[i], device=self.device)
+                        )
+                        h[final_ind : size_embed + final_ind, :] = torch.cat(
+                            [cat_embeddings[
                                 sum(embed_seqlens[:i]) : sum(embed_seqlens[: i + 1]), :
+                                ],
+                                tok_after_embed,
                             ],
-                            tok_after_embed,
-                        ],
-                        dim=0,
-                    )
+                            dim=0,
+                        )
+                    else:
+                        # Insert embedding at the beginning of the sequence
+                        size_embed = len(prefixes[i]) + embed_seqlens[i] + len(suffixes[i])
+                        
+                        tok_before_embed = self.tok_embeddings(
+                            torch.tensor(prefixes[i], device=self.device)
+                        )
+                        tok_after_embed = self.tok_embeddings(
+                            torch.tensor(suffixes[i], device=self.device)
+                        )
+                        h[final_ind : size_embed + final_ind, :] = torch.cat(
+                            [
+                                tok_before_embed,
+                                cat_embeddings[
+                                    sum(embed_seqlens[:i]) : sum(embed_seqlens[: i + 1]), :
+                                ],
+                                tok_after_embed,
+                            ],
+                            dim=0,
+                        )     
                 else:
                     size_embed = embed_seqlens[i]
                     h[final_ind : size_embed + final_ind, :] = cat_embeddings[

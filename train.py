@@ -401,7 +401,7 @@ def _train(
 
         model.tokenize_prompts["continuation"] = []
         for prompt in CONTINUATION_PROMPT:
-            prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
+            prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=False, eos=False)
             suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
             model.tokenize_prompts["continuation"].append(
                 {"prefix": prefix, "suffix": suffix}
