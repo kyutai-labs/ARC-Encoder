@@ -15,4 +15,4 @@ tests.ipynb
 check_loading.py
 testscript.sh
 embed_llm/continuation_test.ipynb
-embed_llm/results/ColBERT
+results/ColBERT
