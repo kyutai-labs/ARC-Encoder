@@ -11,8 +11,7 @@ import torch.distributed
 from torch.optim import AdamW, lr_scheduler
 from functools import partial
 import numpy as np
-import gc
-import sys
+
 
 # Debugging
 import time
@@ -227,6 +226,7 @@ def _train(
             args.hybrid_task.prop_noembed_continuation * int(args.hybrid_task.do) == 0.0
         ), "Noembed continuation should be deactivated when LLM not fine-tuned"
 
+
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
     args.pipeline.param_dtype = param_dtype
 
@@ -280,6 +280,8 @@ def _train(
         is_eval=False,
         continuation=args.continuation,
         hybrid_task=args.hybrid_task,
+        max_embeds = args.pipeline.max_embeds,
+        decompress_usage= '' if not args.toy_tests.do else args.toy_tests.decompress_usage,
     )
     main_logger_info("Data loader done")
     if not args.no_eval:
@@ -296,6 +298,7 @@ def _train(
             is_eval=True,
             continuation=False,
             hybrid_task=None,
+            max_embeds = args.pipeline.max_embeds
         )
 
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
@@ -311,7 +314,7 @@ def _train(
 
         if (
             args.continuation > 0.0 or args.hybrid_task.do
-        ) and not args.instruct_tuning.do:
+        ) and not args.instruct_tuning.do and not (args.toy_tests.do and args.toy_tests.decompress_usage != ""):
             eval_data_loader_4cont = build_data_loader(
                 tokenizer=pipeline.tokenizer,
                 args=args.data,
@@ -325,6 +328,7 @@ def _train(
                 is_eval=True,
                 continuation=True,
                 hybrid_task=None,
+                max_embeds = args.pipeline.max_embeds
             )
             
             # pre-load all eval batches, 40 batches * n_gpus * batch_size // n_gpus
@@ -439,7 +443,7 @@ def _train(
 
             # if get_rank() == 0:
             #     to_gen = [int(tok) for tok in batch.x[:batch.sizes[0]]]
-            #     embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"][0]]
+            #     embed = [int(tokens) for l_tokens in batch.to_embed[0]["tokens"] for tokens in l_tokens]
             #     # print('N_prefix', batch.n_prefixes[0])
             #     print('Sizes', batch.sizes)
             #     print("Embed seqlens", embed_seqlens)
@@ -540,12 +544,13 @@ def _train(
                         ), "Contexts and batch sizes should be the same"
 
                         for i, size in enumerate(batch.sizes):
+                            full_context = sum(contexts[i],[])
                             x_wcontext.extend(
-                                contexts[i][0] + batch.x[ind : ind + size].tolist()
+                                full_context + batch.x[ind : ind + size].tolist()
                             )
-                            seqlens_wcontext.append(size + len(contexts[i][0]))
+                            seqlens_wcontext.append(size + len(full_context))
                             y_mask_wcontext.extend(
-                                [False] * len(contexts[i][0])
+                                [False] * len(full_context)
                                 + ([True]*len(batch.x[ind : ind + size]) if batch.y_mask is None else batch.y_mask[ind : ind + size].tolist()) 
                             )
 

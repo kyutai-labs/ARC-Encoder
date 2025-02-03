@@ -51,7 +51,6 @@ class InstructionTuningArgs(Serializable):
 class HybridTask(Serializable):
     do: bool = False
     prop_noembed_continuation: float = 0.0
-    max_embeds: int = 1  # Works only with one_task_4_all=True
     start_point: float = 0.0
 
 @dataclass
@@ -117,7 +116,6 @@ class TrainArgs(Serializable):
     instruct_tuning: InstructionTuningArgs = field(
         default_factory=InstructionTuningArgs
     )
-    prefix_prompt: bool = False
     mixed_precision: bool = True
 
     # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)

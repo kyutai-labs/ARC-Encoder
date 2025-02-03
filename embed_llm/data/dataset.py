@@ -14,6 +14,7 @@ from embed_llm.data.sequence_iterators import (
     sequence_iterator_continuation,
     sequence_iterator_reconstruction,
     sequence_iterator_one_task_4_all,
+    sequence_iterator_decompress_usage,
     SequenceEmbedMaskAndSizes,
 )
 
@@ -43,6 +44,7 @@ def maybe_load_local_dataset(
     rank: int,
     world_size: int,
     tokenizer: Tokenizer | None = None,
+    max_embeds: int = 1,
 ) -> list[TokenSample]:
     global _LOADED_DATASETS
 
@@ -60,7 +62,7 @@ def maybe_load_local_dataset(
             continue
 
         data_sample: TokenSample = encode(
-            data, tokenizer=tokenizer, data_path=str(path)
+            data, tokenizer=tokenizer, data_path=str(path), max_embed=max_embeds
         )
         data_list.append(data_sample)
 
@@ -156,6 +158,8 @@ def sequence_iterator(
     adapt_seq_len: bool = False,
     continuation: float = 0.0,
     hybrid_task: HybridTask | None = None,
+    max_embeds: int = 1,
+    decompress_usage: str = ''
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -202,6 +206,7 @@ def sequence_iterator(
                         data_type="continuation",
                         is_eval=is_finite,
                         cur_pos=cur_pos,
+                        max_embeds = max_embeds,
                     )
                     if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
                         yield res[0]
@@ -239,6 +244,7 @@ def sequence_iterator(
                         n_missing=n_missing,
                         is_eval=is_finite,
                         cur_pos=cur_pos,
+                        max_embeds = max_embeds,
                     )
 
                     if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -261,6 +267,46 @@ def sequence_iterator(
                         ) = res
                         cur_pos = 0
                         break
+                    
+        elif decompress_usage != '':
+            while True:
+                res = sequence_iterator_decompress_usage(
+                    sample=sample,
+                    x_buffer=x_buffer,
+                    y_buffer=y_buffer,
+                    mask_buffer=mask_buffer,
+                    to_embed_buffer=to_embed_buffer,
+                    sizes=sizes,
+                    seq_len=seq_len,
+                    tokenizer=tokenizer,
+                    adapt_seq_len=adapt_seq_len,
+                    n_missing=n_missing,
+                    is_eval=is_finite,
+                    cur_pos=cur_pos,
+                    max_embeds = max_embeds,
+                    decompress_usage = decompress_usage
+                )
+
+                if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
+                    yield res[0]
+
+                    x_buffer, y_buffer = [], []
+                    mask_buffer = []
+                    to_embed_buffer = []
+                    sizes = []
+                    n_missing = seq_len
+                    cur_pos = res[1]
+                else:
+                    (
+                        x_buffer,
+                        y_buffer,
+                        to_embed_buffer,
+                        mask_buffer,
+                        n_missing,
+                        sizes,
+                    ) = res
+                    cur_pos = 0
+                    break
         else:
 
             tokens, mask = sample.tokens, sample.masks[1:]
@@ -273,7 +319,7 @@ def sequence_iterator(
                     seq_len=seq_len,
                     tokenizer=tokenizer,
                     cur_pos=cur_pos,
-                    max_embeds=hybrid_task.max_embeds,
+                    max_embeds=max_embeds,
                     start_point=hybrid_task.start_point,
                 )
                 if res is None:
@@ -317,6 +363,8 @@ def build_dataset(
     seed: int | None = None,
     shuffle: bool = False,
     continuation: float = 0.0,
+    max_embeds: int = 1,
+    decompress_usage: str = ''
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
 
     data = args.train_data if not is_eval else args.eval_data
@@ -331,6 +379,7 @@ def build_dataset(
             is_finite=is_eval,
             seed=seed,
             shuffle_at_epoch=not is_eval and shuffle,
+            max_embeds=max_embeds,
         )
         for source in sources
     ]
@@ -345,6 +394,8 @@ def build_dataset(
             adapt_seq_len=args.adapt_seq_len,
             continuation=continuation,
             hybrid_task=hybrid_task,
+            max_embeds = max_embeds,
+            decompress_usage = decompress_usage
         )
         for it in dataset_iterators
     ]
@@ -376,6 +427,7 @@ def get_dataset_iterator(
     shuffle_at_epoch: bool,
     tokenizer: Tokenizer,
     seed: int | None = None,
+    max_embeds: int = 1,
 ) -> Iterator[TokenSample]:
     jsonl_files = source.jsonl_files
     rng: np.random.RandomState | None = (
@@ -395,6 +447,7 @@ def get_dataset_iterator(
                         world_size=world_size,
                         rng=rng,
                         tokenizer=tokenizer,
+                        max_embeds=max_embeds,
                     )
                 else:
                     # will read data on-the-fly and yield
@@ -404,6 +457,7 @@ def get_dataset_iterator(
                         rank=rank,
                         world_size=world_size,
                         tokenizer=tokenizer,
+                        max_embeds=max_embeds,
                     )
     else:
         # eval mode
@@ -414,6 +468,7 @@ def get_dataset_iterator(
                 rank=rank,
                 world_size=world_size,
                 tokenizer=tokenizer,
+                max_embeds=max_embeds,
             )
 
 
@@ -423,6 +478,7 @@ def preload_and_yield(
     world_size: int,
     rng: np.random.RandomState,
     tokenizer: Tokenizer | None = None,
+    max_embeds: int = 1,
 ) -> Iterator[TokenSample] | Iterator[str]:
     # only instruct data has to be chunked
     # load dataset if not already loaded. Make sure to only load 1/world_size dataset
@@ -431,6 +487,7 @@ def preload_and_yield(
         rank=rank,
         world_size=world_size,
         tokenizer=tokenizer,
+        max_embeds=max_embeds,
     )
 
     main_logger_info(f"Shuffling {jsonl_file} ...")
@@ -445,6 +502,7 @@ def lazy_load_and_yield(
     rank: int,
     world_size: int,
     tokenizer: Tokenizer | None = None,
+    max_embeds: int = 1,    
 ):
     with jsonl_file.open() as file_handle:
         for idx, line in enumerate(file_handle):
@@ -460,6 +518,7 @@ def lazy_load_and_yield(
                 data,
                 tokenizer=tokenizer,
                 data_path=str(jsonl_file),
+                max_embed=max_embeds,
             )
 
 

@@ -145,6 +145,8 @@ def build_data_loader(
     seed: int | None = None,
     continuation: float = 0.0,
     hybrid_task: HybridTask | None = None,
+    max_embeds: int = 1,
+    decompress_usage: str = "",
 ) -> Iterator[Batch]:
 
     dataset = build_dataset(
@@ -157,6 +159,8 @@ def build_data_loader(
         is_eval=is_eval,
         continuation=continuation,
         hybrid_task=hybrid_task,
+        max_embeds=max_embeds,
+        decompress_usage=decompress_usage,
     )
 
     batch_list_dict = {}

@@ -17,6 +17,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
+Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.0_16BS
 Hybrid_LLM_True_Emb_True_MaxEmb_1_PNoEmbed_0.01_StartPoint_0.0_16BS
 )
 
@@ -53,25 +54,32 @@ case $RUN_NAME in
     --n_passages 500 --max_seq_len 64 --ckpt 35000 #--reconstruct_seq_len 256 --eval_reconstruction
 
 
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
-    --n_passages 500 --max_seq_len 64 --ckpt 30000 --reconstruct_seq_len 256 --eval_reconstruction
+    # srun --gpus=$N_GPU \
+    # micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    # --n_passages 500 --max_seq_len 64 --ckpt 30000 --reconstruct_seq_len 256 --eval_reconstruction
     ;;
 
 *)
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
-    --n_passages 500 --max_seq_len 64 --ckpt 40000 --reconstruct_seq_len 256 --multi_passages 3
-
-
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
-    --n_passages 500 --max_seq_len 64 --ckpt 35000 --reconstruct_seq_len 256 --multi_passages 3
-
+    # srun --gpus=$N_GPU \
+    # micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    # --n_passages 500 --max_seq_len 64 --ckpt 40000 --multi_passages 3
 
     srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
-    --n_passages 500 --max_seq_len 64 --ckpt 30000 --reconstruct_seq_len 256 --multi_passages 3
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    --n_passages 500 --max_seq_len 64 --ckpt 40000 --multi_passages 2
+
+    srun --gpus=$N_GPU \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    --n_passages 500 --max_seq_len 64 --ckpt 40000 --multi_passages 1
+
+    # srun --gpus=$N_GPU \
+    # micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    # --n_passages 500 --max_seq_len 64 --ckpt 35000 --multi_passages 3
+
+
+    # srun --gpus=$N_GPU \
+    # micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    # --n_passages 500 --max_seq_len 64 --ckpt 30000 --reconstruct_seq_len 256 --multi_passages 3
     ;;
 
 esac

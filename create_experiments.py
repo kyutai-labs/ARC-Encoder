@@ -15,7 +15,7 @@ def main(args):
         raise ValueError(f"{args.llm_name} not supported yet !")
 
     config["continuation"] = args.continuation
-    config["pipeline"]["prefix_prompt"] = args.prefix_prompt
+    config["pipeline"]["w_prefix_prompt"] = args.prefix_prompt
     config["llm_name"] = args.llm_name
 
     config["pipeline"]["trainable_llm"] = not args.not_train_llm

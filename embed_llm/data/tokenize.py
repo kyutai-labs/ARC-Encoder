@@ -30,12 +30,13 @@ def encode(
     data: dict[str, object],
     tokenizer: Tokenizer | None = None,
     data_path: str | None = None,
+    max_embed: int = 1,
 ) -> TokenSample | None:
 
-    return get_sample(data, data_path, tokenizer)
+    return get_sample(data, data_path, tokenizer, max_embed)
 
 
-def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
+def get_sample(data: dict[str, object], data_path: str, tokenizer, max_embed: int = 1) -> str:
     if "instruct_data" in data_path.lower() or "qa" in data_path.lower():
 
         question = data["question"]
@@ -49,7 +50,7 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
         if "passage" in data.keys():
             assert isinstance(data["passage"], str) or isinstance(data["passage"], list)
             if isinstance(data["passage"], list):
-                embed_passage = [random.choice(data["passage"])]
+                embed_passage = [data["passage"][:max_embed]]
             else:
                 embed_passage = [data["passage"]]
 
@@ -58,7 +59,7 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
                 data["passages"], list
             )
             if isinstance(data["passages"], list):
-                embed_passage = [random.choice(data["passages"])]
+                embed_passage = [data["passages"][:max_embed]]
             else:
                 embed_passage = [data["passages"]]
         else:
@@ -89,7 +90,7 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer) -> str:
         sample = data["text"]
         if data.get("passage") is not None:
             passages = data["passage"]
-            embed_passage = passages if isinstance(passages, list) else [passages]
+            embed_passage = [passages] if not isinstance(passages, list) else passages[:max_embed]
         else:
             embed_passage = [sample]
 

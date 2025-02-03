@@ -38,7 +38,8 @@ class EmbedAugArgs(Serializable):
     trainable_llm: bool = True
     w_prefix_prompt: bool = False
     gate_bottleneck: int = 8
-
+    max_embeds: int = 1
+    
     # Could be simplified
     cross_att: bool = False
     cross_att_layers: int | None = None
