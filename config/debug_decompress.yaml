@@ -1,7 +1,8 @@
 model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
-exp_name: test_pretrain
+exp_name: test_decompress
+start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/ToyPretraining_LLM_False_Emb_True_MaxEmb_1_pure_reconstruct_16BS/checkpoints/checkpoint_030000
 # continuation: 1.0
 # textual_continuation: 0.0
 lora:
@@ -9,7 +10,13 @@ lora:
   scaling: 2.0
   enable: true
 
-
+toy_tests:
+  do: true
+  kl_pretraining: false
+  alpha: 1.0
+  tune_llm: true
+  tune_embedder: false
+  decompress_usage: 'reversed'
 
 
 pipeline:
@@ -26,7 +33,7 @@ pipeline:
     n_layers: 1
     type: mlp
   n_truncated_layers: 8
-  pooled_cross_att: false
+  pooled_cross_att: true
   pooling_module:
     n_heads: 8
     r: 512
@@ -36,7 +43,7 @@ pipeline:
   train_only_pooling: false
   trainable_embedder: false
   trainable_llm: false
-  max_embeds: 3
+  max_embeds: 1
   w_embeds: true
 
 data:
@@ -48,7 +55,7 @@ data:
 seq_len: 256
 batch_size: 32
 num_microbatches: 1
-max_steps: 40000
+max_steps: 30000
 optim:
   max_lr: 5.0e-05
   weight_decay: 0.1

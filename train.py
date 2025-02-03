@@ -298,7 +298,8 @@ def _train(
             is_eval=True,
             continuation=False,
             hybrid_task=None,
-            max_embeds = args.pipeline.max_embeds
+            max_embeds = args.pipeline.max_embeds,
+            decompress_usage= '' if not args.toy_tests.do else args.toy_tests.decompress_usage,
         )
 
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
@@ -332,7 +333,6 @@ def _train(
             )
             
             # pre-load all eval batches, 40 batches * n_gpus * batch_size // n_gpus
-            # print('EVAL DATA LOADER LEN',len(list(eval_data_loader_4cont)))
             eval_batches_4cont = []
             while len(eval_batches_4cont) < 40:
                 batch = next(eval_data_loader_4cont)

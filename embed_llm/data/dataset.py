@@ -181,7 +181,7 @@ def sequence_iterator(
     n_missing = seq_len
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
-        if hybrid_task is None or not hybrid_task.do:    
+        if (hybrid_task is None or not hybrid_task.do) and decompress_usage == '':    
             rand_continue = np.random.rand()
             if (is_finite and continuation > 0) or continuation >= 1.0:
                 do_continuation = True
@@ -279,9 +279,7 @@ def sequence_iterator(
                     sizes=sizes,
                     seq_len=seq_len,
                     tokenizer=tokenizer,
-                    adapt_seq_len=adapt_seq_len,
                     n_missing=n_missing,
-                    is_eval=is_finite,
                     cur_pos=cur_pos,
                     max_embeds = max_embeds,
                     decompress_usage = decompress_usage

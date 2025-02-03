@@ -430,20 +430,16 @@ def sequence_iterator_decompress_usage(
     sample: TokenSample,
     seq_len: int,
     tokenizer: Tokenizer,
-    adapt_seq_len: bool = False,
-    is_eval: bool = False,
     max_embeds: int = 1,
     decompress_usage: str = "",
 ) -> SequenceEmbedMaskAndSizes:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
     """
-
     assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
-    if not adapt_seq_len:
-        assert n_missing == seq_len - len(
-            x_buffer
-        ), f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
+    assert n_missing == seq_len - len(
+        x_buffer
+    ), f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
     
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
@@ -452,22 +448,12 @@ def sequence_iterator_decompress_usage(
 
     while cur_pos < len(x):
         size = len(x[cur_pos : cur_pos + n_missing])
-        curr_mask = mask[cur_pos : cur_pos + n_missing]
-        
-        if not any(curr_mask):
-            cur_pos += size
-            # we have a sequence with a mask filled with False
-            continue
-
-        x_buffer.extend(x[cur_pos : cur_pos + n_missing])
-        y_buffer.extend(y[cur_pos : cur_pos + n_missing])
-
         # If instruct data type do not split the passage into smaller embeddings
         if data_type == "reconstruction" and len(embed_tokens) == 1: 
             
             nb_embed = np.random.randint(1, max_embeds + 1)
             new_embed = []
-            n_toks_per_embed = len(embed_tokens[0][cur_pos : cur_pos + n_missing]) // nb_embed
+            n_toks_per_embed = len(embed_tokens[0][cur_pos : cur_pos + seq_len]) // nb_embed
             
             for i in range(nb_embed):
                 new_embed.append(
@@ -482,31 +468,36 @@ def sequence_iterator_decompress_usage(
             )
            
         else:
-            # If several passages loaded we use these passages directly
-            # If we want to reconstruct from several chunks of embedded text, we need to be able to reconstruct the full passage
-            assert adapt_seq_len
-            new_embed_tokens =  [toks[:seq_len] for toks in embed_tokens]
-            new_embed_text = [tokenizer.decode(toks[:seq_len]) for toks in embed_tokens]
-            to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
+            raise ValueError("Decompress usage only supports one passage per sample")   
 
-        if is_eval:
-            curr_mask = [False] * (len(curr_mask)//10) + [True] * (len(curr_mask) - len(curr_mask)//10)
+        if decompress_usage == 'middle_reconstruction':
+            middle = len(x[cur_pos : cur_pos + seq_len]) // 2
+            x_buffer.extend(x[cur_pos + middle : cur_pos + seq_len])
+            y_buffer.extend(y[cur_pos + middle : cur_pos + seq_len])
+            mask_buffer.extend(len(y[cur_pos + middle : cur_pos + seq_len]) * [True])
+            x_size = len(x[cur_pos + middle : cur_pos + seq_len])
+        elif decompress_usage == 'one_over_two_reconstruction':
+            x_buffer.extend(x[cur_pos : cur_pos + seq_len:2])
+            y_buffer.extend(y[cur_pos : cur_pos + seq_len:2])
+            mask_buffer.extend(len(y[cur_pos : cur_pos + seq_len:2])*[True])
+            x_size = len(x[cur_pos : cur_pos + seq_len:2])
+        elif decompress_usage == 'reversed':
+            x_buffer.extend(x[cur_pos + seq_len-1: cur_pos:-1])
+            y_buffer.extend(y[cur_pos + seq_len-1: cur_pos:-1])
+            mask_buffer.extend(len(y[cur_pos + seq_len-1: cur_pos:-1])*[True])
+            x_size = len(y[cur_pos + seq_len-1: cur_pos:-1])
+
+        else:
+            raise NotImplementedError(f"Decompress usage {decompress_usage} not supported")
             
-        mask_buffer.extend(curr_mask)
-        
-        if not adapt_seq_len:
-            n_missing -= size
-
-        sizes.append(size)
-
         cur_pos += size
-        if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
-            assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
-            assert len(x_buffer) <= seq_len
+        sizes.append(x_size)
 
-            if not adapt_seq_len:
-                assert sum(sizes) == seq_len
-                assert seq_len == len(x_buffer)
+        n_missing -= x_size
+
+        if n_missing <= 0:
+            assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
+            assert all([size > 0 for size in sizes]), 'All sizes should be greater than 0'
 
             assert len(to_embed_buffer) == len(sizes)
             # we don't want to yield sequences with a mask filled with False
@@ -519,7 +510,5 @@ def sequence_iterator_decompress_usage(
                     sizes=sizes,
                     data_type=data_type
                 ), cur_pos
-
-            if adapt_seq_len:
-                break
+                
     return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes
