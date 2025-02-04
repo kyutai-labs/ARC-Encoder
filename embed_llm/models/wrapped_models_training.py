@@ -281,6 +281,9 @@ def load_training_model(
 
     main_logger_info("Model sharded!")
 
+    for name, param in wrapped_model.named_parameters():
+        if 'gate' in name:
+            print(name, param.requires_grad,torch.sum(param))
     return (
         augmented_pipeline,
         wrapped_model,
