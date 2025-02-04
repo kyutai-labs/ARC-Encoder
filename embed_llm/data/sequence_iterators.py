@@ -508,8 +508,8 @@ def sequence_iterator_decompress_usage(
             mask_buffer.extend(len(y[cur_pos : cur_pos + seq_len:2])*[True])
             x_size = len(x[cur_pos : cur_pos + seq_len:2])
         elif decompress_usage == 'reversed':
-            x_buffer.extend(x[cur_pos + seq_len-1: cur_pos:-1])
-            y_buffer.extend(y[cur_pos + seq_len-1: cur_pos:-1])
+            x_buffer.extend(y[cur_pos + seq_len-1: cur_pos:-1])
+            y_buffer.extend(x[cur_pos + seq_len-1: cur_pos:-1])
             mask_buffer.extend(len(y[cur_pos + seq_len-1: cur_pos:-1])*[True])
             x_size = len(y[cur_pos + seq_len-1: cur_pos:-1])
             if x_size == 0:

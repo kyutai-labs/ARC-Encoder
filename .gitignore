@@ -16,3 +16,4 @@ check_loading.py
 testscript.sh
 embed_llm/continuation_test.ipynb
 results/ColBERT
+results/gate_values
