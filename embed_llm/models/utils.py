@@ -174,7 +174,7 @@ def initialize_cross_att_project(model: torch.nn.Module, param_dtype: torch.dtyp
                     )
                     # Replace the old param with the new ones
                     param = module._parameters[p_name]
-                    if "gate" in p_name:
+                    if "gate.layer2" in p_name:
                         torch.nn.init.zeros_(param)
                     else:
                         torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))

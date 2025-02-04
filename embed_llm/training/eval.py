@@ -180,9 +180,9 @@ def evaluate(
                     )
 
                     kl_dv_loss = compute_kl_loss_with_mask(
-                        rag_logits=rag_output,
+                        target_logits=rag_output,
                         pred_logits=output,
-                        rag_mask=y_mask_rag,
+                        target_mask=y_mask_rag,
                         pred_mask=y_mask,
                         temp=instruction_tuning.temp,
                     )

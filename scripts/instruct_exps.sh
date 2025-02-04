@@ -41,7 +41,7 @@ echo "Starting at: $(date)"
 
 # Run the actual job, allocate with srun to refresh the context
 srun --gpus=$N_GPU \
-    micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json
+    micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG 
 
 RUN_NAME=$(basename "$CONFIG" .yaml)
 
