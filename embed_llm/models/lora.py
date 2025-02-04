@@ -129,9 +129,6 @@ class LoRALoaderMixin:
         scaling: float = 2.0,
         cross_att: bool = False,
     ) -> None:
-        if not lora_state_dict:
-            print("No LoRA weights found in the checkpoint.")
-            return
         """Loads LoRA state_dict"""
         lora_dtypes = set([p.dtype for p in lora_state_dict.values()])
         assert (

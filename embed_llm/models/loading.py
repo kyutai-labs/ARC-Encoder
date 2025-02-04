@@ -216,9 +216,8 @@ def get_instruct_ckpts_paths(
     with open(instruct_ckpt + "/instruct.json", "r") as f:
         instruct_args = json.loads(f.read())
 
-    instruct_args = InstructionTuningArgs(**instruct_args)
 
-    if pipeline_args.trainable_embedder and instruct_args.tune_embedder:
+    if pipeline_args.trainable_embedder and instruct_args['tune_embedder']:
         logger.info("Loading trainable embedder from " + trainable_embedder_path)
         embedder_lora_state_dict_path = trainable_embedder_path
 
@@ -232,7 +231,7 @@ def get_instruct_ckpts_paths(
     if pipeline_args.cross_att:
         ca_state_dict_path = ca_and_lora_path
 
-    if pipeline_args.trainable_llm and instruct_args.tune_llm:
+    if pipeline_args.trainable_llm and instruct_args['tune_llm']:
         llm_lora_state_dict_path = ca_and_lora_path
 
     return (

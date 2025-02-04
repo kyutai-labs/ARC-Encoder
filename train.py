@@ -378,7 +378,7 @@ def _train(
         num_ckpt_keep=args.num_ckpt_keep,
         pipeline=pipeline,
         llm_name=args.llm_name,
-        instruction_tuning=args.instruct_tuning,
+        instruction_tuning=args.instruct_tuning if args.instruct_tuning.do else args.toy_tests,
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
@@ -443,6 +443,7 @@ def _train(
 
             # if get_rank() == 0:
             #     to_gen = [int(tok) for tok in batch.x[:batch.sizes[0]]]
+            #     target = [int(tok) for tok in batch.y[:batch.sizes[0]]]
             #     embed = [int(tokens) for l_tokens in batch.to_embed[0]["tokens"] for tokens in l_tokens]
             #     # print('N_prefix', batch.n_prefixes[0])
             #     print('Sizes', batch.sizes)
@@ -450,7 +451,9 @@ def _train(
             #     # print("Embed", batch.y_mask[:batch.sizes[0]])
             #     print("To embed", pipeline.tokenizer.decode(embed)[:])
             #     print("To generate", pipeline.tokenizer.decode(to_gen)[:100])
-                
+            #     print("Target", pipeline.tokenizer.decode(target)[:100])
+            #     if y_mask is not None:
+            #         print('Mask', y_mask[:batch.sizes[0]])
 
             if args.textual_continuation * args.continuation > 0.0 or (
                 args.hybrid_task.prop_noembed_continuation > 0.0 and args.hybrid_task.do

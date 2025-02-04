@@ -242,6 +242,8 @@ def sequence_iterator_reconstruction(
                 nb_embed = abs(max_embeds)
             elif max_embeds > 1:
                 nb_embed = np.random.randint(1, max_embeds + 1)
+            elif max_embeds == 1:
+                nb_embed = 1
                 
             new_embed = []
             n_toks_per_embed = len(embed_tokens[0][cur_pos : cur_pos + n_missing]) // nb_embed
@@ -387,6 +389,8 @@ def sequence_iterator_continuation(
             nb_embed = abs(max_embeds)
         elif max_embeds > 1:
             nb_embed = np.random.randint(1, max_embeds + 1)
+        elif max_embeds == 1:
+            nb_embed = 1
             
         new_embed = []
         n_toks_per_embed = len(embed_tokens[0][
@@ -471,6 +475,8 @@ def sequence_iterator_decompress_usage(
                 nb_embed = abs(max_embeds)
             elif max_embeds > 1:
                 nb_embed = np.random.randint(1, max_embeds + 1)
+            elif max_embeds == 1:
+                nb_embed = 1
                 
             new_embed = []
             n_toks_per_embed = len(embed_tokens[0][cur_pos : cur_pos + seq_len]) // nb_embed
