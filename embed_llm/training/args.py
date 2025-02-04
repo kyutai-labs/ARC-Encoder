@@ -59,7 +59,7 @@ class ToyTests(Serializable):
     kl_pretraining: bool = False
     alpha: float = 2.0
     temp: float = 1.0
-    decompress_usage: str = 'none'
+    decompress_usage: str = ''
     tune_llm: bool = False
     tune_embedder: bool = False
     

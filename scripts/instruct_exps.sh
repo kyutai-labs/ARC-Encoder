@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=instruct_exps
-#SBATCH --dependency=afterok:647979_1
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx32,par2dc5-ai-prd-cl02s04dgx31,par2dc5-ai-prd-cl02s01dgx25,par2dc5-ai-prd-cl02s04dgx05,par2dc5-ai-prd-cl02s04dgx15,par2dc5-ai-prd-cl02s02dgx18,par2dc5-ai-prd-cl02s04dgx18,par2dc5-ai-prd-cl02s02dgx11,par2dc5-ai-prd-cl02s02dgx08,par2dc5-ai-prd-cl02s02dgx14,par2dc5-ai-prd-cl02s01dgx01
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
 
 
@@ -17,7 +17,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.0_16BS.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_Hybrid_LLM_False_Emb_False_MaxEmb_3_start_0.0.yaml
 )
 
 
@@ -41,7 +41,7 @@ echo "Starting at: $(date)"
 
 # Run the actual job, allocate with srun to refresh the context
 srun --gpus=$N_GPU \
-    micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG /home/hippolytepilchen/code/embed_llm/config/experiments/data_configs/instruct_data_less_QA.jsonl 
+    micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json
 
 RUN_NAME=$(basename "$CONFIG" .yaml)
 
@@ -49,7 +49,15 @@ echo "Starting evaluation of run $RUN_NAME"
 
 srun --gpus=$N_GPU \
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json \
-    --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME 
+    --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 3
+
+srun --gpus=$N_GPU \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json \
+    --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 2
+
+srun --gpus=$N_GPU \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json \
+    --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1
    
 echo "Finished at: $(date)"
 

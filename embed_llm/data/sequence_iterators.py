@@ -486,7 +486,8 @@ def sequence_iterator_decompress_usage(
             y_buffer.extend(y[cur_pos + seq_len-1: cur_pos:-1])
             mask_buffer.extend(len(y[cur_pos + seq_len-1: cur_pos:-1])*[True])
             x_size = len(y[cur_pos + seq_len-1: cur_pos:-1])
-
+            if x_size == 0:
+                return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes
         else:
             raise NotImplementedError(f"Decompress usage {decompress_usage} not supported")
             

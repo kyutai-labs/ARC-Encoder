@@ -511,7 +511,7 @@ def load_training_model_from_ckpt(
             param.requires_grad = True
         elif "mlp_project" in name:
             param.requires_grad = True
-        elif "pooling_module" in name:
+        elif "pooling_module" in name and tune_embedder:
             param.requires_grad = True
         else:
             param.requires_grad = False

@@ -441,15 +441,15 @@ def _train(
             # start_time = time.time()
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
 
-            # if get_rank() == 0:
-            #     to_gen = [int(tok) for tok in batch.x[:batch.sizes[0]]]
-            #     embed = [int(tokens) for l_tokens in batch.to_embed[0]["tokens"] for tokens in l_tokens]
-            #     # print('N_prefix', batch.n_prefixes[0])
-            #     print('Sizes', batch.sizes)
-            #     print("Embed seqlens", embed_seqlens)
-            #     # print("Embed", batch.y_mask[:batch.sizes[0]])
-            #     print("To embed", pipeline.tokenizer.decode(embed)[:])
-            #     print("To generate", pipeline.tokenizer.decode(to_gen)[:100])
+            if get_rank() == 0:
+                to_gen = [int(tok) for tok in batch.x[:batch.sizes[0]]]
+                embed = [int(tokens) for l_tokens in batch.to_embed[0]["tokens"] for tokens in l_tokens]
+                # print('N_prefix', batch.n_prefixes[0])
+                print('Sizes', batch.sizes)
+                print("Embed seqlens", embed_seqlens)
+                # print("Embed", batch.y_mask[:batch.sizes[0]])
+                print("To embed", pipeline.tokenizer.decode(embed)[:])
+                print("To generate", pipeline.tokenizer.decode(to_gen)[:100])
                 
 
             if args.textual_continuation * args.continuation > 0.0 or (

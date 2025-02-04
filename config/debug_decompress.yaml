@@ -2,13 +2,14 @@ model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_decompress
-start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/ToyPretraining_LLM_False_Emb_True_MaxEmb_1_pure_reconstruct_16BS/checkpoints/checkpoint_030000
-# continuation: 1.0
-# textual_continuation: 0.0
+
 lora:
   rank: 64
   scaling: 2.0
   enable: true
+
+start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/ToyPretraining_LLM_False_Emb_True_MaxEmb_1_pure_reconstruct_16BS/checkpoints/checkpoint_030000
+continuation: false
 
 toy_tests:
   do: true
@@ -17,34 +18,6 @@ toy_tests:
   tune_llm: true
   tune_embedder: false
   decompress_usage: 'reversed'
-
-
-pipeline:
-  cross_att: true
-  cross_att_layers: null
-  do_both: true
-  do_pool: true
-  embedder_name: NVEmbed
-  every_cross_att: 2
-  gate_bottleneck: 8
-  mlp_project:
-    act: gelu
-    hidden_dim: 4096
-    n_layers: 1
-    type: mlp
-  n_truncated_layers: 8
-  pooled_cross_att: true
-  pooling_module:
-    n_heads: 8
-    r: 512
-    type: latent_attention
-  prefix_prompt: false
-  shared_kv: false
-  train_only_pooling: false
-  trainable_embedder: false
-  trainable_llm: false
-  max_embeds: 1
-  w_embeds: true
 
 data:
   adapt_seq_len: false

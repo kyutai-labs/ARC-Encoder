@@ -12,7 +12,7 @@ from pathlib import Path
 from mistral_inference.transformer import Transformer
 from mistral_inference.generate import generate
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-
+from nltk.tokenize import sent_tokenize
 from embed_llm.generation.utils import eval_logger_info
 from embed_llm.models.augmented_model import EmbedAugPipeline
 from embed_llm.models.utils import is_torchrun
@@ -227,6 +227,7 @@ def evaluate_QA(
     instruct_name: str = None,
     prompt_before_embed: bool = False,
     colbert: bool = False,
+    split_to_multipassage: bool = False,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
@@ -299,7 +300,16 @@ def evaluate_QA(
                 if max_multi_passage <= 1:
                     context.append(data["passages"][0].strip())
                 else:
-                    context.append(list(data["passages"][:max_multi_passage]))
+                    if split_to_multipassage:
+                        l_sent = sent_tokenize(data["passages"][0])
+                        if len(l_sent) < max_multi_passage:
+                            l_sent = data["passages"][0].split(" ")
+                        multi_passage = []
+                        for i in range(max_multi_passage):
+                            multi_passage.append(' '.join(l_sent[i*len(l_sent)//max_multi_passage:(i+1)*len(l_sent)//max_multi_passage]))
+                        context.append(multi_passage)
+                    else:
+                        context.append(list(data["passages"][:max_multi_passage]))
 
         if benchmark == "NQ" and kilt:
             test_pairs = []
@@ -498,6 +508,7 @@ def evaluate_QA(
                     "approx_Metric": value_approx,
                     "Prop context containing the answer": n_answer_in_context,
                     "n_passages": max_multi_passage,
+                    "1 passage splitted ?": split_to_multipassage,
                     "colbert": colbert,
                 }
                 value_f1 = (
@@ -517,6 +528,7 @@ def evaluate_QA(
                     "w_context_w_query": query_w_context,
                     "Metric": value_f1,
                     "n_passages": max_multi_passage,
+                    "1 passage splitted ?": split_to_multipassage,
                     "colbert": colbert,
                 }
                 eval_logger_info(logger,
@@ -545,6 +557,7 @@ def evaluate_QA(
                     "Metric": value,
                     "w_context_in_examples": icl_w_context,
                     "n_passages": max_multi_passage,
+                    "1 passage splitted ?": split_to_multipassage,
                     "colbert": colbert,
                 }
 
@@ -863,7 +876,7 @@ def arg_parser():
     parser.add_argument("--eval_reconstruction", action="store_true")
     parser.add_argument("--out_file", type=str, default=None)
     parser.add_argument("--n_passages", type=int, default=500)
-    parser.add_argument("--max_seq_len", type=int, default=128)
+    parser.add_argument("--max_seq_len", type=int, default=64)
     parser.add_argument("--bs", type=int, default=4)
     parser.add_argument("--mistral", action="store_true")
     parser.add_argument("--wo_embeds", action="store_false")
@@ -874,6 +887,7 @@ def arg_parser():
     parser.add_argument("--colbert", action="store_true")
     parser.add_argument("--benchmarks", type=str, default="all")
     parser.add_argument("--prompt_before_embed", action="store_true")
+    parser.add_argument("--split_to_multipassage", action="store_true")
 
     return parser.parse_args()
 
@@ -946,6 +960,7 @@ if __name__ == "__main__":
             w_embeds=False,
             colbert=args.colbert,
             max_multi_passage=args.multi_passages,
+            split_to_multipassage=args.split_to_multipassage,
         )
         torch.cuda.empty_cache()
 
@@ -986,6 +1001,7 @@ if __name__ == "__main__":
                 pipeline=mistral_model,
                 colbert=args.colbert,
                 max_multi_passage=args.multi_passages,
+                split_to_multipassage=args.split_to_multipassage,
             )
             torch.cuda.empty_cache()
 
@@ -1005,6 +1021,7 @@ if __name__ == "__main__":
             query_w_context=True,
             w_embeds=False,
             colbert=args.colbert,
+            split_to_multipassage=args.split_to_multipassage,
         )
         torch.cuda.empty_cache()
 
@@ -1092,6 +1109,7 @@ if __name__ == "__main__":
             instruct_name=args.instruct_name,
             colbert=args.colbert,
             prompt_before_embed=args.prompt_before_embed,
+            split_to_multipassage=args.split_to_multipassage,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -1113,4 +1131,5 @@ if __name__ == "__main__":
                 instruct_name=args.instruct_name,
                 colbert=args.colbert,
                 prompt_before_embed=args.prompt_before_embed,
+                split_to_multipassage=args.split_to_multipassage,
             )
