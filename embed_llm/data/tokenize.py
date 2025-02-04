@@ -59,7 +59,13 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer, max_embed: in
                 data["passages"], list
             )
             if isinstance(data["passages"], list):
-                embed_passage = [data["passages"][:max_embed]]
+                if max_embed <= -1:
+                    embed_passage = [data["passages"][:-max_embed]]
+                elif max_embed == 1:
+                    embed_passage = [data["passages"][:max_embed]]
+                elif max_embed > 1:
+                    n_embed = random.randint(1, max_embed)
+                    embed_passage = [data["passages"][:n_embed]]
             else:
                 embed_passage = [data["passages"]]
         else:
@@ -90,7 +96,16 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer, max_embed: in
         sample = data["text"]
         if data.get("passage") is not None:
             passages = data["passage"]
-            embed_passage = [passages] if not isinstance(passages, list) else passages[:max_embed]
+            
+            if max_embed <= -1:
+                n_embed = -max_embed
+            elif max_embed == 1:
+                n_embed = max_embed
+            elif max_embed > 1:
+                n_embed = random.randint(1, max_embed)
+        
+                
+            embed_passage = [passages] if not isinstance(passages, list) else passages[:n_embed]
         else:
             embed_passage = [sample]
 

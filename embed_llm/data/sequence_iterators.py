@@ -60,7 +60,12 @@ def sequence_iterator_one_task_4_all(
             )
             end_embed = seq_len
         else:
-            nb_embed = np.random.randint(1, max_embeds + 1)
+            
+            if max_embeds <= -1:
+                nb_embed = abs(max_embeds)
+            elif max_embeds > 1:
+                nb_embed = np.random.randint(1, max_embeds + 1)
+        
             new_embed = []
             n_embed_toks = 0
 
@@ -117,7 +122,10 @@ def sequence_iterator_one_task_4_all(
         and (len(x) - cur_pos - 10) // max_embeds > 0
     ):
         # 10 of prefix + minimum 2 tokens to continue
-        nb_embed = np.random.randint(1, max_embeds + 1)
+        if max_embeds <= -1:
+            nb_embed = abs(max_embeds)
+        elif max_embeds > 1:
+            nb_embed = np.random.randint(1, max_embeds + 1)
         new_embed = []
         n_embed_toks = 0
 
@@ -230,7 +238,11 @@ def sequence_iterator_reconstruction(
         # If instruct data type do not split the passage into smaller embeddings
         if data_type == "reconstruction" and len(embed_tokens) == 1: 
             
-            nb_embed = np.random.randint(1, max_embeds + 1)
+            if max_embeds <= -1:
+                nb_embed = abs(max_embeds)
+            elif max_embeds > 1:
+                nb_embed = np.random.randint(1, max_embeds + 1)
+                
             new_embed = []
             n_toks_per_embed = len(embed_tokens[0][cur_pos : cur_pos + n_missing]) // nb_embed
             
@@ -371,7 +383,11 @@ def sequence_iterator_continuation(
         if len(embed_tokens) > 1:
             print("Continuation training only supports one passage per sample")
             
-        nb_embed = np.random.randint(1, max_embeds + 1)
+        if max_embeds <= -1:
+            nb_embed = abs(max_embeds)
+        elif max_embeds > 1:
+            nb_embed = np.random.randint(1, max_embeds + 1)
+            
         new_embed = []
         n_toks_per_embed = len(embed_tokens[0][
                             cur_pos : cur_pos + (upper_bound - cur_pos) // 2
@@ -451,7 +467,11 @@ def sequence_iterator_decompress_usage(
         # If instruct data type do not split the passage into smaller embeddings
         if data_type == "reconstruction" and len(embed_tokens) == 1: 
             
-            nb_embed = np.random.randint(1, max_embeds + 1)
+            if max_embeds <= -1:
+                nb_embed = abs(max_embeds)
+            elif max_embeds > 1:
+                nb_embed = np.random.randint(1, max_embeds + 1)
+                
             new_embed = []
             n_toks_per_embed = len(embed_tokens[0][cur_pos : cur_pos + seq_len]) // nb_embed
             

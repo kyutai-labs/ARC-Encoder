@@ -228,6 +228,7 @@ def evaluate_QA(
     prompt_before_embed: bool = False,
     colbert: bool = False,
     split_to_multipassage: bool = False,
+    seed: float = 0.42,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
@@ -329,7 +330,7 @@ def evaluate_QA(
         # fixed_random = random.Random()
         # fixed_random.seed(42)
         # fixed_random.shuffle(c)
-        random.shuffle(c, random=lambda: 0.42)
+        random.shuffle(c, random=lambda: seed)
         questions, context, answers = zip(*c)
 
         eval_logger_info(logger,f"Evaluation dataset loaded for {benchmark}")
@@ -888,6 +889,7 @@ def arg_parser():
     parser.add_argument("--benchmarks", type=str, default="all")
     parser.add_argument("--prompt_before_embed", action="store_true")
     parser.add_argument("--split_to_multipassage", action="store_true")
+    parser.add_argument("--seed", type=float, default=0.42)
 
     return parser.parse_args()
 
@@ -961,6 +963,7 @@ if __name__ == "__main__":
             colbert=args.colbert,
             max_multi_passage=args.multi_passages,
             split_to_multipassage=args.split_to_multipassage,
+            seed=args.seed,
         )
         torch.cuda.empty_cache()
 
@@ -1002,6 +1005,7 @@ if __name__ == "__main__":
                 colbert=args.colbert,
                 max_multi_passage=args.multi_passages,
                 split_to_multipassage=args.split_to_multipassage,
+                seed=args.seed,
             )
             torch.cuda.empty_cache()
 
@@ -1022,6 +1026,7 @@ if __name__ == "__main__":
             w_embeds=False,
             colbert=args.colbert,
             split_to_multipassage=args.split_to_multipassage,
+            seed=args.seed,
         )
         torch.cuda.empty_cache()
 
@@ -1110,6 +1115,7 @@ if __name__ == "__main__":
             colbert=args.colbert,
             prompt_before_embed=args.prompt_before_embed,
             split_to_multipassage=args.split_to_multipassage,
+            seed=args.seed,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -1132,4 +1138,5 @@ if __name__ == "__main__":
                 colbert=args.colbert,
                 prompt_before_embed=args.prompt_before_embed,
                 split_to_multipassage=args.split_to_multipassage,
+                seed=args.seed,
             )
