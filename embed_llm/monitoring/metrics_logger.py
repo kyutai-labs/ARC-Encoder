@@ -83,10 +83,10 @@ def get_eval_logs(
         eval_dict["eval_loss_embcont"] = eval_loss_embcont
 
     if train_cross_entropy is not None:
-        eval_dict["instruct_cross_entropy"] = train_cross_entropy
+        eval_dict["train_cross_entropy"] = train_cross_entropy
 
     if train_kl is not None:
-        eval_dict["instruct_kl"] = train_kl
+        eval_dict["train_kl"] = train_kl
 
     if eval_kl_loss is not None:
         eval_dict["eval_kl_loss"] = eval_kl_loss

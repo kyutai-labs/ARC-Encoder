@@ -529,6 +529,12 @@ def sequence_iterator_decompress_usage(
             x_size = len(y[cur_pos + seq_len-1: cur_pos:-1])
             if x_size == 0:
                 return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes
+        elif decompress_usage == 'from_prefix_reconstruct':
+            start_prefix = np.random.randint(0,len(x[cur_pos : cur_pos + seq_len]) + 1 - 10)
+            x_buffer.extend(x[cur_pos + start_prefix: cur_pos + seq_len])
+            y_buffer.extend(y[cur_pos + start_prefix: cur_pos + seq_len])
+            mask_buffer.extend(5*[False]+len(y[cur_pos + start_prefix + 5: cur_pos + seq_len])*[True]) # Give 5 prefix overlapping tokens to set from where to reconstruct
+            x_size = len(x[cur_pos + start_prefix: cur_pos + seq_len])
         else:
             raise NotImplementedError(f"Decompress usage {decompress_usage} not supported")
             
