@@ -93,11 +93,12 @@ def load_args(
         norm_eps=args["norm_eps"],
         vocab_size=args["vocab_size"],
         max_batch_size=max_batch_size,
-        start_cross_att=(
+        cross_att_layers=(
             -1
             if pipeline_args.cross_att_layers is None
-            else max(args["n_layers"] - pipeline_args.cross_att_layers, 0)
+            else pipeline_args.cross_att_layers
         ),
+        begin_cross_att = False if pipeline_args.begin_cross_att is None else pipeline_args.begin_cross_att,
         every_cross_att=(
             -1
             if pipeline_args.every_cross_att is None

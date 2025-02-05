@@ -45,6 +45,7 @@ class EmbedAugArgs(Serializable):
     cross_att_layers: int | None = None
     pooled_cross_att: bool = False
     every_cross_att: int | None = None
+    begin_cross_att: bool = False
     do_both: bool = False
     w_embeds: bool = False
 
@@ -74,7 +75,8 @@ class MistralModelArgs(Serializable):
     model_type: str = "transformer"
 
     # Parameters specific for cross-attention models
-    start_cross_att: int | None = None
+    cross_att_layers: int | None = None
+    begin_cross_att: bool = False
     shared_kv: bool = True
     pooled_cross_att: bool = False
     every_cross_att: int | None = None

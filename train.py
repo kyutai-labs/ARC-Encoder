@@ -450,8 +450,8 @@ def _train(
             #     print("Embed seqlens", embed_seqlens)
             #     # print("Embed", batch.y_mask[:batch.sizes[0]])
             #     print("To embed", pipeline.tokenizer.decode(embed)[:])
-            #     print("To generate", pipeline.tokenizer.decode(to_gen)[:100])
-            #     print("Target", pipeline.tokenizer.decode(target)[:100])
+            #     print("To generate",to_gen[:2] ,pipeline.tokenizer.decode(to_gen)[:100])
+            #     print("Target",target[:2] ,pipeline.tokenizer.decode(target)[:100])
             #     if y_mask is not None:
             #         print('Mask', y_mask[:batch.sizes[0]])
 

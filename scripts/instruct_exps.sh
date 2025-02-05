@@ -21,6 +21,7 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha0.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha1_highlr.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha1.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha2_lowlr.yaml
 )
 
 
