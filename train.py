@@ -297,7 +297,7 @@ def _train(
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
             continuation=False,
-            hybrid_task=None,
+            hybrid_task=args.hybrid_task,
             max_embeds = pipeline.pipeline_args.max_embeds if not args.instruct_tuning.do else min(pipeline.pipeline_args.max_embeds, args.instruct_tuning.max_embeds),
             decompress_usage= '' if not args.toy_tests.do else args.toy_tests.decompress_usage,
         )
@@ -328,7 +328,7 @@ def _train(
                 world_size=get_world_size(),  # DDP world_size
                 is_eval=True,
                 continuation=True,
-                hybrid_task=None,
+                hybrid_task=args.hybrid_task,
                 max_embeds = pipeline.pipeline_args.max_embeds
             )
             
@@ -776,15 +776,15 @@ def _train(
                 avg_loss,
                 state.this_eval_perplexity_rec,
                 state.this_eval_loss_rec,
-                perplexity_textcont=state.this_eval_perplexity_textcont,
+                eval_ppl_textcont=state.this_eval_perplexity_textcont,
                 eval_loss_textcont=state.this_eval_loss_textcont,
-                perplexity_embcont=state.this_eval_perplexity_embcont,
+                eval_ppl_embcont=state.this_eval_perplexity_embcont,
                 eval_loss_embcont=state.this_eval_loss_embcont,
                 eval_kl_loss=state.this_eval_kl_loss,
-                instruct_cross_entropy=cross_entropy_loss_avg,
-                instruct_kl=kl_loss_avg,
+                train_cross_entropy=cross_entropy_loss_avg,
+                train_kl=kl_loss_avg,
                 eval_loss_nocontext=state.this_eval_loss_nocontext,
-                eval_perplexity_nocontext=state.this_eval_perplexity_nocontext,
+                eval_ppl_nocontext=state.this_eval_perplexity_nocontext,
             )
 
             main_logger_info(eval_log_msg(eval_logs))

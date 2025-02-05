@@ -169,10 +169,23 @@ def load_pipeline(
                         ).exists()
                     ]
                 )[-1]
-
+                
+                last_ckpt_run_name =sorted(
+                    [
+                        ckpt_name
+                        for ckpt_name in os.listdir(
+                            tmp_path + run_name + "/checkpoints/"
+                        )
+                        if (
+                            Path(tmp_path + run_name + "/checkpoints/")
+                            / ckpt_name
+                            / "params.json"
+                        ).exists()
+                    ]
+                )[-1]
                 pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
                     llm_path=llm_path,
-                    ckpt_path=None,
+                    ckpt_path=tmp_path +  run_name + "/checkpoints/" + last_ckpt_run_name,
                     device=device,
                     llm_name="Mistral7B",
                     embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available

@@ -115,11 +115,11 @@ def generate(
     for j in range(max_tokens):
         next_token = sample(last_token_prelogits, temperature=temperature[j], top_p=0.8)
 
-        # if eos_id is not None:
-        #     is_finished = is_finished | (next_token == eos_id).cpu()
+        if eos_id is not None:
+            is_finished = is_finished | (next_token == eos_id).cpu()
 
-        # if is_finished.all():
-        #     break
+        if is_finished.all():
+            break
 
         generated_tensors.append(next_token[:, None])
 

@@ -3,6 +3,7 @@ from typing import Iterable
 from functools import partial, reduce
 from dataclasses import dataclass
 import torch
+import json
 from torch import nn
 import math
 import random
@@ -269,10 +270,40 @@ class Cross_AttTransformerBlock(nn.Module):
                     seqlen=seqlens,
                     mask=cross_att_mask,
                 )
-                # print(f'Gate*r values: MEAN {torch.mean(self.gate(h)*r)} STD {torch.std(self.gate(h)*r)} MAX {torch.max(self.gate(h)*r)} MIN {torch.min(self.gate(h)*r)}')
-                # print(f'H values: MEAN {torch.mean(h)} STD {torch.std(h)} MAX {torch.max(h)} MIN {torch.min(h)}')
-                # print(f'Relative gap: MEAN {torch.mean((self.gate(h)*r-h)/h)} STD {torch.std((self.gate(h)*r-h)/h)} MAX {torch.max((self.gate(h)*r-h)/h)} MIN {torch.min((self.gate(h)*r-h)/h)}')
-
+                
+                # stats = {
+                #     "gate": {
+                #         "mean": torch.mean(self.gate(h), axis = -1).cpu().numpy().tolist(),
+                #         "std": torch.std(self.gate(h), axis = -1).cpu().numpy().tolist(),
+                #         "max": torch.max(self.gate(h), dim = -1)[0].cpu().numpy().tolist(),
+                #         "min": torch.min(self.gate(h), dim = -1)[0].cpu().numpy().tolist(),
+                #         "norm": torch.norm(self.gate(h), dim = -1).cpu().numpy().tolist(),
+                #     },
+                #     "gate*r": {
+                #         "mean": torch.mean(self.gate(h) * r, axis = -1).cpu().numpy().tolist(),
+                #         "std": torch.std(self.gate(h) * r, axis = -1).cpu().numpy().tolist(),
+                #         "max": torch.max(self.gate(h) * r, dim = -1)[0].cpu().numpy().tolist(),
+                #         "min": torch.min(self.gate(h) * r, dim = -1)[0].cpu().numpy().tolist(),
+                #         "norm": torch.norm(self.gate(h) * r, dim = -1).cpu().numpy().tolist(),
+                #     },
+                #     "h": {
+                #         "mean": torch.mean(h, axis = -1).cpu().numpy().tolist(),
+                #         "std": torch.std(h, axis = -1).cpu().numpy().tolist(),
+                #         "max": torch.max(h, dim = -1)[0].cpu().numpy().tolist(),
+                #         "min": torch.min(h, dim = -1)[0].cpu().numpy().tolist(),
+                #         "norm": torch.norm(h, dim = -1).cpu().numpy().tolist()
+                #     },
+                #     "relative_gap": {
+                #         "mean": torch.mean((self.gate(h) * r - h) / h, axis = -1).cpu().numpy().tolist(),
+                #         "std": torch.std((self.gate(h) * r - h) / h, axis = -1).cpu().numpy().tolist(),
+                #         "max": torch.max((self.gate(h) * r - h) / h, dim = -1)[0].cpu().numpy().tolist(),
+                #         "min": torch.min((self.gate(h) * r - h) / h, dim = -1)[0].cpu().numpy().tolist(),
+                #         "norm": torch.norm((self.gate(h) * r - h) / h, dim = -1).cpu().numpy().tolist(),
+                #     },
+                # }
+                # with open('/home/hippolytepilchen/code/embed_llm/results/gate_values/gate_values_1.jsonl', 'a') as f:
+                #     f.write(json.dumps(stats) + '\n')
+            
                 h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
                 if show_attention:
                     cross_attn_mtx = None
@@ -808,6 +839,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 cache_view = None
 
             if str(layer_id) in self.cross_att_layers_id:
+                # with open('/home/hippolytepilchen/code/embed_llm/results/gate_values/gate_values_1.jsonl', 'a') as f:
+                #     f.write(json.dumps({'layer':layer_id}) + '\n')
                 if not self.args.pooled_cross_att:
                     if embeddings is not None and not self.shared_kv:
                         xk, xv = self.to_k[str(layer_id)](embeddings), self.to_v[
@@ -841,6 +874,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             else cross_att_cache.get_mask(seqlens.tolist())
                         ),
                     )
+         
 
             else:
                 h = layer(x=h, freqs_cis=freqs_cis, cache=cache_view)

@@ -345,7 +345,8 @@ class EmbedAugPipeline(nn.Module):
             assert Path(ckpt_path + "/" + llm_name.lower() + "/pooling_module").exists()
             pooling_module_path = ckpt_path + "/" + llm_name.lower() + "/pooling_module"
         else:
-
+            pooling_module_path = None
+            trainable_embedder_path = None
             if is_torchrun() and torch.distributed.get_rank() != 0:
                 embedding_model = None
             else:
@@ -373,6 +374,7 @@ class EmbedAugPipeline(nn.Module):
             ca_state_dict_path = (
                 ca_state_dict_path if ca_state_dict_path is not None else lora_path
             )
+            
             pooling_module_path = (
                 pooling_state_dict_path
                 if pooling_state_dict_path is not None
@@ -704,7 +706,7 @@ class EmbedAugPipeline(nn.Module):
         
         if is_torchrun():
             torch.distributed.barrier()
-            
+
 
         generated_tokens = mistral_generate(
             prompt_pre_embed=encoded_pre_embed_prompts,

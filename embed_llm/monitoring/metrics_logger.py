@@ -52,15 +52,15 @@ def get_eval_logs(
     train_loss: float,
     perplexity_rec: float | None = None,
     eval_loss_rec: float | None = None,
-    perplexity_textcont: float | None = None,
+    eval_ppl_textcont: float | None = None,
     eval_loss_textcont: float | None = None,
-    perplexity_embcont: float | None = None,
+    eval_ppl_embcont: float | None = None,
     eval_loss_embcont: float | None = None,
-    instruct_cross_entropy: float | None = None,
-    instruct_kl: float | None = None,
+    train_cross_entropy: float | None = None,
+    train_kl: float | None = None,
     eval_kl_loss: float | None = None,
     eval_loss_nocontext: float | None = None,
-    eval_perplexity_nocontext: float | None = None,
+    eval_ppl_nocontext: float | None = None,
 ) -> dict[str, float | int]:
     eval_dict = {"step": step, "train_loss": train_loss}
 
@@ -70,23 +70,23 @@ def get_eval_logs(
     if eval_loss_rec is not None:
         eval_dict["eval_loss_rec"] = eval_loss_rec
 
-    if perplexity_textcont is not None:
-        eval_dict["perplexity_textcont"] = perplexity_textcont
+    if eval_ppl_textcont is not None:
+        eval_dict["eval_ppl_textcont"] = eval_ppl_textcont
 
     if eval_loss_textcont is not None:
         eval_dict["eval_loss_textcont"] = eval_loss_textcont
 
-    if perplexity_embcont is not None:
-        eval_dict["perplexity_embcont"] = perplexity_embcont
+    if eval_ppl_embcont is not None:
+        eval_dict["eval_ppl_embcont"] = eval_ppl_embcont
 
     if eval_loss_embcont is not None:
         eval_dict["eval_loss_embcont"] = eval_loss_embcont
 
-    if instruct_cross_entropy is not None:
-        eval_dict["instruct_cross_entropy"] = instruct_cross_entropy
+    if train_cross_entropy is not None:
+        eval_dict["instruct_cross_entropy"] = train_cross_entropy
 
-    if instruct_kl is not None:
-        eval_dict["instruct_kl"] = instruct_kl
+    if train_kl is not None:
+        eval_dict["instruct_kl"] = train_kl
 
     if eval_kl_loss is not None:
         eval_dict["eval_kl_loss"] = eval_kl_loss
@@ -94,8 +94,8 @@ def get_eval_logs(
     if eval_loss_nocontext is not None:
         eval_dict["eval_loss_nocontext"] = eval_loss_nocontext
 
-    if eval_perplexity_nocontext is not None:
-        eval_dict["eval_perplexity_nocontext"] = eval_perplexity_nocontext
+    if eval_ppl_nocontext is not None:
+        eval_dict["eval_ppl_nocontext"] = eval_ppl_nocontext
 
     return eval_dict
 
@@ -148,12 +148,12 @@ def eval_log_msg(logs: dict[str, float | int]) -> str:
         ("perplexity_rec", ".3f", "Eval Reconstruction PPL"),
         ("eval_loss_rec", ".3f", "Eval Reconstruction Loss"),
         ("train_loss", ".3f", "Train Loss"),
-        ("perplexity_textcont", ".3f", "Eval Textcont PPL"),
+        ("eval_ppl_textcont", ".3f", "Eval Textcont PPL"),
         ("eval_loss_textcont", ".3f", "Eval Textcont Loss"),
-        ("perplexity_embcont", ".3f", "Eval Embcont PPL"),
+        ("eval_ppl_embcont", ".3f", "Eval Embcont PPL"),
         ("eval_loss_embcont", ".3f", "Eval Embcont Loss"),
-        ("instruct_cross_entropy", ".3f", "instruct_cross_entropy"),
-        ("instruct_kl", ".3f", "instruct_kl"),
+        ("train_cross_entropy", ".3f", "Training CE"),
+        ("train_kl", ".3f", "Training KL"),
         ("eval_kl_loss", ".3f", "eval_kl_loss"),
         ("eval_loss_nocontext", ".3f", "eval_loss_nocontext"),
         ("eval_perplexity_nocontext", ".3f", "PPL continuation wo context"),

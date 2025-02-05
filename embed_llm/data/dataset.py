@@ -164,6 +164,11 @@ def sequence_iterator(
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
     """
+    hybrid_training = False
+    if is_finite:
+        hybrid_training = False if hybrid_task is None else hybrid_task.do
+        hybrid_task = None
+        
     x_buffer: list[int] = []
     y_buffer: list[int] = []
     to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]] = []
@@ -207,6 +212,7 @@ def sequence_iterator(
                         is_eval=is_finite,
                         cur_pos=cur_pos,
                         max_embeds = max_embeds,
+                        hybrid_training=hybrid_training
                     )
                     if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
                         yield res[0]
@@ -245,6 +251,7 @@ def sequence_iterator(
                         is_eval=is_finite,
                         cur_pos=cur_pos,
                         max_embeds = max_embeds,
+                        hybrid_training=hybrid_training
                     )
 
                     if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):

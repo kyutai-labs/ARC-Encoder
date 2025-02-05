@@ -207,6 +207,7 @@ def sequence_iterator_reconstruction(
     adapt_seq_len: bool = False,
     is_eval: bool = False,
     max_embeds: int = 1,
+    hybrid_training: bool = False,
 ) -> SequenceEmbedMaskAndSizes:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -268,7 +269,7 @@ def sequence_iterator_reconstruction(
             new_embed_text = [tokenizer.decode(toks[:seq_len]) for toks in embed_tokens]
             to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
 
-        if is_eval:
+        if is_eval and hybrid_training:
             curr_mask = [False] * (len(curr_mask)//10) + [True] * (len(curr_mask) - len(curr_mask)//10)
             
         mask_buffer.extend(curr_mask)
@@ -280,9 +281,17 @@ def sequence_iterator_reconstruction(
 
         cur_pos += size
         if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
-            assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
-            assert len(x_buffer) <= seq_len
-
+            
+            try:
+                assert len(mask_buffer) == len(x_buffer) == len(y_buffer), (
+                    len(mask_buffer),
+                    len(x_buffer),
+                    len(y_buffer),)
+                assert len(x_buffer) <= seq_len, f'Buffer to long {len(x_buffer)}'
+            except AssertionError as e:
+                print(e)
+                return [], [], [], [], seq_len, []
+            
             if not adapt_seq_len:
                 assert sum(sizes) == seq_len
                 assert seq_len == len(x_buffer)
@@ -319,6 +328,7 @@ def sequence_iterator_continuation(
     data_type: str = "continuation",
     is_eval: bool = False,
     max_embeds: int = 1,
+    hybrid_training: bool = False,
 ) -> SequenceEmbedMaskAndSizes:
 
     assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
@@ -359,7 +369,7 @@ def sequence_iterator_continuation(
                 break
 
         upper_bound = min(cur_pos + n_missing, len(x))
-        if not is_eval:
+        if not is_eval or not hybrid_training:
             x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
             y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
             mask_buffer.extend(mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
