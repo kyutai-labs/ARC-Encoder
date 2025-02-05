@@ -36,7 +36,7 @@ def compute_kl_loss_with_mask(
     n_vocab = target_logits.size(-1)
 
     # Select logits only for the tokens that are not masked.
-    rag_l = torch.masked_select(
+    target_l = torch.masked_select(
         target_logits,
         torch.repeat_interleave(target_mask, n_vocab, dim=0).reshape(-1, n_vocab),
     )
@@ -47,6 +47,6 @@ def compute_kl_loss_with_mask(
 
     loss_func = torch.nn.KLDivLoss(reduction="none")
     mb_loss = loss_func(
-        F.log_softmax(pred_l / temp, dim=-1), F.softmax(rag_l / temp, dim=-1)
-    ).sum()
+        F.log_softmax(pred_l / temp, dim=-1), F.softmax(target_l / temp, dim=-1)
+    ).sum()/torch.sum(target_mask)
     return mb_loss

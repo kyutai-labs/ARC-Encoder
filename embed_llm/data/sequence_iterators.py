@@ -37,6 +37,7 @@ def sequence_iterator_one_task_4_all(
     tokenizer: Tokenizer,
     max_embeds: int = 1,
     start_point: float = 0.0,
+    n_gap: int = 60,
 ) -> SequenceEmbedMaskAndSizes:
 
     x_buffer, y_buffer, to_embed_buffer, mask_buffer, sizes, n_prefixes = (
@@ -49,9 +50,16 @@ def sequence_iterator_one_task_4_all(
     )
 
     x, y = tokens[:-1], tokens[1:]
+    
+    if max_embeds <= -1:
+        nb_embed = abs(max_embeds)
+    elif max_embeds > 1:
+        nb_embed = np.random.randint(1, max_embeds + 1)
+    elif max_embeds == 1:
+        nb_embed = 1
 
-    if len(x) - cur_pos >= (max_embeds + 1) * seq_len + 20:
-        if max_embeds == 1:
+    if len(x) - cur_pos >= (nb_embed + 1) * seq_len + n_gap:
+        if nb_embed == 1:
             to_embed_buffer.append(
                 {
                     "text": [tokenizer.decode(tokens[cur_pos : cur_pos + seq_len])],
@@ -61,11 +69,6 @@ def sequence_iterator_one_task_4_all(
             end_embed = seq_len
         else:
             
-            if max_embeds <= -1:
-                nb_embed = abs(max_embeds)
-            elif max_embeds > 1:
-                nb_embed = np.random.randint(1, max_embeds + 1)
-        
             new_embed = []
             n_embed_toks = 0
 
@@ -85,8 +88,8 @@ def sequence_iterator_one_task_4_all(
             )
             end_embed = n_embed_toks
 
-        min_rand = min(max(1, int(start_point * end_embed)), end_embed + 20)
-        start_lm = np.random.randint(min_rand, end_embed + 20)
+        min_rand = min(max(1, int(start_point * end_embed)), end_embed + n_gap)
+        start_lm = np.random.randint(min_rand, end_embed + n_gap)
 
         n_prefixes.append(end_embed - start_lm)
         x_buffer.extend(x[start_lm + cur_pos : start_lm + cur_pos + seq_len])
@@ -97,16 +100,16 @@ def sequence_iterator_one_task_4_all(
         cur_pos += start_lm + size
 
     # If not enought to put seqlen in both embedding and x, split the rest in two parts
-    elif max_embeds == 1 and (len(x) - cur_pos) // 2 > 20 + 1:
-        end_embed = (len(x) - cur_pos) // 2 - 10
+    elif nb_embed == 1 and (len(x) - cur_pos) // 2 > max(n_gap,10) + 1:
+        end_embed = (len(x) - cur_pos) // 2 - n_gap
         to_embed_buffer.append(
             {
                 "text": [tokenizer.decode(tokens[cur_pos : cur_pos + end_embed])],
                 "tokens": [tokens[cur_pos : cur_pos + end_embed]],
             }
         )
-        min_rand = min(max(1, int(start_point * end_embed)), end_embed + 1)
-        start_lm = np.random.randint(min_rand, end_embed + 1)
+        min_rand = min(max(1, int(start_point * end_embed)), end_embed + n_gap)
+        start_lm = np.random.randint(min_rand, end_embed + n_gap)
 
         n_prefixes.append(end_embed - start_lm)
         x_buffer.extend(x[start_lm + cur_pos : start_lm + cur_pos + seq_len])
@@ -117,20 +120,16 @@ def sequence_iterator_one_task_4_all(
         cur_pos += start_lm + size
 
     elif (
-        max_embeds > 1
-        and (len(x) - cur_pos) > 20 + 1
-        and (len(x) - cur_pos - 10) // max_embeds > 0
+        nb_embed > 1
+        and (len(x) - cur_pos)//2 > 20 + 1 # At least 20 tokens to generate
+        and ((len(x) - cur_pos)//2) // nb_embed > 0
     ):
-        # 10 of prefix + minimum 2 tokens to continue
-        if max_embeds <= -1:
-            nb_embed = abs(max_embeds)
-        elif max_embeds > 1:
-            nb_embed = np.random.randint(1, max_embeds + 1)
+    
         new_embed = []
         n_embed_toks = 0
 
         for i in range(nb_embed):
-            add_token = min(len(x) - cur_pos - 10 // nb_embed, seq_len)
+            add_token = min(((len(x) - cur_pos)//2) // nb_embed, seq_len)
             new_embed.append(
                 tokens[
                     cur_pos
@@ -155,8 +154,8 @@ def sequence_iterator_one_task_4_all(
         # In case there is a rest to the euclidean div
         end_embed = n_embed_toks
 
-        min_rand = min(max(1, int(start_point * end_embed)), end_embed + 10)
-        start_lm = np.random.randint(min_rand, end_embed + 10)
+        min_rand = min(max(1, int(start_point * end_embed)), end_embed + 1)
+        start_lm = np.random.randint(min_rand, end_embed + 1)
 
         n_prefixes.append(end_embed - start_lm)
         x_buffer.extend(x[start_lm + cur_pos : start_lm + cur_pos + seq_len])

@@ -338,10 +338,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
             
         layers = []
-
-        self.start_cross_att = (max(0, self.n_layers - args.cross_att_layers) if not  args.begin_cross_att 
-                                else 0
-        )
+        if args.cross_att_layers == -1:
+            self.start_cross_att = -1
+        else:
+            self.start_cross_att = (max(0, self.n_layers - args.cross_att_layers) if not  args.begin_cross_att 
+                                    else 0
+            )
         self.end_cross_att = (min(self.n_layers, self.start_cross_att + args.cross_att_layers) if not  args.begin_cross_att 
                                 else (args.cross_att_layers - 1)
         )
