@@ -148,7 +148,6 @@ def build_data_loader(
     max_embeds: int = 1,
     decompress_usage: str = "",
 ) -> Iterator[Batch]:
-
     dataset = build_dataset(
         args=args,
         tokenizer=tokenizer,

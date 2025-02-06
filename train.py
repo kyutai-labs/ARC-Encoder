@@ -448,12 +448,13 @@ def _train(
             #     # print('N_prefix', batch.n_prefixes[0])
             #     print('Sizes', batch.sizes)
             #     print("Embed seqlens", embed_seqlens)
+            #     print('Inside embed seqlens',[len(l_tokens) for embed in  batch.to_embed for l_tokens in embed["tokens"]])
             #     # print("Embed", batch.y_mask[:batch.sizes[0]])
             #     print("To embed", pipeline.tokenizer.decode(embed)[:])
-            #     print("To generate",to_gen[:2] ,pipeline.tokenizer.decode(to_gen)[:100])
-            #     print("Target",target[:2] ,pipeline.tokenizer.decode(target)[:100])
-            #     if y_mask is not None:
-            #         print('Mask', y_mask[:batch.sizes[0]])
+            #     # print("To generate",to_gen[:2] ,pipeline.tokenizer.decode(to_gen)[:100])
+            #     # print("Target",target[:2] ,pipeline.tokenizer.decode(target)[:100])
+            #     # if y_mask is not None:
+            #     #     print('Mask', y_mask[:batch.sizes[0]])
 
             if args.textual_continuation * args.continuation > 0.0 or (
                 args.hybrid_task.prop_noembed_continuation > 0.0 and args.hybrid_task.do
@@ -535,7 +536,15 @@ def _train(
             if (args.toy_tests.do and args.toy_tests.kl_pretraining) or (args.instruct_tuning.do and args.instruct_tuning.kl):
                 
                 if (args.continuation > 0.0 and batch.data_type == "continuation") or batch.data_type == "instruct":
-                    contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
+                    
+                    if batch.data_type == "instruct":
+                        # Remove the eos and the bos 
+                        contexts = []
+                        for i in range(len(batch.to_embed)):
+                            contexts.append([pipeline.tokenizer.encode(' '.join(batch.to_embed[i]["text"]), bos = False, eos = False)])
+                    else:
+                        contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
+                        
                     x_wcontext = []
                     y_mask_wcontext = []
                     seqlens_wcontext = []
@@ -547,14 +556,27 @@ def _train(
 
                     for i, size in enumerate(batch.sizes):
                         full_context = sum(contexts[i],[])
-                        x_wcontext.extend(
-                            full_context + batch.x[ind : ind + size].tolist()
-                        )
-                        seqlens_wcontext.append(size + len(full_context))
-                        y_mask_wcontext.extend(
-                            [False] * len(full_context)
-                            + ([True]*len(batch.x[ind : ind + size]) if (batch.y_mask is None or (args.instruct_tuning.do and args.instruct_tuning.no_mask))  else batch.y_mask[ind : ind + size].tolist()) 
-                        )
+                        # Remove the bos token at the beginning of the question
+                        if args.instruct_tuning.do:
+                            # Skip the bos token of the question since now it is at the beginning of the context
+                            x_wcontext.extend(
+                                full_context + batch.x[ind + 1 : ind + size].tolist()
+                            )
+                            seqlens_wcontext.append(size - 1 + len(full_context))
+                            # If no mask the BOS token with embedding should have the same logit as the last token of context for the LLM teacher
+                            y_mask_wcontext.extend(
+                                [False] * (len(full_context) - 1)
+                                + ([True]*len(batch.x[ind: ind + size]) if (batch.y_mask is None or args.instruct_tuning.no_mask)  else batch.y_mask[ind: ind + size].tolist()) 
+                            )
+                        else: 
+                            x_wcontext.extend(
+                                full_context + batch.x[ind : ind + size].tolist()
+                            )
+                            seqlens_wcontext.append(size + len(full_context))
+                            y_mask_wcontext.extend(
+                                [False] * len(full_context)
+                                + ([True]*len(batch.x[ind : ind + size]) if batch.y_mask is None  else batch.y_mask[ind : ind + size].tolist()) 
+                            )
 
                         ind += size
 
@@ -579,14 +601,16 @@ def _train(
                         # Get the logits for continuation of LLM with textual context
                         model.train()
                     
-                    if get_rank() == 0:
-                        to_gen = [int(tok) for tok in x_wcontext[:seqlens_wcontext[0]]]
-                        # print('N_prefix', batch.n_prefixes[0])
-                        print('Sizes wo context', seqlens)
-                        print('Sizes w context',seqlens_wcontext)
-                        print("To generate",to_gen[:2] ,pipeline.tokenizer.decode(to_gen))
-                        if y_mask_wcontext is not None:
-                            print('Mask', y_mask_wcontext[:seqlens_wcontext[0]])
+                    # if get_rank() == 0:
+                    #     to_gen = [int(tok) for tok in x_wcontext[:seqlens_wcontext[0]]]
+                    #     # print('N_prefix', batch.n_prefixes[0])
+                    #     print('Sizes wo context', seqlens)
+                    #     print('Sizes w context',seqlens_wcontext)
+                    #     print('Without embed', torch.masked_select(x_wcontext[:seqlens_wcontext[0]],y_mask_wcontext[:seqlens_wcontext[0]])[:10])
+                    #     print('With embed', x[:seqlens[0]][:10])
+                    #     print("To generate",to_gen[:2] ,pipeline.tokenizer.decode(to_gen))
+                    #     if y_mask_wcontext is not None:
+                    #         print('Mask', y_mask_wcontext[:seqlens_wcontext[0]])
                         
                     target_mask = y_mask_wcontext
                     pred_mask = None if (args.instruct_tuning.do and args.instruct_tuning.no_mask) else y_mask

@@ -59,12 +59,17 @@ def load_args(
             }
         )
 
-        if "w_prefix_prompt" not in args:
+        if "w_prefix_prompt" not in args or "max_embeds" not in args:
             with open(os.path.join(pipe_path, "../../args.yaml"), "r") as f:
                 train_args = yaml.safe_load(f)
+                
             w_prefix_prompt = train_args.get("prefix_prompt", False)
             pipeline_args.w_prefix_prompt = w_prefix_prompt
 
+            if train_args.get("hybrid_task",{}).get("do",False):
+                pipeline_args.max_embeds = train_args["hybrid_task"].get("max_embeds", 1)
+
+            
         mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
         pipeline_args.mlp_project = mlp_project_args
 
