@@ -9,9 +9,9 @@ from tqdm import tqdm, trange
 import argparse
 from pathlib import Path
 import torch.nn.functional as F
-from embed_llm.generation.utils import load_pipeline, ensure_reproducibility
+from embed_llm.generation.utils import ensure_reproducibility
 from embed_llm.models.mistral.generate import generate as mistral_generate
-from embed_llm.models.augmented_model import EmbedAugPipeline
+from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline
 from embed_llm.training.loss import compute_ce_loss_with_mask
 from embed_llm.generation.metrics import (
     word_overlap,
@@ -36,7 +36,6 @@ def evaluate_toydecompression(
     tmp_path: str = None,
     pipeline: EmbedAugPipeline | None = None,
     instruct_name: str = None,
-    token_lvl_test: bool = False,
     data: str = None,
     decompress_task: str = "reversed",
 ):
@@ -83,12 +82,20 @@ def evaluate_toydecompression(
     
     # Sequence loading with modifs depending on training. 
     if decompress_task == 'from_prefix_reconstruct':
-        full_encoded_prompt_post = [toks[:5] for toks in text_conditioning]
-        gt_text = [toks[5:] for toks in text_conditioning]
+        full_encoded_prompt_post = [toks[:5] for toks in full_x]
+        gt_text = [pipeline.tokenizer.decode(toks[5:]) for toks in full_x]
         gen_len = max_seq_len - 5
     elif decompress_task == 'middle_reconstruct':
-        gt_text = [toks[len(toks)//2:] for toks in text_conditioning]
-        full_encoded_prompt_post = [[] for _ in text_conditioning]
+        gt_text = [pipeline.tokenizer.decode(toks[len(toks)//2:]) for toks in full_x]
+        full_encoded_prompt_post = [[] for _ in full_x]
+        gen_len = max_seq_len//2
+    elif decompress_task == 'reversed':
+        full_encoded_prompt_post = [[] for _ in full_x]
+        gt_text = [pipeline.tokenizer.decode(toks[::-1]) for toks in full_x]
+        gen_len = max_seq_len
+    elif decompress_task == 'one_over_two_reconstruction':
+        full_encoded_prompt_post = [[] for _ in full_x]
+        gt_text = [pipeline.tokenizer.decode(toks[::2]) for toks in full_x]
         gen_len = max_seq_len//2
     else:
         raise NotImplementedError(f"Decompression task {decompress_task} not implemented")
@@ -126,25 +133,24 @@ def evaluate_toydecompression(
         embeddings = cat_embeddings if other_device is None else cat_embeddings.to(other_device)
         
         llm = pipeline.model.llm.to(other_device)
-        
-        if not token_lvl_test:
-            input = [seq[:-1] for seq in x]
-            target = [seq[1:] for seq in x]
-            with torch.no_grad():
-                logits = llm.forward(
-                    torch.tensor(sum(input,[]), device = llm.device, dtype = torch.long),
-                    seqlens=[len(p) for p in x],
-                    embeddings=None,
-                    embed_seqlens=None,
-                    cat_embeddings=None,
-                    show_attention=False,
-                )
-                ce = compute_ce_loss_with_mask(
-                    logits,
-                    torch.tensor(sum(target,[]), device = llm.device, dtype = torch.long),
-                ).item()
-                
-                ppl += 2**ce
+
+        input = [pipeline.tokenizer.encode(seq, bos = False, eos = False)[:-1] for seq in gt_text]
+        target = [pipeline.tokenizer.encode(seq, bos = False, eos = False)[1:] for seq in gt_text]
+        with torch.no_grad():
+            logits = llm.forward(
+                torch.tensor(sum(input,[]), device = llm.device, dtype = torch.long),
+                seqlens=[len(p) for p in x],
+                embeddings=None,
+                embed_seqlens=None,
+                cat_embeddings=None,
+                show_attention=False,
+            )
+            ce = compute_ce_loss_with_mask(
+                logits,
+                torch.tensor(sum(target,[]), device = llm.device, dtype = torch.long),
+            ).item()
+            
+            ppl += 2**ce
                             
         generated_tokens = mistral_generate(
             prompt_pre_embed=[[]*len(text_conditioning)],
@@ -159,23 +165,17 @@ def evaluate_toydecompression(
             cat_embeddings= cat_embeddings 
         )
 
-        if not token_lvl_test:
-            produced_text = [
-                pipeline.tokenizer.decode(generated_tokens[i])
-                for i in range(len(generated_tokens))
-            ]
-            generated_seq.extend(produced_text)
-        else:
-            generated_seq.extend(generated_tokens)
 
-    if not token_lvl_test:
-        bleu_score = get_bleu_score(gt_text, generated_seq)
-        bleu_score_avg = get_bleu_score( gt_text, generated_seq,avg=True)
-    else:
-        bleu_score = None
-        bleu_score_avg = None
-        
-        
+        produced_text = [
+            pipeline.tokenizer.decode(generated_tokens[i])
+            for i in range(len(generated_tokens))
+        ]
+        generated_seq.extend(produced_text)
+
+
+    bleu_score = get_bleu_score(gt_text, generated_seq)
+    bleu_score_avg = get_bleu_score( gt_text, generated_seq,avg=True)
+  
     metrics = {
         'temp': temp,
         'ppl': ppl/len(range(0,len(full_x),max_bs)),
@@ -198,13 +198,16 @@ def arg_parser():
         default=None,
     )
     parser.add_argument("--ckpt", type=int, default=None)
-    parser.add_argument("--out_file", type=str, default=None)
+    parser.add_argument("--out_file", type=str, default='/home/hippolytepilchen/code/embed_llm/results/toy_tests/decompression_tests.jsonl')
     parser.add_argument("--n_passages", type=int, default=500)
     parser.add_argument("--max_seq_len", type=int, default=64)
     parser.add_argument("--bs", type=int, default=4)
     parser.add_argument("--multi_passages", type=int, default=1)
     parser.add_argument("--instruct_name", type=str, default=None)
     parser.add_argument("--seed", type=float, default=0.42)
+    parser.add_argument("--data", type=str, default=None)
+    parser.add_argument("--decompress_task", type=str, default='reversed')
+    parser.add_argument("--temp", type=float, default=0.0)
 
     return parser.parse_args()
 
@@ -212,3 +215,47 @@ def arg_parser():
 if __name__ == "__main__":
     args = arg_parser()
     ensure_reproducibility(args.seed)
+    
+    if not Path(args.out_file).exists():
+        with open(args.out_file, "w") as f:
+            json.dump({}, f)
+        
+        
+    tmp_path = '/lustre/scwpod02/client/kyutai-interns/hippop/tmp'
+    data_path_ID = '/lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl'
+    data_path_eval_ID = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl'
+    data_path_less_ID = '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl'
+    data_path_minor_OOD = '/lustre/scwpod02/client/kyutai-interns/datasets/finemath/train.jsonl'
+    data_very_OOD = 'random'
+    
+    if args.data == 'random':
+        data = data_very_OOD
+    elif args.data == 'ID':
+        data = data_path_ID
+    elif args.data == 'eval_ID':
+        data = data_path_eval_ID
+    elif args.data == 'less_ID':
+        data = data_path_less_ID
+    elif args.data == 'minor_OOD':
+        data = data_path_minor_OOD
+    else:
+        raise NotImplementedError(f"Data {args.data} not implemented")
+    
+    evaluate_toydecompression(
+        run_name = args.run_name,
+        ckpt = args.ckpt,
+        max_seq_len = args.max_seq_len,
+        temp = args.temp,
+        max_bs = args.bs,
+        output_file = args.out_file,
+        n_samples = args.n_passages,
+        tmp_path = None,
+        pipeline=None,
+        instruct_name = args.instruct_name,
+        data = data,
+        decompress_task = args.decompress_task,
+    )
+        
+    
+    
+    

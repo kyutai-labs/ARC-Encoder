@@ -15,6 +15,7 @@ from embed_llm.models.embedding_modules import (
     LatentAttention,
 )
 import yaml
+from mistral_inference.transformer import Transformer
 import os
 from embed_llm.retrieval.embeddings import encode_text, get_pretrained_embedder
 from embed_llm.data.data_loader import Batch
@@ -749,3 +750,123 @@ class EmbedAugPipeline(nn.Module):
             return final_texts, embeddings
 
         return final_texts
+
+
+
+
+def load_pipeline(
+    run_name: str | None,
+    tmp_path: str,
+    llm_path: str,
+    device: str,
+    max_bs: int,
+    pipeline: EmbedAugPipeline | Transformer | None = None,
+    mistral: bool = False,
+    ckpt: int | None = None,
+    instruct_name: str = None,
+) -> EmbedAugPipeline | Transformer:
+    if pipeline is None and is_torchrun():
+            torch.distributed.init_process_group()
+            torch.cuda.set_device(torch.distributed.get_rank())
+            device = "cuda"
+            num_pipeline_ranks = torch.distributed.get_world_size()
+    else:
+        num_pipeline_ranks = 1
+     
+    if not mistral:
+        if pipeline is None:
+            # Get last checkpoint
+            if instruct_name is None:
+                assert run_name is not None
+                last_ckpt = (
+                    sorted(
+                        [
+                            ckpt_name
+                            for ckpt_name in os.listdir(
+                                tmp_path + run_name + "/checkpoints/"
+                            )
+                            if (
+                                Path(tmp_path + run_name + "/checkpoints/")
+                                / ckpt_name
+                                / "params.json"
+                            ).exists()
+                        ]
+                    )[-1]
+                    if ckpt is None
+                    else f"checkpoint_{ckpt:06d}"
+                )
+
+                pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
+                    llm_path=llm_path,
+                    ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
+                    device=device,
+                    llm_name="Mistral7B",
+                    embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
+                    max_batch_size=max_bs,
+                    instruct_ckpt=None,
+                    num_pipeline_ranks=num_pipeline_ranks,
+                )
+            else:
+                last_ckpt = sorted(
+                    [
+                        ckpt_name
+                        for ckpt_name in os.listdir(
+                            tmp_path + instruct_name + "/checkpoints/"
+                        )
+                        if (
+                            Path(tmp_path + instruct_name + "/checkpoints/")
+                            / ckpt_name
+                            / "params.json"
+                        ).exists()
+                    ]
+                )[-1]
+                
+                last_ckpt_run_name =sorted(
+                    [
+                        ckpt_name
+                        for ckpt_name in os.listdir(
+                            tmp_path + run_name + "/checkpoints/"
+                        )
+                        if (
+                            Path(tmp_path + run_name + "/checkpoints/")
+                            / ckpt_name
+                            / "params.json"
+                        ).exists()
+                    ]
+                )[-1]
+                pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
+                    llm_path=llm_path,
+                    ckpt_path=tmp_path +  run_name + "/checkpoints/" + last_ckpt_run_name,
+                    device=device,
+                    llm_name="Mistral7B",
+                    embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available
+                    max_batch_size=max_bs,
+                    instruct_ckpt=tmp_path
+                    + instruct_name
+                    + "/checkpoints/"
+                    + last_ckpt,
+                    num_pipeline_ranks=num_pipeline_ranks,
+                )
+
+            ckpt = int(last_ckpt.split("_")[-1])
+            eval_logger_info(logger,f"Evaluating checkpoint {ckpt}")
+        else:
+            pipeline: EmbedAugPipeline = pipeline
+            ckpt = ckpt
+
+        return pipeline, ckpt
+    else:
+        if pipeline is None:
+            mistral_model = Transformer.from_folder(
+                "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/",
+                device=device,
+                max_batch_size=max_bs,
+                dtype=torch.float32,
+                num_pipeline_ranks=num_pipeline_ranks,
+            )
+        else:
+            mistral_model = pipeline
+
+        return mistral_model, None
+
+

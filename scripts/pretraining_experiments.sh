@@ -1,13 +1,12 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=7-9
+#SBATCH --array=10
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s01dgx01,par2dc5-ai-prd-cl02s04dgx15,par2dc5-ai-prd-cl02s04dgx31,par2dc5-ai-prd-cl02s03dgx32,par2dc5-ai-prd-cl02s01dgx05,par2dc5-ai-prd-cl02s01dgx08,par2dc5-ai-prd-cl02s02dgx18,par2dc5-ai-prd-cl02s02dgx29,par2dc5-ai-prd-cl02s04dgx22
 #SBATCH --job-name=pretraining_embed_llm
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/embed_llm_out/embed_llm_%A_%a.out
 
@@ -27,6 +26,7 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_False_MaxEmb_5_fullcont_16BS_alternativeCA.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_v3_LLM_False_Emb_False_MaxEmb_3_StartPoint_0.4_16BS.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyDecompressingTests_LLM_FT_MaxEmb_1_rec_from_prefix.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyDecompressingTests_LLM_FT_MaxEmb_1_reversed_2.yaml
 )
 
 

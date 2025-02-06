@@ -4,8 +4,9 @@
 #SBATCH --array=4 
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --gpus-per-task=8
+#SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=32
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx29
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=instruct_exps
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
@@ -43,8 +44,8 @@ echo "Using $N_GPUS GPUs: $CUDA_VISIBLE_DEVICES"
 echo "Starting at: $(date)"
 
 # Run the actual job, allocate with srun to refresh the context
-srun --gpus=$N_GPU \
-    micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG 
+# srun --gpus=$N_GPU \
+#     micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG 
 
 RUN_NAME=$(basename "$CONFIG" .yaml)
 
@@ -52,15 +53,15 @@ echo "Starting evaluation of run $RUN_NAME"
 
 srun --gpus=$N_GPU \
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json \
-    --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 3 --run_name Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.0_16BS
+    --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 3 --run_name $RUN_NAME
 
 srun --gpus=$N_GPU \
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json \
-    --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 2 --run_name Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.0_16BS
+    --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 2 --run_name $RUN_NAME
 
 srun --gpus=$N_GPU \
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json \
-    --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1 --run_name Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.0_16BS
+    --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1 --run_name $RUN_NAME
    
 echo "Finished at: $(date)"
 

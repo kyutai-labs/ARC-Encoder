@@ -530,6 +530,8 @@ def sequence_iterator_decompress_usage(
             if x_size == 0:
                 return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes
         elif decompress_usage == 'from_prefix_reconstruct':
+            if len(x[cur_pos : cur_pos + seq_len])<10:
+                return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes
             start_prefix = np.random.randint(0,len(x[cur_pos : cur_pos + seq_len]) + 1 - 10)
             x_buffer.extend(x[cur_pos + start_prefix: cur_pos + seq_len])
             y_buffer.extend(y[cur_pos + start_prefix: cur_pos + seq_len])

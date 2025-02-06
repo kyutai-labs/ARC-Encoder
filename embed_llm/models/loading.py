@@ -16,7 +16,6 @@ from embed_llm.models.args import (
     EmbedAugArgs,
 )
 
-from embed_llm.training.args import TrainArgs, InstructionTuningArgs
 from embed_llm.training.distributed import (
     get_rank,
 )
@@ -174,7 +173,7 @@ def load_llm_model(
     with torch.device("meta"):
         # Remove cross-attention if for trainable embedder
         if for_embedding:
-            llm_args.start_cross_att = -1
+            llm_args.cross_att_layers = -1
             llm_args.every_cross_att = -1
         model = MistralTransformer(args=llm_args, checkpoint=checkpoint, pipeline_rank=pipeline_rank, num_pipeline_ranks=num_pipeline_rank)
 
@@ -242,3 +241,4 @@ def get_instruct_ckpts_paths(
         ca_state_dict_path,
         llm_lora_state_dict_path,
     )
+

@@ -13,10 +13,10 @@ from mistral_inference.transformer import Transformer
 from mistral_inference.generate import generate
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 from nltk.tokenize import sent_tokenize
-from embed_llm.models.augmented_model import EmbedAugPipeline
+from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline
 from embed_llm.models.utils import is_torchrun
 from embed_llm.monitoring.utils import set_logger
-from embed_llm.generation.utils import eval_logger_info, load_pipeline, ensure_reproducibility
+from embed_llm.generation.utils import eval_logger_info, ensure_reproducibility
 from embed_llm.generation.metrics import (
     word_overlap,
     get_bleu_score,
