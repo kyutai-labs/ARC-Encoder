@@ -1,12 +1,12 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=4-5
+#SBATCH --array=4-6
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=32
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx29
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx31,par2dc5-ai-prd-cl02s03dgx32,par2dc5-ai-prd-cl02s01dgx05,par2dc5-ai-prd-cl02s02dgx18,par2dc5-ai-prd-cl02s02dgx29,par2dc5-ai-prd-cl02s04dgx22,par2dc5-ai-prd-cl02s02dgx12,par2dc5-ai-prd-cl02s03dgx26,par2dc5-ai-prd-cl02s02dgx13,par2dc5-ai-prd-cl02s01dgx23
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=instruct_exps
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
@@ -46,8 +46,8 @@ echo "Using $N_GPUS GPUs: $CUDA_VISIBLE_DEVICES"
 echo "Starting at: $(date)"
 
 # Run the actual job, allocate with srun to refresh the context
-# srun --gpus=$N_GPU \
-#     micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG 
+srun --gpus=$N_GPU \
+    micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG 
 
 RUN_NAME=$(basename "$CONFIG" .yaml)
 
