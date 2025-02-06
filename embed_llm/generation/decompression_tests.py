@@ -13,6 +13,7 @@ from embed_llm.generation.utils import ensure_reproducibility
 from embed_llm.models.mistral.generate import generate as mistral_generate
 from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline
 from embed_llm.training.loss import compute_ce_loss_with_mask
+from embed_llm.generation.evaluation import get_gpu_memory
 from embed_llm.generation.metrics import (
     word_overlap,
     get_bleu_score,
@@ -41,13 +42,30 @@ def evaluate_toydecompression(
 ):
 
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
-
+    
+    data_path_ID = '/lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl'
+    data_path_eval_ID = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl'
+    data_path_less_ID = '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl'
+    data_path_minor_OOD = '/lustre/scwpod02/client/kyutai-interns/datasets/finemath/train.jsonl'
+    data_very_OOD = 'random'
+    
+    if data == 'random':
+        data_path = data_very_OOD
+    elif data == 'ID':
+        data_path = data_path_ID
+    elif data == 'eval_ID':
+        data_path = data_path_eval_ID
+    elif data == 'less_ID':
+        data_path = data_path_less_ID
+    elif data == 'minor_OOD':
+        data_path = data_path_minor_OOD
+    else:
+        raise NotImplementedError(f"Data {data} not implemented")
 
     # Loading model
     device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
     device_count = torch.cuda.device_count()
     other_device = torch.device("cuda:1") if device_count > 1 else device
-
 
     pipeline, ckpt = load_pipeline(
         run_name=run_name,
@@ -62,63 +80,72 @@ def evaluate_toydecompression(
     )
     
     text_conditioning = []
-    if Path(data).exists():
-        with open(data, "r") as f:
+    if Path(data_path).exists():
+        with open(data_path, "r") as f:
             for i, line in enumerate(f):
-                sample = json.loads(f)['text']
+                sample = json.loads(line)['text']
                 text_conditioning.append(sample)
                 if i+1 == n_samples:
                     break
-    elif data == 'random':
+    elif data_path == 'random':
         for _ in range(n_samples):
             sample = pipeline.tokenizer.decode([random.choice(pipeline.tokenizer.vocab) for _ in range(max_seq_len)])
             text_conditioning.append(sample)     
     
     full_x = [
-        pipeline.tokenizer.encode(text, bos=True, eos=True)
+        pipeline.tokenizer.encode(text, bos=True, eos=True)[:max_seq_len]
         for text in text_conditioning
     ]
     
+    llm = pipeline.model.llm.to(other_device)
     
     # Sequence loading with modifs depending on training. 
     if decompress_task == 'from_prefix_reconstruct':
         full_encoded_prompt_post = [toks[:5] for toks in full_x]
         gt_text = [pipeline.tokenizer.decode(toks[5:]) for toks in full_x]
+        ppl_tok = [toks[5:] for toks in full_x]
         gen_len = max_seq_len - 5
     elif decompress_task == 'middle_reconstruct':
         gt_text = [pipeline.tokenizer.decode(toks[len(toks)//2:]) for toks in full_x]
-        full_encoded_prompt_post = [[] for _ in full_x]
+        full_encoded_prompt_post = [[pipeline.tokenizer.bos_id] for _ in full_x]
+        ppl_tok = [toks[len(toks)//2:] for toks in full_x]
         gen_len = max_seq_len//2
     elif decompress_task == 'reversed':
-        full_encoded_prompt_post = [[] for _ in full_x]
+        full_encoded_prompt_post = [[pipeline.tokenizer.bos_id] for _ in full_x]
         gt_text = [pipeline.tokenizer.decode(toks[::-1]) for toks in full_x]
+        ppl_tok = [toks[::-1] for toks in full_x]
         gen_len = max_seq_len
     elif decompress_task == 'one_over_two_reconstruction':
-        full_encoded_prompt_post = [[] for _ in full_x]
+        full_encoded_prompt_post = [[pipeline.tokenizer.bos_id] for _ in full_x]
         gt_text = [pipeline.tokenizer.decode(toks[::2]) for toks in full_x]
+        ppl_tok = [toks[::2] for toks in full_x]
         gen_len = max_seq_len//2
+    elif decompress_task == 'full_reconstruct':
+        full_encoded_prompt_post = [[pipeline.tokenizer.bos_id] for _ in full_x]
+        gt_text = [pipeline.tokenizer.decode(toks) for toks in full_x]
+        ppl_tok = full_x
+        gen_len = max_seq_len
     else:
         raise NotImplementedError(f"Decompression task {decompress_task} not implemented")
-    
+
     ppl = 0
     generated_seq = []
-    for i in range(0,len(full_x),max_bs):
-        
+    for i in trange(0,len(full_x),max_bs):
+
         x = full_x[i:i+max_bs]
         encoded_prompt_post = full_encoded_prompt_post[i:i+max_bs]
-        
         seqlens = [len(tokens) for tokens in x]
-        x = torch.from_numpy(np.array([el for el in x])).to(
-            device
+        x = torch.tensor([int(toks) for l_tokens in x for toks in l_tokens]).to(device
         )
-        embeddings = pipeline.model.trainable_embedder(
-            input_ids=x, embeddings=None, seqlens=seqlens
-        )
+
+        with torch.no_grad():
+            embeddings = pipeline.model.trainable_embedder(
+                input_ids=x, embeddings=None, seqlens=seqlens
+            )
 
         embeddings = pipeline.model.pooling_module(x=embeddings.to(pipeline.pipeline_args.param_dtype), seqlens=seqlens)
-        embed_seqlens = [len(l_text) for l_text in text_conditioning]
+        embed_seqlens =  [1]*len(seqlens)
         embeddings = F.normalize(embeddings, p=2, dim=-1) 
-
         
         if pipeline.pipeline_args.mlp_project.type == "mlp":
             cat_embeddings = pipeline.model.mlp_project(
@@ -131,27 +158,25 @@ def evaluate_toydecompression(
             )
         
         embeddings = cat_embeddings if other_device is None else cat_embeddings.to(other_device)
-        
-        llm = pipeline.model.llm.to(other_device)
+    
 
-        input = [pipeline.tokenizer.encode(seq, bos = False, eos = False)[:-1] for seq in gt_text]
-        target = [pipeline.tokenizer.encode(seq, bos = False, eos = False)[1:] for seq in gt_text]
+        input = [tok[:-1] for tok in ppl_tok]
+        target = [tok[1:] for tok in ppl_tok]
         with torch.no_grad():
             logits = llm.forward(
                 torch.tensor(sum(input,[]), device = llm.device, dtype = torch.long),
-                seqlens=[len(p) for p in x],
+                seqlens=[len(p) for p in input],
                 embeddings=None,
                 embed_seqlens=None,
                 cat_embeddings=None,
                 show_attention=False,
             )
-            ce = compute_ce_loss_with_mask(
-                logits,
-                torch.tensor(sum(target,[]), device = llm.device, dtype = torch.long),
-            ).item()
-            
-            ppl += 2**ce
-                            
+        ce = compute_ce_loss_with_mask(
+            logits,
+            torch.tensor(sum(target,[]), device = llm.device, dtype = torch.long),None).item()
+
+        ppl += 2**ce
+         
         generated_tokens = mistral_generate(
             prompt_pre_embed=[[]*len(text_conditioning)],
             prompt_post_embed=encoded_prompt_post,
@@ -172,7 +197,8 @@ def evaluate_toydecompression(
         ]
         generated_seq.extend(produced_text)
 
-
+    print('Ground_truth:', gt_text[0])
+    print('Generated:', generated_seq[0])
     bleu_score = get_bleu_score(gt_text, generated_seq)
     bleu_score_avg = get_bleu_score( gt_text, generated_seq,avg=True)
   
@@ -182,13 +208,16 @@ def evaluate_toydecompression(
         "decompression_task": decompress_task,
         "data": data,
         'run_name': run_name,
+        'instruct_name': instruct_name if instruct_name is not None else 'None',
         'bleu': bleu_score, 
         'bleu_avg': bleu_score_avg,
+        'n_samples': n_samples,
     }
 
     
     with open(output_file, "a") as f:
-        json.dump(metrics + "\n", f)
+        json.dump(metrics, f)
+        f.write("\n")
         
 def arg_parser():
     parser = argparse.ArgumentParser()
@@ -200,11 +229,10 @@ def arg_parser():
     parser.add_argument("--ckpt", type=int, default=None)
     parser.add_argument("--out_file", type=str, default='/home/hippolytepilchen/code/embed_llm/results/toy_tests/decompression_tests.jsonl')
     parser.add_argument("--n_passages", type=int, default=500)
-    parser.add_argument("--max_seq_len", type=int, default=64)
+    parser.add_argument("--max_seq_len", type=int, default=256)
     parser.add_argument("--bs", type=int, default=4)
-    parser.add_argument("--multi_passages", type=int, default=1)
     parser.add_argument("--instruct_name", type=str, default=None)
-    parser.add_argument("--seed", type=float, default=0.42)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--decompress_task", type=str, default='reversed')
     parser.add_argument("--temp", type=float, default=0.0)
@@ -221,25 +249,16 @@ if __name__ == "__main__":
             json.dump({}, f)
         
         
-    tmp_path = '/lustre/scwpod02/client/kyutai-interns/hippop/tmp'
-    data_path_ID = '/lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl'
-    data_path_eval_ID = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl'
-    data_path_less_ID = '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl'
-    data_path_minor_OOD = '/lustre/scwpod02/client/kyutai-interns/datasets/finemath/train.jsonl'
-    data_very_OOD = 'random'
+    # Full reconstruct:    ToyPretraining_LLM_False_Emb_True_MaxEmb_1_pure_reconstruct_16BS
+    # Hybrid: Hybrid_LLM_False_Emb_True_MaxEmb_1_PNoEmbed_0.0_StartPoint_0.0_16BS
     
-    if args.data == 'random':
-        data = data_very_OOD
-    elif args.data == 'ID':
-        data = data_path_ID
-    elif args.data == 'eval_ID':
-        data = data_path_eval_ID
-    elif args.data == 'less_ID':
-        data = data_path_less_ID
-    elif args.data == 'minor_OOD':
-        data = data_path_minor_OOD
-    else:
-        raise NotImplementedError(f"Data {args.data} not implemented")
+    # Toy tests
+    # ToyDecompressingTests_LLM_FT_MaxEmb_1_rec_from_prefix
+    # ToyDecompressingTests_LLM_FT_MaxEmb_1_reversed_2
+    # ToyDecompressingTests_LLM_FT_MaxEmb_1_one_over_2
+    # ToyDecompressingTests_LLM_FT_MaxEmb_1_middle_reconstruct
+    
+
     
     evaluate_toydecompression(
         run_name = args.run_name,
@@ -249,10 +268,10 @@ if __name__ == "__main__":
         max_bs = args.bs,
         output_file = args.out_file,
         n_samples = args.n_passages,
-        tmp_path = None,
+        tmp_path = '/lustre/scwpod02/client/kyutai-interns/hippop/tmp/',
         pipeline=None,
         instruct_name = args.instruct_name,
-        data = data,
+        data = args.data,
         decompress_task = args.decompress_task,
     )
         

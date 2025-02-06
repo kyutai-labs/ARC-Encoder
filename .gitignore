@@ -18,3 +18,5 @@ embed_llm/continuation_test.ipynb
 results/ColBERT
 results/gate_values
 results/old
+results/toy_tests
+scripts/toy_tests.sh
