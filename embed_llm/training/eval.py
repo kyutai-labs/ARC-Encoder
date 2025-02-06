@@ -143,9 +143,9 @@ def evaluate(
                 eval_loss_rec += compute_ce_loss_with_mask(output, y, y_mask)
                 if instruction_tuning.do and instruction_tuning.kl:
                     contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
-                    x_rag = []
-                    y_mask_rag = []
-                    seqlens_rag = []
+                    x_wcontext = []
+                    y_mask_wcontext = []
+                    seqlens_wcontext = []
 
                     ind = 0
                     assert len(contexts) == len(
@@ -153,28 +153,30 @@ def evaluate(
                     ), "Contexts and batch sizes should be the same"
 
                     for i, size in enumerate(batch.sizes):
-                        x_rag.extend(
-                            contexts[i][0] + batch.x[ind : ind + size].tolist()
+                        full_context = sum(contexts[i],[])
+                        x_wcontext.extend(
+                            full_context + batch.x[ind : ind + size].tolist()
                         )
-                        seqlens_rag.append(size + len(contexts[i][0]))
-                        y_mask_rag.extend(
-                            [False] * len(contexts[i][0])
-                            + batch.y_mask[ind : ind + size].tolist()
+                        seqlens_wcontext.append(size + len(full_context))
+                        y_mask_wcontext.extend(
+                            [False] * len(full_context)
+                            + ([True]*len(batch.x[ind : ind + size]) if batch.y_mask is None else batch.y_mask[ind : ind + size].tolist()) 
                         )
+
                         ind += size
 
-                    x_rag = torch.from_numpy(np.array(x_rag)).cuda(non_blocking=True)
-                    y_mask_rag = torch.from_numpy(np.array(y_mask_rag)).cuda(
+                    x_wcontext = torch.from_numpy(np.array(x_wcontext)).cuda(non_blocking=True)
+                    y_mask_wcontext = torch.from_numpy(np.array(y_mask_wcontext)).cuda(
                         non_blocking=True
                     )
 
-                    assert len(x_rag) == len(
-                        y_mask_rag
+                    assert len(x_wcontext) == len(
+                        y_mask_wcontext
                     ), "x_rag and y_mask_rag should be the same length"
                     rag_output = model.forward(
-                        x=x_rag,
+                        x=x_wcontext,
                         embeddings=embeddings,
-                        seqlens=seqlens_rag,
+                        seqlens=seqlens_wcontext,
                         embed_seqlens=embed_seqlens,
                         batch_type=batch.data_type,
                     )
@@ -182,7 +184,7 @@ def evaluate(
                     kl_dv_loss = compute_kl_loss_with_mask(
                         target_logits=rag_output,
                         pred_logits=output,
-                        target_mask=y_mask_rag,
+                        target_mask=y_mask_wcontext,
                         pred_mask=y_mask,
                         temp=instruction_tuning.temp,
                     )

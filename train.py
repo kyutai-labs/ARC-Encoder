@@ -525,111 +525,20 @@ def _train(
                 embed_seqlens=embed_seqlens,
                 batch_type=batch.data_type,
             )
-            
-            if not args.instruct_tuning.do:
-                mb_loss = compute_ce_loss_with_mask(
-                    logits=output, target=y, target_mask=y_mask
-                )
+        
+            mb_loss = compute_ce_loss_with_mask(
+                logits=output, target=y, target_mask=y_mask
+            )
 
-                train_ppl += 2 ** (mb_loss.item())
+            train_ppl += 2 ** (mb_loss.item())
 
-                if args.toy_tests.do and args.toy_tests.kl_pretraining:
-                   
-                    if args.continuation > 0.0 and batch.data_type == "continuation":
-                        contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
-                        x_wcontext = []
-                        y_mask_wcontext = []
-                        seqlens_wcontext = []
-
-                        ind = 0
-                        assert len(contexts) == len(
-                            batch.sizes
-                        ), "Contexts and batch sizes should be the same"
-
-                        for i, size in enumerate(batch.sizes):
-                            full_context = sum(contexts[i],[])
-                            x_wcontext.extend(
-                                full_context + batch.x[ind : ind + size].tolist()
-                            )
-                            seqlens_wcontext.append(size + len(full_context))
-                            y_mask_wcontext.extend(
-                                [False] * len(full_context)
-                                + ([True]*len(batch.x[ind : ind + size]) if batch.y_mask is None else batch.y_mask[ind : ind + size].tolist()) 
-                            )
-
-                            ind += size
-
-                        x_wcontext = torch.from_numpy(np.array(x_wcontext)).cuda(non_blocking=True)
-                        y_mask_wcontext = torch.from_numpy(np.array(y_mask_wcontext)).cuda(
-                            non_blocking=True
-                        )
-
-                        assert len(x_wcontext) == len(
-                            y_mask_wcontext
-                        ), "x_wcontext and y_mask_wcontext should be the same length"
-
-                        with torch.no_grad():
-                            model.eval()
-                            llm_output = model.forward(
-                                x=x_wcontext,
-                                embeddings=None,
-                                seqlens=seqlens_wcontext,
-                                embed_seqlens=None,
-                                batch_type=batch.data_type,
-                            )
-                            # Get the logits for continuation of LLM with textual context
-                            model.train()
-                            
-                        target_mask = y_mask_wcontext
-                        pred_mask = y_mask
-
-                    else: # Full reconstruction
-                        with torch.no_grad():
-                            model.eval()
-                            llm_output = model.forward(
-                                x=x,
-                                embeddings=None,
-                                seqlens=seqlens,
-                                embed_seqlens=None,
-                                batch_type=batch.data_type,
-                            )
-                            model.train()
-                            
-                        target_mask = None
-                        pred_mask = y_mask
-    
-                    kl_dv_loss = compute_kl_loss_with_mask(
-                        target_logits=llm_output,
-                        pred_logits=output,
-                        target_mask=target_mask,
-                        pred_mask=pred_mask,
-                        temp=args.toy_tests.temp,
-                    )
-
-                    
-                    kl_loss += kl_dv_loss.item()
-                    cross_entropy_loss += mb_loss.item()
-                    mb_loss = mb_loss + args.toy_tests.alpha * kl_dv_loss
-
-                loss += mb_loss.item()
-                mb_loss.backward()
+            if (args.toy_tests.do and args.toy_tests.kl_pretraining) or (args.instruct_tuning.do and args.instruct_tuning.kl):
                 
-            else:
-
-                instruct_cross_entropy = compute_ce_loss_with_mask(
-                    logits=output, target=y, target_mask=y_mask
-                )
-                train_ppl += 2 ** (instruct_cross_entropy.item())
-                cross_entropy_loss += instruct_cross_entropy.item()
-
-                if args.instruct_tuning.cross_entropy:
-                    mb_loss = instruct_cross_entropy
-
-                if args.instruct_tuning.kl:
+                if (args.continuation > 0.0 and batch.data_type == "continuation") or batch.data_type == "instruct":
                     contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
-                    x_rag = []
-                    y_mask_rag = []
-                    seqlens_rag = []
+                    x_wcontext = []
+                    y_mask_wcontext = []
+                    seqlens_wcontext = []
 
                     ind = 0
                     assert len(contexts) == len(
@@ -637,51 +546,82 @@ def _train(
                     ), "Contexts and batch sizes should be the same"
 
                     for i, size in enumerate(batch.sizes):
-                        x_rag.extend(
-                            contexts[i][0] + batch.x[ind : ind + size].tolist()
+                        full_context = sum(contexts[i],[])
+                        x_wcontext.extend(
+                            full_context + batch.x[ind : ind + size].tolist()
                         )
-                        seqlens_rag.append(size + len(contexts[i][0]))
-                        y_mask_rag.extend(
-                            [False] * len(contexts[i][0])
-                            + batch.y_mask[ind : ind + size].tolist()
+                        seqlens_wcontext.append(size + len(full_context))
+                        y_mask_wcontext.extend(
+                            [False] * len(full_context)
+                            + ([True]*len(batch.x[ind : ind + size]) if (batch.y_mask is None or (args.instruct_tuning.do and args.instruct_tuning.no_mask))  else batch.y_mask[ind : ind + size].tolist()) 
                         )
+
                         ind += size
 
-                    x_rag = torch.from_numpy(np.array(x_rag)).cuda(non_blocking=True)
-                    y_mask_rag = torch.from_numpy(np.array(y_mask_rag)).cuda(
+                    x_wcontext = torch.from_numpy(np.array(x_wcontext)).cuda(non_blocking=True)
+                    y_mask_wcontext = torch.from_numpy(np.array(y_mask_wcontext)).cuda(
                         non_blocking=True
                     )
 
-                    assert len(x_rag) == len(
-                        y_mask_rag
-                    ), "x_rag and y_mask_rag should be the same length"
+                    assert len(x_wcontext) == len(
+                        y_mask_wcontext
+                    ), "x_wcontext and y_mask_wcontext should be the same length"
 
                     with torch.no_grad():
                         model.eval()
-                        rag_output = model.forward(
-                            x=x_rag,
+                        llm_output = model.forward(
+                            x=x_wcontext,
                             embeddings=None,
-                            seqlens=seqlens_rag,
-                            embed_seqlens=embed_seqlens,
+                            seqlens=seqlens_wcontext,
+                            embed_seqlens=None,
+                            batch_type=batch.data_type,
+                        )
+                        # Get the logits for continuation of LLM with textual context
+                        model.train()
+                    
+                    if get_rank() == 0:
+                        to_gen = [int(tok) for tok in x_wcontext[:seqlens_wcontext[0]]]
+                        # print('N_prefix', batch.n_prefixes[0])
+                        print('Sizes wo context', seqlens)
+                        print('Sizes w context',seqlens_wcontext)
+                        print("To generate",to_gen[:2] ,pipeline.tokenizer.decode(to_gen))
+                        if y_mask_wcontext is not None:
+                            print('Mask', y_mask_wcontext[:seqlens_wcontext[0]])
+                        
+                    target_mask = y_mask_wcontext
+                    pred_mask = None if (args.instruct_tuning.do and args.instruct_tuning.no_mask) else y_mask
+
+                else: # Full reconstruction
+                    with torch.no_grad():
+                        model.eval()
+                        llm_output = model.forward(
+                            x=x,
+                            embeddings=None,
+                            seqlens=seqlens,
+                            embed_seqlens=None,
                             batch_type=batch.data_type,
                         )
                         model.train()
+                        
+                    target_mask = None
+                    pred_mask = y_mask
 
-                    kl_dv_loss = compute_kl_loss_with_mask(
-                        target_logits=rag_output,
-                        pred_logits=output,
-                        target_mask=y_mask_rag,
-                        pred_mask=y_mask,
-                        temp=args.instruct_tuning.temp,
-                    )
+                kl_dv_loss = compute_kl_loss_with_mask(
+                    target_logits=llm_output,
+                    pred_logits=output,
+                    target_mask=target_mask,
+                    pred_mask=pred_mask,
+                    temp=args.toy_tests.temp if args.toy_tests.do else args.instruct_tuning.temp,
+                )
 
-                    kl_loss += kl_dv_loss.item()
-                    mb_loss = mb_loss + args.instruct_tuning.alpha * kl_dv_loss
-
-                mb_loss.backward()
-                loss += mb_loss.item()
-                # print(prof.key_averages().table(sort_by="cuda_time_total"))
                 
+                kl_loss += kl_dv_loss.item()
+                cross_entropy_loss += mb_loss.item()
+                mb_loss = mb_loss + (args.toy_tests.alpha if args.toy_tests.do else args.instruct_tuning.alpha) * kl_dv_loss
+
+            loss += mb_loss.item()
+            mb_loss.backward()
+       
             n_batch_tokens += x.numel()
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward

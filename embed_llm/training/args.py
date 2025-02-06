@@ -46,6 +46,7 @@ class InstructionTuningArgs(Serializable):
     tune_llm: bool = False
     tune_embedder: bool = False
     max_embeds: int = 1
+    no_mask: bool = False
 
 
 @dataclass

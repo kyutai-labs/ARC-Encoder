@@ -261,16 +261,22 @@ def sequence_iterator_reconstruction(
             )
            
         else:
-            # If several passages loaded we use these passages directly
-            # If we want to reconstruct from several chunks of embedded text, we need to be able to reconstruct the full passage
             assert adapt_seq_len
+            # If we can use more embeddings and that one passage reaches the limit we split it in two embeddings and so on
             if len(embed_tokens) < abs(max_embeds):
-                # TODO SPLIT IF TOO LARGE
-                new_embed_tokens =  [toks[:seq_len] for toks in embed_tokens]
-                new_embed_text = [tokenizer.decode(toks[:seq_len]) for toks in embed_tokens]
-            else:
-                new_embed_tokens =  [toks[:seq_len] for toks in embed_tokens]
-                new_embed_text = [tokenizer.decode(toks[:seq_len]) for toks in embed_tokens]
+                embed_tokens.sort(key=len, reverse=True)
+                l = len(embed_tokens)
+                while l < abs(max_embeds):
+                    if len(embed_tokens[0]) > seq_len:
+                        embed_tokens.append(embed_tokens[0][seq_len//2:])   
+                        embed_tokens[0] = embed_tokens[0][:seq_len//2]
+                        l += 1
+                        embed_tokens.sort(key=len, reverse=True)
+                    else:
+                        break
+              
+            new_embed_tokens = [toks[:seq_len] for toks in embed_tokens]
+            new_embed_text = [tokenizer.decode(toks[:seq_len]) for toks in embed_tokens]
             
             to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
 

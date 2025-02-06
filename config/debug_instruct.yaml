@@ -14,6 +14,8 @@ instruct_tuning:
   tune_llm: false
   tune_embedder: false
   max_embeds: 3
+  no_mask: true
+  
 
 lora:
   rank: 64
