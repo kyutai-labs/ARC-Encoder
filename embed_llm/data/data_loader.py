@@ -190,9 +190,8 @@ def build_data_loader(
             data_type=sample.data_type,
             n_prefixes=getattr(sample, "n_prefixes", None),
         )
-
+        
         if len(batch_list) == batch_size:
-
             batch: Batch = batch_list.create_batch()
             yield batch
 

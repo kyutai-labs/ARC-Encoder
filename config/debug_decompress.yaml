@@ -17,7 +17,7 @@ toy_tests:
   alpha: 1.0
   tune_llm: true
   tune_embedder: false
-  decompress_usage: 'reversed'
+  decompress_usage: 'true_reversed'
 
 data:
   adapt_seq_len: false
@@ -39,7 +39,7 @@ optim:
 seed: 0
 log_freq: 1
 eval_freq: 1
-no_eval: false
+no_eval: true
 ckpt_freq: 500
 save_adapters: true
 

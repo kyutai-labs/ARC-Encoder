@@ -1,12 +1,12 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=4-6
+#SBATCH --array=7-15
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --gpus-per-task=2
+#SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=32
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx31,par2dc5-ai-prd-cl02s03dgx32,par2dc5-ai-prd-cl02s01dgx05,par2dc5-ai-prd-cl02s02dgx18,par2dc5-ai-prd-cl02s02dgx29,par2dc5-ai-prd-cl02s04dgx22,par2dc5-ai-prd-cl02s02dgx12,par2dc5-ai-prd-cl02s03dgx26,par2dc5-ai-prd-cl02s02dgx13,par2dc5-ai-prd-cl02s01dgx23
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx22,par2dc5-ai-prd-cl02s02dgx12,par2dc5-ai-prd-cl02s03dgx26,par2dc5-ai-prd-cl02s02dgx13,par2dc5-ai-prd-cl02s01dgx23,par2dc5-ai-prd-cl02s01dgx05,par2dc5-ai-prd-cl02s01dgx05,par2dc5-ai-prd-cl02s01dgx05,par2dc5-ai-prd-cl02s03dgx23,par2dc5-ai-prd-cl02s04dgx05
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=instruct_exps
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
@@ -24,6 +24,15 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha2_lowlr.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha10_lowlr.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha2_lowlr_nomask.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_bottom_1embeds_alpha100_lowlr.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_bottom_1embeds_alpha10_lowlr.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_bottom_1embeds_alpha2_lowlr.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alpha100_lowlr.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alpha10_lowlr.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alpha2_lowlr.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha100_lowlr.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha2_lowlr_08tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha2_higherlr.yaml
 )
 
 

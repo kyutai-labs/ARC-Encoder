@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=10
+#SBATCH --array=13-14
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -27,6 +27,10 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_v3_LLM_False_Emb_False_MaxEmb_3_StartPoint_0.4_16BS.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyDecompressingTests_LLM_FT_MaxEmb_1_rec_from_prefix.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyDecompressingTests_LLM_FT_MaxEmb_1_reversed_2.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_True_MaxEmb_3_0.5cont_2alpha_16BS_08tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_True_MaxEmb_3_0.5cont_2alpha_16BS.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyDecompressingTests_LLM_FT_MaxEmb_1_every_2.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyDecompressingTests_LLM_FT_MaxEmb_true_reversed.yaml
 )
 
 

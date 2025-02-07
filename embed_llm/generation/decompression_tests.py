@@ -89,7 +89,7 @@ def evaluate_toydecompression(
                     break
     elif data_path == 'random':
         for _ in range(n_samples):
-            sample = pipeline.tokenizer.decode([random.choice(pipeline.tokenizer.vocab) for _ in range(max_seq_len)])
+            sample = pipeline.tokenizer.decode([random.randint(0,pipeline.tokenizer.n_words-1) for _ in range(max_seq_len)])
             text_conditioning.append(sample)     
     
     full_x = [
@@ -102,29 +102,46 @@ def evaluate_toydecompression(
     # Sequence loading with modifs depending on training. 
     if decompress_task == 'from_prefix_reconstruct':
         full_encoded_prompt_post = [toks[:5] for toks in full_x]
-        gt_text = [pipeline.tokenizer.decode(toks[5:]) for toks in full_x]
-        ppl_tok = [toks[5:] for toks in full_x]
+        ppl_tok_input = [toks[:-1][5:] for toks in full_x]
+        ppl_tok_output = [toks[1:][5:] for toks in full_x] 
+        gt_text = [pipeline.tokenizer.decode(toks) for toks in ppl_tok_output] 
         gen_len = max_seq_len - 5
     elif decompress_task == 'middle_reconstruct':
-        gt_text = [pipeline.tokenizer.decode(toks[len(toks)//2:]) for toks in full_x]
         full_encoded_prompt_post = [[pipeline.tokenizer.bos_id] for _ in full_x]
-        ppl_tok = [toks[len(toks)//2:] for toks in full_x]
+        ppl_tok_input =  [toks[:-1][len(toks)//2:] for toks in full_x]
+        ppl_tok_output =  [toks[1:][len(toks)//2:] for toks in full_x] 
+        gt_text = [pipeline.tokenizer.decode(toks) for toks in ppl_tok_output] 
         gen_len = max_seq_len//2
     elif decompress_task == 'reversed':
         full_encoded_prompt_post = [[pipeline.tokenizer.bos_id] for _ in full_x]
-        gt_text = [pipeline.tokenizer.decode(toks[::-1]) for toks in full_x]
-        ppl_tok = [toks[::-1] for toks in full_x]
+        ppl_tok_input = [toks[:-1][::-1] for toks in full_x]
+        ppl_tok_output = [toks[1:][::-1] for toks in full_x] 
+        gt_text = [pipeline.tokenizer.decode(toks) for toks in ppl_tok_output] 
+        gen_len = max_seq_len
+    elif decompress_task == 'true_reversed':
+        full_encoded_prompt_post = [[pipeline.tokenizer.bos_id] for _ in full_x]
+        ppl_tok_input = [toks[::-1][:-1] for toks in full_x]
+        ppl_tok_output = [toks[::-1][1:] for toks in full_x] 
+        gt_text = [pipeline.tokenizer.decode(toks) for toks in ppl_tok_output] 
         gen_len = max_seq_len
     elif decompress_task == 'one_over_two_reconstruction':
         full_encoded_prompt_post = [[pipeline.tokenizer.bos_id] for _ in full_x]
-        gt_text = [pipeline.tokenizer.decode(toks[::2]) for toks in full_x]
-        ppl_tok = [toks[::2] for toks in full_x]
+        ppl_tok_input = [toks[:-1][::2] for toks in full_x]
+        ppl_tok_output = [toks[1:][::2] for toks in full_x] 
+        gt_text = [pipeline.tokenizer.decode(toks) for toks in ppl_tok_output] 
         gen_len = max_seq_len//2
     elif decompress_task == 'full_reconstruct':
         full_encoded_prompt_post = [[pipeline.tokenizer.bos_id] for _ in full_x]
-        gt_text = [pipeline.tokenizer.decode(toks) for toks in full_x]
-        ppl_tok = full_x
+        ppl_tok_input = [toks[:-1]for toks in full_x]
+        ppl_tok_output = [toks[1:]for toks in full_x]
+        gt_text = [pipeline.tokenizer.decode(toks) for toks in ppl_tok_output] 
         gen_len = max_seq_len
+    elif decompress_task == 'reconstruct_one_every_two':
+        full_encoded_prompt_post = [[pipeline.tokenizer.bos_id] for _ in full_x]
+        ppl_tok_input = [toks[:-1][::2] for toks in full_x]
+        ppl_tok_output = [toks[1:][::2] for toks in full_x] 
+        gt_text = [pipeline.tokenizer.decode(toks) for toks in ppl_tok_output] 
+        gen_len = max_seq_len//2
     else:
         raise NotImplementedError(f"Decompression task {decompress_task} not implemented")
 
@@ -156,40 +173,37 @@ def evaluate_toydecompression(
                 embeddings.to(pipeline.pipeline_args.param_dtype),
                 seqlens=embed_seqlens,
             )
-        
         embeddings = cat_embeddings if other_device is None else cat_embeddings.to(other_device)
     
-
-        input = [tok[:-1] for tok in ppl_tok]
-        target = [tok[1:] for tok in ppl_tok]
         with torch.no_grad():
+            input = torch.tensor(sum(ppl_tok_input,[]), dtype = torch.long).to(other_device)
             logits = llm.forward(
-                torch.tensor(sum(input,[]), device = llm.device, dtype = torch.long),
-                seqlens=[len(p) for p in input],
+                input.detach(),
+                seqlens=[len(p) for p in ppl_tok_input],
                 embeddings=None,
                 embed_seqlens=None,
                 cat_embeddings=None,
                 show_attention=False,
             )
-        ce = compute_ce_loss_with_mask(
-            logits,
-            torch.tensor(sum(target,[]), device = llm.device, dtype = torch.long),None).item()
 
-        ppl += 2**ce
-         
-        generated_tokens = mistral_generate(
-            prompt_pre_embed=[[]*len(text_conditioning)],
-            prompt_post_embed=encoded_prompt_post,
-            embeddings=embeddings,
-            model = llm,
-            max_tokens=gen_len,
-            temperature=temp,
-            chunk_size=None,
-            eos_id=pipeline.tokenizer.eos_id,
-            embed_seqlens=embed_seqlens,
-            cat_embeddings= cat_embeddings 
-        )
-
+            output = torch.tensor(sum(ppl_tok_output,[]), dtype = torch.long).to(other_device)
+            ce = compute_ce_loss_with_mask(
+                logits,
+                output,None).item()
+            ppl += 2**ce
+        with torch.no_grad():
+            generated_tokens = mistral_generate(
+                prompt_pre_embed=[[]*len(text_conditioning)],
+                prompt_post_embed=encoded_prompt_post,
+                embeddings=embeddings,
+                model = llm,
+                max_tokens=gen_len,
+                temperature=temp,
+                chunk_size=None,
+                eos_id=pipeline.tokenizer.eos_id,
+                embed_seqlens=embed_seqlens,
+                cat_embeddings= cat_embeddings 
+            )
 
         produced_text = [
             pipeline.tokenizer.decode(generated_tokens[i])
@@ -198,6 +212,7 @@ def evaluate_toydecompression(
         generated_seq.extend(produced_text)
 
     print('Ground_truth:', gt_text[0])
+    
     print('Generated:', generated_seq[0])
     bleu_score = get_bleu_score(gt_text, generated_seq)
     bleu_score_avg = get_bleu_score( gt_text, generated_seq,avg=True)
@@ -212,6 +227,7 @@ def evaluate_toydecompression(
         'bleu': bleu_score, 
         'bleu_avg': bleu_score_avg,
         'n_samples': n_samples,
+        'max_seq_len': max_seq_len,
     }
 
     
@@ -230,7 +246,7 @@ def arg_parser():
     parser.add_argument("--out_file", type=str, default='/home/hippolytepilchen/code/embed_llm/results/toy_tests/decompression_tests.jsonl')
     parser.add_argument("--n_passages", type=int, default=500)
     parser.add_argument("--max_seq_len", type=int, default=256)
-    parser.add_argument("--bs", type=int, default=4)
+    parser.add_argument("--bs", type=int, default=8)
     parser.add_argument("--instruct_name", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--data", type=str, default=None)

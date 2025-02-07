@@ -528,6 +528,13 @@ def sequence_iterator_decompress_usage(
             y_buffer.extend(y[cur_pos : cur_pos + seq_len:2])
             mask_buffer.extend(len(y[cur_pos : cur_pos + seq_len:2])*[True])
             x_size = len(x[cur_pos : cur_pos + seq_len:2])
+        elif decompress_usage == 'reconstruct_one_every_two':
+            if len(tokens[cur_pos : cur_pos + seq_len+1: 2]) <= 1:
+                return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes
+            x_buffer.extend(tokens[cur_pos : cur_pos + seq_len + 1: 2][:-1])
+            y_buffer.extend(tokens[cur_pos : cur_pos + seq_len + 1: 2][1:])
+            mask_buffer.extend(len(tokens[cur_pos : cur_pos + seq_len + 1: 2][1:])*[True])
+            x_size = len(tokens[cur_pos : cur_pos + seq_len + 1: 2][:-1])
         elif decompress_usage == 'reversed':
             x_buffer.extend(y[cur_pos + seq_len-1: cur_pos:-1])
             y_buffer.extend(x[cur_pos + seq_len-1: cur_pos:-1])
@@ -535,6 +542,13 @@ def sequence_iterator_decompress_usage(
             x_size = len(y[cur_pos + seq_len-1: cur_pos:-1])
             if x_size == 0:
                 return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes
+        elif decompress_usage == 'true_reversed':
+            if len(tokens[cur_pos : cur_pos + seq_len]) <= 1:
+                return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes
+            x_buffer.extend(tokens[cur_pos : cur_pos + seq_len][::-1][:-1])
+            y_buffer.extend(tokens[cur_pos : cur_pos + seq_len][::-1][1:])
+            mask_buffer.extend(len(tokens[cur_pos : cur_pos + seq_len][1:])*[True])
+            x_size = len(tokens[cur_pos : cur_pos + seq_len][:-1])
         elif decompress_usage == 'from_prefix_reconstruct':
             if len(x[cur_pos : cur_pos + seq_len])<10:
                 return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes

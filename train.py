@@ -307,6 +307,7 @@ def _train(
         eval_batches = []
         while len(eval_batches) < 40:
             batch = next(eval_data_loader_4rec)
+
             if len(batch.sizes) > 70:
                 print("Too many embeddings to do, skipping batch")
                 continue
@@ -432,7 +433,7 @@ def _train(
             batch = next(train_data_loader)
 
             # Avoid OOM due to too many embeddings for the same batch
-            while len(batch.sizes) > 70:
+            while len(batch.sizes) > 100:
                 batch = next(train_data_loader)
                 print("Too many embeddings to do, skipping batch")
 
@@ -448,11 +449,11 @@ def _train(
             #     # print('N_prefix', batch.n_prefixes[0])
             #     print('Sizes', batch.sizes)
             #     print("Embed seqlens", embed_seqlens)
-            #     print('Inside embed seqlens',[len(l_tokens) for embed in  batch.to_embed for l_tokens in embed["tokens"]])
+            #     # print('Inside embed seqlens',[len(l_tokens) for embed in  batch.to_embed for l_tokens in embed["tokens"]])
             #     # print("Embed", batch.y_mask[:batch.sizes[0]])
             #     print("To embed", pipeline.tokenizer.decode(embed)[:])
-            #     # print("To generate",to_gen[:2] ,pipeline.tokenizer.decode(to_gen)[:100])
-            #     # print("Target",target[:2] ,pipeline.tokenizer.decode(target)[:100])
+            #     print("To generate",to_gen[:2] ,pipeline.tokenizer.decode(to_gen)[:100])
+            #     print("Target",target[:2] ,pipeline.tokenizer.decode(target)[:100])
             #     # if y_mask is not None:
             #     #     print('Mask', y_mask[:batch.sizes[0]])
 
