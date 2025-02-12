@@ -27,12 +27,29 @@ def main(args):
                 continue
             
             sample = json.loads(line)
+            answer = sample['answer']
+            if isinstance(sample['answer'], list):
+                answer = '\n'.join(sample['answer'])
+            if 'No Answer Present'.lower() in answer.lower() and args.remove_no_answer :
+                continue
+        
+            if 'I don\'t know.'.lower() in answer.lower() and args.remove_no_answer:
+                continue
+            
+            if  len(answer) == 0 and args.remove_no_answer:
+                continue
+            
+            if args.no_answer_only and not ('I don\'t know.'.lower() in answer.lower() or 'No Answer Present'.lower() in answer.lower()):
+                continue
+             
             if args.add_query_template:
                 sample["question"] = random.choice(templates_for_qa).format(question=sample['question'])
+            
             to_add.append(sample)
             
-            if i == args.n_sample_to_add - 1 + args.start_at_n:
+            if len(to_add) == args.n_sample_to_add:
                 break
+            
     print('Adding', len(to_add), 'samples')
     for sample in to_add:
         mix_dataset.append(sample)
@@ -61,6 +78,12 @@ def arg_parser():
         help="Path to save data params",
     )
 
+    parser.add_argument(
+        "--remove_no_answer",
+        action="store_true",
+        help="Whether to remove samples with no answer",
+    )
+    parser.add_argument("--no_answer_only", action="store_true")
     parser.add_argument("--to_add_file", type=str, default=None)
 
     parser.add_argument("--n_sample_to_add", type=int, default=None)

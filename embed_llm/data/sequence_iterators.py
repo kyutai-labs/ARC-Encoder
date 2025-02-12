@@ -291,8 +291,11 @@ def sequence_iterator_reconstruction(
         sizes.append(size)
 
         cur_pos += size
-        if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
-            
+        # if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
+        if n_missing == 0 or ((adapt_seq_len and cur_pos == len(x)) or len(x_buffer) == seq_len): 
+        # With adapt seq len just do not cut a sequence in the middle to fill the empty space 
+        # But still upper bounded by max_seq_len
+
             try:
                 assert len(mask_buffer) == len(x_buffer) == len(y_buffer), (
                     len(mask_buffer),

@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from embed_llm.generation.utils import ensure_reproducibility
 from embed_llm.models.mistral.generate import generate as mistral_generate
 from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline
-from embed_llm.training.loss import compute_ce_loss_with_mask
+from embed_llm.training.loss import compute_ce_loss_with_mask, compute_bpt_loss
 from embed_llm.generation.evaluation import get_gpu_memory
 from embed_llm.generation.metrics import (
     word_overlap,
@@ -39,6 +39,7 @@ def evaluate_toydecompression(
     instruct_name: str = None,
     data: str = None,
     decompress_task: str = "reversed",
+    random_prefix: bool = False,
 ):
 
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
@@ -48,6 +49,7 @@ def evaluate_toydecompression(
     data_path_less_ID = '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl'
     data_path_minor_OOD = '/lustre/scwpod02/client/kyutai-interns/datasets/finemath/train.jsonl'
     data_very_OOD = 'random'
+    data_esp_lang = '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/eswiki-20220120.jsonl'
     
     if data == 'random':
         data_path = data_very_OOD
@@ -59,6 +61,12 @@ def evaluate_toydecompression(
         data_path = data_path_less_ID
     elif data == 'minor_OOD':
         data_path = data_path_minor_OOD
+    elif data == 'esp_lang':
+        data_path = data_esp_lang
+    elif data == 'lit_lang':
+        data_path = '/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/ltwiki-20220120.jsonl'
+    elif data == 'code':
+        data_path = '/lustre/scwpod02/client/kyutai-interns/datasets/thestack/shuf/python.jsonl'
     else:
         raise NotImplementedError(f"Data {data} not implemented")
 
@@ -101,11 +109,28 @@ def evaluate_toydecompression(
     
     # Sequence loading with modifs depending on training. 
     if decompress_task == 'from_prefix_reconstruct':
-        full_encoded_prompt_post = [toks[:5] for toks in full_x]
-        ppl_tok_input = [toks[:-1][5:] for toks in full_x]
-        ppl_tok_output = [toks[1:][5:] for toks in full_x] 
-        gt_text = [pipeline.tokenizer.decode(toks) for toks in ppl_tok_output] 
-        gen_len = max_seq_len - 5
+        if not random_prefix:
+            full_encoded_prompt_post = [toks[:5] for toks in full_x]
+            ppl_tok_input = [toks[:-1][5:] for toks in full_x]
+            ppl_tok_output = [toks[1:][5:] for toks in full_x] 
+            gt_text = [pipeline.tokenizer.decode(toks) for toks in ppl_tok_output] 
+            gen_len = max_seq_len - 5
+        else:
+            full_encoded_prompt_post = []
+            ppl_tok_input = []
+            ppl_tok_output = []
+            gt_text = []
+            gen_lengths = []
+            for toks in full_x:
+                start_gen = random.randint(0, len(toks)-10)
+                full_encoded_prompt_post.append(toks[start_gen:start_gen+5])
+                ppl_tok_input.append(toks[start_gen+5:-1])
+                ppl_tok_output.append(toks[start_gen+6:])
+                gt_text.append(pipeline.tokenizer.decode(toks[start_gen+6:]))
+                gen_lengths.append(len(toks[start_gen+6:]))
+            gen_len = max(gen_lengths)
+                
+                
     elif decompress_task == 'middle_reconstruct':
         full_encoded_prompt_post = [[pipeline.tokenizer.bos_id] for _ in full_x]
         ppl_tok_input =  [toks[:-1][len(toks)//2:] for toks in full_x]
@@ -146,6 +171,7 @@ def evaluate_toydecompression(
         raise NotImplementedError(f"Decompression task {decompress_task} not implemented")
 
     ppl = 0
+    bpc = 0
     generated_seq = []
     for i in trange(0,len(full_x),max_bs):
 
@@ -186,11 +212,22 @@ def evaluate_toydecompression(
                 show_attention=False,
             )
 
+            batch_bpc = 0
+            ind = 0
+            for i, toks in enumerate(ppl_tok_output):
+                loss_in_bits = torch.sum(compute_bpt_loss(logits[ind:ind+len(toks),...], 
+                                                          torch.tensor(toks).to(other_device), None)).item() 
+                batch_bpc += loss_in_bits / len(pipeline.tokenizer.decode(toks))
+                ind += len(toks)
+                            
             output = torch.tensor(sum(ppl_tok_output,[]), dtype = torch.long).to(other_device)
             ce = compute_ce_loss_with_mask(
                 logits,
                 output,None).item()
             ppl += 2**ce
+            bpc += batch_bpc 
+            
+            ce * sum([len(toks) for toks in ppl_tok_output]) / sum([len(pipeline.tokenizer.decode(toks)) for toks in ppl_tok_output])
         with torch.no_grad():
             generated_tokens = mistral_generate(
                 prompt_pre_embed=[[]*len(text_conditioning)],
@@ -228,6 +265,8 @@ def evaluate_toydecompression(
         'bleu_avg': bleu_score_avg,
         'n_samples': n_samples,
         'max_seq_len': max_seq_len,
+        'random_prefix': random_prefix,
+        'bpc': bpc/len(range(0,len(full_x),max_bs)),
     }
 
     
@@ -243,11 +282,12 @@ def arg_parser():
         default=None,
     )
     parser.add_argument("--ckpt", type=int, default=None)
-    parser.add_argument("--out_file", type=str, default='/home/hippolytepilchen/code/embed_llm/results/toy_tests/decompression_tests.jsonl')
+    parser.add_argument("--out_file", type=str, default='/home/hippolytepilchen/code/embed_llm/results/toy_tests/decompression_tests_2.jsonl')
     parser.add_argument("--n_passages", type=int, default=500)
     parser.add_argument("--max_seq_len", type=int, default=256)
     parser.add_argument("--bs", type=int, default=8)
     parser.add_argument("--instruct_name", type=str, default=None)
+    parser.add_argument("--random_prefix", action='store_true')
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--decompress_task", type=str, default='reversed')
@@ -289,6 +329,7 @@ if __name__ == "__main__":
         instruct_name = args.instruct_name,
         data = args.data,
         decompress_task = args.decompress_task,
+        random_prefix = args.random_prefix
     )
         
     

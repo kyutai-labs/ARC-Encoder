@@ -2,25 +2,35 @@ model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7
 llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_instruct
-start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/ToyPretraining_LLM_False_Emb_True_MaxEmb_1_0.2cont_2alpha_16BS/checkpoints/checkpoint_030000
+start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/ToyPretraining_LLM_False_Emb_False_MaxEmb_1_0.2cont_0alpha_16BS_tmp/checkpoints/checkpoint_030000
 
 
 instruct_tuning:
   do: true
   cross_entropy: true
   kl: true
-  alpha: 10.
+  alpha: 2.
   temp: 1.0
   tune_llm: false
-  tune_embedder: true
+  tune_embedder: false
   max_embeds: 1
 
 
 lora:
+  enable: false
   rank: 64
   scaling: 2.0
-  enable: false
 
+data:
+  adapt_seq_len: true
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl
+  shuffle: false
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/premixed_datasets/instruct_xRAG_1002.jsonl
+# data:
+#   adapt_seq_len: false
+#   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
+#   shuffle: false
+#   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
 
 # data:
 #   # train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
@@ -30,11 +40,11 @@ lora:
 #   data_types: [instruct]
 #   adapt_seq_len: true
 
-data:
-  adapt_seq_len: true
-  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl
-  shuffle: false
-  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/premixed_datasets/instruct_xRAG_clean.jsonl
+# data:
+#   adapt_seq_len: true
+#   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl
+#   shuffle: false
+#   train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/premixed_datasets/instruct_xRAG_clean.jsonl
 
 seq_len: 1024
 batch_size: 32

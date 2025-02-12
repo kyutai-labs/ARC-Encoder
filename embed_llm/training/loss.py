@@ -39,14 +39,29 @@ def compute_kl_loss_with_mask(
     target_l = torch.masked_select(
         target_logits,
         torch.repeat_interleave(target_mask, n_vocab, dim=0).reshape(-1, n_vocab),
-    )
+    ).view(-1,n_vocab)
+
     pred_l = torch.masked_select(
         pred_logits,
         torch.repeat_interleave(pred_mask, n_vocab, dim=0).reshape(-1, n_vocab),
-    )
+    ).view(-1,n_vocab)
+
 
     loss_func = torch.nn.KLDivLoss(reduction="none")
     mb_loss = loss_func(
         F.log_softmax(pred_l / temp, dim=-1), F.softmax(target_l / temp, dim=-1)
     ).sum()/torch.sum(target_mask)
     return mb_loss
+
+
+def compute_bpt_loss(logits, targets, target_mask: torch.Tensor | None):
+
+    # Compute the cross-entropy loss
+    loss = F.cross_entropy(logits, targets, reduction='none')
+
+    # Convert the loss from nats to bits
+    loss_in_bits = loss / torch.log(torch.tensor(2.0))
+
+    loss_in_bits = loss_in_bits  if target_mask is None else loss_in_bits * target_mask
+
+    return loss_in_bits

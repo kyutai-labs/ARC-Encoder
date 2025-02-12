@@ -756,10 +756,10 @@ class EmbedAugPipeline(nn.Module):
 
 def load_pipeline(
     run_name: str | None,
-    tmp_path: str,
     llm_path: str,
     device: str,
     max_bs: int,
+    tmp_path: str = '/lustre/scwpod02/client/kyutai-interns/hippop/tmp/',
     pipeline: EmbedAugPipeline | Transformer | None = None,
     mistral: bool = False,
     ckpt: int | None = None,
@@ -821,22 +821,23 @@ def load_pipeline(
                     ]
                 )[-1]
                 
-                last_ckpt_run_name =sorted(
-                    [
-                        ckpt_name
-                        for ckpt_name in os.listdir(
-                            tmp_path + run_name + "/checkpoints/"
-                        )
-                        if (
-                            Path(tmp_path + run_name + "/checkpoints/")
-                            / ckpt_name
-                            / "params.json"
-                        ).exists()
-                    ]
+                if run_name is not None:
+                    last_ckpt_run_name =sorted(
+                        [
+                            ckpt_name
+                            for ckpt_name in os.listdir(
+                                tmp_path + run_name + "/checkpoints/"
+                            )
+                            if (
+                                Path(tmp_path + run_name + "/checkpoints/")
+                                / ckpt_name
+                                / "params.json"
+                            ).exists()
+                        ]
                 )[-1]
                 pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
                     llm_path=llm_path,
-                    ckpt_path=tmp_path +  run_name + "/checkpoints/" + last_ckpt_run_name,
+                    ckpt_path= None if run_name is None else tmp_path +  run_name + "/checkpoints/" + last_ckpt_run_name,
                     device=device,
                     llm_name="Mistral7B",
                     embed_model_name="NVEmbed",  # Not used if pretrainde ckpt available

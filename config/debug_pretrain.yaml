@@ -4,21 +4,28 @@ run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_pretrain
 # continuation: 1.0
 # textual_continuation: 0.0
+
+continuation: 0.5
+toy_tests:
+  do: true
+  kl_pretraining: true
+  alpha: 2
+  temp: 0.8
+  
+
 lora:
+  enable: true
   rank: 64
   scaling: 2.0
-  enable: true
 
-
-
-
+  
 pipeline:
   cross_att: true
-  cross_att_layers: null
+  cross_att_layers: 16
   do_both: true
   do_pool: true
-  embedder_name: NVEmbed
-  every_cross_att: 2
+  embedder_name: Mistral7B
+  every_cross_att: null
   gate_bottleneck: 8
   mlp_project:
     act: gelu
@@ -27,16 +34,15 @@ pipeline:
     type: mlp
   n_truncated_layers: 8
   pooled_cross_att: false
+  max_embeds: 3
   pooling_module:
     n_heads: 8
     r: 512
     type: latent_attention
-  prefix_prompt: false
   shared_kv: false
   train_only_pooling: false
-  trainable_embedder: false
+  trainable_embedder: true
   trainable_llm: false
-  max_embeds: 3
   w_embeds: true
 
 data:
@@ -59,8 +65,8 @@ optim:
 seed: 0
 log_freq: 1
 eval_freq: 1
-no_eval: false
-ckpt_freq: 500
+no_eval: true
+ckpt_freq: 1
 save_adapters: true
 
 

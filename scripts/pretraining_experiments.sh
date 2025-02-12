@@ -1,36 +1,33 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=13-14
+#SBATCH --array=0-10%8
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
-#SBATCH --job-name=pretraining_embed_llm
+#SBATCH --job-name=distill_pretrain_embed_llm
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/embed_llm_out/embed_llm_%A_%a.out
 
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
+
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_False_MaxEmb_3_fullrec_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_False_MaxEmb_3_fullcont_16BS_higher_lr.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_False_MaxEmb_3_fullcont_16BS_nowd.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_False_MaxEmb_5_fullcont_16BS_alternativeCA.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_False_MaxEmb_1_0.2cont_2alpha_16BS_tmp.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_False_MaxEmb_1_0.2cont_0alpha_16BS_tmp.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_False_MaxEmb_3_fullcont_16BS_beginCA.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_False_MaxEmb_5_fullcont_16BS_alternativeCA.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Hybrid_v3_LLM_False_Emb_False_MaxEmb_3_StartPoint_0.4_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyDecompressingTests_LLM_FT_MaxEmb_1_rec_from_prefix.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyDecompressingTests_LLM_FT_MaxEmb_1_reversed_2.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_True_MaxEmb_3_0.5cont_2alpha_16BS_08tmp.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyPretraining_LLM_False_Emb_True_MaxEmb_3_0.5cont_2alpha_16BS.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyDecompressingTests_LLM_FT_MaxEmb_1_every_2.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyDecompressingTests_LLM_FT_MaxEmb_true_reversed.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_embmid_MaxEmb_1_50cont_0alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_embmid_MaxEmb_1_50cont_2alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_embmid_MaxEmb_3_50cont_0alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_embmid_MaxEmb_3_50cont_2alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_1_50cont_0alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_1_50cont_2alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_3_50cont_01alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_3_50cont_0alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_3_50cont_2alpha_08tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_3_50cont_2alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyInstruct_LLM_False_Emb_False_MaxEmb_3_alpha_2.yaml
 )
 
 
@@ -62,19 +59,21 @@ echo "Starting evaluation of run $RUN_NAME"
 
 case $RUN_NAME in
 *_MaxEmb_1*)
+
+
     srun --gpus=$N_GPU \
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
     --n_passages 500 --max_seq_len 64 --ckpt 30000 --reconstruct_seq_len 256
 
 
     srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
-    --n_passages 500 --max_seq_len 64 --ckpt 25000 --reconstruct_seq_len 256
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    --n_passages 500 --max_seq_len 64 --ckpt 25000
 
 
     srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
-    --n_passages 500 --max_seq_len 64 --ckpt 20000 --reconstruct_seq_len 256
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    --n_passages 500 --max_seq_len 64 --ckpt 20000 
     ;;
 
 *)
@@ -82,15 +81,25 @@ case $RUN_NAME in
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
     --n_passages 500 --max_seq_len 64 --ckpt 30000 --reconstruct_seq_len 256 --multi_passages 3
 
+    srun --gpus=$N_GPU \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    --n_passages 500 --max_seq_len 64 --ckpt 30000  --multi_passages 2
+
+
+    srun --gpus=$N_GPU \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    --n_passages 500 --max_seq_len 64 --ckpt 30000 --multi_passages 1
+
+
+
+    srun --gpus=$N_GPU \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    --n_passages 500 --max_seq_len 64 --ckpt 25000  --multi_passages 3
+
 
     srun --gpus=$N_GPU \
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
-    --n_passages 500 --max_seq_len 64 --ckpt 25000 --reconstruct_seq_len 256 --multi_passages 3
-
-
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
-    --n_passages 500 --max_seq_len 64 --ckpt 20000 --reconstruct_seq_len 256 --multi_passages 3
+    --n_passages 500 --max_seq_len 64 --ckpt 20000  --multi_passages 3
     ;;
 
 esac

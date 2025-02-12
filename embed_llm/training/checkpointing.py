@@ -200,6 +200,7 @@ class Checkpointer:
             self.instruction_tuning is not None
             and not self.instruction_tuning.tune_embedder
         ):
+
             trainable_embedder_modules = {}
             pooling_modules = {}
         else:
@@ -343,10 +344,11 @@ class Checkpointer:
 
         if self.mlp_project is not None and self.mlp_project.n_layers > 0:
             tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
-
+        
         if self.trainable_embedder is not None and (
             self.instruction_tuning is None or self.instruction_tuning.tune_embedder
         ):
+            
             if not self.pipeline.pipeline_args.train_only_pooling:
                 tmp_trainable_embedder_dst = self._tmp(
                     llm_dst.parent / "trainable_embedder"

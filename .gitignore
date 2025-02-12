@@ -20,3 +20,4 @@ results/gate_values
 results/old
 results/toy_tests
 scripts/toy_tests.sh
+scripts/create_data_mix1002.sh

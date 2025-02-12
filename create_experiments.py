@@ -383,25 +383,27 @@ def arg_parser():
 
 
 if __name__ == "__main__":
-    args = arg_parser()
-    main(args)
+    # args = arg_parser()
+    # main(args)
 
-    # import os
-    # import yaml
+    import os
+    import yaml
 
-    # path_config = (
-    #     "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/"
-    # )
+    path_config = (
+        "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/"
+    )
     
     
-    # filenames = [file for file in os.listdir(path_config)] 
+    filenames = [file for file in os.listdir(path_config) if 'Instruct' in file]  
 
-    # for filename in filenames:
-    #     if filename.endswith(".yaml"):
-    #         with open(path_config + filename, "r") as file:
-    #             config = yaml.safe_load(file) 
-    #         config["max_steps"] = 30000
-    #         with open(
-    #             path_config + filename, "w"
-    #         ) as file:
-    #             yaml.dump(config, file)
+    for filename in filenames:
+        if filename.endswith(".yaml"):
+            with open(path_config + filename, "r") as file:
+                config = yaml.safe_load(file) 
+            config["exp_name"] = config["exp_name"].split('_newdata')[0] + '_newdata'
+            config['wandb']['run_name'] = config["exp_name"].split('_newdata')[0] + '_newdata'
+            config['data']['train_data'] = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/premixed_datasets/instruct_xRAG_1002.jsonl'
+            with open(
+                path_config + filename, "w"
+            ) as file:
+                yaml.dump(config, file)
