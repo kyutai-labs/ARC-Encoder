@@ -444,6 +444,7 @@ def _train(
             # start_time = time.time()
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
 
+       
             # if get_rank() == 0:
             #     to_gen = [int(tok) for tok in batch.x[:batch.sizes[0]]]
             #     target = [int(tok) for tok in batch.y[:batch.sizes[0]]]
@@ -540,6 +541,8 @@ def _train(
                 batch_bpc = 0
                 ind = 0
                 for i, size in enumerate(batch.sizes):
+                    if len(pipeline.tokenizer.decode([int(tok) for tok in batch.y[ind : ind + size]]))==0:
+                        continue
                     loss_in_bits = torch.sum(compute_bpt_loss(output[ind:ind+size,...], 
                                                             y[ind:ind+size], 
                                                             None if y_mask is None else y_mask[ind:ind+size])).item()
@@ -651,7 +654,10 @@ def _train(
             loss += mb_loss.item()
             mb_loss.backward()
        
-            n_batch_tokens += x.numel()
+            if y_mask is None:
+                n_batch_tokens += x.numel()
+            else:
+                n_batch_tokens += torch.sum(y_mask).item()
             if i < args.num_microbatches - 1:
                 # synchronize CUDA to re-run backward
                 assert args.num_microbatches > 1  # should not happen

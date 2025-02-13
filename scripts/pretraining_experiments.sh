@@ -17,17 +17,18 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_embmid_MaxEmb_1_50cont_0alpha_1tmp.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_embmid_MaxEmb_1_50cont_2alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyInstruct_LLM_False_Emb_False_MaxEmb_3_alpha_2.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_embmid_MaxEmb_3_50cont_0alpha_1tmp.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_embmid_MaxEmb_3_50cont_2alpha_1tmp.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_1_50cont_0alpha_1tmp.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_1_50cont_2alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_embmid_MaxEmb_1_50cont_0alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_embmid_MaxEmb_1_50cont_2alpha_1tmp.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_3_50cont_01alpha_1tmp.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_3_50cont_0alpha_1tmp.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_3_50cont_2alpha_08tmp.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_3_50cont_2alpha_1tmp.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyInstruct_LLM_False_Emb_False_MaxEmb_3_alpha_2.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_1_50cont_0alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_1_50cont_2alpha_1tmp.yaml
+
 )
 
 

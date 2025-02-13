@@ -1,13 +1,12 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=17
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --gpus-per-task=2
+#SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx29
 #SBATCH --job-name=instruct_exps
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
 
@@ -17,6 +16,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 # Get the configuration file for this job
 CONFIG_FILES=(
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alpha2_xRAGdata.yaml
 )
 
 
@@ -39,8 +39,8 @@ echo "Using $N_GPUS GPUs: $CUDA_VISIBLE_DEVICES"
 echo "Starting at: $(date)"
 
 # Run the actual job, allocate with srun to refresh the context
-# srun --gpus=$N_GPU \
-#     micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG 
+srun --gpus=$N_GPU \
+    micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG 
 
 RUN_NAME=$(basename "$CONFIG" .yaml)
 

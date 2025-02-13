@@ -5,18 +5,14 @@ exp_name: test_pretrain
 # continuation: 1.0
 # textual_continuation: 0.0
 
+
 continuation: 0.5
 toy_tests:
   do: true
-  kl_pretraining: true
-  alpha: 2
-  temp: 0.8
-  
+  kl_pretraining: false
+  alpha: 0.0
+  temp: 1.
 
-lora:
-  enable: true
-  rank: 64
-  scaling: 2.0
 
   
 pipeline:
@@ -24,7 +20,7 @@ pipeline:
   cross_att_layers: 16
   do_both: true
   do_pool: true
-  embedder_name: Mistral7B
+  embedder_name: NVEmbed
   every_cross_att: null
   gate_bottleneck: 8
   mlp_project:
@@ -34,16 +30,17 @@ pipeline:
     type: mlp
   n_truncated_layers: 8
   pooled_cross_att: false
-  max_embeds: 3
   pooling_module:
     n_heads: 8
     r: 512
     type: latent_attention
+  prefix_prompt: false
   shared_kv: false
   train_only_pooling: false
-  trainable_embedder: true
+  trainable_embedder: false
   trainable_llm: false
   w_embeds: true
+  max_embeds: 3
 
 data:
   adapt_seq_len: false

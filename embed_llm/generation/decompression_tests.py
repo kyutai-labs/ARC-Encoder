@@ -225,9 +225,8 @@ def evaluate_toydecompression(
                 logits,
                 output,None).item()
             ppl += 2**ce
-            bpc += batch_bpc 
+            bpc += batch_bpc/len(ppl_tok_output)
             
-            ce * sum([len(toks) for toks in ppl_tok_output]) / sum([len(pipeline.tokenizer.decode(toks)) for toks in ppl_tok_output])
         with torch.no_grad():
             generated_tokens = mistral_generate(
                 prompt_pre_embed=[[]*len(text_conditioning)],
