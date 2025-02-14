@@ -47,6 +47,7 @@ class InstructionTuningArgs(Serializable):
     tune_embedder: bool = False
     max_embeds: int = 1
     no_mask: bool = False
+    topk: int | None = None
 
 
 @dataclass
@@ -64,7 +65,7 @@ class ToyTests(Serializable):
     decompress_usage: str = ''
     tune_llm: bool = False
     tune_embedder: bool = False
-    
+    topk: int | None = None
     
 @dataclass
 class TrainArgs(Serializable):

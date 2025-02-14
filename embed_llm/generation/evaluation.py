@@ -462,6 +462,7 @@ def evaluate_QA(
                     "w_context_in_examples": icl_w_context,
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
+                    'prop context containing the answer': n_answer_in_context,
                 }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
@@ -833,7 +834,7 @@ if __name__ == "__main__":
         print("EVALUATING WITHOUT CONTEXT")
         mistral_model = evaluate_QA(
             "",
-            ["NQ", "TRIVIAQA"],
+            benchmarks,
             temps=temp_tests,
             max_bs=args.bs,
             output_file=output_file,
@@ -873,7 +874,7 @@ if __name__ == "__main__":
             print("EVALUATING WITHOUT CONTEXT")
             mistral_model = evaluate_QA(
                 "",
-                ["NQ", "TRIVIAQA"],
+                benchmarks,
                 temps=temp_tests,
                 max_bs=args.bs,
                 output_file=output_file,

@@ -6,14 +6,15 @@ start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/ToyPretr
 
 
 instruct_tuning:
+  alpha: 1.0
+  cross_entropy: false
   do: true
-  cross_entropy: true
   kl: true
-  alpha: 2.
-  temp: 1.0
-  tune_llm: false
-  tune_embedder: false
   max_embeds: 1
+  temp: 1.0
+  tune_embedder: false
+  tune_llm: false
+  topk: 50
 
 
 lora:

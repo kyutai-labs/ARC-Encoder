@@ -43,7 +43,7 @@ def eval_logger_info(logger, message: str) -> None:
 
 def format_results(results: dict, benchmark: str):
 
-    if benchmark.lower() == "nq" or benchmark.lower() == "triviaqa":
+    if benchmark.lower() == "nq" or benchmark.lower() == "triviaqa" or benchmark.lower() == "hotpotqa":
         key_list = [
             "run_name",
             "ckpt",
@@ -55,6 +55,19 @@ def format_results(results: dict, benchmark: str):
             "EM Metric",
             "EM approx_Metric",
             "F1",
+            "Prop_a_in_cont",
+            "n_passages",
+            "colbert",
+        ]
+    elif benchmark.lower() == "factkg":
+        key_list = [
+            "run_name",
+            "ckpt",
+            "temp",
+            "n_samples",
+            "icl_examples",
+            "context_in_examples",
+            "Metric",
             "Prop_a_in_cont",
             "n_passages",
             "colbert",
@@ -117,7 +130,7 @@ def format_results(results: dict, benchmark: str):
                     .reset_index()
                 )
             
-            elif benchmark.lower() == "nq" or benchmark.lower() == "triviaqa":
+            elif benchmark.lower() == "nq" or benchmark.lower() == "triviaqa" or benchmark.lower() == "hotpotqa":
                 for metric in ["EM", "F1"]:
                     if benchmark not in results[run_name][ckpt].keys():
                         continue
@@ -186,47 +199,44 @@ def format_results(results: dict, benchmark: str):
                 if benchmark not in results[run_name][ckpt].keys():
                     continue
                 for temp in results[run_name][ckpt][benchmark].keys():
-                    for res in results[run_name][ckpt][benchmark][temp]:
+                    for k in range(len(results[run_name][ckpt][benchmark][temp]['n_samples'])):
+                        res = results[run_name][ckpt][benchmark][temp]
                         df_res = pd.DataFrame(
                                     {
                                         "run_name": run_name,
                                         "ckpt": int(ckpt),
                                         "temp": float(temp),
-                                        "n_samples": res["n_samples"],
-                                        "icl_examples": res["icl_examples"],
+                                        "n_samples": res["n_samples"][k],
+                                        "icl_examples": res["icl_examples"][k],
                                         "context_in_examples": res[
                                             "w_context_in_examples"
-                                        ],
-                                        "context_w_query": res[
-                                            "w_context_w_query"
-                                        ],
-                                        "Metric": res["Metric"],
+                                        ][k],
+                                        "Metric": res["Metric"][k],
                                         "Prop_a_in_cont": res.get(
                                             "Prop context containing the answer",
-                                            None,
-                                        ),
-                                        "n_passages": res.get("n_passages", 1),
+                                            [None]*10,
+                                        )[k],
+                                        "n_passages": res.get("n_passages", 1)[k],
                                     },
                                     index=[0],
                                 )
-    
+
                                 
                         formated_results = pd.concat([formated_results, df_res])
                                 
-                formated_results = (
-                    formated_results.groupby(
-                        [
-                            "run_name",
-                            "ckpt",
-                            "temp",
-                            "n_samples",
-                            "icl_examples",
-                            "context_in_examples",
-                            "context_w_query",
-                            "n_passages",
-                        ]
-                    )
-                    .first()
-                    .reset_index()
+            formated_results = (
+                formated_results.groupby(
+                    [
+                        "run_name",
+                        "ckpt",
+                        "temp",
+                        "n_samples",
+                        "icl_examples",
+                        "context_in_examples",
+                        "n_passages",
+                    ]
                 )
+                .first()
+                .reset_index()
+            )
     return formated_results

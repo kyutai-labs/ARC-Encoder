@@ -20,6 +20,7 @@ def compute_kl_loss_with_mask(
     target_mask: torch.Tensor | None,
     pred_mask: torch.Tensor | None,
     temp: float = 1.0,
+    topk: int | None = None,
 ):
     if target_mask is None:
         target_mask = torch.ones(target_logits.shape[0], dtype=torch.bool, device = target_logits.device)
@@ -46,6 +47,11 @@ def compute_kl_loss_with_mask(
         torch.repeat_interleave(pred_mask, n_vocab, dim=0).reshape(-1, n_vocab),
     ).view(-1,n_vocab)
 
+    if topk is not None:
+        _, topk_target_indices = torch.topk(target_l, k=topk, dim=-1)  
+      
+        target_l = torch.gather(target_l, -1, topk_target_indices)  
+        pred_l = torch.gather(pred_l, -1, topk_target_indices)
 
     loss_func = torch.nn.KLDivLoss(reduction="none")
     mb_loss = loss_func(

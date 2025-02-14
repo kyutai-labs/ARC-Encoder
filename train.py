@@ -413,6 +413,12 @@ def _train(
             )
 
 
+    if args.instruct_tuning.do:
+        topk = args.instruct_tuning.topk 
+    elif args.toy_tests.do:
+        topk = args.toy_tests.topk
+    else:
+        topk = None
         
     main_logger_info("Start training")
     model.train()
@@ -641,6 +647,7 @@ def _train(
                     target_mask=target_mask,
                     pred_mask=pred_mask,
                     temp=args.toy_tests.temp if args.toy_tests.do else args.instruct_tuning.temp,
+                    topk =  topk,
                 )
 
                 

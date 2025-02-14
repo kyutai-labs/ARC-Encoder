@@ -1,14 +1,13 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-8
+#SBATCH --array=0-9%3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx07
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx03
 #SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
-#SBATCH --dependency=afterany:657837_0
 #SBATCH --job-name=eval_models
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/embed_llm_%A_%a.out
 
@@ -18,6 +17,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
+DistillTraining_mid_MaxEmb_3_50cont_0alpha_1tmp
 Hybrid_LLM_False_Emb_True_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.0_16BS
 Hybrid_v2_LLM_False_Emb_False_MaxEmb_3_StartPoint_0.8_16BS
 Hybrid_v2_LLM_False_Emb_False_MaxEmb_3_StartPoint_0.4_16BS

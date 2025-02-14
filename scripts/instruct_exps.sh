@@ -1,14 +1,13 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=2-3
+#SBATCH --array=0-6
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=instruct_exps
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx20,par2dc5-ai-prd-cl02s01dgx24,par2dc5-ai-prd-cl02s03dgx15,par2dc5-ai-prd-cl02s02dgx01,par2dc5-ai-prd-cl02s01dgx13,par2dc5-ai-prd-cl02s01dgx11,par2dc5-ai-prd-cl02s04dgx20,par2dc5-ai-prd-cl02s04dgx10,par2dc5-ai-prd-cl02s02dgx31
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
 
 
@@ -17,9 +16,12 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alpha2_xRAGdata.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alpha0_lowlr_newdata.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alpha2_enhcleandata.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alpha2_xRAGdata.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alphafull_xRAGdatatop50.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alphafull_xRAGdata.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha0_lowlr_verif.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_3embeds_alpha2_1002data.yaml
 )
 

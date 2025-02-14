@@ -133,8 +133,8 @@ def get_em(pred: str, ground_truth: str) -> int:
 
 
 def get_approx_em(pred: str, ground_truth: str) -> int:
-    l_normed_pred = normalize_answer(pred).split(" ")
-    l_normed_gt = normalize_answer(ground_truth).split(" ")
+    l_normed_pred = normalize_answer(str(pred)).split(" ")
+    l_normed_gt = normalize_answer(str(ground_truth)).split(" ")
     len_gt = len(l_normed_gt)
     if len(l_normed_pred) < len_gt:
         return 0
@@ -164,9 +164,9 @@ def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> flo
         return meteor_avg_score / len(ground_truth)
 
 def get_acc_factchecking(pred: str, ground_truth: str) -> int:
-    if  ground_truth.lower() == "false":
+    if  str(ground_truth).lower() == "false":
         answer = ["refutes", "no", "false"]
-    if  ground_truth.lower() == "true":
+    if  str(ground_truth).lower() == "true":
         answer = ["supports", "yes", "true"]
         
     assert answer == ["refutes", "no", "false"] or answer == ["supports", "yes", "true"]
