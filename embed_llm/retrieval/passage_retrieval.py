@@ -270,11 +270,17 @@ if __name__ == "__main__":
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/web_qa.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa_good_answer.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa.jsonl",
-        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/yahoo_qa.jsonl",
-        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/yahoo_qa.jsonl",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/train.jsonl", # Only one not done or not in process
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/train.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/msmarco_qa.jsonl",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/factkg/factkg_test.jsonl",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/factkg/factkg_dev.jsonl",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/factkg/factkg_train.jsonl",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Hotpot_qa_test.jsonl"
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Pisco_train_dataset.jsonl"
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/popqa_test.jsonl",
     ]
 
     output_path = [
@@ -286,11 +292,17 @@ if __name__ == "__main__":
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/web_qa.jsonl  ",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa_good_answer.jsonl  ",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa.jsonl  ",
-        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/yahoo_qa.jsonl",
-        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/yahoo_qa.jsonl",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_data_old.jsonl", # Only one not done or not in process
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/triviaqa_data.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/msmarco_qa.jsonl ",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_test.jsonl",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_dev.jsonl",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_train.jsonl"
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl"
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/premixed_datasets/Pisco_train_dataset.jsonl"
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/popqa_test.jsonl",
     ]
 
     set_logger(logging.INFO)

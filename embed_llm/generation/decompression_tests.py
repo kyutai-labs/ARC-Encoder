@@ -91,7 +91,10 @@ def evaluate_toydecompression(
     if Path(data_path).exists():
         with open(data_path, "r") as f:
             for i, line in enumerate(f):
-                sample = json.loads(line)['text']
+                if data != 'code':
+                    sample = json.loads(line)['text']
+                else:
+                    sample = json.loads(line)['content']
                 text_conditioning.append(sample)
                 if i+1 == n_samples:
                     break
@@ -170,11 +173,13 @@ def evaluate_toydecompression(
     else:
         raise NotImplementedError(f"Decompression task {decompress_task} not implemented")
 
-    ppl = 0
-    bpc = 0
+
+
+    ppl = 0  
+    bpc_w_embedding = 0
+    bpc_wo_embedding = 0
     generated_seq = []
     for i in trange(0,len(full_x),max_bs):
-
         x = full_x[i:i+max_bs]
         encoded_prompt_post = full_encoded_prompt_post[i:i+max_bs]
         seqlens = [len(tokens) for tokens in x]
@@ -201,32 +206,44 @@ def evaluate_toydecompression(
             )
         embeddings = cat_embeddings if other_device is None else cat_embeddings.to(other_device)
     
+      
+            
         with torch.no_grad():
-            input = torch.tensor(sum(ppl_tok_input,[]), dtype = torch.long).to(other_device)
-            logits = llm.forward(
+            input = torch.tensor(sum(ppl_tok_input[i:i+max_bs],[]), dtype = torch.long).to(other_device)
+            logits_w_embeds = llm.forward(
                 input.detach(),
-                seqlens=[len(p) for p in ppl_tok_input],
+                seqlens=[len(p) for p in ppl_tok_input[i:i+max_bs]],
+                embeddings=embeddings,
+                embed_seqlens=embed_seqlens,
+                cat_embeddings=cat_embeddings,
+                show_attention=False,
+            )
+            logits_wo_embeds = llm.forward(
+                input.detach(),
+                seqlens=[len(p) for p in ppl_tok_input[i:i+max_bs]],
                 embeddings=None,
                 embed_seqlens=None,
                 cat_embeddings=None,
                 show_attention=False,
             )
-
+            batch_bpc_wo = 0
             batch_bpc = 0
+            batch_ce = 0
             ind = 0
-            for i, toks in enumerate(ppl_tok_output):
-                loss_in_bits = torch.sum(compute_bpt_loss(logits[ind:ind+len(toks),...], 
+            for toks in ppl_tok_output[i:i+max_bs]:
+                loss_in_bits = torch.sum(compute_bpt_loss(logits_w_embeds[ind:ind+len(toks),...], 
                                                           torch.tensor(toks).to(other_device), None)).item() 
                 batch_bpc += loss_in_bits / len(pipeline.tokenizer.decode(toks))
+                batch_ce += compute_ce_loss_with_mask(logits_wo_embeds[ind:ind+len(toks),...],
+                                                        torch.tensor(toks).to(other_device), None).item() 
+                batch_bpc_wo += torch.sum(compute_bpt_loss(logits_wo_embeds[ind:ind+len(toks),...],
+                                                            torch.tensor(toks).to(other_device), None)).item() / len(pipeline.tokenizer.decode(toks))
                 ind += len(toks)
                             
-            output = torch.tensor(sum(ppl_tok_output,[]), dtype = torch.long).to(other_device)
-            ce = compute_ce_loss_with_mask(
-                logits,
-                output,None).item()
-            ppl += 2**ce
-            bpc += batch_bpc/len(ppl_tok_output)
-            
+
+            bpc_w_embedding += batch_bpc/len(ppl_tok_output[i:i+max_bs])
+            bpc_wo_embedding += batch_bpc_wo/len(ppl_tok_output[i:i+max_bs])
+            ppl += 2**(batch_ce/len(ppl_tok_output[i:i+max_bs]))
         with torch.no_grad():
             generated_tokens = mistral_generate(
                 prompt_pre_embed=[[]*len(text_conditioning)],
@@ -242,8 +259,8 @@ def evaluate_toydecompression(
             )
 
         produced_text = [
-            pipeline.tokenizer.decode(generated_tokens[i])
-            for i in range(len(generated_tokens))
+            pipeline.tokenizer.decode(generated_tokens[l])
+            for l in range(len(generated_tokens))
         ]
         generated_seq.extend(produced_text)
 
@@ -254,18 +271,19 @@ def evaluate_toydecompression(
     bleu_score_avg = get_bleu_score( gt_text, generated_seq,avg=True)
   
     metrics = {
-        'temp': temp,
         'ppl': ppl/len(range(0,len(full_x),max_bs)),
+        'bpc_wo_embed': bpc_wo_embedding/len(range(0,len(full_x),max_bs)),
+        'bpc_w_embed': bpc_w_embedding/len(range(0,len(full_x),max_bs)),
+        'temp': temp,
+        'bleu': bleu_score, 
+        'bleu_avg': bleu_score_avg,
         "decompression_task": decompress_task,
         "data": data,
         'run_name': run_name,
         'instruct_name': instruct_name if instruct_name is not None else 'None',
-        'bleu': bleu_score, 
-        'bleu_avg': bleu_score_avg,
         'n_samples': n_samples,
         'max_seq_len': max_seq_len,
         'random_prefix': random_prefix,
-        'bpc': bpc/len(range(0,len(full_x),max_bs)),
     }
 
     

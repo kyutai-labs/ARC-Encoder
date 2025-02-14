@@ -1,4 +1,4 @@
-from embed_llm.data.utils import templates_for_qa
+from embed_llm.data.utils import templates_for_qa, templates_for_enhanced_qa
 import json
 import argparse
 import random
@@ -42,8 +42,10 @@ def main(args):
             if args.no_answer_only and not ('I don\'t know.'.lower() in answer.lower() or 'No Answer Present'.lower() in answer.lower()):
                 continue
              
-            if args.add_query_template:
+            if args.add_query_template and not args.enhanced_context:
                 sample["question"] = random.choice(templates_for_qa).format(question=sample['question'])
+            elif args.add_query_template and args.enhanced_context:
+                sample["question"] = random.choice(templates_for_enhanced_qa).format(question=sample['question'])
             
             to_add.append(sample)
             
@@ -89,6 +91,7 @@ def arg_parser():
     parser.add_argument("--n_sample_to_add", type=int, default=None)
 
     parser.add_argument("--add_query_template", action="store_true")
+    parser.add_argument('--enhanced_context', action='store_true')
     parser.add_argument("--start_at_n", default = 0, type = int)
 
     return parser.parse_args()

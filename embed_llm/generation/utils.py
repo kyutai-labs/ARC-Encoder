@@ -116,8 +116,8 @@ def format_results(results: dict, benchmark: str):
                     .first()
                     .reset_index()
                 )
-
-            else:
+            
+            elif benchmark.lower() == "nq" or benchmark.lower() == "triviaqa":
                 for metric in ["EM", "F1"]:
                     if benchmark not in results[run_name][ckpt].keys():
                         continue
@@ -182,6 +182,36 @@ def format_results(results: dict, benchmark: str):
         
                                     
                                 formated_results = pd.concat([formated_results, df_res])
+            else:
+                if benchmark not in results[run_name][ckpt].keys():
+                    continue
+                for temp in results[run_name][ckpt][benchmark].keys():
+                    for res in results[run_name][ckpt][benchmark][temp]:
+                        df_res = pd.DataFrame(
+                                    {
+                                        "run_name": run_name,
+                                        "ckpt": int(ckpt),
+                                        "temp": float(temp),
+                                        "n_samples": res["n_samples"],
+                                        "icl_examples": res["icl_examples"],
+                                        "context_in_examples": res[
+                                            "w_context_in_examples"
+                                        ],
+                                        "context_w_query": res[
+                                            "w_context_w_query"
+                                        ],
+                                        "Metric": res["Metric"],
+                                        "Prop_a_in_cont": res.get(
+                                            "Prop context containing the answer",
+                                            None,
+                                        ),
+                                        "n_passages": res.get("n_passages", 1),
+                                    },
+                                    index=[0],
+                                )
+    
+                                
+                        formated_results = pd.concat([formated_results, df_res])
                                 
                 formated_results = (
                     formated_results.groupby(

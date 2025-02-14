@@ -163,6 +163,16 @@ def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> flo
             )
         return meteor_avg_score / len(ground_truth)
 
+def get_acc_factchecking(pred: str, ground_truth: str) -> int:
+    if  ground_truth.lower() == "false":
+        answer = ["refutes", "no", "false"]
+    if  ground_truth.lower() == "true":
+        answer = ["supports", "yes", "true"]
+        
+    assert answer == ["refutes", "no", "false"] or answer == ["supports", "yes", "true"]
+    if pred.lower() in answer:
+        return 1
+    return 0
 
 # import regex
 # import unicodedata

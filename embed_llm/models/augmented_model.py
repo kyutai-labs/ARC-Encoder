@@ -731,7 +731,6 @@ class EmbedAugPipeline(nn.Module):
             ),
             **kwargs,
         )
-
         produced_text = [
             self.tokenizer.decode(generated_tokens[i])
             for i in range(len(generated_tokens))

@@ -14,6 +14,22 @@ templates_for_qa = [
     "{question}???\n",
 ]
 
+templates_for_enhanced_qa = [
+    "Using the previous context, answer the following question: {question}?\nAnswer:",
+    "Based on the paragraph above, {question}?\n",
+    "Answer the following question using the previous text:\n\n{question}\n",
+    "Following the above information:\n\n{question}?\n",
+    "Please answer this question using the context: {question}\n",
+    "Answer the question using the previous context...{question}?\n",
+    "Can you tell me the answer to {question} using the previous context?",
+    "Q: {question} A: (Using the previous context)",
+    "{question}\nUsing the previous context, what is the answer?",
+    "Using the previous context, {question}???\n",
+    "Question: {question}?\nAnswer:",
+    "Q: {question} A:",
+]
+
+
 # Used to preprocess datasets
 templates_for_sum = [
     "Write a short summary for the previous text\n\nSummary:",

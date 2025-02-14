@@ -9,6 +9,7 @@ import argparse
 import logging
 import subprocess as sp
 from pathlib import Path
+from torch.autograd.profiler import profile, record_function
 from mistral_inference.transformer import Transformer
 from mistral_inference.generate import generate
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
@@ -25,6 +26,7 @@ from embed_llm.generation.metrics import (
     get_f1_score,
     metric_max_over_ground_truths,
     get_approx_em,
+    get_acc_factchecking,
 )
 
 EVAL_DATA_PATH_COLBERT = {
@@ -34,9 +36,11 @@ EVAL_DATA_PATH_COLBERT = {
 EVAL_DATA_PATH = {
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",
+    "FactKG": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_test.jsonl",
+    "HotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl"
 }
 
-METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em}
+METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em, "FactKG": get_acc_factchecking, "HotpotQA": get_em}
 
 
 logger = logging.getLogger(__name__)
@@ -54,17 +58,25 @@ def create_prompt_prefix(
     answers: list[str],
     docs: list[str] | None = None,
     max_examples: int | None = None,
+    fact_checking: bool = False,
 ) -> tuple[str]:
     max_examples = max_examples if max_examples is not None else len(queries)
 
     prompt = ""
-
-    if docs is not None:
-        for query, answer, doc, _ in zip(queries, answers, docs, range(max_examples)):
-            prompt += f"Document: {doc}\nQuery: {query}\nAnswer: {answer}\n\n"
+    if not fact_checking:
+        if docs is not None:
+            for query, answer, doc, _ in zip(queries, answers, docs, range(max_examples)):
+                prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
+        else:
+            for query, answer, _ in zip(queries, answers, range(max_examples)):
+                prompt += f"Question: {query}\nAnswer: {answer}\n\n"
     else:
-        for query, answer, _ in zip(queries, answers, range(max_examples)):
-            prompt += f"Query: {query}\nAnswer: {answer}\n\n"
+        if docs is not None:
+            for query, answer, doc, _ in zip(queries, answers, docs, range(max_examples)):
+                prompt += f"Document: {doc}\nVerify the following claims with \"True\" or \"False\":\n{query}: {query}\nAnswer: {answer}\n\n"
+        else:
+            for query, answer, _ in zip(queries, answers, range(max_examples)):
+                prompt += f"Verify the following claims with \"True\" or \"False\":\n{query}: {query}\nAnswer: {answer}\n\n"
     return prompt
 
 
@@ -74,9 +86,9 @@ def create_prompt(
     if isinstance(doc, list):
         doc = "\n".join(doc)
     if wdoc:
-        return prefix + f"Document: {doc}\nQuery: {query}\nAnswer:"
+        return prefix + f"Document: {doc}\nQustiony: {query}\nAnswer:"
     else:
-        return prefix + f"Query: {query}\nAnswer:"
+        return prefix + f"Question: {query}\nAnswer:"
 
 
 
@@ -131,6 +143,7 @@ def evaluate_QA(
         instruct_name=instruct_name,
         ckpt=ckpt,
     )
+
 
     if mistral:
         mistral_tokenizer = MistralTokenizer.from_file(
@@ -218,6 +231,7 @@ def evaluate_QA(
                 answers=[answer[0] for answer in answers],
                 docs=context,
                 max_examples=icl_examples,
+                fact_checking = (benchmark == "FactKG")
             )
         else:
             prompt_prefix = create_prompt_prefix(
@@ -225,6 +239,7 @@ def evaluate_QA(
                 answers=[answer[0] for answer in answers],
                 docs=None,
                 max_examples=icl_examples,
+                fact_checking = (benchmark == "FactKG")
             )
 
         new_context, new_questions, new_answers = (
@@ -294,7 +309,7 @@ def evaluate_QA(
                         text_conditioning = list(new_context[i : i + max_bs])
                     else:
                         text_conditioning = None
-
+       
                     generated_sequence = pipeline.generate(
                         prompt_pre_embed=(
                             [""] * max_bs
@@ -313,6 +328,7 @@ def evaluate_QA(
                         device=device,
                         device_generation=other_device,
                     )
+
                     generated_sequences.extend(generated_sequence)
                 else:
 
@@ -424,6 +440,19 @@ def evaluate_QA(
                     )
                     / n_samples
                 )
+                n_answer_in_context = (
+                    sum(
+                        [
+                            metric_max_over_ground_truths(
+                                get_approx_em, cont, gts
+                            )
+                            for cont, gts in zip(
+                                list(new_context), new_answers[:n_samples]
+                            )
+                        ]
+                    )
+                    / n_samples
+                )
                 eval_logger_info(logger,f"Temperature: {temp} {benchmark}  {value}")
 
                 metrics[benchmark][str(temp)] = {
@@ -433,7 +462,6 @@ def evaluate_QA(
                     "w_context_in_examples": icl_w_context,
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
-                    "colbert": colbert,
                 }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
@@ -776,14 +804,14 @@ if __name__ == "__main__":
     args = arg_parser()
 
     if args.benchmarks == "all":
-        benchmarks = ["NQ", "TRIVIAQA"]
+        benchmarks = ["NQ", "TRIVIAQA", "FactKG", "HotpotQA"]
     else:
         benchmarks = [args.benchmarks]
 
     ensure_reproducibility(29)
 
     output_file = (
-        "/home/hippolytepilchen/code/embed_llm/results/NVEmbed/mistral/eval_mistral_RAG_QA.json"
+        "/home/hippolytepilchen/code/embed_llm/results/NVEmbed/mistral/eval_mistral_RAG_QA_new_template.json"
         if args.out_file is None
         else args.out_file
     )
@@ -802,22 +830,22 @@ if __name__ == "__main__":
         assert (
             not args.eval_reconstruction
         ), "Cannot evaluate reconstruction with Mistral"
-        # print("EVALUATING WITHOUT CONTEXT")
-        # mistral_model = evaluate_QA(
-        #     "",
-        #     ["NQ", "TRIVIAQA"],
-        #     temps=temp_tests,
-        #     max_bs=args.bs,
-        #     output_file=output_file,
-        #     n_samples=n_passages,
-        #     max_seq_len=max_seq_len,
-        #     tmp_path=tmp_path,
-        #     icl_examples=icl_tests[0],
-        #     mistral=True,
-        #     icl_w_context=False,
-        #     query_w_context=False,
-        #     w_embeds=False,
-        # )
+        print("EVALUATING WITHOUT CONTEXT")
+        mistral_model = evaluate_QA(
+            "",
+            ["NQ", "TRIVIAQA"],
+            temps=temp_tests,
+            max_bs=args.bs,
+            output_file=output_file,
+            n_samples=n_passages,
+            max_seq_len=max_seq_len,
+            tmp_path=tmp_path,
+            icl_examples=icl_tests[0],
+            mistral=True,
+            icl_w_context=False,
+            query_w_context=False,
+            w_embeds=False,
+        )
         torch.cuda.empty_cache()
         eval_logger_info(logger, "EVALUATING WITH CONTEXT")
         mistral_model = evaluate_QA(
@@ -842,23 +870,23 @@ if __name__ == "__main__":
         torch.cuda.empty_cache()
 
         for icl_ex in icl_tests[1:]:
-            # print("EVALUATING WITHOUT CONTEXT")
-            # mistral_model = evaluate_QA(
-            #     "",
-            #     ["NQ", "TRIVIAQA"],
-            #     temps=temp_tests,
-            #     max_bs=args.bs,
-            #     output_file=output_file,
-            #     n_samples=n_passages,
-            #     max_seq_len=max_seq_len,
-            #     tmp_path=tmp_path,
-            #     icl_examples=icl_ex,
-            #     mistral=True,
-            #     icl_w_context=False,
-            #     query_w_context=False,
-            #     w_embeds=False,
-            #     pipeline=mistral_model,
-            # )
+            print("EVALUATING WITHOUT CONTEXT")
+            mistral_model = evaluate_QA(
+                "",
+                ["NQ", "TRIVIAQA"],
+                temps=temp_tests,
+                max_bs=args.bs,
+                output_file=output_file,
+                n_samples=n_passages,
+                max_seq_len=max_seq_len,
+                tmp_path=tmp_path,
+                icl_examples=icl_ex,
+                mistral=True,
+                icl_w_context=False,
+                query_w_context=False,
+                w_embeds=False,
+                pipeline=mistral_model,
+            )
             torch.cuda.empty_cache()
             eval_logger_info(logger, "EVALUATING WITH CONTEXT")
             mistral_model = evaluate_QA(
@@ -883,26 +911,26 @@ if __name__ == "__main__":
             )
             torch.cuda.empty_cache()
 
-        eval_logger_info(logger, "EVALUATING WITH CONTEXT but not in ICL")
-        mistral_model = evaluate_QA(
-            "",
-            benchmarks,
-            temps=temp_tests,
-            max_bs=args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=icl_tests[1],
-            mistral=True,
-            icl_w_context=False,
-            query_w_context=True,
-            w_embeds=False,
-            colbert=args.colbert,
-            split_to_multipassage=args.split_to_multipassage,
-            seed=args.seed,
-        )
-        torch.cuda.empty_cache()
+        # eval_logger_info(logger, "EVALUATING WITH CONTEXT but not in ICL")
+        # mistral_model = evaluate_QA(
+        #     "",
+        #     benchmarks,
+        #     temps=temp_tests,
+        #     max_bs=args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=icl_tests[1],
+        #     mistral=True,
+        #     icl_w_context=False,
+        #     query_w_context=True,
+        #     w_embeds=False,
+        #     colbert=args.colbert,
+        #     split_to_multipassage=args.split_to_multipassage,
+        #     seed=args.seed,
+        # )
+        # torch.cuda.empty_cache()
 
         # for icl_ex in icl_tests[2:]:
         #     mistral_model = evaluate_QA(
