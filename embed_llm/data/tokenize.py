@@ -87,6 +87,7 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer, max_embed: in
         a_tokens = tokenizer.encode(answer, bos=False, eos=True)
 
         masks = [False] * len(q_tokens) + [True] * len(a_tokens)
+        # masks = [True] * len(q_tokens) + [True] * len(a_tokens)
 
         passages = EmbedPassage(
             [

@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-10%8
+#SBATCH --array=12
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -14,7 +14,7 @@
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
-
+s
 # Get the configuration file for this job
 CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyInstruct_LLM_False_Emb_False_MaxEmb_3_alpha_2.yaml
@@ -28,10 +28,12 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_3_50cont_2alpha_1tmp.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_1_50cont_0alpha_1tmp.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/DistillTraining_mid_MaxEmb_1_50cont_2alpha_1tmp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyInstruct_LLM_False_Emb_False_MaxEmb_3_alpha_0_noinstruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/ToyInstruct_LLM_False_Emb_False_MaxEmb_3_alpha_0_noinstruct_nomask.yaml
 
 )
 
-
+s
 # Get the specific config file for this array task
 CONFIG=${CONFIG_FILES[$SLURM_ARRAY_TASK_ID]}
 
@@ -78,6 +80,11 @@ case $RUN_NAME in
     ;;
 
 *)
+
+  srun --gpus=$N_GPU \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
+    --n_passages 500 --max_seq_len 64 --multi_passages 3
+
     srun --gpus=$N_GPU \
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --eval_reconstruction --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
     --n_passages 500 --max_seq_len 64 --ckpt 30000 --reconstruct_seq_len 256 --multi_passages 3

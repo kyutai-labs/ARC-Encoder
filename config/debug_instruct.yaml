@@ -60,8 +60,8 @@ optim:
 seed: 0
 log_freq: 5
 eval_freq: 100
-no_eval: false
-ckpt_freq: 5
+no_eval: true
+ckpt_freq: 500
 save_adapters: true
 
 # wandb:

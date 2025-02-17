@@ -153,21 +153,21 @@ class CacheView:
 
 
 class CrossAttCache:
-    def __init__(self, batch_size, n_kv_heads, head_dim, kv_seqlens):
+    def __init__(self, batch_size, n_kv_heads,  cross_att_layers, head_dim, kv_seqlens):
         self.n_kv_heads = n_kv_heads
         self.head_dim = head_dim
 
-        self.cache_k = torch.empty((batch_size, n_kv_heads * head_dim))
-        self.cache_v = torch.empty((batch_size, n_kv_heads * head_dim))
+        self.cache_k = {str(i):torch.empty((batch_size, n_kv_heads * head_dim)) for i in cross_att_layers}
+        self.cache_v = {str(i):torch.empty((batch_size, n_kv_heads * head_dim)) for i in cross_att_layers}
         self.mask = None
         # holds the valid length for each batch element in the cache
         self.kv_seqlens = kv_seqlens
-        self.full = False
+        self.full = {str(i): False for i in cross_att_layers}
 
-    def fill(self, xk, xv):
-        self.cache_k = xk
-        self.cache_v = xv
-        self.full = True
+    def fill(self, xk, xv, n_layer):
+        self.cache_k[str(n_layer)] = xk
+        self.cache_v[str(n_layer)] = xv
+        self.full[str(n_layer)] = True
 
     def get_mask(self, q_seqlens):
         return BlockDiagonalMask.from_seqlens(
@@ -176,8 +176,8 @@ class CrossAttCache:
         
     def to(self, device: torch.device, dtype: torch.dtype) -> "CrossAttCache":
         
-        self.cache_k = self.cache_k.to(device=device, dtype=dtype)
-        self.cache_v = self.cache_v.to(device=device, dtype=dtype)
+        self.cache_k = {k:v.to(device=device, dtype=dtype) for k, v in self.cache_k.items()}
+        self.cache_v = {k:v.to(device=device, dtype=dtype) for k, v in self.cache_v.items()}
 
         return self
 

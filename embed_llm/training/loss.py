@@ -49,7 +49,7 @@ def compute_kl_loss_with_mask(
 
     if topk is not None:
         _, topk_target_indices = torch.topk(target_l, k=topk, dim=-1)  
-      
+
         target_l = torch.gather(target_l, -1, topk_target_indices)  
         pred_l = torch.gather(pred_l, -1, topk_target_indices)
 

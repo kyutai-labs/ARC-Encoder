@@ -72,7 +72,6 @@ class Pooled_Cross_Attention(nn.Module):
         self,
         embedding: torch.Tensor,
         seqlen: list[int],
-        mask: BlockDiagonalMask | None = None,
     ) -> torch.Tensor:
         x = self.up(embedding)
         xv = x.view(-1, self.n_kv_heads, self.head_dim)
@@ -248,6 +247,9 @@ class Cross_AttTransformerBlock(nn.Module):
 
         if not self.pooled_cross_att:
             if xk is not None and xv is not None:
+                # print("xk and xv", xk.shape, xv.shape)
+                # print('STATS',torch.mean(xk), torch.mean(xv), torch.std(xk), torch.std(xv))
+                # print("h", h.shape)
                 if not show_attention:
                     r = self.cross_attention.forward(
                         x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
@@ -267,8 +269,7 @@ class Cross_AttTransformerBlock(nn.Module):
             if pool_att_embds is not None:
                 r = self.cross_attention.forward(
                     embedding=pool_att_embds,
-                    seqlen=seqlens,
-                    mask=cross_att_mask,
+                    seqlen=seqlens
                 )
                 
                 # stats = {
@@ -826,14 +827,14 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 if self.pipeline_rank == 0:
                     xk, xv = self.to_k(embeddings), self.to_v(embeddings)
                 else:
-                    xk, xv =  (torch.empty( self.args.n_kv_heads * self.args.head_dim, self.args.dim, device=self.device, dtype=self.dtype), 
-                               torch.empty( self.args.n_kv_heads * self.args.head_dim, self.args.dim, device=self.device, dtype=self.dtype))
+                    xk, xv =  (torch.empty(len(embeddings),self.args.n_kv_heads * self.args.head_dim, device=self.device, dtype=self.dtype), 
+                               torch.empty(len(embeddings),self.args.n_kv_heads * self.args.head_dim,  device=self.device, dtype=self.dtype))
                     torch.distributed.broadcast(xk, src=0)
                     torch.distributed.broadcast(xv, src=0)
                     
-                cross_att_cache.fill(xk, xv)
+                cross_att_cache.fill(xk, xv,str(0))
             else:
-                xk, xv = cross_att_cache.cache_k, cross_att_cache.cache_v
+                xk, xv = cross_att_cache.cache_k['0'], cross_att_cache.cache_v['0']
 
         for local_layer_id, (layer_id, layer) in enumerate(self.layers.items()):
             # print('Layer:', layer_id)
@@ -845,17 +846,21 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 cache_view = cache.get_view(local_layer_id, cache_metadata)
             else:
                 cache_view = None
-
+            # print('Cross_att mask:', cross_att_cache.get_mask(seqlens.tolist()))
+            # print('Self att mask',cache_view.mask)
             if str(layer_id) in self.cross_att_layers_id:
                 # with open('/home/hippolytepilchen/code/embed_llm/results/gate_values/gate_values_1.jsonl', 'a') as f:
                 #     f.write(json.dumps({'layer':layer_id}) + '\n')
                 if not self.args.pooled_cross_att:
-                    if embeddings is not None and not self.shared_kv:
+                    if embeddings is not None and not self.shared_kv and not cross_att_cache.full[str(layer_id)]:
                         xk, xv = self.to_k[str(layer_id)](embeddings), self.to_v[
                             str(layer_id)
                         ](embeddings)
+                        cross_att_cache.fill(xk, xv,str(layer_id))
                     elif embeddings is None:
                         xk, xv = None, None
+                    elif cross_att_cache.full[str(layer_id)]:
+                        xk, xv = cross_att_cache.cache_k[str(layer_id)], cross_att_cache.cache_v[str(layer_id)]
 
                     h = layer(
                         x=h,
@@ -876,11 +881,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                         cache=cache_view,
                         pool_att_embds=embeddings,
                         seqlens=seqlens,
-                        cross_att_mask=(
-                            None
-                            if cross_att_cache is None
-                            else cross_att_cache.get_mask(seqlens.tolist())
-                        ),
                     )
          
 
@@ -911,18 +911,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embeddings: torch.Tensor | None,
         cache: BufferCache | None,
         cat_embeddings: torch.Tensor | None = None,
+        cross_att_cache: CrossAttCache | None = None,
     ) -> torch.Tensor:
-        cross_att_cache = (
-            None
-            if embeddings is None 
-            else CrossAttCache(
-                embeddings.shape[0],
-                n_kv_heads=self.args.n_kv_heads,
-                head_dim=self.args.head_dim,
-                kv_seqlens=embed_seqlens,
-            ).to(self.device, dtype = self.dtype)
-        )
-        
+ 
 
         h = self.generate_partial(
             input_ids,

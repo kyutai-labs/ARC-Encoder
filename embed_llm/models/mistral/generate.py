@@ -1,5 +1,5 @@
 import torch
-from embed_llm.models.mistral.cache import BufferCache
+from embed_llm.models.mistral.cache import BufferCache, CrossAttCache
 from embed_llm.models.mistral.cross_att_transformer import Transformer
 
 
@@ -47,8 +47,20 @@ def generate(
         model.args.sliding_window,
     )
     cache.to(device=model.device, dtype=model.dtype)
+    
     cache.reset()
 
+    cross_att_cache = (
+            None
+            if embeddings is None 
+            else CrossAttCache(
+                embeddings.shape[0],
+                n_kv_heads=model.args.n_kv_heads,
+                head_dim=model.args.head_dim,
+                kv_seqlens=embed_seqlens,
+                cross_att_layers = model.cross_att_layers_id if not model.shared_kv else [0],
+            ).to(model.device, dtype = model.dtype)
+        )
     last_token_prelogits = None
 
 
@@ -63,6 +75,7 @@ def generate(
             embed_seqlens=embed_seqlens,
             cache=cache,
             cat_embeddings=None,
+            cross_att_cache=cross_att_cache,
         )
 
     # One chunk if size not specified
@@ -86,11 +99,15 @@ def generate(
             embed_seqlens=embed_seqlens,
             cache=cache,
             cat_embeddings=cat_embeddings,
+            cross_att_cache=cross_att_cache,
         )
 
         # Stop concatenating after first chunk
         if s == 0 and concat:
+            # Both in cache
             cat_embeddings = None
+            embeddings = None
+            
 
         last_token_prelogits = prelogits.index_select(
             0,
@@ -129,7 +146,8 @@ def generate(
             embeddings=embeddings,
             embed_seqlens=embed_seqlens,
             cache=cache,
-            cat_embeddings=None,
+            cat_embeddings=cat_embeddings,
+            cross_att_cache=cross_att_cache,
         )
 
         assert last_token_prelogits.shape == (
