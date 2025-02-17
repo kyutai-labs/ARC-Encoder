@@ -857,11 +857,16 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             str(layer_id)
                         ](embeddings)
                         cross_att_cache.fill(xk, xv,str(layer_id))
-                    elif embeddings is None:
-                        xk, xv = None, None
-                    elif cross_att_cache.full[str(layer_id)]:
+                        
+                    # TO REMOVE
+                    # elif embeddings is None:
+                    #     xk, xv = None, None
+                    
+                    elif cross_att_cache is not None and cross_att_cache.full[str(layer_id)]:
                         xk, xv = cross_att_cache.cache_k[str(layer_id)], cross_att_cache.cache_v[str(layer_id)]
-
+                    else:
+                        xk, xv = None, None
+                        
                     h = layer(
                         x=h,
                         freqs_cis=freqs_cis,

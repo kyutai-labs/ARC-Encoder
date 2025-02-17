@@ -27,6 +27,7 @@ from embed_llm.generation.metrics import (
     metric_max_over_ground_truths,
     get_approx_em,
     get_acc_factchecking,
+    get_substring_match_score,
 )
 
 EVAL_DATA_PATH_COLBERT = {
@@ -389,6 +390,8 @@ def evaluate_QA(
                     )
                     / n_samples
                 )
+                
+                value_xrag, _ = get_substring_match_score(generated_sequences, new_answers[:n_samples])
    
                 metrics[benchmark]["EM"][str(temp)] = {
                     "n_samples": n_samples,
@@ -398,6 +401,7 @@ def evaluate_QA(
                     "Metric": value_em,
                     "approx_Metric": value_approx,
                     "Prop context containing the answer": n_answer_in_context,
+                    "xRAG metric": value_xrag,
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
                     "colbert": colbert,

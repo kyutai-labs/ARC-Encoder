@@ -58,6 +58,7 @@ def format_results(results: dict, benchmark: str):
             "Prop_a_in_cont",
             "n_passages",
             "colbert",
+            "xRAG metric",
         ]
     elif benchmark.lower() == "factkg":
         key_list = [
@@ -153,6 +154,7 @@ def format_results(results: dict, benchmark: str):
                                                 "context_w_query": res[
                                                     "w_context_w_query"
                                                 ],
+                                                "xRAG metric": res.get("xRAG metric",None),
                                                 "EM Metric": res["Metric"],
                                                 "EM approx_Metric": res[
                                                     "approx_Metric"

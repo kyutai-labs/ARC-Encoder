@@ -130,6 +130,7 @@ def generate(
         temperature = [float(temperature)] * max_tokens
 
     for j in range(max_tokens):
+  
         next_token = sample(last_token_prelogits, temperature=temperature[j], top_p=0.8)
 
         if eos_id is not None:
@@ -160,7 +161,16 @@ def generate(
         generated_tokens = torch.cat(generated_tensors, 1).tolist()
     else:
         generated_tokens = []
-
+    
+    if eos_id is not None:
+        truncated_list = []
+        for i in range(B):
+            truncated_list.append([])
+            for tok in generated_tokens[i]:
+                if tok == eos_id:
+                    break
+                truncated_list[i].append(tok)
+        generated_tokens = truncated_list
     return generated_tokens
 
 

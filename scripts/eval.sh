@@ -1,10 +1,10 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0
+#SBATCH --array=0-1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx07
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx07
 #SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
@@ -29,6 +29,7 @@ ToyPretraining_LLM_False_Emb_False_MaxEmb_3_fullcont_16BS_alternativeCA
 # ToyPretraining_LLM_False_Emb_True_MaxEmb_1_0.2cont_16BS
 # ToyInstruct_LLM_False_Emb_False_MaxEmb_3_alpha_0_noinstruct
 # DistillTraining_mid_MaxEmb_1_50cont_2alpha_1tmp
+Hybrid_LLM_False_Emb_False_MaxEmb_3_PNoEmbed_0.0_StartPoint_0.0_16BS
 )
 
 

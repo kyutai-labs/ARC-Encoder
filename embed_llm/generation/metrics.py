@@ -4,7 +4,8 @@ import re
 import string
 import numpy as np
 from collections import Counter
-
+import unicodedata
+import regex
 # nltk.download("wordnet")
 
 
@@ -24,6 +25,77 @@ def word_overlap(ground_truth: list[str] | str, predicted: list[str] | str) -> f
             n_words += len(gt_text)
             avg_word_overlap += len(gt_text.intersection(pred_text))
         return avg_word_overlap / n_words
+
+
+class SimpleTokenizer(object):
+    ALPHA_NUM = r'[\p{L}\p{N}\p{M}]+'
+    NON_WS = r'[^\p{Z}\p{C}]'
+
+    def __init__(self):
+        """
+        Args:
+            annotators: None or empty set (only tokenizes).
+        """
+        self._regexp = regex.compile(
+            '(%s)|(%s)' % (self.ALPHA_NUM, self.NON_WS),
+            flags=regex.IGNORECASE + regex.UNICODE + regex.MULTILINE
+        )
+
+    def tokenize(self, text, uncased=False):
+        matches = [m for m in self._regexp.finditer(text)]
+        if uncased:
+            tokens = [m.group().lower() for m in matches]
+        else:
+            tokens = [m.group() for m in matches]
+        return tokens
+
+
+def _normalize(text):
+    return unicodedata.normalize('NFD', text)
+
+
+
+def has_answer(answers, text, tokenizer=SimpleTokenizer()) -> bool:
+    """Check if a document contains an answer string."""
+    text = _normalize(text)
+    text = tokenizer.tokenize(text, uncased=True)
+
+    for answer in answers:
+        answer = _normalize(answer)
+        answer = tokenizer.tokenize(answer, uncased=True)
+        for i in range(0, len(text) - len(answer) + 1):
+            if answer == text[i: i + len(answer)]:
+                return True
+    return False
+
+
+
+def get_substring_match_score(outputs,answers):
+    """
+    outputs: [string1,string2]
+    answers: [
+                [string1_1,string1_2],
+                [string2_1,string2_2]
+             ]
+    """
+    import numpy as np
+    assert len(outputs) == len(answers)
+    if not isinstance(answers[0],list):
+        answers = [[x] for x in answers]
+    substring_match_scores = []
+    answer_lengths = []
+    for output,answer in zip(outputs,answers):
+        if has_answer(answer,output): # EM evaluation
+            substring_match_scores.append(1.0)
+        else:
+            substring_match_scores.append(0.0)
+        
+        answer_lengths.append(len(output.split()))
+
+    substring_match = round(sum(substring_match_scores)/len(outputs), 4)
+    lens = round(np.mean(answer_lengths), 4)
+
+    return substring_match,substring_match_scores
 
 
 def get_bleu_score(
