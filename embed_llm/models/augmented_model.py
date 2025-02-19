@@ -806,7 +806,8 @@ def load_pipeline(
                     num_pipeline_ranks=num_pipeline_ranks,
                 )
             else:
-                last_ckpt = sorted(
+                last_ckpt = (
+                    sorted(
                     [
                         ckpt_name
                         for ckpt_name in os.listdir(
@@ -819,6 +820,8 @@ def load_pipeline(
                         ).exists()
                     ]
                 )[-1]
+                  if ckpt is None
+                    else f"checkpoint_{ckpt:06d}")
                 
                 if run_name is not None:
                     last_ckpt_run_name =sorted(

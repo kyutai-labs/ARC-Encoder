@@ -216,7 +216,7 @@ def format_results(results: dict, benchmark: str):
                                         "Metric": res["Metric"][k],
                                         "Prop_a_in_cont": res.get(
                                             "Prop context containing the answer",
-                                            [None]*10,
+                                            [None]*100,
                                         )[k],
                                         "n_passages": res.get("n_passages", 1)[k],
                                     },

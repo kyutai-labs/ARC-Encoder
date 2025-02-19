@@ -835,23 +835,23 @@ if __name__ == "__main__":
         assert (
             not args.eval_reconstruction
         ), "Cannot evaluate reconstruction with Mistral"
-        print("EVALUATING WITHOUT CONTEXT")
-        mistral_model = evaluate_QA(
-            "",
-            benchmarks,
-            temps=temp_tests,
-            max_bs=args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=icl_tests[0],
-            mistral=True,
-            icl_w_context=False,
-            query_w_context=False,
-            w_embeds=False,
-        )
-        torch.cuda.empty_cache()
+        # print("EVALUATING WITHOUT CONTEXT")
+        # mistral_model = evaluate_QA(
+        #     "",
+        #     benchmarks,
+        #     temps=temp_tests,
+        #     max_bs=args.bs,
+        #     output_file=output_file,
+        #     n_samples=n_passages,
+        #     max_seq_len=max_seq_len,
+        #     tmp_path=tmp_path,
+        #     icl_examples=icl_tests[0],
+        #     mistral=True,
+        #     icl_w_context=False,
+        #     query_w_context=False,
+        #     w_embeds=False,
+        # )
+        # torch.cuda.empty_cache()
         eval_logger_info(logger, "EVALUATING WITH CONTEXT")
         mistral_model = evaluate_QA(
             "",
@@ -875,23 +875,23 @@ if __name__ == "__main__":
         torch.cuda.empty_cache()
 
         for icl_ex in icl_tests[1:]:
-            print("EVALUATING WITHOUT CONTEXT")
-            mistral_model = evaluate_QA(
-                "",
-                benchmarks,
-                temps=temp_tests,
-                max_bs=args.bs,
-                output_file=output_file,
-                n_samples=n_passages,
-                max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
-                icl_examples=icl_ex,
-                mistral=True,
-                icl_w_context=False,
-                query_w_context=False,
-                w_embeds=False,
-                pipeline=mistral_model,
-            )
+            # print("EVALUATING WITHOUT CONTEXT")
+            # mistral_model = evaluate_QA(
+            #     "",
+            #     benchmarks,
+            #     temps=temp_tests,
+            #     max_bs=args.bs,
+            #     output_file=output_file,
+            #     n_samples=n_passages,
+            #     max_seq_len=max_seq_len,
+            #     tmp_path=tmp_path,
+            #     icl_examples=icl_ex,
+            #     mistral=True,
+            #     icl_w_context=False,
+            #     query_w_context=False,
+            #     w_embeds=False,
+            #     pipeline=mistral_model,
+            # )
             torch.cuda.empty_cache()
             eval_logger_info(logger, "EVALUATING WITH CONTEXT")
             mistral_model = evaluate_QA(
