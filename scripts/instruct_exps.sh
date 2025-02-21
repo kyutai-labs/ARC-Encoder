@@ -1,14 +1,13 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=2
+#SBATCH --array=0-4
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --gpus-per-task=2
+#SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=instruct_embed_llm
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx11
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
 
 
@@ -18,12 +17,12 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_embmid_3embeds_alpha2.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_embmid_3embeds_alpha2_v.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_embmid_3embeds_alpha0.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alpha2_xRAGdata.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alphafull_xRAGdatatop50.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Instruct_mid_1embeds_alphafull_xRAGdata.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Instruct_notall.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Rec_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_pref_Cont_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_pref_Rec_Instruct.yaml
+
 )
 
 
@@ -46,8 +45,8 @@ echo "Using $N_GPUS GPUs: $CUDA_VISIBLE_DEVICES"
 echo "Starting at: $(date)"
 
 # Run the actual job, allocate with srun to refresh the context
-# srun --gpus=$N_GPU \
-#     micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG
+srun --gpus=$N_GPU \
+    micromamba run -n llm_embed torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG
 
 RUN_NAME=$(basename "$CONFIG" .yaml)
 
@@ -55,25 +54,35 @@ echo "Starting evaluation of run $RUN_NAME"
 
 
 case $RUN_NAME in
-*3embeds*)
+*)
+    srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_simplif_tests.json \
+        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 5 
+    srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_simplif_tests.json \
+        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 4 
 
     srun --gpus=$N_GPU \
-        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_simplif_tests.json \
+        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 3 
+
+    srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_simplif_tests.json \
+        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 2 
+
+    srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_simplif_tests.json \
+        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1 
+
+    srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_simplif_tests.json \
+        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 3 --ckpt 9500
+
+    srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_simplif_tests.json \
         --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 3 --ckpt 9000
-
-    srun --gpus=$N_GPU \
-        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json \
-        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 2 --ckpt 9000
-
-    srun --gpus=$N_GPU \
-        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json \
-        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1 --ckpt 9000
     ;;
-*) 
-    srun --gpus=$N_GPU \
-        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_instruct.json \
-        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME 
-    ;;
+
 
 esac
 

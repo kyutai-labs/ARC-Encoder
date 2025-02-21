@@ -722,7 +722,7 @@ class EmbedAugPipeline(nn.Module):
             temperature=temperature,
             chunk_size=None,
             eos_id=eos_id,
-            embed_seqlens=None if not self.pipeline_args.cross_att else embed_seqlens,
+            embed_seqlens=embed_seqlens,
             cat_embeddings=(
                 None
                 if cat_embeddings is None

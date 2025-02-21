@@ -18,7 +18,7 @@ class PoolingArgs(Serializable):
 @dataclass
 class MLPProjectArgs(Serializable):
     hidden_dim: int = 4096
-    n_layers: int = 0
+    n_layers: int = 1
     act: str = "gelu"
     in_dim: int | None = None
     out_dim: int | None = None
@@ -34,8 +34,8 @@ class EmbedAugArgs(Serializable):
     train_only_pooling: bool = False
     n_truncated_layers: int = 8
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
-    shared_kv: bool = True
-    trainable_llm: bool = True
+    shared_kv: bool = False
+    trainable_llm: bool = False
     w_prefix_prompt: bool = False
     gate_bottleneck: int = 8
     max_embeds: int = 1

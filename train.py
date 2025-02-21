@@ -544,19 +544,19 @@ def _train(
 
             train_ppl += 2 ** (mb_loss.item())
            
-            if (args.instruct_tuning.do and args.instruct_tuning.cross_entropy) or not args.instruct_tuning.do:
-                batch_bpc = 0
-                ind = 0
-                for i, size in enumerate(batch.sizes):
-                    if len(pipeline.tokenizer.decode([int(tok) for tok in batch.y[ind : ind + size]]))==0:
-                        continue
-                    loss_in_bits = torch.sum(compute_bpt_loss(output[ind:ind+size,...], 
-                                                            y[ind:ind+size], 
-                                                            None if y_mask is None else y_mask[ind:ind+size])).item()
-                    batch_bpc += loss_in_bits/len(pipeline.tokenizer.decode([int(tok) for tok in batch.y[ind : ind + size]]))
-                    ind += size
- 
-                bpc += batch_bpc/len(batch.sizes)
+            batch_bpc = 0
+            ind = 0
+            for i, size in enumerate(batch.sizes):
+                if len(pipeline.tokenizer.decode([int(tok) for tok in batch.y[ind : ind + size]]))==0:
+                    continue
+                loss_in_bits = torch.sum(compute_bpt_loss(output[ind:ind+size,...], 
+                                                        y[ind:ind+size], 
+                                                        None if y_mask is None else y_mask[ind:ind+size])).item()
+                batch_bpc += loss_in_bits/len(pipeline.tokenizer.decode([int(tok) for tok in batch.y[ind : ind + size]]))
+                ind += size
+
+            bpc += batch_bpc/len(batch.sizes)
+       
                 
             if (args.toy_tests.do and args.toy_tests.kl_pretraining) or (args.instruct_tuning.do and args.instruct_tuning.kl):
                 
@@ -731,7 +731,6 @@ def _train(
         if not (args.toy_tests.do and args.toy_tests.kl_pretraining):
             if not args.instruct_tuning.do:
                 kl_loss_avg = None
-                bpc_avg = None
             else:
                 if not args.instruct_tuning.cross_entropy:
                     bpc_avg = None

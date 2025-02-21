@@ -394,15 +394,14 @@ if __name__ == "__main__":
     )
     
     
-    filenames = [file for file in os.listdir(path_config) if 'Instruct' in file]  
+    filenames = [file for file in os.listdir(path_config)]  
 
     for filename in filenames:
         if filename.endswith(".yaml"):
             with open(path_config + filename, "r") as file:
                 config = yaml.safe_load(file) 
-            config["exp_name"] = config["exp_name"].split('_newdata')[0] + '_newdata'
-            config['wandb']['run_name'] = config["exp_name"].split('_newdata')[0] + '_newdata'
-            config['data']['train_data'] = '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/premixed_datasets/instruct_xRAG_1002.jsonl'
+            config["exp_name"] = filename.split('.yam')[0] 
+            config['wandb']['run_name'] = filename.split('.yam')[0]
             with open(
                 path_config + filename, "w"
             ) as file:
