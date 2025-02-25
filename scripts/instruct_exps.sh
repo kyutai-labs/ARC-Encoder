@@ -1,19 +1,19 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-4
+#SBATCH --array=10-13
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
+#SBATCH --dependency=afterany:663485_19
 #SBATCH --job-name=instruct_embed_llm
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
 
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
-
 
 # Get the configuration file for this job
 CONFIG_FILES=(
@@ -22,7 +22,15 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Rec_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_pref_Cont_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_pref_Rec_Instruct.yaml
-
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Rec_Instruct_further_embeds.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Cont_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Rec_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Cont_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_atlas_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG5_atlas_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG5_Instruct.yaml
 )
 
 
@@ -35,6 +43,7 @@ if [ -z "$CUDA_VISIBLE_DEVICES" ]; then
     # If CUDA_VISIBLE_DEVICES is not set, try to get from SLURM
     # Replace , with newline and count lines
     N_GPUS=$(echo $SLURM_GPUS_ON_NODE | tr ',' '\n' | wc -l)
+
 else
     # Count GPUs from CUDA_VISIBLE_DEVICES
     N_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
@@ -54,6 +63,14 @@ echo "Starting evaluation of run $RUN_NAME"
 
 
 case $RUN_NAME in
+*xRAG1*)
+
+
+    srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_simplif_tests.json \
+        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1 
+
+
 *)
     srun --gpus=$N_GPU \
         micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_simplif_tests.json \

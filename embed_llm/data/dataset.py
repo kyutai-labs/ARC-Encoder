@@ -159,11 +159,13 @@ def sequence_iterator(
     continuation: float = 0.0,
     hybrid_task: HybridTask | None = None,
     max_embeds: int = 1,
-    decompress_usage: str = ''
+    decompress_usage: str = '',
+    further_embeds: bool = False,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
     """
+ 
     hybrid_training = False
     if is_finite:
         hybrid_training = False if hybrid_task is None else hybrid_task.do
@@ -251,7 +253,8 @@ def sequence_iterator(
                         is_eval=is_finite,
                         cur_pos=cur_pos,
                         max_embeds = max_embeds,
-                        hybrid_training=hybrid_training
+                        hybrid_training=hybrid_training,
+                        further_embeds= further_embeds
                     )
 
                     if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -400,7 +403,8 @@ def build_dataset(
             continuation=continuation,
             hybrid_task=hybrid_task,
             max_embeds = max_embeds,
-            decompress_usage = decompress_usage
+            decompress_usage = decompress_usage,
+            further_embeds = args.further_embeds
         )
         for it in dataset_iterators
     ]

@@ -50,6 +50,7 @@ def encode_text(
     tokenizer: AutoTokenizer | None = None,
     device: str = "cpu",
     no_pool: bool = False,
+    give_n_tokens: bool = False,
 ):
     if isinstance(text, str):
         text = [text]
@@ -95,16 +96,19 @@ def encode_text(
                 )
             else:
                 # If needs a pooled embedding used the HF code (reduce possible mismatch between model and encode function)
-                embedding = model.encode(
+                embedding, initial_seqlens = model.encode(
                     text, instruction=instruction, max_length=32768
                 )
-
+                n_tokens = sum(initial_seqlens)
+                
         if device == "cpu":
             return (
                 (embedding.cpu().numpy(), seqlens)
                 if no_pool
                 else embedding.cpu().numpy()
             )
+        elif give_n_tokens and not no_pool:
+            return embedding, n_tokens
         else:
             return (embedding, seqlens) if no_pool else embedding
     else:

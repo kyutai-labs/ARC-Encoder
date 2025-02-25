@@ -57,8 +57,8 @@ def format_results(results: dict, benchmark: str):
             "F1",
             "Prop_a_in_cont",
             "n_passages",
-            "colbert",
             "xRAG metric",
+            "compress_ratio"
         ]
     elif benchmark.lower() == "factkg":
         key_list = [
@@ -164,7 +164,7 @@ def format_results(results: dict, benchmark: str):
                                                     None,
                                                 ),
                                                 "n_passages": res.get("n_passages", 1),
-                                                "colbert": res.get("colbert", None),
+                                                "compress_ratio": res.get("compress_ratio", None),
                                             },
                                             index=[0],
                                         ),

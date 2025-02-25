@@ -599,7 +599,7 @@ def custom_encode(
         batch_dict, instruction_lens, device=device
     )
     if pool:
-        return model(**features)["sentence_embeddings"].squeeze(1)
+        return model(**features)["sentence_embeddings"].squeeze(1), torch.sum(batch_dict["attention_mask"], dim=1).numpy().tolist()
     else:
         features["pool_mask"] = None
         result = model(**features)["sentence_embeddings"]

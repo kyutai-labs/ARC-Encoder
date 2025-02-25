@@ -552,6 +552,7 @@ class EmbedAugPipeline(nn.Module):
         truncate_line: bool = False,
         device_generation: str | None = None,
         embed_seqlens: list[int] | None = None,
+        give_n_tokens: bool = False,
         **kwargs,
     ):
         if not is_torchrun():
@@ -598,8 +599,9 @@ class EmbedAugPipeline(nn.Module):
                         device=device,
                         no_pool=True,
                     )
+                    n_context_tokens = sum(embed_seqlens)
                 else:
-                    embeddings = encode_text(
+                    embeddings, n_context_tokens = encode_text(
                         (
                             sum(text_conditioning, [])
                             if isinstance(text_conditioning, list)
@@ -610,6 +612,7 @@ class EmbedAugPipeline(nn.Module):
                         query_embedding=False,
                         device=device,
                         no_pool=False,
+                        give_n_tokens=True,
                     )
                     embed_seqlens = [len(l_text) for l_text in text_conditioning]
 
@@ -624,6 +627,7 @@ class EmbedAugPipeline(nn.Module):
                     for text in l_text
                 ]
                 seqlens = [len(tokens) for tokens in x]
+                n_context_tokens = sum(seqlens)
                 x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
                     device
                 )
@@ -639,6 +643,7 @@ class EmbedAugPipeline(nn.Module):
                 embeddings = None
                 embed_seqlens = None
                 cat_embeddings = None
+                n_context_tokens = 0
     
             if embeddings is not None:
                 embeddings = F.normalize(embeddings, p=2, dim=-1) 
@@ -748,7 +753,10 @@ class EmbedAugPipeline(nn.Module):
         if kwargs.get("return_embeddings", False):
             return final_texts, embeddings
 
-        return final_texts
+        if not give_n_tokens:
+            return final_texts
+        else:
+            return final_texts, n_context_tokens, sum(sum(embed_seqlens,[]))
 
 
 
