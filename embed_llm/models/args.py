@@ -48,7 +48,8 @@ class EmbedAugArgs(Serializable):
     begin_cross_att: bool = False
     do_both: bool = False
     w_embeds: bool = False
-
+    causal_embedder: bool = False
+    
     # Remove later
     do_pool: bool = False
 

@@ -247,9 +247,7 @@ class Cross_AttTransformerBlock(nn.Module):
 
         if not self.pooled_cross_att:
             if xk is not None and xv is not None:
-                # print("xk and xv", xk.shape, xv.shape)
-                # print('STATS',torch.mean(xk), torch.mean(xv), torch.std(xk), torch.std(xv))
-                # print("h", h.shape)
+   
                 if not show_attention:
                     r = self.cross_attention.forward(
                         x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
@@ -467,6 +465,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             )
             
         self.for_embedding = False
+        self.causal_embedder = False
         self.pos_to_keep = None
 
         if not self.cross_att:
@@ -624,7 +623,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             cross_att_mask = None
 
         # Causality deactivated when using LLM for embedder
-        if not self.for_embedding:
+        if not self.for_embedding or self.causal_embedder:
             self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
         else:
             self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
@@ -837,7 +836,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 xk, xv = cross_att_cache.cache_k['0'], cross_att_cache.cache_v['0']
 
         for local_layer_id, (layer_id, layer) in enumerate(self.layers.items()):
-            # print('Layer:', layer_id)
+
             if cache is not None:
                 assert input_metadata is not None
 
@@ -846,8 +845,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 cache_view = cache.get_view(local_layer_id, cache_metadata)
             else:
                 cache_view = None
-            # print('Cross_att mask:', cross_att_cache.get_mask(seqlens.tolist()))
-            # print('Self att mask',cache_view.mask)
+
             if str(layer_id) in self.cross_att_layers_id:
                 # with open('/home/hippolytepilchen/code/embed_llm/results/gate_values/gate_values_1.jsonl', 'a') as f:
                 #     f.write(json.dumps({'layer':layer_id}) + '\n')
@@ -857,19 +855,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             str(layer_id)
                         ](embeddings)
                         cross_att_cache.fill(xk, xv,str(layer_id))
-                        
-                    # TO REMOVE
-                    # elif embeddings is None:
-                    #     xk, xv = None, None
                     
                     elif not self.shared_kv  and cross_att_cache is not None and cross_att_cache.full[str(layer_id)]:
                         xk, xv = cross_att_cache.cache_k[str(layer_id)], cross_att_cache.cache_v[str(layer_id)]
                         
-                    elif self.shared_kv and cross_att_cache is not None and cross_att_cache.full['0']:
-                        xk, xv = cross_att_cache.cache_k['0'], cross_att_cache.cache_v['0']
+                    elif self.shared_kv and not embeddings is None:
+                        pass
                     else:
                         xk, xv = None, None
-                        
+
                     h = layer(
                         x=h,
                         freqs_cis=freqs_cis,

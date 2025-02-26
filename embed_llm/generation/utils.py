@@ -41,9 +41,9 @@ def eval_logger_info(logger, message: str) -> None:
     if not is_torchrun() or torch.distributed.get_rank() == 0:
         logger.info(message)
 
-def format_results(results: dict, benchmark: str):
+def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.DataFrame:
 
-    if benchmark.lower() == "nq" or benchmark.lower() == "triviaqa" or benchmark.lower() == "hotpotqa":
+    if benchmark.lower() == "nq" or benchmark.lower() == "triviaqa" or benchmark.lower() == "hotpotqa" or benchmark.lower() == "squad":
         key_list = [
             "run_name",
             "ckpt",
@@ -225,20 +225,37 @@ def format_results(results: dict, benchmark: str):
 
                                 
                         formated_results = pd.concat([formated_results, df_res])
-                                
-            formated_results = (
-                formated_results.groupby(
-                    [
-                        "run_name",
-                        "ckpt",
-                        "temp",
-                        "n_samples",
-                        "icl_examples",
-                        "context_in_examples",
-                        "n_passages",
-                    ]
+                       
+            if icae: 
+                formated_results = (
+                    formated_results.groupby(
+                        [
+                            "run_name",
+                            "ckpt",
+                            "temp",
+                            "n_samples",
+                            "icl_examples",
+                            "context_in_examples",
+                            "n_passages",
+                            "fine_tuned",
+                        ]
+                    )
+                    .first()
+                    .reset_index()
                 )
-                .first()
-                .reset_index()
-            )
+            else:
+                formated_results = (formated_results.groupby(
+                        [
+                            "run_name",
+                            "ckpt",
+                            "temp",
+                            "n_samples",
+                            "icl_examples",
+                            "context_in_examples",
+                            "n_passages",
+                        ]
+                    )
+                    .first()
+                    .reset_index()
+                )
     return formated_results

@@ -38,10 +38,11 @@ EVAL_DATA_PATH = {
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",
     "FactKG": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_test.jsonl",
-    "HotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl"
+    "HotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl",
+    "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",
 }
 
-METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em, "FactKG": get_acc_factchecking, "HotpotQA": get_em}
+METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em, "FactKG": get_acc_factchecking, "HotpotQA": get_em, "SQUAD": get_em}
 
 
 logger = logging.getLogger(__name__)
@@ -131,7 +132,7 @@ def evaluate_QA(
         device = 'cuda'
         other_device = None
    
-
+    print('Max multi passage:', max_multi_passage)
 
     pipeline, ckpt = load_pipeline(
         run_name=run_name,
@@ -223,7 +224,7 @@ def evaluate_QA(
 
         eval_logger_info(logger,f"Evaluation dataset loaded for {benchmark}")
 
-        if isinstance(context[0], list):
+        if mistral and isinstance(context[0], list):
             context = ["\n".join(doc) for doc in context]
 
         if icl_w_context:
@@ -311,7 +312,6 @@ def evaluate_QA(
                         text_conditioning = list(new_context[i : i + max_bs])
                     else:
                         text_conditioning = None
-       
                     generated_sequence, embed_tokens, embeds = pipeline.generate(
                         prompt_pre_embed=(
                             [""] * max_bs
@@ -813,7 +813,7 @@ if __name__ == "__main__":
     args = arg_parser()
 
     if args.benchmarks == "all":
-        benchmarks = ["NQ", "TRIVIAQA", "FactKG", "HotpotQA"]
+        benchmarks = ["NQ", "TRIVIAQA", "FactKG", "HotpotQA", "SQUAD"]
     else:
         benchmarks = [args.benchmarks]
 
@@ -832,7 +832,12 @@ if __name__ == "__main__":
 
     max_seq_len = args.max_seq_len
     n_passages = args.n_passages
-
+    
+    if args.instruct_name is not None:
+        print('Evaluating with instruction:', args.instruct_name
+        )
+    if args.run_name is not None:
+        print('Evuating run:', args.run_name)
     # Evaluate Mistral using their code
     if args.mistral:
 

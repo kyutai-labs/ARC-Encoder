@@ -61,6 +61,7 @@ def generate(
                 cross_att_layers = model.cross_att_layers_id if not model.shared_kv else [0],
             ).to(model.device, dtype = model.dtype)
         )
+    assert cross_att_cache is None or all([not v for k,v in cross_att_cache.full.items()]), "Cross att cache not empty"
     last_token_prelogits = None
 
 

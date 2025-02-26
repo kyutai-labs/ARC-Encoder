@@ -7,7 +7,6 @@
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=32
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
-#SBATCH --dependency=afterany:663485_19
 #SBATCH --job-name=instruct_embed_llm
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
 
@@ -17,20 +16,30 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Instruct_notall.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Rec_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_pref_Cont_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_pref_Rec_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Rec_Instruct_further_embeds.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Cont_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Rec_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Cont_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_atlas_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG5_atlas_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Instruct_notall.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Rec_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_pref_Cont_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_pref_Rec_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Rec_Instruct_further_embeds.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Cont_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Rec_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Cont_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG5_atlas_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG5_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_wiki_Instruct.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_atlas_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TraincausalEmbed_CA_Cont_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TraincausalEmbed_CA_Rec_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainPoolEmbed_CA_Cont_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainPoolEmbed_CA_Rec_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG5_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_atlas_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG5_atlas_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_wiki_Instruct.yaml
 )
 
 
