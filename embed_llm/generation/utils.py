@@ -55,10 +55,11 @@ def format_results(results: dict, benchmark: str):
             "EM Metric",
             "EM approx_Metric",
             "F1",
+            "xRAG metric",
             "Prop_a_in_cont",
             "n_passages",
-            "xRAG metric",
-            "compress_ratio"
+            "compress_ratio",
+            "fine_tuned",
         ]
     elif benchmark.lower() == "factkg":
         key_list = [
@@ -71,7 +72,6 @@ def format_results(results: dict, benchmark: str):
             "Metric",
             "Prop_a_in_cont",
             "n_passages",
-            "colbert",
         ]
     elif benchmark.lower() == "reconstruction":
         key_list = [
@@ -165,6 +165,7 @@ def format_results(results: dict, benchmark: str):
                                                 ),
                                                 "n_passages": res.get("n_passages", 1),
                                                 "compress_ratio": res.get("compress_ratio", None),
+                                                "fine_tuned": res.get("fine_tuned", None),
                                             },
                                             index=[0],
                                         ),
@@ -190,7 +191,6 @@ def format_results(results: dict, benchmark: str):
                                                     None,
                                                 ),
                                                 "n_passages": res.get("n_passages", 1),
-                                                "colbert": res.get("colbert", None),
                                             },
                                             index=[0],
                                         )

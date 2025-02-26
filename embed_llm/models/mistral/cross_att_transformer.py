@@ -862,8 +862,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     # elif embeddings is None:
                     #     xk, xv = None, None
                     
-                    elif cross_att_cache is not None and cross_att_cache.full[str(layer_id)]:
+                    elif not self.shared_kv  and cross_att_cache is not None and cross_att_cache.full[str(layer_id)]:
                         xk, xv = cross_att_cache.cache_k[str(layer_id)], cross_att_cache.cache_v[str(layer_id)]
+                        
+                    elif self.shared_kv and cross_att_cache is not None and cross_att_cache.full['0']:
+                        xk, xv = cross_att_cache.cache_k['0'], cross_att_cache.cache_v['0']
                     else:
                         xk, xv = None, None
                         

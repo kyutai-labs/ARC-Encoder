@@ -713,7 +713,7 @@ class EmbedAugPipeline(nn.Module):
         if is_torchrun():
             torch.distributed.barrier()
 
-
+      
         generated_tokens = mistral_generate(
             prompt_pre_embed=encoded_pre_embed_prompts,
             prompt_post_embed=encoded_post_embed_prompts,
@@ -752,11 +752,11 @@ class EmbedAugPipeline(nn.Module):
 
         if kwargs.get("return_embeddings", False):
             return final_texts, embeddings
-
+        
         if not give_n_tokens:
             return final_texts
         else:
-            return final_texts, n_context_tokens, sum(sum(embed_seqlens,[]))
+            return final_texts, n_context_tokens, sum(embed_seqlens)
 
 
 

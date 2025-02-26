@@ -96,8 +96,8 @@ def encode_text(
                 )
             else:
                 # If needs a pooled embedding used the HF code (reduce possible mismatch between model and encode function)
-                embedding, initial_seqlens = model.encode(
-                    text, instruction=instruction, max_length=32768
+                embedding, initial_seqlens = custom_encode(
+                    model, prompts=text, instruction=instruction, pool=True
                 )
                 n_tokens = sum(initial_seqlens)
                 

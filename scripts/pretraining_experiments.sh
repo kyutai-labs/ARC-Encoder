@@ -73,7 +73,7 @@ case $RUN_NAME in
     srun --gpus=$N_GPU \
         micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_simplif_tests.json \
         --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1 
-
+    ;;
 *)
     srun --gpus=$N_GPU \
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_simplif_tests.json \

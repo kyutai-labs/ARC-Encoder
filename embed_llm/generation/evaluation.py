@@ -254,8 +254,7 @@ def evaluate_QA(
         new_answers.reverse()
 
         for temp in temps:
-            memory_tokens = 0
-            context_tokens = 0
+            compress_ratio = 0
             generated_sequences = []
             n_samples = len(new_questions) if n_samples is None else n_samples
             for i in trange(0, n_samples, max_bs):
@@ -332,9 +331,8 @@ def evaluate_QA(
                         device_generation=other_device,
                         give_n_tokens= True
                     )
-                    memory_tokens += embeds
-                    context_tokens += embed_tokens
 
+                    compress_ratio += embeds/embed_tokens
                     generated_sequences.extend(generated_sequence)
                 else:
 
@@ -342,9 +340,8 @@ def evaluate_QA(
                         mistral_tokenizer.encode(prompt, bos=True, eos=False)
                         for prompt in no_context_prompt
                     ]
-                    memory_tokens += sum([len(token) for token in tokens])
-                    context_tokens += sum([len(token) for token in tokens])
 
+                    compress_ratio +=sum([len(token) for token in tokens])/sum([len(token) for token in tokens])
                     generated_sequence, logprobs = generate(
                         model=mistral_model,
                         encoded_prompts=tokens,
@@ -411,7 +408,7 @@ def evaluate_QA(
                     "xRAG metric": value_xrag,
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
-                    "compress_ratio":  memory_tokens/context_tokens,
+                    "compress_ratio":  compress_ratio/len(range(0, n_samples, max_bs)),
                 }
                 value_f1 = (
                     sum(
@@ -431,7 +428,7 @@ def evaluate_QA(
                     "Metric": value_f1,
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
-                    "compress_ratio":  memory_tokens/context_tokens,
+                    "compress_ratio":  compress_ratio/len(range(0, n_samples, max_bs)),
                 }
                 eval_logger_info(logger,
                     f"Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}"
