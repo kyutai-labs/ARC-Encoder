@@ -45,3 +45,7 @@ templates_for_sum = [
 template_for_fact_checking = [
     'Verify the following claims with "True" or "False":\n{question}',
 ]
+
+template_for_it_tuning_proxy_prompt = [
+    "Please provide the following information:",
+]

@@ -131,7 +131,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                     .reset_index()
                 )
             
-            elif benchmark.lower() == "nq" or benchmark.lower() == "triviaqa" or benchmark.lower() == "hotpotqa":
+            elif benchmark.lower() == "nq" or benchmark.lower() == "triviaqa" or benchmark.lower() == "hotpotqa" or benchmark.lower() == "squad":
                 for metric in ["EM", "F1"]:
                     if benchmark not in results[run_name][ckpt].keys():
                         continue

@@ -61,7 +61,7 @@ def create_prompt_prefix(
     docs: list[str] | None = None,
     max_examples: int | None = None,
     fact_checking: bool = False,
-) -> tuple[str]:
+) -> str:
     max_examples = max_examples if max_examples is not None else len(queries)
 
     prompt = ""
@@ -132,7 +132,6 @@ def evaluate_QA(
         device = 'cuda'
         other_device = None
    
-    print('Max multi passage:', max_multi_passage)
 
     pipeline, ckpt = load_pipeline(
         run_name=run_name,
@@ -430,6 +429,7 @@ def evaluate_QA(
                     "1 passage splitted ?": split_to_multipassage,
                     "compress_ratio":  compress_ratio/len(range(0, n_samples, max_bs)),
                 }
+                eval_logger_info(logger,'Prompt prefix: '+prompt_prefix)
                 eval_logger_info(logger,
                     f"Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}"
                 )

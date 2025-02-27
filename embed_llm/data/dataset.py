@@ -372,7 +372,7 @@ def build_dataset(
     shuffle: bool = False,
     continuation: float = 0.0,
     max_embeds: int = 1,
-    decompress_usage: str = ''
+    decompress_usage: str = '',
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
 
     data = args.train_data if not is_eval else args.eval_data
@@ -404,7 +404,7 @@ def build_dataset(
             hybrid_task=hybrid_task,
             max_embeds = max_embeds,
             decompress_usage = decompress_usage,
-            further_embeds = args.further_embeds
+            further_embeds = args.further_embeds,
         )
         for it in dataset_iterators
     ]
