@@ -17,7 +17,7 @@ def generate(
     eos_id: int | None = None,
     embed_seqlens: list[int] | None = None,
     cat_embeddings: torch.Tensor | None = None,
-    **kwargs,
+    w_scores: list[float] | None = None,
 ) -> tuple[list[list[int]], list[list[float]]]:
 
     if len(prompt_pre_embed) > 0 and not isinstance(prompt_pre_embed[0], list):
@@ -77,6 +77,7 @@ def generate(
             cache=cache,
             cat_embeddings=None,
             cross_att_cache=cross_att_cache,
+            w_scores=w_scores,
         )
 
     # One chunk if size not specified
@@ -101,13 +102,13 @@ def generate(
             cache=cache,
             cat_embeddings=cat_embeddings,
             cross_att_cache=cross_att_cache,
+            w_scores=w_scores,
         )
 
         # Stop concatenating after first chunk
         if s == 0 and concat:
             # Both in cache
             cat_embeddings = None
-            embeddings = None
             
 
         last_token_prelogits = prelogits.index_select(

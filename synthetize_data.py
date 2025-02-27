@@ -6,9 +6,11 @@ from mistral_inference.transformer import Transformer
 from mistral_inference.generate import generate
 from dataclasses import dataclass
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-from torch.distributed import get_rank, get_world_size, init_process_group
+from torch.distributed import get_rank, get_world_size, init_process_group, destroy_process_group
 from pathlib import Path
-
+import torch
+import os
+import torch.distributed as dist
 
 instruction_prompts = [
     "\nCreate a summary of the above context:\n",
@@ -89,6 +91,11 @@ def main(args):
     
     # Initialize default process group
     init_process_group(backend="nccl")
+    # Get local rank for this process
+    local_rank = int(os.environ.get('LOCAL_RANK', 0))
+    
+    # Set device for this process
+    torch.cuda.set_device(local_rank)
     
     if get_rank() == 0:
         if Path(args.output_path).exists():
@@ -109,10 +116,10 @@ def main(args):
     model = Transformer.from_folder(args.model_folder_path, max_batch_size=args.batch_size)
     data_loader = dataloader_from_file(args.data_path, args.batch_size, mistral_tokenizer.instruct_tokenizer.tokenizer, args.seq_sizes)
     data_buffer = []
-    n_data = 0
-    n_toks = 0
+    n_data = torch.tensor([0], device="cuda")
+    n_toks = torch.tensor([0], device="cuda")
     start_time = time.time()
-    for i in range(args.max_steps):
+    for step in range(args.max_steps):
 
         batch = next(data_loader)
         tokens = [sample.tokens for sample in batch]
@@ -121,28 +128,36 @@ def main(args):
         truncated_list = []
         for j in range(args.batch_size):
             truncated_list.append([])
-            for tok in out_tokens[i]:
+            for tok in out_tokens[j]:
                 if tok == mistral_tokenizer.instruct_tokenizer.tokenizer.eos_id:
                     break
-                truncated_list[i].append(tok)
+                truncated_list[j].append(tok)
 
         for j in range(args.batch_size):
             result = mistral_tokenizer.instruct_tokenizer.tokenizer.decode(truncated_list[j])
             data_buffer.append({"passages": batch[j].passages, "question": batch[j].question, "answer": result})
-        n_data += args.batch_size
-        n_toks += sum([len(l) for l in truncated_list])
+            
+        n_data += torch.tensor(args.batch_size).item()
+        n_toks += torch.tensor(sum([len(l) for l in truncated_list])).item()
         
-        if i % 1 == 0:
-            print(f"Step {i} took {time.time() - start_time} seconds", "Data processed:", n_data, "Tokens generated:", n_toks)
+
+        if step % 100 == 0:
+            buffer_data = torch.tensor([n_data.item()], dtype=torch.int32, device=f"cuda:{local_rank}")
+            buffer_toks = torch.tensor([n_toks.item()], dtype=torch.int32, device=f"cuda:{local_rank}")
+            dist.all_reduce(buffer_data, op=dist.ReduceOp.SUM)
+            dist.all_reduce(buffer_toks, op=dist.ReduceOp.SUM)
+
+            if get_rank() == 0:
+                print(f"Step {step} took {time.time() - start_time} seconds", "Data processed:", buffer_data[0].item(), "Tokens generated:", buffer_toks[0].item())
             
         start_time = time.time()
-        if i%args.freq_load_data == 0:
+        if step%args.freq_load_data == 0:
             with open(Path(args.output_path) / args.output_file.replace('.jsonl',str(get_rank()) + '.jsonl'), "a") as f:
                 for sample in data_buffer:
-                    f.write(sample)
+                    json.dump(sample, f)
                     f.write("\n")
             data_buffer = []
-    
+    destroy_process_group()
 
 def arg_parser():
     parser = argparse.ArgumentParser()
@@ -165,7 +180,7 @@ def arg_parser():
     parser.add_argument(
         '--freq_load_data',
         type=int,
-        default=10,
+        default=50,
     )
 
     parser.add_argument(
@@ -203,7 +218,7 @@ def arg_parser():
     parser.add_argument(
         "--n_samples",
         type=int,
-        default=None,
+        default=2000000,
     )
     
     parser.add_argument(

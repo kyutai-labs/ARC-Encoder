@@ -117,6 +117,7 @@ def evaluate_QA(
     colbert: bool = False,
     split_to_multipassage: bool = False,
     seed: float = 0.42,
+    with_scores: bool = False,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
@@ -171,7 +172,7 @@ def evaluate_QA(
         context = []
         questions = []
         answers = []
-
+        scores = []
         with open(eval_data, "r") as f:
             for line in f:
                 data = json.loads(line)
@@ -188,6 +189,9 @@ def evaluate_QA(
 
                 if max_multi_passage <= 1:
                     context.append(data["passages"][0].strip())
+                                    
+                    if 'scores' in data.keys():
+                        scores.append(int(data['scores'][0]))
                 else:
                     if split_to_multipassage:
                         l_sent = sent_tokenize(data["passages"][0])
@@ -199,6 +203,9 @@ def evaluate_QA(
                         context.append(multi_passage)
                     else:
                         context.append(list(data["passages"][:max_multi_passage]))
+                    if 'scores' in data.keys():
+                        scores.append([int(score) for score in  data['scores'][:max_multi_passage]])
+
 
         if benchmark == "NQ" and kilt:
             test_pairs = []
@@ -213,13 +220,19 @@ def evaluate_QA(
             answers = [pair["answer"] for pair in test_pairs]
             context = [pair["doc"] for pair in test_pairs]
 
-        c = list(zip(questions, context, answers))
+        if len(scores) == 0:
+            c = list(zip(questions, context, answers))
 
-        # fixed_random = random.Random()
-        # fixed_random.seed(42)
-        # fixed_random.shuffle(c)
-        random.shuffle(c, random=lambda: seed)
-        questions, context, answers = zip(*c)
+            # fixed_random = random.Random()
+            # fixed_random.seed(42)
+            # fixed_random.shuffle(c)
+            random.shuffle(c, random=lambda: seed)
+            questions, context, answers = zip(*c)
+        else:
+            c = list(zip(questions, context, answers, scores))
+            random.shuffle(c, random=lambda: seed)
+            questions, context, answers, scores = zip(*c)
+            
 
         eval_logger_info(logger,f"Evaluation dataset loaded for {benchmark}")
 
@@ -248,6 +261,10 @@ def evaluate_QA(
             list(questions[icl_examples:]),
             list(answers[icl_examples:]),
         )
+        
+        if len(scores) > 0:
+            new_scores = list(scores[icl_examples:])
+            new_scores.reverse()
 
         new_context.reverse()
         new_questions.reverse()
@@ -328,7 +345,8 @@ def evaluate_QA(
                         truncate_line=True,
                         device=device,
                         device_generation=other_device,
-                        give_n_tokens= True
+                        give_n_tokens= True,
+                        w_scores = None if len(scores) == 0 or not with_scores else list(new_scores[i:i+max_bs])
                     )
 
                     compress_ratio += embeds/embed_tokens
@@ -801,6 +819,7 @@ def arg_parser():
     parser.add_argument("--prompt_before_embed", action="store_true")
     parser.add_argument("--split_to_multipassage", action="store_true")
     parser.add_argument("--seed", type=float, default=0.42)
+    parser.add_argument("--with_scores", action="store_true")
 
     return parser.parse_args()
 
@@ -995,6 +1014,7 @@ if __name__ == "__main__":
             prompt_before_embed=args.prompt_before_embed,
             split_to_multipassage=args.split_to_multipassage,
             seed=args.seed,
+            with_scores = args.with_scores
         )
 
         for icl_ex in icl_tests[1:]:
@@ -1018,4 +1038,5 @@ if __name__ == "__main__":
                 prompt_before_embed=args.prompt_before_embed,
                 split_to_multipassage=args.split_to_multipassage,
                 seed=args.seed,
+                with_scores = args.with_scores
             )

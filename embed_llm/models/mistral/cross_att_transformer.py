@@ -113,6 +113,7 @@ class Cross_Attention(nn.Module):
         xv: torch.Tensor,
         mask: BlockDiagonalMask | None = None,
         show_attention: bool = False,
+        w_scores: list[float] | None = None,
     ) -> torch.Tensor:
         seqlen_sum, _ = x.shape
 
@@ -127,7 +128,7 @@ class Cross_Attention(nn.Module):
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
 
-        if not show_attention:
+        if not show_attention and w_scores is None:
             output = memory_efficient_attention(xq, key, val, mask)
             output = output.view(seqlen_sum, self.n_heads * self.head_dim)
 
@@ -145,14 +146,21 @@ class Cross_Attention(nn.Module):
             attn_shape = attn.shape
             if attn_bias is not None:
                 attn = attn + attn_bias.materialize(attn_shape).to(attn.device)
-
+            if w_scores is not None:
+                assert len(w_scores) == attn.shape[-1]
+                # Multiply element wise according to the last dimension
+                score_inv_temp = torch.nn.functional.normalize(torch.tensor(w_scores).to(attn.device))
+                attn = torch.einsum("bhsl,l->bhsl", attn, score_inv_temp)
+                
             attn = attn.softmax(-1)
             output = (attn @ val).transpose(1, 2)
             output = output.reshape(seqlen_sum, self.n_heads * self.head_dim)
 
             assert isinstance(output, torch.Tensor)
-
-            return self.wo(output), attn  # type: ignore
+            if show_attention:
+                return self.wo(output), attn
+            else:
+                return self.wo(output)
 
 
 class Cross_AttTransformerBlock(nn.Module):
@@ -229,6 +237,7 @@ class Cross_AttTransformerBlock(nn.Module):
         show_attention: bool = False,
         pool_att_embds: torch.Tensor | None = None,
         seqlens: list[int] | None = None,
+        w_scores: list[float] | None = None,
     ) -> torch.Tensor:
         if not show_attention:
             r = self.attention.forward(
@@ -250,7 +259,7 @@ class Cross_AttTransformerBlock(nn.Module):
    
                 if not show_attention:
                     r = self.cross_attention.forward(
-                        x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv
+                        x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv, w_scores=w_scores
                     )
                 else:
                     r, cross_attn_mtx = self.cross_attention.forward(
@@ -259,6 +268,7 @@ class Cross_AttTransformerBlock(nn.Module):
                         xk=xk,
                         xv=xv,
                         show_attention=True,
+                        w_scores=w_scores,
                     )
                 h = h + r * self.gate(
                     h
@@ -267,7 +277,8 @@ class Cross_AttTransformerBlock(nn.Module):
             if pool_att_embds is not None:
                 r = self.cross_attention.forward(
                     embedding=pool_att_embds,
-                    seqlen=seqlens
+                    seqlen=seqlens,
+                    w_scores=w_scores
                 )
                 
                 # stats = {
@@ -732,7 +743,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         cache: BufferCache | None,
         cross_att_cache: CrossAttCache | None,
         cat_embeddings: torch.Tensor | None = None,
-        # images: list[torch.Tensor] | None,
+        w_scores: list[float] | None = None,
     ) -> torch.Tensor:
         """Local forward pass.
 
@@ -875,6 +886,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             if cross_att_cache is None
                             else cross_att_cache.get_mask(seqlens.tolist())
                         ),
+                        w_scores=w_scores,
                     )
                 else:
                     h = layer(
@@ -883,6 +895,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                         cache=cache_view,
                         pool_att_embds=embeddings,
                         seqlens=seqlens,
+                        w_scores=w_scores,
                     )
          
 
@@ -914,6 +927,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         cache: BufferCache | None,
         cat_embeddings: torch.Tensor | None = None,
         cross_att_cache: CrossAttCache | None = None,
+        w_scores: list[float] | None = None,
     ) -> torch.Tensor:
  
 
@@ -925,6 +939,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             cross_att_cache=cross_att_cache,
             embed_seqlens=embed_seqlens,
             cat_embeddings=cat_embeddings,
+            w_scores=w_scores,
         )  
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             # ignore the intermediate activations as we'll get the final output from

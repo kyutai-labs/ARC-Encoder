@@ -553,12 +553,14 @@ class EmbedAugPipeline(nn.Module):
         device_generation: str | None = None,
         embed_seqlens: list[int] | None = None,
         give_n_tokens: bool = False,
+        w_scores: list[float] | None = None,
         **kwargs,
     ):
         if not is_torchrun():
             device_generation = device if device_generation is None else device_generation
         else:
             device_generation = None
+
 
         if isinstance(prompt_pre_embed, str):
             prompt_pre_embed = [prompt_pre_embed]
@@ -575,7 +577,7 @@ class EmbedAugPipeline(nn.Module):
                 raise ValueError(
                     "Text conditioning must be a string or a list of strings"
                 )
-
+     
         if text_conditioning is None:
             w_embeds = False
         else:
@@ -713,7 +715,16 @@ class EmbedAugPipeline(nn.Module):
         if is_torchrun():
             torch.distributed.barrier()
 
-      
+        if w_scores is not None:
+
+            if isinstance(w_scores, int):
+                text_conditioning = [w_scores]
+            elif isinstance(w_scores, list):
+                if isinstance(w_scores[0], list):
+                    w_scores = sum(w_scores, [])
+
+            assert len(w_scores) == embeddings.shape[0], f"Scores {len(w_scores)} must be provided for each text conditioning {embeddings.shape[0]}"
+            
         generated_tokens = mistral_generate(
             prompt_pre_embed=encoded_pre_embed_prompts,
             prompt_post_embed=encoded_post_embed_prompts,
