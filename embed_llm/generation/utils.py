@@ -46,19 +46,20 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
     if benchmark.lower() == "nq" or benchmark.lower() == "triviaqa" or benchmark.lower() == "hotpotqa" or benchmark.lower() == "squad":
         key_list = [
             "run_name",
+            "EM Metric",
+            "EM approx_Metric",
+            "F1",
+            "xRAG metric",
             "ckpt",
             "temp",
             "n_samples",
             "icl_examples",
             "context_in_examples",
             "context_w_query",
-            "EM Metric",
-            "EM approx_Metric",
-            "F1",
-            "xRAG metric",
             "Prop_a_in_cont",
             "n_passages",
             "compress_ratio",
+            "w_scores",
             "fine_tuned",
         ]
     elif benchmark.lower() == "factkg":
@@ -72,6 +73,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "Metric",
             "Prop_a_in_cont",
             "n_passages",
+            "w_scores"
         ]
     elif benchmark.lower() == "reconstruction":
         key_list = [
@@ -166,6 +168,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                 "n_passages": res.get("n_passages", 1),
                                                 "compress_ratio": res.get("compress_ratio", None),
                                                 "fine_tuned": res.get("fine_tuned", None),
+                                                "w_scores": res.get("w_scores", 0.),
                                             },
                                             index=[0],
                                         ),
@@ -191,6 +194,8 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                     None,
                                                 ),
                                                 "n_passages": res.get("n_passages", 1),
+                                                "w_scores": res.get("w_scores", 0.),
+                                                "fine_tuned": res.get("fine_tuned", None),
                                             },
                                             index=[0],
                                         )
@@ -238,10 +243,11 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                             "context_in_examples",
                             "n_passages",
                             "fine_tuned",
+                            "w_scores",
                         ]
                     )
                     .first()
-                    .reset_index()
+                    .reset_index(allow_duplicates=True)
                 )
             else:
                 formated_results = (formated_results.groupby(
@@ -253,9 +259,11 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                             "icl_examples",
                             "context_in_examples",
                             "n_passages",
+                            "w_scores",
+
                         ]
                     )
                     .first()
-                    .reset_index()
+                    .reset_index(allow_duplicates=True)
                 )
     return formated_results

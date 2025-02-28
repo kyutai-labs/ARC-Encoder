@@ -117,7 +117,7 @@ def evaluate_QA(
     colbert: bool = False,
     split_to_multipassage: bool = False,
     seed: float = 0.42,
-    with_scores: bool = False,
+    with_scores: float = 0.0,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
@@ -162,7 +162,10 @@ def evaluate_QA(
     for benchmark in tqdm(
         benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
     ):
-
+        if benchmark == 'SQUAD' and max_multi_passage > 1:
+            benchmarks.remove(benchmark)
+            continue
+        
         metrics[benchmark] = {}
         eval_data = (
             EVAL_DATA_PATH[benchmark]
@@ -190,8 +193,6 @@ def evaluate_QA(
                 if max_multi_passage <= 1:
                     context.append(data["passages"][0].strip())
                                     
-                    if 'scores' in data.keys():
-                        scores.append(int(data['scores'][0]))
                 else:
                     if split_to_multipassage:
                         l_sent = sent_tokenize(data["passages"][0])
@@ -203,10 +204,22 @@ def evaluate_QA(
                         context.append(multi_passage)
                     else:
                         context.append(list(data["passages"][:max_multi_passage]))
-                    if 'scores' in data.keys():
-                        scores.append([int(score) for score in  data['scores'][:max_multi_passage]])
+                    if 'scores' in data.keys() and with_scores > 0.:
+                        l_scores = [float(score) for score in  data['scores'][:max_multi_passage]]
+                        if with_scores == 1.: # Marche pas
+                            centered_scores = (np.array(l_scores) - np.min(l_scores))/(np.max(l_scores) - np.min(l_scores))
+                        elif with_scores == 2.:
+                            centered_scores = (np.array(l_scores) - np.min(l_scores) + 1e-2)/(np.max(l_scores) - np.min(l_scores)+1e-2)
+                        elif with_scores == 3.:
+                            centered_scores = (np.array(l_scores) - np.mean(l_scores))/np.std(l_scores) + 1
+                        elif with_scores == 4.:
+                            centered_scores = l_scores
+                        elif with_scores == 5.:
+                            centered_scores = (np.array(l_scores) - np.mean(l_scores))/np.std(l_scores)
+                        scores.append(centered_scores.tolist())
 
-
+        if with_scores > 0.:
+            print('Centered scores ex:', scores[0])
         if benchmark == "NQ" and kilt:
             test_pairs = []
             with open(
@@ -255,7 +268,9 @@ def evaluate_QA(
                 max_examples=icl_examples,
                 fact_checking = (benchmark == "FactKG")
             )
-
+        print('icl_examples:', icl_examples)
+        print('Prompt prefix:', prompt_prefix)
+        
         new_context, new_questions, new_answers = (
             list(context[icl_examples:]),
             list(questions[icl_examples:]),
@@ -275,14 +290,14 @@ def evaluate_QA(
             generated_sequences = []
             n_samples = len(new_questions) if n_samples is None else n_samples
             for i in trange(0, n_samples, max_bs):
-
+                bs = min(max_bs, n_samples - i)
                 if w_embeds:
 
                     no_context_prompt = [
                         create_prompt(
                             prefix=prompt_prefix, doc="", query=query, wdoc=False
                         )
-                        for query in new_questions[i : i + max_bs]
+                        for query in new_questions[i : i + bs]
                     ]
 
                     context_prompt = [
@@ -293,7 +308,7 @@ def evaluate_QA(
                             query=query,
                             wdoc=False,
                         )
-                        for query in new_questions[i : i + max_bs]
+                        for query in new_questions[i : i + bs]
                     ]
 
                 else:
@@ -307,8 +322,8 @@ def evaluate_QA(
                                 wdoc=True,
                             )
                             for query, doc in zip(
-                                new_questions[i : i + max_bs],
-                                new_context[i : i + max_bs],
+                                new_questions[i : i + bs],
+                                new_context[i : i + bs],
                             )
                         ]
                     else:
@@ -319,20 +334,22 @@ def evaluate_QA(
                                 query=query,
                                 wdoc=False,
                             )
-                            for query in new_questions[i : i + max_bs]
+                            for query in new_questions[i : i + bs]
                         ]
 
                 if not mistral:
 
                     if w_embeds:
-                        text_conditioning = list(new_context[i : i + max_bs])
+                        text_conditioning = list(new_context[i : i + bs])
                     else:
                         text_conditioning = None
+           
+
                     generated_sequence, embed_tokens, embeds = pipeline.generate(
                         prompt_pre_embed=(
-                            [""] * max_bs
+                            [""] * bs
                             if not prompt_before_embed
-                            else ["Based on the context "] * max_bs
+                            else ["Based on the context "] * bs
                         ),  # If model trained with task prefix before embedding
                         prompt_post_embed=(
                             context_prompt
@@ -346,9 +363,9 @@ def evaluate_QA(
                         device=device,
                         device_generation=other_device,
                         give_n_tokens= True,
-                        w_scores = None if len(scores) == 0 or not with_scores else list(new_scores[i:i+max_bs])
+                        w_scores = None if len(scores) == 0 or (with_scores==0.) else list(new_scores[i:i+bs])
                     )
-
+              
                     compress_ratio += embeds/embed_tokens
                     generated_sequences.extend(generated_sequence)
                 else:
@@ -367,6 +384,10 @@ def evaluate_QA(
                         eos_id=mistral_tokenizer.eos_id,
                     )
 
+                    print('Len sub',len([
+                            mistral_tokenizer.decode(gen).split("\n")[0]
+                            for gen in generated_sequence
+                        ]))
                     generated_sequences.extend(
                         [
                             mistral_tokenizer.decode(gen).split("\n")[0]
@@ -411,7 +432,8 @@ def evaluate_QA(
                     )
                     / n_samples
                 )
-                
+                print('Len gen seq:', len(generated_sequences))
+                print('Len new answers:', len(new_answers[:n_samples]))
                 value_xrag, _ = get_substring_match_score(generated_sequences, new_answers[:n_samples])
    
                 metrics[benchmark]["EM"][str(temp)] = {
@@ -426,6 +448,7 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
                     "compress_ratio":  compress_ratio/len(range(0, n_samples, max_bs)),
+                    "w_scores":with_scores,
                 }
                 value_f1 = (
                     sum(
@@ -446,6 +469,7 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
                     "compress_ratio":  compress_ratio/len(range(0, n_samples, max_bs)),
+                    "w_scores":with_scores,
                 }
                 eval_logger_info(logger,'Prompt prefix: '+prompt_prefix)
                 eval_logger_info(logger,
@@ -489,6 +513,7 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
                     'prop context containing the answer': n_answer_in_context,
+                    "w_scores":with_scores,
                 }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
@@ -819,7 +844,7 @@ def arg_parser():
     parser.add_argument("--prompt_before_embed", action="store_true")
     parser.add_argument("--split_to_multipassage", action="store_true")
     parser.add_argument("--seed", type=float, default=0.42)
-    parser.add_argument("--with_scores", action="store_true")
+    parser.add_argument("--with_scores", type=float, default=0.0)
 
     return parser.parse_args()
 
@@ -833,6 +858,8 @@ if __name__ == "__main__":
 
     if args.benchmarks == "all":
         benchmarks = ["NQ", "TRIVIAQA", "FactKG", "HotpotQA", "SQUAD"]
+    elif args.benchmarks == 'two_main':
+        benchmarks = ["NQ", "TRIVIAQA"]
     else:
         benchmarks = [args.benchmarks]
 

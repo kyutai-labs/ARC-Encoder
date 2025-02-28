@@ -149,7 +149,7 @@ class Cross_Attention(nn.Module):
             if w_scores is not None:
                 assert len(w_scores) == attn.shape[-1]
                 # Multiply element wise according to the last dimension
-                score_inv_temp = torch.nn.functional.normalize(torch.tensor(w_scores).to(attn.device))
+                score_inv_temp = torch.tensor(w_scores).to(attn.device)
                 attn = torch.einsum("bhsl,l->bhsl", attn, score_inv_temp)
                 
             attn = attn.softmax(-1)
@@ -929,7 +929,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         cross_att_cache: CrossAttCache | None = None,
         w_scores: list[float] | None = None,
     ) -> torch.Tensor:
- 
+   
 
         h = self.generate_partial(
             input_ids,

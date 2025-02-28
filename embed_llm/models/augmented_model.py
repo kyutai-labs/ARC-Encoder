@@ -724,7 +724,7 @@ class EmbedAugPipeline(nn.Module):
                     w_scores = sum(w_scores, [])
 
             assert len(w_scores) == embeddings.shape[0], f"Scores {len(w_scores)} must be provided for each text conditioning {embeddings.shape[0]}"
-            
+
         generated_tokens = mistral_generate(
             prompt_pre_embed=encoded_pre_embed_prompts,
             prompt_post_embed=encoded_post_embed_prompts,
@@ -745,6 +745,7 @@ class EmbedAugPipeline(nn.Module):
                 or (not self.pipeline_args.do_both and self.pipeline_args.cross_att)
                 else cat_embeddings
             ),
+            w_scores=w_scores,
             **kwargs,
         )
         produced_text = [

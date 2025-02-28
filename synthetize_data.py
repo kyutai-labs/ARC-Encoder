@@ -10,28 +10,36 @@ from torch.distributed import get_rank, get_world_size, init_process_group, dest
 from pathlib import Path
 import torch
 import os
+import subprocess as sp
 import torch.distributed as dist
+
+# Profiling memory
+def get_gpu_memory():
+    command = "nvidia-smi"
+    memory_free_info = sp.check_output(command.split()).decode("ascii")
+    return memory_free_info
+
 
 instruction_prompts = [
     "\nCreate a summary of the above context:\n",
-    "\nAsk questions concerning the preceding passage and provide the answers.\n",
-    "\nExtract key takeaways and list them as bullet points.\n",
-    "\nRewrite the passage in simpler terms for a younger audience.\n",
+    "\nAsk questions concerning the preceding passage and provide the answers.",
+    "\nExtract key takeaways and list them as bullet points.",
+    "\nRewrite the passage in simpler terms for a younger audience.",
     "\nSummarize the passage:\n",
-    "\nIdentify and explain any complex or technical terms used.\n",
-    "\nProvide a counterargument or critique of the passage.\n",
-    "\nRewrite the background in a more formal/professional tone.\n",
-    "\nConvert the information into a persuasive argument.\n",
-    "\nGenerate a list of keywords that summarize the main topics.\n",
-    "\nIdentify any logical fallacies or biases in the passage.\n",
-    "\nRewrite the passage in the style of a famous author or historical figure.\n",
-    "\nProvide a real-world example or analogy to illustrate the main idea.\n",
-    "\nSuggest a list of follow-up questions for further discussion.\n",
+    "\nIdentify and explain any complex or technical terms used.",
+    "\nProvide a counterargument or critique of the passage.",
+    "\nRewrite the background in a more formal/professional tone.",
+    "\nConvert the information into a persuasive argument.",
+    "\nGenerate a list of keywords that summarize the main topics.",
+    "\nIdentify any logical fallacies or biases in the passage.",
+    "\nRewrite the passage in the style of a famous author or historical figure!",
+    "\nProvide a real-world example or analogy to illustrate the main idea.",
+    "\nSuggest a list of follow-up questions for further discussion:\n",
     "\nGenerate a tweet-length summary of the passage (under 280 characters).\n",
     "\nIdentify any missing information or unanswered questions in the passage.\n",
     "\nConvert the passage into a short dialogue between two characters.\n",
-    "\nTurn the passage into a poem or a short piece of creative writing.\n",
-    "\nCompare and contrast the main ideas with another topic or perspective.\n"
+    "\nTurn the passage into a poem or a short piece of creative writing.",
+    "\nCompare and contrast the main ideas with another topic or perspective."
 ]
 @dataclass()
 class BatchSample:
@@ -40,19 +48,28 @@ class BatchSample:
     tokens: list[int]
 
     
-def dataset_from_file(file_path):
+def dataset_from_file(file_path, num_gen: int = None, overall_gen: int = 8):
     while True:
         with open(file_path, "r") as f:
             for idx, line in enumerate(f):
-                if not idx % get_world_size() == get_rank():
+                if num_gen is None:
+                    if not idx % get_world_size() == get_rank():
+                        continue
 
                     data = json.loads(line)
                     if "rand" in data.keys() and float(data["rand"]) >= 0.8:
                         continue
                     yield data['text'].strip()
+                else:
+                    if not idx % overall_gen == num_gen:
+                        continue
+                    data = json.loads(line)
+                    if "rand" in data.keys() and float(data["rand"]) >= 0.8:
+                        continue
+                    yield data['text'].strip()
                 
-def dataloader_from_file(file_path, batch_size, tokenizer, seq_sizes):
-    dataset = dataset_from_file(file_path)
+def dataloader_from_file(file_path, batch_size, tokenizer, seq_sizes, num_gen: int = None, overall_gen: int = 8):
+    dataset = dataset_from_file(file_path, num_gen, overall_gen)
     batch_list = []
     for sample in dataset:
 
@@ -72,7 +89,8 @@ def dataloader_from_file(file_path, batch_size, tokenizer, seq_sizes):
                 tok_seq = tokenizer.encode(s, bos = False, eos = False)
             
             passage += tok_seq
-            if len(passage) >= seq:
+            if len(passage) >= seq or len(passage) >= 8192:
+                passage = passage[:8192]
                 break
     
 
@@ -105,8 +123,11 @@ def main(args):
             Path(args.output_path).mkdir(parents=True, exist_ok=True)
             
     if get_rank() == 0:
-        for rank in range(1, get_world_size()):
-            (Path(args.output_path) / args.output_file.replace('.jsonl',str(rank) + '.jsonl')).touch()
+        if args.num_gen is None:
+            for rank in range(1, get_world_size()):
+                (Path(args.output_path) / args.output_file.replace('.jsonl',str(rank) + '.jsonl')).touch()
+        else:
+            (Path(args.output_path) / args.output_file.replace('.jsonl',str(args.num_gen) + '.jsonl')).touch()
             
 
     if args.n_samples is not None:
@@ -114,17 +135,22 @@ def main(args):
         
     mistral_tokenizer = MistralTokenizer.from_file(args.tokenizer_path)
     model = Transformer.from_folder(args.model_folder_path, max_batch_size=args.batch_size)
-    data_loader = dataloader_from_file(args.data_path, args.batch_size, mistral_tokenizer.instruct_tokenizer.tokenizer, args.seq_sizes)
+    data_loader = dataloader_from_file(args.data_path, args.batch_size, mistral_tokenizer.instruct_tokenizer.tokenizer, 
+                                       args.seq_sizes, num_gen = args.num_gen, overall_gen = args.overall_gen)
     data_buffer = []
     n_data = torch.tensor([0], device="cuda")
     n_toks = torch.tensor([0], device="cuda")
+    max_token_size = 0
     start_time = time.time()
     for step in range(args.max_steps):
-
+ 
         batch = next(data_loader)
         tokens = [sample.tokens for sample in batch]
-        out_tokens, _ = generate(tokens, model, max_tokens=args.max_gen_toks, temperature=args.temp, eos_id=mistral_tokenizer.instruct_tokenizer.tokenizer.eos_id)        
 
+        out_tokens, _ = generate(tokens, model, max_tokens=args.max_gen_toks, temperature=args.temp, eos_id=mistral_tokenizer.instruct_tokenizer.tokenizer.eos_id)  
+        torch.cuda.empty_cache() 
+
+        max_token_size = max(max_token_size, max([len(l) for l in tokens]))
         truncated_list = []
         for j in range(args.batch_size):
             truncated_list.append([])
@@ -139,24 +165,29 @@ def main(args):
             
         n_data += torch.tensor(args.batch_size).item()
         n_toks += torch.tensor(sum([len(l) for l in truncated_list])).item()
-        
 
         if step % 100 == 0:
             buffer_data = torch.tensor([n_data.item()], dtype=torch.int32, device=f"cuda:{local_rank}")
             buffer_toks = torch.tensor([n_toks.item()], dtype=torch.int32, device=f"cuda:{local_rank}")
             dist.all_reduce(buffer_data, op=dist.ReduceOp.SUM)
             dist.all_reduce(buffer_toks, op=dist.ReduceOp.SUM)
-
             if get_rank() == 0:
-                print(f"Step {step} took {time.time() - start_time} seconds", "Data processed:", buffer_data[0].item(), "Tokens generated:", buffer_toks[0].item())
+                print(f"Step {step} took {time.time() - start_time} seconds", "Data processed:", buffer_data[0].item(), "Tokens generated:", buffer_toks[0].item(), "Max token size:", max_token_size)
             
         start_time = time.time()
         if step%args.freq_load_data == 0:
-            with open(Path(args.output_path) / args.output_file.replace('.jsonl',str(get_rank()) + '.jsonl'), "a") as f:
-                for sample in data_buffer:
-                    json.dump(sample, f)
-                    f.write("\n")
-            data_buffer = []
+            if args.num_gen is None:
+                with open(Path(args.output_path) / args.output_file.replace('.jsonl',str(get_rank()) + '.jsonl'), "a") as f:
+                    for sample in data_buffer:
+                        json.dump(sample, f)
+                        f.write("\n")
+                data_buffer = []
+            else:
+                with open(Path(args.output_path) / args.output_file.replace('.jsonl',str(args.num_gen) + '.jsonl'), "a") as f:
+                    for sample in data_buffer:
+                        json.dump(sample, f)
+                        f.write("\n")
+                data_buffer = []
     destroy_process_group()
 
 def arg_parser():
@@ -180,7 +211,7 @@ def arg_parser():
     parser.add_argument(
         '--freq_load_data',
         type=int,
-        default=50,
+        default=5,
     )
 
     parser.add_argument(
@@ -226,7 +257,18 @@ def arg_parser():
         type=float,
         default=.8,
     )
+    
+    parser.add_argument(
+        "--num_gen",
+        type=int,
+        default=None,
+    )
 
+    parser.add_argument(
+        "--overall_gen",
+        type=int,
+        default=8,
+    )
     return parser.parse_args()
 
 
