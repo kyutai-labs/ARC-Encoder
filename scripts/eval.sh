@@ -1,12 +1,12 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=1-3
+#SBATCH --array=4
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=16
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s01dgx29
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx25
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=eval_models
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/embed_llm_%A_%a.out
@@ -21,6 +21,7 @@ NVEmbed_pref_Rec_xRAG5_Instruct
 NVEmbed_pref_Rec_xRAG5_atlas_Instruct
 NVEmbed_pref_Rec_xRAG1_atlas_true
 NVEmbed_pref_Rec_xRAG1_Instruct
+NVEmbed_pref_Rec_xRAG1_wiki_Instruct
 )
 
 

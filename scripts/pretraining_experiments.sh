@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=6
+#SBATCH --array=7-8
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -9,7 +9,7 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=pretrain_llm
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/embed_llm_out/embed_llm_%A_%a.out
-
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s01dgx20,par2dc5-ai-prd-cl02s03dgx21,par2dc5-ai-prd-cl02s04dgx31,par2dc5-ai-prd-cl02s03dgx22,par2dc5-ai-prd-cl02s04dgx11,par2dc5-ai-prd-cl02s01dgx08,par2dc5-ai-prd-cl02s03dgx30,par2dc5-ai-prd-cl02s01dgx26,par2dc5-ai-prd-cl02s04dgx30,par2dc5-ai-prd-cl02s02dgx25,par2dc5-ai-prd-cl02s04dgx15,par2dc5-ai-prd-cl02s03dgx12
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
@@ -44,6 +44,8 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_atlas_true.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Rec_fixed5.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_Cont.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Cont_Distractor.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Distractor.yaml
 )
 
 s

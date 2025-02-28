@@ -328,6 +328,153 @@ def sequence_iterator_reconstruction(
                 break
     return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes
 
+def sequence_iterator_continuation_wdistractor(
+    x_buffer: list[int],
+    y_buffer: list[int],
+    to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]],
+    distractor_buffer: list[int],
+    n_missing: int,
+    mask_buffer: Mask,
+    sizes: list[int],
+    sample: TokenSample,
+    cur_pos: int,
+    seq_len: int,
+    tokenizer: Tokenizer,
+    adapt_seq_len: bool = False,
+    data_type: str = "continuation",
+    is_eval: bool = False,
+    max_embeds: int = 1,
+    hybrid_training: bool = False,
+    prob_distractor: float = 0.5,
+) -> SequenceEmbedMaskAndSizes:
+
+    assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
+    tokens, mask = sample.tokens, sample.masks[1:]
+    x, y = tokens[:-1], tokens[1:]
+    embed_tokens = sample.passages.tokens
+    assert (
+        len(embed_tokens) == 1
+    ), "Continuation training only supports one passage per sample"
+
+    while cur_pos < len(x):
+
+        overall_size = len(x[cur_pos : cur_pos + n_missing])
+        curr_mask = mask[cur_pos : cur_pos + n_missing]
+        if not any(curr_mask):
+            cur_pos += overall_size
+            # we have a sequence with a mask filled with False
+            continue
+
+        if overall_size < 4:
+            assert len(mask_buffer) == len(x_buffer) == sum(sizes) == len(y_buffer)
+            assert len(to_embed_buffer) == len(sizes), (
+                len(to_embed_buffer),
+                len(sizes),
+            )
+            
+            # we don't want to yield sequences with a mask filled with False
+            if any(mask_buffer):
+                return SequenceEmbedMaskAndSizes(
+                    x=x_buffer,
+                    y=y_buffer,
+                    to_embed=to_embed_buffer,
+                    mask=mask_buffer,
+                    sizes=sizes,
+                    data_type=data_type
+                ), len(x), distractor_buffer # ensures that it does not come back to this sample
+            else:
+                break
+
+        upper_bound = min(cur_pos + n_missing, len(x))
+        if not is_eval or not hybrid_training:
+            x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+            y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+            mask_buffer.extend(mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+
+            size = len(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+
+            sizes.append(size)
+
+        else:
+            x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 3 : upper_bound])
+            y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 3 : upper_bound])
+            
+            mask_buffer.extend([False]*len(mask[cur_pos + (upper_bound - cur_pos) // 3 : cur_pos + (upper_bound - cur_pos) // 2 ]) + 
+                               mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+            
+
+
+            size = len(x[cur_pos + (upper_bound - cur_pos) // 3 : upper_bound])
+
+            sizes.append(size)
+
+
+        if len(embed_tokens) > 1:
+            print("Continuation training only supports one passage per sample")
+            
+        if max_embeds <= -1:
+            nb_embed = abs(max_embeds)
+        elif max_embeds > 1:
+            nb_embed = np.random.randint(1, max_embeds + 1)
+        elif max_embeds == 1:
+            nb_embed = 1
+            
+        if len(embed_tokens[0][
+                            cur_pos : cur_pos + (upper_bound - cur_pos) // 2
+                        ]) < 40:
+            nb_embed = 1
+            
+        new_embed = []
+        n_toks_per_embed = len(embed_tokens[0][
+                            cur_pos : cur_pos + (upper_bound - cur_pos) // 2
+                        ]) // nb_embed
+        
+        do_distract = True
+        for i in range(nb_embed):
+            new_embed.append(
+                embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
+            )
+            if i > 0 and np.random.rand() < prob_distractor and do_distract:
+                if len(distractor_buffer)>0:
+                    distractor_buffer.extend(distractor_buffer[:n_toks_per_embed])
+                    distractor_buffer = embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
+                else:
+                    distractor_buffer = embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
+                do_distract = False
+                
+        to_embed_buffer.append(
+            {
+                "text": [tokenizer.decode(toks) for toks in new_embed],
+                "tokens": new_embed,
+            }
+        )
+          
+        cur_pos += overall_size
+
+        if not adapt_seq_len:
+           n_missing -= overall_size
+
+        if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
+            assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
+            assert len(x_buffer) <= seq_len
+
+            assert len(to_embed_buffer) == len(sizes)
+            # we don't want to yield sequences with a mask filled with False
+            if any(mask_buffer):
+                return SequenceEmbedMaskAndSizes(
+                    x=x_buffer,
+                    y=y_buffer,
+                    to_embed=to_embed_buffer,
+                    mask=mask_buffer,
+                    sizes=sizes,
+                    data_type=data_type
+                ), cur_pos, distractor_buffer
+
+            if adapt_seq_len:
+                break
+    return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes, distractor_buffer
+
+
 
 def sequence_iterator_continuation(
     x_buffer: list[int],

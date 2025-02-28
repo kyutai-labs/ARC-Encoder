@@ -25,6 +25,7 @@ class DataArgs(Serializable):
     adapt_seq_len: bool = False
     data_types: list[str] = field(default_factory=lambda: ["reconstruction"])
     further_embeds: bool = False
+    prob_distractor: float = 0.0
     def __post_init__(self) -> None:
         assert len(self.train_data.strip().split(",")) == len(
             self.data_types

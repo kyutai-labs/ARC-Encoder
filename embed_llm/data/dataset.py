@@ -15,6 +15,7 @@ from embed_llm.data.sequence_iterators import (
     sequence_iterator_reconstruction,
     sequence_iterator_one_task_4_all,
     sequence_iterator_decompress_usage,
+    sequence_iterator_continuation_wdistractor,
     SequenceEmbedMaskAndSizes,
 )
 
@@ -161,6 +162,7 @@ def sequence_iterator(
     max_embeds: int = 1,
     decompress_usage: str = '',
     further_embeds: bool = False,
+    prob_distractor: float = 0.0,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -183,7 +185,7 @@ def sequence_iterator(
     to_embed_buffer_cont: list[dict[str, str | int | list[int] | list[str]]] = []
     mask_buffer_cont: Mask = []
     sizes_cont: list[int] = []
-    
+    distractor_buffer: list[int] = []
     cur_pos = 0
     n_missing = seq_len
     for sample in ds_it:
@@ -197,7 +199,7 @@ def sequence_iterator(
             else:
                 do_continuation = rand_continue < continuation
 
-            if do_continuation:
+            if do_continuation and prob_distractor == 0.0:
                 while True:
                     res = sequence_iterator_continuation(
                         sample=sample,
@@ -233,6 +235,49 @@ def sequence_iterator(
                             mask_buffer_cont,
                             n_missing_cont,
                             sizes_cont,
+                        ) = res
+                        cur_pos = 0
+                        break
+            elif do_continuation and prob_distractor > 0.0:
+                while True:
+                    res = sequence_iterator_continuation_wdistractor(
+                        distractor_buffer=distractor_buffer,
+                        sample=sample,
+                        x_buffer=x_buffer_cont,
+                        y_buffer=y_buffer_cont,
+                        mask_buffer=mask_buffer_cont,
+                        to_embed_buffer=to_embed_buffer_cont,
+                        sizes=sizes_cont,
+                        seq_len=seq_len * 2, # To ensure max seq len to generate and max seq len to embed
+                        tokenizer=tokenizer,
+                        adapt_seq_len=adapt_seq_len,
+                        n_missing=n_missing_cont,
+                        data_type="continuation",
+                        is_eval=is_finite,
+                        cur_pos=cur_pos,
+                        max_embeds = max_embeds,
+                        hybrid_training=hybrid_training,
+                        prob_distractor=prob_distractor)
+                    
+                    if len(res) == 3 and isinstance(res[0], SequenceEmbedMaskAndSizes):
+                        yield res[0]
+
+                        x_buffer_cont, y_buffer_cont = [], []
+                        mask_buffer_cont = []
+                        to_embed_buffer_cont = []
+                        sizes_cont = []
+                        n_missing_cont = seq_len * 2
+                        cur_pos = res[1]
+                        distractor_buffer = res[2]
+                    else:
+                        (
+                            x_buffer_cont,
+                            y_buffer_cont,
+                            to_embed_buffer_cont,
+                            mask_buffer_cont,
+                            n_missing_cont,
+                            sizes_cont,
+                            distractor_buffer
                         ) = res
                         cur_pos = 0
                         break
@@ -405,6 +450,7 @@ def build_dataset(
             max_embeds = max_embeds,
             decompress_usage = decompress_usage,
             further_embeds = args.further_embeds,
+            prob_distractor = args.prob_distractor,
         )
         for it in dataset_iterators
     ]

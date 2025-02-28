@@ -268,8 +268,7 @@ def evaluate_QA(
                 max_examples=icl_examples,
                 fact_checking = (benchmark == "FactKG")
             )
-        print('icl_examples:', icl_examples)
-        print('Prompt prefix:', prompt_prefix)
+ 
         
         new_context, new_questions, new_answers = (
             list(context[icl_examples:]),
@@ -384,10 +383,6 @@ def evaluate_QA(
                         eos_id=mistral_tokenizer.eos_id,
                     )
 
-                    print('Len sub',len([
-                            mistral_tokenizer.decode(gen).split("\n")[0]
-                            for gen in generated_sequence
-                        ]))
                     generated_sequences.extend(
                         [
                             mistral_tokenizer.decode(gen).split("\n")[0]
@@ -432,8 +427,7 @@ def evaluate_QA(
                     )
                     / n_samples
                 )
-                print('Len gen seq:', len(generated_sequences))
-                print('Len new answers:', len(new_answers[:n_samples]))
+          
                 value_xrag, _ = get_substring_match_score(generated_sequences, new_answers[:n_samples])
    
                 metrics[benchmark]["EM"][str(temp)] = {
@@ -845,13 +839,15 @@ def arg_parser():
     parser.add_argument("--split_to_multipassage", action="store_true")
     parser.add_argument("--seed", type=float, default=0.42)
     parser.add_argument("--with_scores", type=float, default=0.0)
+    parser.add_argument("--icl_exs", type=int, default=None)
+    parser.add_argument("--llmemb_icl_w_context", action="store_true")
 
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     set_logger(logging.INFO)
-    icl_tests = [0, 2, 5]
+  
     temp_tests = [0]
 
     args = arg_parser()
@@ -862,7 +858,7 @@ if __name__ == "__main__":
         benchmarks = ["NQ", "TRIVIAQA"]
     else:
         benchmarks = [args.benchmarks]
-
+    icl_tests = [0, 2, 5] if args.icl_exs is None else [args.icl_exs]
     ensure_reproducibility(29)
 
     output_file = (
@@ -1034,7 +1030,7 @@ if __name__ == "__main__":
             tmp_path=tmp_path,
             icl_examples=icl_tests[0],
             w_embeds=args.wo_embeds,
-            icl_w_context=False,
+            icl_w_context=args.llmemb_icl_w_context,
             max_multi_passage=args.multi_passages,
             instruct_name=args.instruct_name,
             colbert=args.colbert,
@@ -1056,7 +1052,7 @@ if __name__ == "__main__":
                 tmp_path=tmp_path,
                 icl_examples=icl_ex,
                 w_embeds=args.wo_embeds,
-                icl_w_context=False,
+                icl_w_context=args.llmemb_icl_w_context,
                 pipeline=pipeline,
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
