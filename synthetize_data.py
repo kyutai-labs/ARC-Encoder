@@ -167,13 +167,14 @@ def main(args):
  
         batch = next(data_loader)
         tokens = [sample.tokens for sample in batch]
-        print('Step:', step)
-        print('Text sizes:', [len(sample) for sample in tokens])
-        print('Max text size:', max([len(sample) for sample in tokens]))
-        print('Min text size:', min([len(sample) for sample in tokens]))
+
         
-        check_tensor(torch.tensor(sum(tokens,[])), "Tokens")
-        out_tokens, _ = generate(tokens, model, max_tokens=args.max_gen_toks, temperature=args.temp, eos_id=None)  
+
+        try:
+            out_tokens, _ = generate(tokens, model, max_tokens=args.max_gen_toks, temperature=args.temp, eos_id=None)  
+        except:
+            print("Error during generation")
+            continue
         torch.cuda.empty_cache() 
 
         max_token_size = max(max_token_size, max([len(l) for l in tokens]))

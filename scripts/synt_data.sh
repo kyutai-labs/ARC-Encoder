@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=1
 #SBATCH --cpus-per-task=16
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx20
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx12
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=synt_data
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/synt_data/embed_llm_%A_%a.out
