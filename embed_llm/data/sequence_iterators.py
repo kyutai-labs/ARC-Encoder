@@ -431,17 +431,19 @@ def sequence_iterator_continuation_wdistractor(
         
         do_distract = True
         for i in range(nb_embed):
-            new_embed.append(
-                embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
-            )
-            if i > 0 and np.random.rand() < prob_distractor and do_distract:
+            if np.random.rand() < prob_distractor and do_distract:
                 if len(distractor_buffer)>0:
-                    distractor_buffer.extend(distractor_buffer[:n_toks_per_embed])
+                    new_embed.append(distractor_buffer[:n_toks_per_embed])
                     distractor_buffer = embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
                 else:
                     distractor_buffer = embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
+                    new_embed.append(distractor_buffer[:n_toks_per_embed])
                 do_distract = False
-                
+  
+            else:
+                new_embed.append(
+                    embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
+                )
         to_embed_buffer.append(
             {
                 "text": [tokenizer.decode(toks) for toks in new_embed],

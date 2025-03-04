@@ -48,6 +48,15 @@ class BatchSample:
     tokens: list[int]
 
     
+# def filter_samples(data_path: str):
+#     with open(data_path, "r") as f:
+#         for idx, line in enumerate(f):
+#             data = json.loads(line)
+#             if "rand" in data.keys() and float(data["rand"]) >= 0.8:
+#                 continue
+#             yield data['text'].strip()
+
+
 def dataset_from_file(file_path, num_gen: int = None, overall_gen: int = 8):
     while True:
         with open(file_path, "r") as f:
@@ -68,30 +77,36 @@ def dataset_from_file(file_path, num_gen: int = None, overall_gen: int = 8):
                         continue
                     yield data['text'].strip()
                 
-def dataloader_from_file(file_path, batch_size, tokenizer, seq_sizes, num_gen: int = None, overall_gen: int = 8):
+def dataloader_from_file(file_path, batch_size, tokenizer, seq_sizes, num_gen: int = None, overall_gen: int = 8, adapt_seq_len: bool = False):
     dataset = dataset_from_file(file_path, num_gen, overall_gen)
     batch_list = []
     for sample in dataset:
 
-        seq = random.choice(seq_sizes)
-        
-        if len(sample) < seq*2:
-            continue
-        
-        splitted_sample = sample.split("\n")
-        
-        passage = []
-        for i, s in enumerate(splitted_sample):
-  
-            if i == 0:
-                tok_seq = tokenizer.encode(s, bos = True, eos = False)
-            else:
-                tok_seq = tokenizer.encode(s, bos = False, eos = False)
+        if not adapt_seq_len:
+            seq = random.choice(seq_sizes)
             
-            passage += tok_seq
-            if len(passage) >= seq or len(passage) >= 8192:
-                passage = passage[:8192]
-                break
+            if len(sample) < seq*2:
+                continue
+            
+            splitted_sample = sample.split("\n")
+            
+            passage = []
+            for i, s in enumerate(splitted_sample):
+    
+                if i == 0:
+                    tok_seq = tokenizer.encode(s, bos = True, eos = False)
+                else:
+                    tok_seq = tokenizer.encode(s, bos = False, eos = False)
+                
+                passage += tok_seq
+                if len(passage) >= seq or len(passage) >= 8192:
+                    passage = passage[:8192]
+                    break
+        else:
+            if len(sample) < 50:
+                continue
+            tok_seq = tokenizer.encode(sample, bos = True, eos = False)
+            passage = tok_seq[:8192]
     
 
         passages = [tokenizer.decode(passage)]
@@ -104,6 +119,12 @@ def dataloader_from_file(file_path, batch_size, tokenizer, seq_sizes, num_gen: i
             batch_list = []
     if len(batch_list) > 0:
         yield batch_list
+        
+def check_tensor(tensor, name):
+    if torch.isnan(tensor).any() or torch.isinf(tensor).any():
+        print(f"{name} contains NaNs or Infs")
+    else:
+        print(f"{name} is clean")
         
 def main(args):
     
@@ -136,7 +157,7 @@ def main(args):
     mistral_tokenizer = MistralTokenizer.from_file(args.tokenizer_path)
     model = Transformer.from_folder(args.model_folder_path, max_batch_size=args.batch_size)
     data_loader = dataloader_from_file(args.data_path, args.batch_size, mistral_tokenizer.instruct_tokenizer.tokenizer, 
-                                       args.seq_sizes, num_gen = args.num_gen, overall_gen = args.overall_gen)
+                                       args.seq_sizes, num_gen = args.num_gen, overall_gen = args.overall_gen, adapt_seq_len = args.adapt_seq_len)
     data_buffer = []
     n_data = torch.tensor([0], device="cuda")
     n_toks = torch.tensor([0], device="cuda")
@@ -146,8 +167,13 @@ def main(args):
  
         batch = next(data_loader)
         tokens = [sample.tokens for sample in batch]
-
-        out_tokens, _ = generate(tokens, model, max_tokens=args.max_gen_toks, temperature=args.temp, eos_id=mistral_tokenizer.instruct_tokenizer.tokenizer.eos_id)  
+        print('Step:', step)
+        print('Text sizes:', [len(sample) for sample in tokens])
+        print('Max text size:', max([len(sample) for sample in tokens]))
+        print('Min text size:', min([len(sample) for sample in tokens]))
+        
+        check_tensor(torch.tensor(sum(tokens,[])), "Tokens")
+        out_tokens, _ = generate(tokens, model, max_tokens=args.max_gen_toks, temperature=args.temp, eos_id=None)  
         torch.cuda.empty_cache() 
 
         max_token_size = max(max_token_size, max([len(l) for l in tokens]))
@@ -268,6 +294,11 @@ def arg_parser():
         "--overall_gen",
         type=int,
         default=8,
+    )
+    
+    parser.add_argument(
+        "--adapt_seq_len",
+        action='store_true',
     )
     return parser.parse_args()
 

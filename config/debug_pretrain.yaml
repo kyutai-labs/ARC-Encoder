@@ -6,23 +6,18 @@ exp_name: test_pretrain
 # textual_continuation: 0.0
 
 
-continuation: 0.5
-toy_tests:
-  do: true
-  kl_pretraining: false
-  alpha: 0.0
-  temp: 1.
+continuation: false
 
 
-  
 pipeline:
   cross_att: true
-  cross_att_layers: 16
-  do_both: true
+  cross_att_layers: null
+  do_both: false
   do_pool: true
   embedder_name: NVEmbed
-  every_cross_att: null
+  every_cross_att: 2
   gate_bottleneck: 8
+  max_embeds: -5
   mlp_project:
     act: gelu
     hidden_dim: 4096
@@ -34,13 +29,12 @@ pipeline:
     n_heads: 8
     r: 512
     type: latent_attention
-  prefix_prompt: false
   shared_kv: false
   train_only_pooling: false
   trainable_embedder: false
   trainable_llm: false
   w_embeds: true
-  max_embeds: 3
+  w_prefix_prompt: false
 
 data:
   adapt_seq_len: false

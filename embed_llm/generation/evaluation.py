@@ -208,13 +208,13 @@ def evaluate_QA(
                         l_scores = [float(score) for score in  data['scores'][:max_multi_passage]]
                         if with_scores == 1.: # Marche pas
                             centered_scores = (np.array(l_scores) - np.min(l_scores))/(np.max(l_scores) - np.min(l_scores))
-                        elif with_scores == 2.:
+                        elif with_scores == 2.: # Seul qui fonctionne
                             centered_scores = (np.array(l_scores) - np.min(l_scores) + 1e-2)/(np.max(l_scores) - np.min(l_scores)+1e-2)
-                        elif with_scores == 3.:
+                        elif with_scores == 3.: # Bof
                             centered_scores = (np.array(l_scores) - np.mean(l_scores))/np.std(l_scores) + 1
-                        elif with_scores == 4.:
+                        elif with_scores == 4.: # Nul
                             centered_scores = l_scores
-                        elif with_scores == 5.:
+                        elif with_scores == 5.: # Non
                             centered_scores = (np.array(l_scores) - np.mean(l_scores))/np.std(l_scores)
                         scores.append(centered_scores.tolist())
 
