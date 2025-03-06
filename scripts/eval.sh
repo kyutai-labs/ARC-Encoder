@@ -17,15 +17,9 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-NVEmbed_pref_Rec_xRAG5_Instruct
-NVEmbed_pref_Rec_xRAG5_atlas_Instruct
-NVEmbed_pref_Rec_xRAG1_atlas_true
-NVEmbed_pref_Rec_xRAG1_Instruct
-NVEmbed_pref_Rec_xRAG1_wiki_Instruct
-TraincausalEmbed_CA_Cont
-TrainEmbed_CA_Cont_Distill_Instruct
-TrainEmbed_pref_Cont_Distill_Instruct
-TraincausalEmbed_CA_Cont_Instruct
+TrainCausalPoolEmbed_CA_08Cont_Dist
+TrainCausalPoolEmbed_CA_Rec
+NVEmbed_CA_Rec_Instruct_SQUAD_50epochs
 )
 
 

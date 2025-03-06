@@ -13,6 +13,7 @@ class PoolingArgs(Serializable):
     r: int = 512  # Hidden dim of latent if latent attention pooling
     n_heads: int = 8  # Number of heads in latent attention pooling
     n_layers: int = 1
+    compress_rate: int = 0
 
 
 @dataclass
@@ -49,6 +50,7 @@ class EmbedAugArgs(Serializable):
     do_both: bool = False
     w_embeds: bool = False
     causal_embedder: bool = False
+
     
     # Remove later
     do_pool: bool = False

@@ -1,55 +1,29 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=11-12
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
-#SBATCH --job-name=pretrain_llm
+#SBATCH --job-name=pretrain_llm_rlatt
+#SBATCH --dependency=afterany:671975_13
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/embed_llm_out/embed_llm_%A_%a.out
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 
+
 # Get the configuration file for this job
 CONFIG_FILES=(
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Rec.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Hybrid0.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_pref_Rec.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Cont.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Hybrid0.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Rec.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_pref_Cont.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Cont.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Cont_distill_2alpha_1tmp.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_distill_2alpha_1tmp.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_pref_Cont_distill_2alpha_1tmp.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Cont_distill_2alpha_1tmp.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Rec_further_embeds.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Rec_shared.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_atlas.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG5_atlas.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG5.yaml
-# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_atlas_true.yaml # STILL TO DO
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TraincausalEmbed_CA_Cont.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TraincausalEmbed_CA_Rec.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainPoolEmbed_CA_Cont.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainPoolEmbed_CA_Rec.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_pref_Rec_xRAG1_atlas_true.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Rec_fixed5.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_Cont.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Cont_Distractor.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Distractor.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_08Cont_Dist.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_Rec.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Cont_Distractor20.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Distractor20.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Compress_32.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Compress_4.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Compress_all.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Compress_nothing.yaml
+# /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Distractor20.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont.yaml
 )
 
 s
@@ -87,6 +61,17 @@ case $RUN_NAME in
         micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
         --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1 
     ;;
+
+*Compress*)
+    srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_compress.json \
+        --n_passages 500 --max_seq_len 64 --run_name $RUN_NAME --multi_passages 1 
+
+    srun --gpus=$N_GPU \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
+    --n_passages 500 --max_seq_len 64   --multi_passages 3
+    ;;
+
 *)
     srun --gpus=$N_GPU \
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \

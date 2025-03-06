@@ -14,10 +14,10 @@ pipeline:
   cross_att_layers: null
   do_both: false
   do_pool: true
-  embedder_name: NVEmbed
+  embedder_name: Mistral7B
   every_cross_att: 2
   gate_bottleneck: 8
-  max_embeds: -5
+  max_embeds: 2
   mlp_project:
     act: gelu
     hidden_dim: 4096
@@ -29,8 +29,9 @@ pipeline:
     n_heads: 8
     r: 512
     type: latent_attention
+    compress_rate: 4
   shared_kv: false
-  train_only_pooling: false
+  train_only_pooling: true
   trainable_embedder: false
   trainable_llm: false
   w_embeds: true

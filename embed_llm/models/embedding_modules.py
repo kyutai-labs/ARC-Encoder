@@ -5,7 +5,15 @@ from einops import repeat
 from embed_llm.models.args import MLPProjectArgs, PoolingArgs
 from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
+import numpy as np
 
+def split_integer(x, n):
+    base = x // n
+    remainder = x % n
+    result = [base] * n
+    for i in range(remainder):
+        result[i] += 1
+    return result
 
 class MLP_block(nn.Module):
     def __init__(
@@ -312,31 +320,65 @@ class PoolingModule(nn.Module):
             self.process = None
 
     def forward(
-        self, x: torch.Tensor, seqlens: list[int] | None = None
+        self, x: torch.Tensor, embed_seqlens: list[list[int]] | None = None 
     ) -> torch.Tensor:
-
-        if x.ndim == 3:
-            seqlens = [x.shape[1]] * x.shape[0]
-            x = x.view(-1, x.shape[-1])  # (B, S, D) -> (B*S, D)
-
+        
+        """
+        embed_seqlens: List of a list of embeddings size per sample in the batch
+        """
+        
         if "attention" not in self.args.type:
             out = x
         else:
-            out = self.process.forward(x, seqlens=seqlens)
+            out = self.process.forward(x, seqlens=sum(embed_seqlens, []))
 
         if "attention" in self.args.type or self.args.type == "mean":
-            mean_mask = torch.block_diag(*[torch.ones(l) / l for l in seqlens]).to(
-                x.device
-            )
+            # Full compression
+            if self.args.compress_rate == 0:
+  
+                mean_mask = torch.block_diag(*[torch.ones(l) / l for l in sum(embed_seqlens, [])]).to(
+                    x.device
+                )
+                embed_seqlens = [len(l) for l in embed_seqlens]
+            # No compression
+            elif self.args.compress_rate == -1:
+                mean_mask = torch.block_diag(*[torch.ones(1) for l in sum(embed_seqlens, []) for _ in range(l)]).to(
+                    x.device
+                )
+                embed_seqlens = [sum(l) for l in embed_seqlens]
+            # Partial compression
+            else:
+                assert self.args.compress_rate > 0 
+                new_embed_seqlens = []
+                mean_size = []
+                for pass_embs in embed_seqlens:
+                    embed_seqlen = 0
+                    for embed_size in pass_embs:
+                        compressed_embed_size = []
+                        
+                        if embed_size //self.args.compress_rate == 0:
+                            compressed_embed_size = [embed_size]
+                        else:
+                            compressed_embed_size = split_integer(embed_size, self.args.compress_rate)
+                            
+                        mean_size.extend(compressed_embed_size)
+                        embed_seqlen += len(compressed_embed_size)
+                    new_embed_seqlens.append(embed_seqlen)
+                mean_mask = torch.block_diag(*[torch.ones(l)/l for l in mean_size]).to(
+                    x.device
+                )
+                embed_seqlens = new_embed_seqlens
+          
             out = mean_mask @ out
 
         elif self.args.type == "eos":
-            idx = torch.cumsum(torch.tensor(seqlens), 0) - 1
+            idx = torch.cumsum(torch.tensor(sum(embed_seqlens,[])), 0) - 1
             out = out[idx, :]
         else:
             raise ValueError(f"Pooling type {self.args.type} not supported")
+        # Embed seqlens becomes the number of tokens from embeddings linked to a passage
+        return out, embed_seqlens 
 
-        return out
 
 
 if __name__ == "__main__":

@@ -533,7 +533,7 @@ def _train(
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
 
-            output = model.forward(
+            output = model(
                 x=x,
                 embeddings=embeddings,
                 seqlens=seqlens,
@@ -606,7 +606,7 @@ def _train(
 
                     with torch.no_grad():
                         model.eval()
-                        llm_output = model.forward(
+                        llm_output = model(
                             x=x_wcontext,
                             embeddings=None,
                             seqlens=seqlens_wcontext,

@@ -29,7 +29,7 @@ from embed_llm.models.args import MistralModelArgs, EmbedAugArgs, LoraArgs
 
 from embed_llm.training.args import InstructionTuningArgs
 
-from embed_llm.models.utils import is_cross_att, is_torchrun
+from embed_llm.models.utils import is_cross_att, is_torchrun, group_embed_seqlens
 from embed_llm.generation.utils import eval_logger_info
 
 # Mistral specifics
@@ -118,13 +118,13 @@ class EmbedAugModel(nn.Module):
                 ],
             )
             if self.pooling_module is not None:
-                embeddings = self.pooling_module(
+
+                embeddings, embed_seqlens = self.pooling_module(
                     x=embeddings,
-                    seqlens=[
-                        size for batch_seqlen in embed_seqlens for size in batch_seqlen
-                    ],
+                    embed_seqlens=embed_seqlens,
                 )
-                embed_seqlens = [len(batch_seqlen) for batch_seqlen in embed_seqlens]
+
+
             else:
                 embed_seqlens = [sum(batch_seqlen) for batch_seqlen in embed_seqlens]
         else:
@@ -639,8 +639,14 @@ class EmbedAugPipeline(nn.Module):
                 
        
                 if self.pipeline_args.do_pool:
-                    embeddings = self.model.pooling_module(x=embeddings.to(self.pipeline_args.param_dtype), seqlens=seqlens)
-                embed_seqlens = [len(l_text) for l_text in text_conditioning]
+                    # Here seqlens must be the number of tokens in each subpassage grouped by 
+                    embed_seqlens = group_embed_seqlens(seqlens, [len(l_text) for l_text in text_conditioning])
+                    embeddings, embed_seqlens = self.model.pooling_module(x=embeddings.to(self.pipeline_args.param_dtype), 
+                                                                embed_seqlens=embed_seqlens)
+
+
+                else:
+                    embed_seqlens = [len(l_text) for l_text in text_conditioning]
             else:
                 embeddings = None
                 embed_seqlens = None
@@ -670,9 +676,9 @@ class EmbedAugPipeline(nn.Module):
         if is_torchrun() and w_embeds:
             assert  self.pipeline_args.do_pool, "Cannot use distributed pipeline if not pooling for now"
             if torch.distributed.get_rank()>0:
-                embed_seqlens = [len(l_text) for l_text in text_conditioning]
-                cat_embeddings = torch.empty((sum(embed_seqlens),self.model.llm.args.dim), device=self.model.llm.device, dtype=self.model.llm.dtype)
-                embeddings = torch.empty((sum(embed_seqlens),self.model.llm.args.dim), device=self.model.llm.device, dtype=self.model.llm.dtype)
+                # Does not work with compress_rate != 0 for now
+                cat_embeddings = torch.empty((sum([len(l_text) for l_text in text_conditioning]),self.model.llm.args.dim), device=self.model.llm.device, dtype=self.model.llm.dtype)
+                embeddings = torch.empty((sum([len(l_text) for l_text in text_conditioning]),self.model.llm.args.dim), device=self.model.llm.device, dtype=self.model.llm.dtype)
             torch.distributed.broadcast(cat_embeddings, src=0)
             torch.distributed.broadcast(embeddings, src=0)
         elif not w_embeds:

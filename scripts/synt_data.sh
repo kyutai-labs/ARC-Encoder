@@ -6,14 +6,13 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=1
 #SBATCH --cpus-per-task=16
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx12
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx01
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
-#SBATCH --job-name=synt_data
+#SBATCH --job-name=atlas_synt_data
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/synt_data/embed_llm_%A_%a.out
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
-
 
 # Get number of GPUs allocated to this task, -z checks if CUDA_VISIBLE_DEVICES is empty
 if [ -z "$CUDA_VISIBLE_DEVICES" ]; then
@@ -33,10 +32,15 @@ echo "Starting at: $(date)"
 case $SLURM_ARRAY_TASK_ID in
 *)
 
-    srun --gpus=$N_GPU \
-        micromamba run -n  synt_data torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m synthetize_data --output_path /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/synth_data/ \
-        --num_gen $SLURM_ARRAY_TASK_ID --data_path '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl' --adapt_seq_len
+    # srun --gpus=$N_GPU \
+    #     micromamba run -n  synt_data  torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m synthetize_data --output_path /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/synth_data_instruct/ \
+    #     --num_gen $SLURM_ARRAY_TASK_ID  --model_folder_path /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B_instruct \
+    #     --tokenizer_path /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B_instruct/tokenizer.model.v3 --instruct_model
 
+     srun --gpus=$N_GPU \
+        micromamba run -n  synt_data python synthetize_data.py --output_path /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/synth_data_instruct/     \
+            --num_gen $SLURM_ARRAY_TASK_ID --data_path '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl' --adapt_seq_len --tokenizer_path /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B_instruct/tokenizer.model.v3 \
+            --model_folder_path /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B_instruct -bs 1
     
     ;;
 

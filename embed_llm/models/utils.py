@@ -210,3 +210,15 @@ def initialize_proj_params(
                     )
                     param = module._parameters[p_name]
                     torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+
+def group_embed_seqlens(values: list[int], sizes: list[int]):
+    result = []
+    for size in sizes:
+        if size <= len(values):
+            sublist = values[:size]
+            result.append(sublist)
+            values = values[size:]
+        else:
+            result.append(values)
+            break
+    return result

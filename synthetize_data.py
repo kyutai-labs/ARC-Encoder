@@ -6,7 +6,11 @@ from mistral_inference.transformer import Transformer
 from mistral_inference.generate import generate
 from dataclasses import dataclass
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+from mistral_common.protocol.instruct.messages import UserMessage
+from mistral_common.protocol.instruct.request import ChatCompletionRequest
 from torch.distributed import get_rank, get_world_size, init_process_group, destroy_process_group
+from embed_llm.training.distributed import is_torchrun
 from pathlib import Path
 import torch
 import os
@@ -77,7 +81,7 @@ def dataset_from_file(file_path, num_gen: int = None, overall_gen: int = 8):
                         continue
                     yield data['text'].strip()
                 
-def dataloader_from_file(file_path, batch_size, tokenizer, seq_sizes, num_gen: int = None, overall_gen: int = 8, adapt_seq_len: bool = False):
+def dataloader_from_file(file_path, batch_size, tokenizer, seq_sizes, num_gen: int = None, overall_gen: int = 8, adapt_seq_len: bool = False, instruct_model: bool = False):
     dataset = dataset_from_file(file_path, num_gen, overall_gen)
     batch_list = []
     for sample in dataset:
@@ -94,9 +98,9 @@ def dataloader_from_file(file_path, batch_size, tokenizer, seq_sizes, num_gen: i
             for i, s in enumerate(splitted_sample):
     
                 if i == 0:
-                    tok_seq = tokenizer.encode(s, bos = True, eos = False)
+                    tok_seq = tokenizer.instruct_tokenizer.tokenizer.encode(s, bos = True, eos = False)
                 else:
-                    tok_seq = tokenizer.encode(s, bos = False, eos = False)
+                    tok_seq = tokenizer.instruct_tokenizer.tokenizer.encode(s, bos = False, eos = False)
                 
                 passage += tok_seq
                 if len(passage) >= seq or len(passage) >= 8192:
@@ -105,7 +109,7 @@ def dataloader_from_file(file_path, batch_size, tokenizer, seq_sizes, num_gen: i
         else:
             if len(sample) < 50:
                 continue
-            tok_seq = tokenizer.encode(sample, bos = True, eos = False)
+            tok_seq = tokenizer.instruct_tokenizer.tokenizer.encode(sample, bos = True, eos = False)
             passage = tok_seq[:8192]
     
 
@@ -113,7 +117,15 @@ def dataloader_from_file(file_path, batch_size, tokenizer, seq_sizes, num_gen: i
 
         instruction = random.choice(instruction_prompts)
         
-        batch_list.append(BatchSample(passages = passages, question = instruction, tokens =passage + tokenizer.encode(instruction, bos = False, eos = False)))
+        if args.instruct_model:
+            # chat completion request
+            completion_request = ChatCompletionRequest(messages=[UserMessage(content=passages[0] + instruction)])
+            # encode message
+            tokens = tokenizer.encode_chat_completion(completion_request).tokens
+            batch_list.append(BatchSample(passages = passages, question = instruction, tokens = tokens))
+        else:
+            batch_list.append(BatchSample(passages = passages, question = instruction, tokens =passage + tokenizer.instruct_tokenizer.tokenizer.encode(instruction, bos = False, eos = False)))
+            
         if len(batch_list) == batch_size:
             yield batch_list
             batch_list = []
@@ -128,22 +140,21 @@ def check_tensor(tensor, name):
         
 def main(args):
     
-    # Initialize default process group
-    init_process_group(backend="nccl")
-    # Get local rank for this process
+    if is_torchrun():
+        # Initialize default process group
+        init_process_group(backend="nccl")
+        
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
-    
-    # Set device for this process
     torch.cuda.set_device(local_rank)
     
-    if get_rank() == 0:
+    if not is_torchrun() or get_rank() == 0:
         if Path(args.output_path).exists():
             print("Output repo already exists")
         else:
             # Create the output directory
             Path(args.output_path).mkdir(parents=True, exist_ok=True)
             
-    if get_rank() == 0:
+    if not is_torchrun() or get_rank() == 0:
         if args.num_gen is None:
             for rank in range(1, get_world_size()):
                 (Path(args.output_path) / args.output_file.replace('.jsonl',str(rank) + '.jsonl')).touch()
@@ -154,13 +165,17 @@ def main(args):
     if args.n_samples is not None:
         args.max_steps = args.n_samples // args.batch_size
         
+
     mistral_tokenizer = MistralTokenizer.from_file(args.tokenizer_path)
-    model = Transformer.from_folder(args.model_folder_path, max_batch_size=args.batch_size)
-    data_loader = dataloader_from_file(args.data_path, args.batch_size, mistral_tokenizer.instruct_tokenizer.tokenizer, 
-                                       args.seq_sizes, num_gen = args.num_gen, overall_gen = args.overall_gen, adapt_seq_len = args.adapt_seq_len)
+
+
+        
+    model = Transformer.from_folder(args.model_folder_path, max_batch_size=args.batch_size, device = f"cuda:{local_rank}")
+    data_loader = dataloader_from_file(args.data_path, args.batch_size, mistral_tokenizer, 
+                                       args.seq_sizes, num_gen = args.num_gen, overall_gen = args.overall_gen, adapt_seq_len = args.adapt_seq_len, instruct_model = args.instruct_model)
     data_buffer = []
-    n_data = torch.tensor([0], device="cuda")
-    n_toks = torch.tensor([0], device="cuda")
+    n_data = torch.tensor([0], device=f"cuda:{local_rank}")
+    n_toks = torch.tensor([0], device=f"cuda:{local_rank}")
     max_token_size = 0
     start_time = time.time()
     for step in range(args.max_steps):
@@ -172,9 +187,13 @@ def main(args):
 
         try:
             out_tokens, _ = generate(tokens, model, max_tokens=args.max_gen_toks, temperature=args.temp, eos_id=None)  
-        except:
-            print("Error during generation")
+        except Exception as e:
+            print("Error during generation", step)
+            print('Memory:', get_gpu_memory())
+            print('Max memory:', torch.cuda.max_memory_allocated())
+            print('Exception:', e)
             continue
+        
         torch.cuda.empty_cache() 
 
         max_token_size = max(max_token_size, max([len(l) for l in tokens]))
@@ -192,17 +211,19 @@ def main(args):
             
         n_data += torch.tensor(args.batch_size).item()
         n_toks += torch.tensor(sum([len(l) for l in truncated_list])).item()
-
         if step % 100 == 0:
-            buffer_data = torch.tensor([n_data.item()], dtype=torch.int32, device=f"cuda:{local_rank}")
-            buffer_toks = torch.tensor([n_toks.item()], dtype=torch.int32, device=f"cuda:{local_rank}")
-            dist.all_reduce(buffer_data, op=dist.ReduceOp.SUM)
-            dist.all_reduce(buffer_toks, op=dist.ReduceOp.SUM)
-            if get_rank() == 0:
-                print(f"Step {step} took {time.time() - start_time} seconds", "Data processed:", buffer_data[0].item(), "Tokens generated:", buffer_toks[0].item(), "Max token size:", max_token_size)
-            
+            if is_torchrun():
+                buffer_data = torch.tensor([n_data.item()], dtype=torch.int32, device=f"cuda:{local_rank}")
+                buffer_toks = torch.tensor([n_toks.item()], dtype=torch.int32, device=f"cuda:{local_rank}")
+                dist.all_reduce(buffer_data, op=dist.ReduceOp.SUM)
+                dist.all_reduce(buffer_toks, op=dist.ReduceOp.SUM)
+                if get_rank() == 0:
+                    print(f"Step {step} took {time.time() - start_time} seconds", "Data processed:", buffer_data[0].item(), "Tokens generated:", buffer_toks[0].item(), "Max token size:", max_token_size)
+            else:
+                print(f"Step {step} took {time.time() - start_time} seconds", "Data processed:", n_data.item(), "Tokens generated:", n_toks.item(), "Max token size:", max_token_size)
         start_time = time.time()
         if step%args.freq_load_data == 0:
+            print('Data buffer size:', data_buffer[-1])
             if args.num_gen is None:
                 with open(Path(args.output_path) / args.output_file.replace('.jsonl',str(get_rank()) + '.jsonl'), "a") as f:
                     for sample in data_buffer:
@@ -224,11 +245,13 @@ def arg_parser():
         type=str,
         default='/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3',
     )
+    # /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B_instruct/tokenizer.model.v3
     parser.add_argument(
         "--model_folder_path",
         type=str,
         default='/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/',
     )
+    # /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B_instruct
     parser.add_argument(
         "-bs","--batch_size",
         type=int,
@@ -237,7 +260,6 @@ def arg_parser():
     
     parser.add_argument(
         '--freq_load_data',
-        type=int,
         default=5,
     )
 
@@ -282,7 +304,7 @@ def arg_parser():
     parser.add_argument(
         "--temp",
         type=float,
-        default=.8,
+        default=0.8,
     )
     
     parser.add_argument(
@@ -299,6 +321,11 @@ def arg_parser():
     
     parser.add_argument(
         "--adapt_seq_len",
+        action='store_true',
+    )
+    
+    parser.add_argument(
+        "--instruct_model",
         action='store_true',
     )
     return parser.parse_args()
