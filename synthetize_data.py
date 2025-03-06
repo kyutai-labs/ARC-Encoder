@@ -6,7 +6,6 @@ from mistral_inference.transformer import Transformer
 from mistral_inference.generate import generate
 from dataclasses import dataclass
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 from mistral_common.protocol.instruct.messages import UserMessage
 from mistral_common.protocol.instruct.request import ChatCompletionRequest
 from torch.distributed import get_rank, get_world_size, init_process_group, destroy_process_group
@@ -181,21 +180,13 @@ def main(args):
     for step in range(args.max_steps):
  
         batch = next(data_loader)
-        tokens = [sample.tokens for sample in batch]
-
-        
-
-        try:
-            out_tokens, _ = generate(tokens, model, max_tokens=args.max_gen_toks, temperature=args.temp, eos_id=None)  
-        except Exception as e:
-            print("Error during generation", step)
-            print('Memory:', get_gpu_memory())
-            print('Max memory:', torch.cuda.max_memory_allocated())
-            print('Exception:', e)
-            continue
-        
+        tokens = [sample.tokens for sample in batch]  
+        out_tokens, _, is_a_nan = generate(tokens, model, max_tokens=args.max_gen_toks, temperature=args.temp, eos_id = mistral_tokenizer.instruct_tokenizer.tokenizer.eos_id)  
+    
         torch.cuda.empty_cache() 
-
+        if is_a_nan:
+            print("Nan in output tokens")
+            continue
         max_token_size = max(max_token_size, max([len(l) for l in tokens]))
         truncated_list = []
         for j in range(args.batch_size):
@@ -222,7 +213,7 @@ def main(args):
             else:
                 print(f"Step {step} took {time.time() - start_time} seconds", "Data processed:", n_data.item(), "Tokens generated:", n_toks.item(), "Max token size:", max_token_size)
         start_time = time.time()
-        if step%args.freq_load_data == 0:
+        if step%args.freq_load_data == 0 and step != 0:
             print('Data buffer size:', data_buffer[-1])
             if args.num_gen is None:
                 with open(Path(args.output_path) / args.output_file.replace('.jsonl',str(get_rank()) + '.jsonl'), "a") as f:

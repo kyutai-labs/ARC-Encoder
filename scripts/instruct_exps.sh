@@ -22,6 +22,8 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Compress_all_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Compress_nothing_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Distractor20_Instruct.yaml # TODO
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Rec_Distractor20_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_Instruct.yaml
 )
 
 
