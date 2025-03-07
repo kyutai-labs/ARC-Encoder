@@ -157,6 +157,7 @@ class ReversedLatentAttention(nn.Module):
         n_heads: int = 8,
         n_layers: int = 2,
         dtype: torch.dtype | None = None,
+        early_out: bool = False
     ):
         super().__init__()
         self.r = r
@@ -181,21 +182,24 @@ class ReversedLatentAttention(nn.Module):
             context_dim=hidden_dim,
         )
 
-        # Attention as in the Perceiver IO decoder
-        self.cross_attend_block_decoder = PreNorm(
-            latent_dim,
-            Attention(
+
+        if not early_out:
+            # Attention as in the Perceiver IO decoder
+            self.cross_attend_block_decoder = PreNorm(
                 latent_dim,
+                Attention(
+                    latent_dim,
+                    context_dim=hidden_dim,
+                    n_heads=n_heads,
+                    head_dim=hidden_dim // n_heads,
+                ),
                 context_dim=hidden_dim,
-                n_heads=n_heads,
-                head_dim=hidden_dim // n_heads,
-            ),
-            context_dim=hidden_dim,
-        )
+            )
+        else:
+            self.cross_attend_block_decoder = None
 
         self.mlp_layers = nn.ModuleList()
-        for _ in range(n_layers):
-            self.mlp_layers.append(
+        self.mlp_layers.append(
                 PreNorm(
                     latent_dim,
                     MLP_block(
@@ -203,6 +207,17 @@ class ReversedLatentAttention(nn.Module):
                     ),
                 )
             )
+        if not early_out:
+            for _ in range(1,n_layers):
+                self.mlp_layers.append(
+                    PreNorm(
+                        latent_dim,
+                        MLP_block(
+                            in_dim=latent_dim, out_dim=latent_dim, act="gelu", dtype=dtype
+                        ),
+                    )
+                )
+        self.early_out = early_out  
 
     def forward(self, keys: torch.Tensor, seqlens: list[int]) -> torch.Tensor:
         b = len(seqlens)
@@ -215,9 +230,13 @@ class ReversedLatentAttention(nn.Module):
                 q_seqlen=[self.r] * b, kv_seqlen=seqlens
             ),
         )
+ 
 
         hiddens = self.mlp_layers[0](hiddens) + hiddens
-
+        
+        if self.early_out:
+            return hiddens
+        
         hiddens = (
             self.cross_attend_block_decoder(
                 keys,
@@ -315,7 +334,9 @@ class PoolingModule(nn.Module):
                 n_heads=args.n_heads,
                 hidden_dim=hidden_dim,
                 dtype=dtype,
+                early_out=args.early_out
             )
+            assert args.compress_rate * int(args.early_out) <= 0, "Cannot compress and early out"
         else:
             self.process = None
 
@@ -326,7 +347,7 @@ class PoolingModule(nn.Module):
         """
         embed_seqlens: List of a list of embeddings size per sample in the batch
         """
-        
+
         if "attention" not in self.args.type:
             out = x
         else:
@@ -342,10 +363,11 @@ class PoolingModule(nn.Module):
                 embed_seqlens = [len(l) for l in embed_seqlens]
             # No compression
             elif self.args.compress_rate == -1:
-                mean_mask = torch.block_diag(*[torch.ones(1) for l in sum(embed_seqlens, []) for _ in range(l)]).to(
-                    x.device
-                )
-                embed_seqlens = [sum(l) for l in embed_seqlens]
+                if self.args.type == "reversed_latent_attention" and self.args.early_out:
+                    embed_seqlens = [len(list_embs_per_pass)*self.args.r for list_embs_per_pass in embed_seqlens]            
+                else:
+                    embed_seqlens = [sum(l) for l in embed_seqlens]
+                mean_mask = None
             # Partial compression
             else:
                 assert self.args.compress_rate > 0 
@@ -369,7 +391,7 @@ class PoolingModule(nn.Module):
                 )
                 embed_seqlens = new_embed_seqlens
           
-            out = mean_mask @ out
+            out = out if mean_mask is None else mean_mask @ out
 
         elif self.args.type == "eos":
             idx = torch.cumsum(torch.tensor(sum(embed_seqlens,[])), 0) - 1

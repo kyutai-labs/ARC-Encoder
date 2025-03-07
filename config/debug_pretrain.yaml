@@ -4,17 +4,23 @@ run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_pretrain
 # continuation: 1.0
 # textual_continuation: 0.0
+continuation: 0.0
 
-continuation: false
+toy_tests:
+  alpha: 2.0
+  do: true
+  kl_pretraining: true
+  temp: 1.0
+  tune_embedder: false
 pipeline:
   cross_att: true
   cross_att_layers: null
   do_both: false
   do_pool: true
-  embedder_name: NVEmbed
+  embedder_name: Mistral7B
   every_cross_att: 2
   gate_bottleneck: 8
-  max_embeds: 5
+  max_embeds: 1
   mlp_project:
     act: gelu
     hidden_dim: 4096
@@ -24,42 +30,18 @@ pipeline:
   pooled_cross_att: false
   pooling_module:
     n_heads: 8
-    r: 512
-    type: latent_attention
+    r: 64
+    type: reversed_latent_attention
+    compress_rate: -1
+    early_out: true
   shared_kv: false
-  train_only_pooling: false
+  train_only_pooling: true
   trainable_embedder: false
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
+  causal_embedder: true
 
-# pipeline:
-#   cross_att: true
-#   cross_att_layers: null
-#   do_both: false
-#   do_pool: true
-#   embedder_name: Mistral7B
-#   every_cross_att: 2
-#   gate_bottleneck: 8
-#   max_embeds: 2
-#   mlp_project:
-#     act: gelu
-#     hidden_dim: 4096
-#     n_layers: 1
-#     type: mlp
-#   n_truncated_layers: 8
-#   pooled_cross_att: false
-#   pooling_module:
-#     n_heads: 8
-#     r: 512
-#     type: latent_attention
-#     compress_rate: 4
-#   shared_kv: false
-#   train_only_pooling: true
-#   trainable_embedder: false
-#   trainable_llm: false
-#   w_embeds: true
-#   w_prefix_prompt: false
 
 data:
   adapt_seq_len: false
@@ -82,7 +64,7 @@ optim:
 seed: 0
 log_freq: 1
 eval_freq: 1
-no_eval: true
+no_eval: false
 ckpt_freq: 1
 save_adapters: true
 

@@ -289,6 +289,7 @@ class EmbedAugPipeline(nn.Module):
                 assert not any([len(l_tokens) <= 1 for l_tokens in to_embed["tokens"]])
                 embed_seqlens.append([len(l_tokens) for l_tokens in to_embed["tokens"]])
 
+
         x = torch.from_numpy(batch.x).cuda(non_blocking=True)
         y = torch.from_numpy(batch.y).cuda(non_blocking=True)
         y_mask = (

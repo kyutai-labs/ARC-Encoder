@@ -424,7 +424,7 @@ def _train(
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
-
+    
     while state.step < args.max_steps:
         state.start_step()
 
@@ -658,9 +658,9 @@ def _train(
                 kl_loss += kl_dv_loss.item()
 
                 if (args.instruct_tuning.do and args.instruct_tuning.cross_entropy) or args.toy_tests.do:
-                    mb_loss = mb_loss + (args.toy_tests.alpha if args.toy_tests.do else args.instruct_tuning.alpha) * kl_dv_loss
+                    mb_loss = mb_loss + (args.toy_tests.alpha if args.toy_tests.do else args.instruct_tuning.alpha) * kl_dv_loss * int(batch.data_type != "reconstruction")
                 else:
-                    mb_loss = (args.toy_tests.alpha if args.toy_tests.do else args.instruct_tuning.alpha) * kl_dv_loss
+                    mb_loss = (args.toy_tests.alpha if args.toy_tests.do else args.instruct_tuning.alpha) * kl_dv_loss * int(batch.data_type != "reconstruction")
                     
             loss += mb_loss.item()
             mb_loss.backward()

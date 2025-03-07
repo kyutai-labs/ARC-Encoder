@@ -247,7 +247,6 @@ def sequence_iterator_reconstruction(
                 nb_embed = np.random.randint(1, max_embeds + 1)
             elif max_embeds == 1:
                 nb_embed = 1
-                
             new_embed = []
             n_toks_per_embed = len(embed_tokens[0][cur_pos : cur_pos + n_missing]) // nb_embed
             
@@ -267,10 +266,6 @@ def sequence_iterator_reconstruction(
                         embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
                     )
               
-            for i in range(nb_embed):
-                new_embed.append(
-                    embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
-                )
 
             to_embed_buffer.append(
                 {

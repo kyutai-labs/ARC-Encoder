@@ -14,6 +14,7 @@ class PoolingArgs(Serializable):
     n_heads: int = 8  # Number of heads in latent attention pooling
     n_layers: int = 1
     compress_rate: int = 0
+    early_out: bool = False 
 
 
 @dataclass

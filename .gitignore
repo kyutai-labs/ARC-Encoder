@@ -7,6 +7,7 @@ embed_llm/models/mistral/__pycache__
 embed_llm/data/__pycache__
 embed_llm/monitoring/__pycache__
 embed_llm/retrieval/__pycache__
+embed_llm/generation/needlehaystack
 embed_llm/training/__pycache__
 config/experiments
 config/old
