@@ -379,7 +379,7 @@ class PoolingModule(nn.Module):
                         compressed_embed_size = []
                         
                         if embed_size //self.args.compress_rate == 0:
-                            compressed_embed_size = [embed_size]
+                            compressed_embed_size = [1]*embed_size
                         else:
                             compressed_embed_size = split_integer(embed_size, self.args.compress_rate)
                             
