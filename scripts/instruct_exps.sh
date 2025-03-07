@@ -26,6 +26,13 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Distractor20_Instruct.yaml # TODO
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Rec_Distractor20_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_02Cont_Dist_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_Rec_Distractor_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_2comp_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_64comp_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_8comp_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Instruct_v2.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Instruct_v2_new_data.yaml
 )
 
 
@@ -121,6 +128,17 @@ case $RUN_NAME in
 
 
 esac
+
+
+
+
+
+
+
+
+
+
+
 
 
 
