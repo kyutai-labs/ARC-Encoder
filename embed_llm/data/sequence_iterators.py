@@ -289,7 +289,7 @@ def sequence_iterator_reconstruction(
                             embed_tokens.sort(key=len, reverse=True)
                         else:
                             break
-                        
+            nb_embed = len(embed_tokens)
             do_distract = True if nb_embed > 1 else False
             new_embed = []
             for i in range(len(embed_tokens)):

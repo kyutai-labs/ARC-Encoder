@@ -30,10 +30,10 @@ pipeline:
   pooled_cross_att: false
   pooling_module:
     n_heads: 8
-    r: 64
-    type: reversed_latent_attention
-    compress_rate: -1
-    early_out: true
+    r: 512
+    type: latent_attention
+    compress_rate: 64
+
   shared_kv: false
   train_only_pooling: true
   trainable_embedder: false

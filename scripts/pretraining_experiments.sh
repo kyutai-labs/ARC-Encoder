@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-6
+#SBATCH --array=7
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -24,6 +24,7 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_2comp.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_64comp.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_8comp.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Compress_64.yaml
 )
 
 

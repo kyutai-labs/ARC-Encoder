@@ -398,6 +398,7 @@ class PoolingModule(nn.Module):
             out = out[idx, :]
         else:
             raise ValueError(f"Pooling type {self.args.type} not supported")
+
         # Embed seqlens becomes the number of tokens from embeddings linked to a passage
         return out, embed_seqlens 
 
