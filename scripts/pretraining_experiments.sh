@@ -1,30 +1,32 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=7
+#SBATCH --array=4-8
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=pretrain_llm_rlatt
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx29,par2dc5-ai-prd-cl02s04dgx23,par2dc5-ai-prd-cl02s04dgx21,par2dc5-ai-prd-cl02s04dgx20,par2dc5-ai-prd-cl02s01dgx15,par2dc5-ai-prd-cl02s03dgx14,par2dc5-ai-prd-cl02s04dgx25,par2dc5-ai-prd-cl02s04dgx05,par2dc5-ai-prd-cl02s01dgx29
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/embed_llm_out/embed_llm_%A_%a.out
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx26,par2dc5-ai-prd-cl02s04dgx12,par2dc5-ai-prd-cl02s01dgx07,par2dc5-ai-prd-cl02s04dgx05,par2dc5-ai-prd-cl02s03dgx17,par2dc5-ai-prd-cl02s04dgx26,par2dc5-ai-prd-cl02s03dgx14,par2dc5-ai-prd-cl02s01dgx22,par2dc5-ai-prd-cl02s04dgx15
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 
+
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/NVEmbed_CA_Rec_Distractor20.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_02Cont_Dist.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_Rec_Distractor.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_2comp.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_64comp.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_8comp.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Compress_64.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Rec.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_Cont_Compress_32.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_Cont_Compress_64.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_Cont_Compress_nothing.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_Compress_32.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_Compress_64.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_Cont_Compress_nothing.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_02Cont_02DD.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolRlatEmbed_CA_02Cont_02DD.yaml
 )
 
 

@@ -18,6 +18,7 @@ class SequenceEmbedMaskAndSizes:
     sizes: list[int]
     data_type: str
     n_prefixes: list[int] | None = None
+    distract_list: list[int] | None = None
 
     def __post_init__(self):
         assert sum(self.sizes) == len(self.x) == len(self.y) == len(self.mask)
@@ -26,6 +27,11 @@ class SequenceEmbedMaskAndSizes:
             assert len(self.n_prefixes) == len(self.sizes), (
                 len(self.n_prefixes),
                 len(self.sizes),
+            )
+        if self.distract_list is not None:
+            assert len(self.distract_list) == len(self.to_embed), (
+                len(self.distract_list),
+                len(self.to_embed),
             )
 
 
@@ -204,6 +210,7 @@ def sequence_iterator_reconstruction(
     seq_len: int,
     tokenizer: Tokenizer,
     distractor_buffer: list[int],
+    distract_list: list[int],
     prob_distractor: float = 0.5,
     adapt_seq_len: bool = False,
     is_eval: bool = False,
@@ -237,7 +244,7 @@ def sequence_iterator_reconstruction(
 
         x_buffer.extend(x[cur_pos : cur_pos + n_missing])
         y_buffer.extend(y[cur_pos : cur_pos + n_missing])
-
+        dist_idx = -1
         # If instruct data type do not split the passage into smaller embeddings
         if data_type == "reconstruction" and len(embed_tokens) == 1: 
             
@@ -260,7 +267,7 @@ def sequence_iterator_reconstruction(
                         distractor_buffer = embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
                         new_embed.append(embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed])
                     do_distract = False
-    
+                    dist_idx = i
                 else:
                     new_embed.append(
                         embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
@@ -301,7 +308,7 @@ def sequence_iterator_reconstruction(
                         distractor_buffer = embed_tokens[i]
                         new_embed.append(embed_tokens[i])
                     do_distract = False
-    
+                    dist_idx = i
                 else:
                     new_embed.append(
                         embed_tokens[i]
@@ -309,14 +316,14 @@ def sequence_iterator_reconstruction(
               
             new_embed_tokens = [toks[:seq_len] for toks in new_embed]
             new_embed_text = [tokenizer.decode(toks[:seq_len]) for toks in new_embed]
-            
+
             to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
 
         if is_eval and hybrid_training:
             curr_mask = [False] * (len(curr_mask)//10) + [True] * (len(curr_mask) - len(curr_mask)//10)
             
         mask_buffer.extend(curr_mask)
-        
+        distract_list.append(dist_idx)
         if not adapt_seq_len:
             n_missing -= size
 
@@ -336,7 +343,7 @@ def sequence_iterator_reconstruction(
                 assert len(x_buffer) <= seq_len, f'Buffer to long {len(x_buffer)}'
             except AssertionError as e:
                 print(e)
-                return [], [], [], [], seq_len, []
+                return [], [], [], [], seq_len, [], [], []
             
             if not adapt_seq_len:
                 assert sum(sizes) == seq_len
@@ -351,18 +358,20 @@ def sequence_iterator_reconstruction(
                     to_embed=to_embed_buffer,
                     mask=mask_buffer,
                     sizes=sizes,
-                    data_type=data_type
+                    data_type=data_type,
+                    distract_list=distract_list
                 ), cur_pos, distractor_buffer
 
             if adapt_seq_len:
                 break
-    return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes, distractor_buffer
+    return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes, distractor_buffer,  distract_list
 
 def sequence_iterator_continuation(
     x_buffer: list[int],
     y_buffer: list[int],
     to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]],
     distractor_buffer: list[int],
+    distract_list: list[int],
     n_missing: int,
     mask_buffer: Mask,
     sizes: list[int],
@@ -410,7 +419,8 @@ def sequence_iterator_continuation(
                     to_embed=to_embed_buffer,
                     mask=mask_buffer,
                     sizes=sizes,
-                    data_type=data_type
+                    data_type=data_type,
+                    distract_list=distract_list
                 ), len(x), distractor_buffer # ensures that it does not come back to this sample
             else:
                 break
@@ -460,6 +470,7 @@ def sequence_iterator_continuation(
                         ]) // nb_embed
         
         do_distract = True if nb_embed > 1 else False
+        dist_idx = -1
         for i in range(nb_embed):
             if np.random.rand() < prob_distractor and do_distract:
                 if len(distractor_buffer)>0:
@@ -469,6 +480,7 @@ def sequence_iterator_continuation(
                     distractor_buffer = embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
                     new_embed.append(distractor_buffer[:n_toks_per_embed])
                 do_distract = False
+                dist_idx = i
   
             else:
                 new_embed.append(
@@ -480,7 +492,7 @@ def sequence_iterator_continuation(
                 "tokens": new_embed,
             }
         )
-          
+        distract_list.append(dist_idx)
         cur_pos += overall_size
 
         if not adapt_seq_len:
@@ -499,12 +511,13 @@ def sequence_iterator_continuation(
                     to_embed=to_embed_buffer,
                     mask=mask_buffer,
                     sizes=sizes,
-                    data_type=data_type
+                    data_type=data_type,
+                    distract_list=distract_list
                 ), cur_pos, distractor_buffer
 
             if adapt_seq_len:
                 break
-    return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes, distractor_buffer
+    return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes, distractor_buffer, distract_list
 
 
 

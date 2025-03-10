@@ -37,7 +37,7 @@ def encode(
 
 
 def get_sample(data: dict[str, object], data_path: str, tokenizer, max_embed: int = 1) -> str:
-    if "instruct_data" in data_path.lower() or "qa" in data_path.lower() or 'readcomp' in data_path.lower():
+    if "instruct_data" in data_path.lower() or "qa" in data_path.lower() or 'readcomp' in data_path.lower() or 'synth' in data_path.lower():
 
         question = data["question"]
 

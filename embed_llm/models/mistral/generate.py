@@ -162,8 +162,9 @@ def generate(
     if generated_tensors:
         generated_tokens = torch.cat(generated_tensors, 1).tolist()
     else:
-        generated_tokens = []
-    
+        generated_tokens = [[0] for _ in range(B)]
+
+        
     if eos_id is not None:
         truncated_list = []
         for i in range(B):

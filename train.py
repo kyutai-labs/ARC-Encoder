@@ -571,7 +571,15 @@ def _train(
                         for i in range(len(batch.to_embed)):
                             contexts.append([pipeline.tokenizer.encode(' '.join(batch.to_embed[i]["text"]), bos = False, eos = False)])
                     else:
-                        contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
+                        if batch.distract_list is None:
+                            contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
+                        else:
+                            contexts = []
+                            for embs, dist_id in zip(batch.to_embed, batch.distract_list):
+                                if dist_id == -1:
+                                    contexts.append(embs["tokens"])
+                                else:
+                                    contexts.append([emb for i, emb in enumerate(embs["tokens"]) if i != dist_id])
                         
                     x_wcontext = []
                     y_mask_wcontext = []
@@ -581,7 +589,6 @@ def _train(
                     assert len(contexts) == len(
                         batch.sizes
                     ), "Contexts and batch sizes should be the same"
-
                     for i, size in enumerate(batch.sizes):
                         full_context = sum(contexts[i],[])
              

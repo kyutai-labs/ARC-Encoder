@@ -178,6 +178,7 @@ def sequence_iterator(
     mask_buffer: Mask = []
     sizes: list[int] = []
     n_missing_cont = seq_len * 2 
+    distract_list_rec: list[int] = []
     
     x_buffer_cont: list[int] = []
     y_buffer_cont: list[int] = []
@@ -185,6 +186,7 @@ def sequence_iterator(
     mask_buffer_cont: Mask = []
     sizes_cont: list[int] = []
     distractor_buffer: list[int] = []
+    distract_list_cont: list[int] = []
     cur_pos = 0
     n_missing = seq_len
     for sample in ds_it:
@@ -211,6 +213,7 @@ def sequence_iterator(
                         seq_len=seq_len * 2, # To ensure max seq len to generate and max seq len to embed
                         tokenizer=tokenizer,
                         adapt_seq_len=adapt_seq_len,
+                        distract_list = distract_list_cont,
                         n_missing=n_missing_cont,
                         data_type="continuation",
                         is_eval=is_finite,
@@ -226,6 +229,7 @@ def sequence_iterator(
                         mask_buffer_cont = []
                         to_embed_buffer_cont = []
                         sizes_cont = []
+                        distract_list_cont = []
                         n_missing_cont = seq_len * 2
                         cur_pos = res[1]
                         distractor_buffer = res[2]
@@ -237,7 +241,8 @@ def sequence_iterator(
                             mask_buffer_cont,
                             n_missing_cont,
                             sizes_cont,
-                            distractor_buffer
+                            distractor_buffer,
+                            distract_list_cont
                         ) = res
                         cur_pos = 0
                         break
@@ -254,6 +259,7 @@ def sequence_iterator(
                         tokenizer=tokenizer,
                         adapt_seq_len=adapt_seq_len,
                         n_missing=n_missing,
+                        distract_list = distract_list_rec,
                         is_eval=is_finite,
                         cur_pos=cur_pos,
                         max_embeds = max_embeds,
@@ -273,6 +279,7 @@ def sequence_iterator(
                         n_missing = seq_len
                         cur_pos = res[1]
                         distractor_buffer = res[2]
+                        distract_list_rec = []
                     else:
                         (
                             x_buffer,
@@ -281,7 +288,8 @@ def sequence_iterator(
                             mask_buffer,
                             n_missing,
                             sizes,
-                            distractor_buffer
+                            distractor_buffer,
+                            distract_list_rec
                         ) = res
                         cur_pos = 0
                         break
