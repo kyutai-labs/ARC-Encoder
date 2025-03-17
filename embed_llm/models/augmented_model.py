@@ -274,6 +274,7 @@ class EmbedAugPipeline(nn.Module):
         else:
             # Trainable Embedder
             embeddings = [to_embed["tokens"] for to_embed in batch.to_embed]
+     
             embeddings = torch.from_numpy(
                 np.array(
                     [
@@ -288,7 +289,7 @@ class EmbedAugPipeline(nn.Module):
             for to_embed in batch.to_embed:
                 assert not any([len(l_tokens) <= 1 for l_tokens in to_embed["tokens"]])
                 embed_seqlens.append([len(l_tokens) for l_tokens in to_embed["tokens"]])
-
+                            
 
         x = torch.from_numpy(batch.x).cuda(non_blocking=True)
         y = torch.from_numpy(batch.y).cuda(non_blocking=True)

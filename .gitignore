@@ -24,3 +24,5 @@ scripts/toy_tests.sh
 scripts/create_data_*
 scripts/eval_*
 scripts/old
+scripts/needle*
+results/haystack

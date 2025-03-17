@@ -1,24 +1,30 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=3
+#SBATCH --array=0-8
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
-#SBATCH --job-name=instruct_embed_llm
+#SBATCH --job-name=inst_comp
+#SBATCH --dependency=afterok:673803_3
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx31,par2dc5-ai-prd-cl02s04dgx28,par2dc5-ai-prd-cl02s02dgx12,par2dc5-ai-prd-cl02s03dgx14,par2dc5-ai-prd-cl02s01dgx07,par2dc5-ai-prd-cl02s03dgx23,par2dc5-ai-prd-cl02s03dgx24
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
+
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 # Get the configuration file for this job
 CONFIG_FILES=(
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Instruct_v2_new_data.yaml 
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainCausalPoolEmbed_CA_02Cont_Dist_Instruct.yaml 
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Compress_64_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/TrainEmbed_CA_Cont_Distractor20_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp64_CA_alternate_Rec_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_pref_Rec_Instruct.yaml 
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp32_CA_alternate_Rec_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp32_CA_begin_Rec_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp32_CA_pref_Rec_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp64_CA_begin_Rec_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp64_CA_pref_Rec_Instruct.yaml
 )
 
 
@@ -57,6 +63,16 @@ case $RUN_NAME in
     srun --gpus=$N_GPU \
         micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
         --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1 
+    ;;
+
+*Comp*)
+    srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_compress.json \
+        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1 
+
+    srun --gpus=$N_GPU \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --instruct_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_compress.json \
+    --n_passages 500 --max_seq_len 64   --multi_passages 3
     ;;
 
 *SQUAD*)

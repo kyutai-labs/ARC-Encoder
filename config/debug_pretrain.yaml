@@ -3,22 +3,32 @@ llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_pretrain
 
-
 toy_tests:
   alpha: 2.0
-  do: true
+  do: false
   kl_pretraining: true
   temp: 1.0
   tune_embedder: false
+
+model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
+no_eval: false
+num_microbatches: 1
+optim:
+  final_lr: 1.0e-10
+  initial_lr: 1.0e-20
+  max_lr: 5.0e-05
+  warm_up_steps: 500
+  weight_decay: 0.1
 pipeline:
   cross_att: true
-  cross_att_layers: null
+  begin_cross_att: true
+  cross_att_layers: 16
   do_both: false
   do_pool: true
   embedder_name: Mistral7B
-  every_cross_att: 2
+  every_cross_att: null
   gate_bottleneck: 8
-  max_embeds: 5
+  max_embeds: 1
   mlp_project:
     act: gelu
     hidden_dim: 4096
@@ -29,7 +39,8 @@ pipeline:
   pooling_module:
     n_heads: 8
     r: 512
-    type: reversed_latent_attention
+    type: latent_attention
+    compress_rate: -1
   shared_kv: false
   train_only_pooling: true
   trainable_embedder: false
@@ -37,15 +48,14 @@ pipeline:
   w_embeds: true
   w_prefix_prompt: false
   causal_embedder: true
-
-continuation: 0.2
+  ca_rope: true
+continuation: false
 
 data:
   adapt_seq_len: false
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
-  prob_distractor: 0.2
 
 seq_len: 256
 batch_size: 32
@@ -62,7 +72,7 @@ seed: 0
 log_freq: 1
 eval_freq: 1
 no_eval: true
-ckpt_freq: 1
+ckpt_freq: 10
 save_adapters: true
 
 

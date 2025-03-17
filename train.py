@@ -624,15 +624,13 @@ def _train(
                         model.train()
                     
                     # if get_rank() == 0:
-                    #     to_gen = [int(tok) for tok in x_wcontext[:seqlens_wcontext[0]]]
-                    #     # print('N_prefix', batch.n_prefixes[0])
-                    #     # print('Sizes wo context', seqlens)
-                    #     # print('Sizes w context',seqlens_wcontext)
-                    #     # print('Without embed', torch.masked_select(x_wcontext[:seqlens_wcontext[0]],y_mask_wcontext[:seqlens_wcontext[0]])[:10])
-                    #     # print('With embed', x[:seqlens[0]][:10])
-                    #     print("To generate",to_gen[:2] ,pipeline.tokenizer.decode(to_gen))
-                    #     if y_mask_wcontext is not None:
-                    #         print('Mask', y_mask_wcontext[:seqlens_wcontext[0]])
+                    #     print('Sizes wo context', seqlens)
+                    #     print('Sizes w context',seqlens_wcontext)
+                    #     print('X Without Embed',pipeline.tokenizer.decode([int(tok) for tok in x_wcontext[:seqlens_wcontext[0]]]))
+                    #     for cont in batch.to_embed[0]["tokens"]:
+                    #         print('\nEmbed', pipeline.tokenizer.decode(cont))
+                    #     print("\nX",pipeline.tokenizer.decode([int(tok) for tok in x[:seqlens[0]]]))
+        
                         
                     target_mask = y_mask_wcontext
                     pred_mask = None if (args.instruct_tuning.do and args.instruct_tuning.no_mask) else y_mask
@@ -665,9 +663,9 @@ def _train(
                 kl_loss += kl_dv_loss.item()
 
                 if (args.instruct_tuning.do and args.instruct_tuning.cross_entropy) or args.toy_tests.do:
-                    mb_loss = mb_loss + (args.toy_tests.alpha if args.toy_tests.do else args.instruct_tuning.alpha) * kl_dv_loss * int(batch.data_type != "reconstruction")
+                    mb_loss = mb_loss + (args.toy_tests.alpha if args.toy_tests.do else args.instruct_tuning.alpha) * kl_dv_loss 
                 else:
-                    mb_loss = (args.toy_tests.alpha if args.toy_tests.do else args.instruct_tuning.alpha) * kl_dv_loss * int(batch.data_type != "reconstruction")
+                    mb_loss = (args.toy_tests.alpha if args.toy_tests.do else args.instruct_tuning.alpha) * kl_dv_loss 
                     
             loss += mb_loss.item()
             mb_loss.backward()

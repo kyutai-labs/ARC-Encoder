@@ -153,14 +153,13 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                 "context_in_examples": res[
                                                     "w_context_in_examples"
                                                 ],
-                                                "context_w_query": res[
-                                                    "w_context_w_query"
-                                                ],
+                                                "context_w_query": res.get(
+                                                    "w_context_w_query",False),
                                                 "xRAG metric": res.get("xRAG metric",None),
-                                                "EM Metric": res["Metric"],
-                                                "EM approx_Metric": res[
+                                                "EM Metric": res.get("Metric",None),
+                                                "EM approx_Metric": res.get(
                                                     "approx_Metric"
-                                                ],
+                                                ,None),
                                                 "Prop_a_in_cont": res.get(
                                                     "Prop context containing the answer",
                                                     None,
@@ -185,10 +184,9 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                 "context_in_examples": res[
                                                     "w_context_in_examples"
                                                 ],
-                                                "context_w_query": res[
-                                                    "w_context_w_query"
-                                                ],
-                                                "F1": res["Metric"],
+                                                "context_w_query": res.get(
+                                                    "w_context_w_query", False),
+                                                "F1": res.get("Metric",None),
                                                 "Prop_a_in_cont": res.get(
                                                     "Prop context containing the answer",
                                                     None,

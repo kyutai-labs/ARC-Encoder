@@ -111,6 +111,7 @@ def load_args(
         shared_kv=True if pipeline_args.shared_kv else False,
         pooled_cross_att=True if pipeline_args.pooled_cross_att else False,
         gate_bottleneck=getattr(pipeline_args, "gate_bottleneck", 1),
+        ca_rope = getattr(pipeline_args, "ca_rope", False),
     )
 
     if args.get("rope_theta") is not None:

@@ -41,6 +41,7 @@ class EmbedAugArgs(Serializable):
     w_prefix_prompt: bool = False
     gate_bottleneck: int = 8
     max_embeds: int = 1
+    ca_rope: bool = False
     
     # Could be simplified
     cross_att: bool = False
@@ -85,6 +86,7 @@ class MistralModelArgs(Serializable):
     pooled_cross_att: bool = False
     every_cross_att: int | None = None
     gate_bottleneck: int = 1
+    ca_rope: bool = False
     # vision_encoder: VisionEncoderArgs] | None = None
     """ If adding new args take care giving it to load args """
 

@@ -15,7 +15,7 @@ from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 
 from embed_llm.models.args import MistralModelArgs
 from embed_llm.models.lora import LoRALoaderMixin, maybe_lora
-
+from embed_llm.models.mistral.rope import apply_rotary_emb
 from embed_llm.models.mistral.model import ModelBase
 from embed_llm.models.mistral.transformer_layers import (
     Attention,
@@ -92,6 +92,7 @@ class Cross_Attention(nn.Module):
         n_heads: int,
         head_dim: int,
         n_kv_heads: int,
+        ca_rope: bool = False,
     ):
         super().__init__()
 
@@ -105,6 +106,7 @@ class Cross_Attention(nn.Module):
 
         self.wq = nn.Linear(dim, n_heads * head_dim, bias=False)
         self.wo = nn.Linear(n_heads * head_dim, dim, bias=False)
+        self.ca_rope = ca_rope
 
     def forward(
         self,
@@ -112,8 +114,10 @@ class Cross_Attention(nn.Module):
         xk: torch.Tensor,
         xv: torch.Tensor,
         mask: BlockDiagonalMask | None = None,
+        freqs_cis: torch.Tensor | None = None,
         show_attention: bool = False,
         w_scores: list[float] | None = None,
+        freqs_cis_ca: torch.Tensor | None = None,
     ) -> torch.Tensor:
         seqlen_sum, _ = x.shape
 
@@ -121,7 +125,10 @@ class Cross_Attention(nn.Module):
         xq = xq.view(seqlen_sum, self.n_heads, self.head_dim)
         xk = xk.view(-1, self.n_kv_heads, self.head_dim)
         xv = xv.view(-1, self.n_kv_heads, self.head_dim)
-
+        
+        if self.ca_rope:
+            assert freqs_cis is not None
+            xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis, freqs_cis_ca=freqs_cis_ca)
         key, val = xk, xv
         # Repeat keys and values to match number of query heads
         key, val = repeat_kv(key, val, self.repeats, dim=1)
@@ -176,6 +183,7 @@ class Cross_AttTransformerBlock(nn.Module):
         moe: MoeArgs | None = None,
         pooled_cross_att: bool = False,
         gate_bottleneck: int = 1,
+        ca_rope: bool = False,
     ):
         super().__init__()
         self.n_heads = n_heads
@@ -194,6 +202,7 @@ class Cross_AttTransformerBlock(nn.Module):
                 n_heads=n_heads,
                 head_dim=head_dim,
                 n_kv_heads=n_kv_heads,
+                ca_rope = ca_rope,
             )
             self.gate = MLP_block(
                 in_dim=dim, out_dim=dim, hidden_dim=dim // gate_bottleneck, act="gelu"
@@ -238,6 +247,7 @@ class Cross_AttTransformerBlock(nn.Module):
         pool_att_embds: torch.Tensor | None = None,
         seqlens: list[int] | None = None,
         w_scores: list[float] | None = None,
+        freqs_cis_ca: torch.Tensor | None = None,
     ) -> torch.Tensor:
         if not show_attention:
             r = self.attention.forward(
@@ -259,7 +269,9 @@ class Cross_AttTransformerBlock(nn.Module):
    
                 if not show_attention:
                     r = self.cross_attention.forward(
-                        x=self.attention_norm(h), mask=cross_att_mask, xk=xk, xv=xv, w_scores=w_scores
+                        x=self.attention_norm(h), mask=cross_att_mask, 
+                        xk=xk, xv=xv, w_scores=w_scores, freqs_cis=freqs_cis,
+                        freqs_cis_ca = freqs_cis_ca
                     )
                 else:
                     r, cross_attn_mtx = self.cross_attention.forward(
@@ -269,6 +281,8 @@ class Cross_AttTransformerBlock(nn.Module):
                         xv=xv,
                         show_attention=True,
                         w_scores=w_scores,
+                        freqs_cis=freqs_cis,
+                        freqs_cis_ca = freqs_cis_ca
                     )
                 h = h + r * self.gate(
                     h
@@ -281,40 +295,7 @@ class Cross_AttTransformerBlock(nn.Module):
                     w_scores=w_scores
                 )
                 
-                # stats = {
-                #     "gate": {
-                #         "mean": torch.mean(self.gate(h), axis = -1).cpu().numpy().tolist(),
-                #         "std": torch.std(self.gate(h), axis = -1).cpu().numpy().tolist(),
-                #         "max": torch.max(self.gate(h), dim = -1)[0].cpu().numpy().tolist(),
-                #         "min": torch.min(self.gate(h), dim = -1)[0].cpu().numpy().tolist(),
-                #         "norm": torch.norm(self.gate(h), dim = -1).cpu().numpy().tolist(),
-                #     },
-                #     "gate*r": {
-                #         "mean": torch.mean(self.gate(h) * r, axis = -1).cpu().numpy().tolist(),
-                #         "std": torch.std(self.gate(h) * r, axis = -1).cpu().numpy().tolist(),
-                #         "max": torch.max(self.gate(h) * r, dim = -1)[0].cpu().numpy().tolist(),
-                #         "min": torch.min(self.gate(h) * r, dim = -1)[0].cpu().numpy().tolist(),
-                #         "norm": torch.norm(self.gate(h) * r, dim = -1).cpu().numpy().tolist(),
-                #     },
-                #     "h": {
-                #         "mean": torch.mean(h, axis = -1).cpu().numpy().tolist(),
-                #         "std": torch.std(h, axis = -1).cpu().numpy().tolist(),
-                #         "max": torch.max(h, dim = -1)[0].cpu().numpy().tolist(),
-                #         "min": torch.min(h, dim = -1)[0].cpu().numpy().tolist(),
-                #         "norm": torch.norm(h, dim = -1).cpu().numpy().tolist()
-                #     },
-                #     "relative_gap": {
-                #         "mean": torch.mean((self.gate(h) * r - h) / h, axis = -1).cpu().numpy().tolist(),
-                #         "std": torch.std((self.gate(h) * r - h) / h, axis = -1).cpu().numpy().tolist(),
-                #         "max": torch.max((self.gate(h) * r - h) / h, dim = -1)[0].cpu().numpy().tolist(),
-                #         "min": torch.min((self.gate(h) * r - h) / h, dim = -1)[0].cpu().numpy().tolist(),
-                #         "norm": torch.norm((self.gate(h) * r - h) / h, dim = -1).cpu().numpy().tolist(),
-                #     },
-                # }
-                # with open('/home/hippolytepilchen/code/embed_llm/results/gate_values/gate_values_1.jsonl', 'a') as f:
-                #     f.write(json.dumps(stats) + '\n')
-            
-                h = h + r * self.gate(h)  # (l, d) + (l, d) * (l, d) = (l, d)
+
                 if show_attention:
                     cross_attn_mtx = None
 
@@ -383,6 +364,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     moe=args.moe,
                     pooled_cross_att=args.pooled_cross_att,
                     gate_bottleneck=args.gate_bottleneck,
+                    ca_rope = args.ca_rope,
                 )
                 self.cross_att_layers_id.append(str(i))
             elif self.every_cross_att != -1 and i % self.every_cross_att == 0:
@@ -397,6 +379,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     moe=args.moe,
                     pooled_cross_att=args.pooled_cross_att,
                     gate_bottleneck=args.gate_bottleneck,
+                    ca_rope = args.ca_rope,
                 )
                 self.cross_att_layers_id.append(str(i))
             else:
@@ -640,6 +623,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
+        
+        if self.args.ca_rope and embed_seqlens is not None and not self.args.pooled_cross_att:
+            ca_positions = positions_from_sizes(embed_seqlens, self.freqs_cis.device)
+            freqs_cis_ca = self.freqs_cis[ca_positions].to(device=h.device)   
+        else:
+            freqs_cis_ca = None 
         if (
             self.cross_att
             and embeddings is not None
@@ -666,6 +655,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             cross_att_mask=cross_att_mask,
                             xk=xk,
                             xv=xv,
+                            freqs_cis_ca = freqs_cis_ca
                         )
                     else:
                         h = self.layers[str(i)](
@@ -699,6 +689,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             cross_att_mask=cross_att_mask,
                             xk=xk,
                             xv=xv,
+                            freqs_cis_ca = freqs_cis_ca
                         )
                     else:
                         h = self.layers[str(i)](
@@ -827,6 +818,13 @@ class Transformer(ModelBase, LoRALoaderMixin):
         # freqs_cis is always the same for every layer
         freqs_cis = self.freqs_cis[input_metadata[0].positions]
         
+        if self.args.ca_rope and embed_seqlens is not None and not self.args.pooled_cross_att:
+            # No generation so always the same as in the prefilling phase
+            ca_positions = positions_from_sizes(embed_seqlens, self.freqs_cis.device) 
+            freqs_cis_ca = self.freqs_cis[ca_positions]
+        else:
+            freqs_cis_ca = None 
+        
         if (
             self.cross_att
             and embeddings is not None
@@ -886,6 +884,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             if cross_att_cache is None
                             else cross_att_cache.get_mask(seqlens.tolist())
                         ),
+                        freqs_cis_ca = freqs_cis_ca,
                         w_scores=w_scores,
                     )
                 else:
