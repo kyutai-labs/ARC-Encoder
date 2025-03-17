@@ -360,13 +360,13 @@ class PoolingModule(nn.Module):
                 mean_mask = torch.block_diag(*[torch.ones(l) / l for l in sum(embed_seqlens, [])]).to(
                     x.device
                 )
-                embed_seqlens = [len(l) for l in embed_seqlens]
+                embed_seqlens = [[1]*len(l) for l in embed_seqlens]
             # No compression
             elif self.args.compress_rate == -1:
                 if self.args.type == "reversed_latent_attention" and self.args.early_out:
-                    embed_seqlens = [len(list_embs_per_pass)*self.args.r for list_embs_per_pass in embed_seqlens]            
+                    embed_seqlens = [len(list_embs_per_pass)*[self.args.r] for list_embs_per_pass in embed_seqlens]            
                 else:
-                    embed_seqlens = [sum(l) for l in embed_seqlens]
+                    embed_seqlens = embed_seqlens
                 mean_mask = None
             # Partial compression
             else:
@@ -374,7 +374,7 @@ class PoolingModule(nn.Module):
                 new_embed_seqlens = []
                 mean_size = []
                 for pass_embs in embed_seqlens:
-                    embed_seqlen = 0
+                    embed_seqlen = []
                     for embed_size in pass_embs:
                         compressed_embed_size = []
                         
@@ -384,7 +384,7 @@ class PoolingModule(nn.Module):
                             compressed_embed_size = split_integer(embed_size, self.args.compress_rate)
                             
                         mean_size.extend(compressed_embed_size)
-                        embed_seqlen += len(compressed_embed_size)
+                        embed_seqlen.append(len(compressed_embed_size))
                     new_embed_seqlens.append(embed_seqlen)
                 mean_mask = torch.block_diag(*[torch.ones(l)/l for l in mean_size]).to(
                     x.device
@@ -396,6 +396,7 @@ class PoolingModule(nn.Module):
         elif self.args.type == "eos":
             idx = torch.cumsum(torch.tensor(sum(embed_seqlens,[])), 0) - 1
             out = out[idx, :]
+            embed_seqlens = [[1]*len(l) for l in embed_seqlens]
         else:
             raise ValueError(f"Pooling type {self.args.type} not supported")
 

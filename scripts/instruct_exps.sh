@@ -25,6 +25,10 @@ CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp32_CA_pref_Rec_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp64_CA_begin_Rec_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp64_CA_pref_Rec_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_alternate_Cont_ROPE_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_alternate_Rec_ROPE_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_begin_Cont_ROPE_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_begin_Rec_ROPE_Instruct.yaml
 )
 
 

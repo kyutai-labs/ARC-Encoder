@@ -143,6 +143,7 @@ class EmbedAugModel(nn.Module):
             else:
                 cat_embeddings = embeddings
 
+        # Embed seqlens is a list of lists of the number of tokens in each subpassage
         return self.llm.forward(
             input_ids=x,
             embeddings=embeddings,
@@ -225,7 +226,7 @@ class EmbedAugPipeline(nn.Module):
                             # We keep all tokens so we can concatenate embeddings into one long sequence.
                             embed_seqlens.extend(emb_seqlens)
                         else:
-                            embed_seqlens.extend([len(l_text) for l_text in subbatch])
+                            embed_seqlens.extend([[1]*len(l_text) for l_text in subbatch])
                             subbatch = [
                                 el for sublist in subbatch for el in sublist
                             ]  # Flatten list of lists
@@ -255,8 +256,12 @@ class EmbedAugPipeline(nn.Module):
                         # We keep all tokens so we can concatenate embeddings into one long sequence.
                         subbatch = [" ".join(sublist) for sublist in subbatch]
                         embed_seqlens.extend(emb_seqlens)
+                        new_embed_seqlens = []
+                        for seql in embed_seqlens:
+                            new_embed_seqlens.append([seql])
+                        embed_seqlens = new_embed_seqlens
                     else:
-                        embed_seqlens.extend([len(l_text) for l_text in subbatch])
+                        embed_seqlens.extend([len(l_text)*[1] for l_text in subbatch])
                         subbatch = [
                             el for sublist in subbatch for el in sublist
                         ]  # Flatten list of lists
@@ -269,6 +274,7 @@ class EmbedAugPipeline(nn.Module):
                             no_pool=False,
                         )
                     embeddings.append(embeds.type(self.pipeline_args.param_dtype))
+
                 embeddings = torch.concatenate(embeddings, dim=0)
 
         else:
@@ -604,6 +610,10 @@ class EmbedAugPipeline(nn.Module):
                         no_pool=True,
                     )
                     n_context_tokens = sum(embed_seqlens)
+                    new_embed_seqlens = []
+                    for seql in embed_seqlens:
+                        new_embed_seqlens.append([seql])
+                    embed_seqlens = new_embed_seqlens
                 else:
                     embeddings, n_context_tokens = encode_text(
                         (
@@ -618,7 +628,7 @@ class EmbedAugPipeline(nn.Module):
                         no_pool=False,
                         give_n_tokens=True,
                     )
-                    embed_seqlens = [len(l_text) for l_text in text_conditioning]
+                    embed_seqlens = [len(l_text)*[1] for l_text in text_conditioning]
 
             elif w_embeds and (
                 self.pipeline_args.trainable_embedder
@@ -645,10 +655,9 @@ class EmbedAugPipeline(nn.Module):
                     embed_seqlens = group_embed_seqlens(seqlens, [len(l_text) for l_text in text_conditioning])
                     embeddings, embed_seqlens = self.model.pooling_module(x=embeddings.to(self.pipeline_args.param_dtype), 
                                                                 embed_seqlens=embed_seqlens)
-
-
                 else:
-                    embed_seqlens = [len(l_text) for l_text in text_conditioning]
+                    embed_seqlens = group_embed_seqlens(seqlens, [len(l_text) for l_text in text_conditioning])
+
             else:
                 embeddings = None
                 embed_seqlens = None
@@ -776,7 +785,8 @@ class EmbedAugPipeline(nn.Module):
         if not give_n_tokens:
             return final_texts
         else:
-            return final_texts, n_context_tokens, sum(embed_seqlens)
+            print('EMBED SEQLENS',embed_seqlens)
+            return final_texts, n_context_tokens, sum(sum(embed_seqlens,[]))
 
 
 

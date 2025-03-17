@@ -15,7 +15,7 @@ def generate(
     chunk_size: int | None = None,
     embeddings: torch.Tensor | None = None,
     eos_id: int | None = None,
-    embed_seqlens: list[int] | None = None,
+    embed_seqlens: list[list[int]] | None = None,
     cat_embeddings: torch.Tensor | None = None,
     w_scores: list[float] | None = None,
 ) -> tuple[list[list[int]], list[list[float]]]:
@@ -57,7 +57,7 @@ def generate(
                 embeddings.shape[0],
                 n_kv_heads=model.args.n_kv_heads,
                 head_dim=model.args.head_dim,
-                kv_seqlens=embed_seqlens,
+                kv_seqlens=sum(embed_seqlens,[]),
                 cross_att_layers = model.cross_att_layers_id if not model.shared_kv else [0],
             ).to(model.device, dtype = model.dtype)
         )
@@ -194,7 +194,7 @@ def get_attention(
             torch.tensor(token_ids).to(model.device),
             seqlens=[len(token_ids)],
             embeddings=embeddings.to(model.device),
-            embed_seqlens=[embeddings.shape[0]],
+            embed_seqlens=[[embeddings.shape[0]]],
             cat_embeddings=embeddings if model.do_both else None,
             show_attention=True,
         )

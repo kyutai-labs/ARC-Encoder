@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-1
+#SBATCH --array=2-5%2
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -14,10 +14,15 @@
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
+
 # Get the configuration file for this job
 CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp64_CA_begin_Rec.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp64_CA_pref_Rec.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_begin_Rec_ROPE.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_alternate_Rec_ROPE.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_begin_Cont_ROPE.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_alternate_Cont_ROPE.yaml
 )
 
 
