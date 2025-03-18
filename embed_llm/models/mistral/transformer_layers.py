@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from torch.nn import functional as F
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 
@@ -48,7 +47,7 @@ class Attention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        freqs_cis: torch.Tensor,
+        freqs_cis: torch.Tensor | None = None,
         cache: CacheView | None = None,
         mask: BlockDiagonalMask | None = None,
         show_attention: bool = False,
@@ -60,7 +59,8 @@ class Attention(nn.Module):
         xq = xq.view(seqlen_sum, self.n_heads, self.head_dim)
         xk = xk.view(seqlen_sum, self.n_kv_heads, self.head_dim)
         xv = xv.view(seqlen_sum, self.n_kv_heads, self.head_dim)
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
+        if freqs_cis is not None:
+            xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
         if cache is None:
             key, val = xk, xv

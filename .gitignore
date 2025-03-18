@@ -26,3 +26,4 @@ scripts/eval_*
 scripts/old
 scripts/needle*
 results/haystack
+scripts/dissect*

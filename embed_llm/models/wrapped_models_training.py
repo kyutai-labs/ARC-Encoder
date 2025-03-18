@@ -201,7 +201,7 @@ def load_training_model(
     if pipeline_args.trainable_embedder or pipeline_args.train_only_pooling:
         assert (
             augmented_model.trainable_embedder.n_layers
-            > pipeline_args.n_truncated_layers
+            >= pipeline_args.n_truncated_layers
             > 0
         ), "Truncated layers must be less than total layers"
         removed_layers = []
@@ -222,7 +222,7 @@ def load_training_model(
     if (
         pipeline_args.do_pool
         and augmented_model.pooling_args is not None
-        and "attention" in augmented_model.pooling_args.type
+        and "latent_attention" in augmented_model.pooling_args.type
     ):
         initialize_proj_params(
             augmented_model.pooling_module, param_dtype, latents=True, device="cuda"
@@ -231,7 +231,7 @@ def load_training_model(
     else:
         ignored_state = []
 
-    if "attention" in augmented_model.mlp_project_args.type:
+    if "latent_attention" in augmented_model.mlp_project_args.type:
         initialize_proj_params(
             augmented_model.mlp_project, param_dtype, latents=True, device="cuda"
         )
@@ -418,11 +418,12 @@ def load_training_model_from_ckpt(
                     state_dict, assign=True, strict=True
                 )
 
-            augmented_model.pooling_module.process.latents = torch.nn.Parameter(
-                [v for k, v in state_dict.items() if "latents" in k][0].cuda()
-            )
+            if 'latent_attention' in augmented_model.pooling_args.type:
+                augmented_model.pooling_module.process.latents = torch.nn.Parameter(
+                    [v for k, v in state_dict.items() if "latents" in k][0].cuda()
+                )
 
-            ignored_state = [augmented_model.pooling_module.process.latents]
+                ignored_state = [augmented_model.pooling_module.process.latents]
             del state_dict
 
     if old_pipeline_args.mlp_project.n_layers > 0:
@@ -434,7 +435,7 @@ def load_training_model_from_ckpt(
                 assign=True,
                 strict=True,
             )
-        if "attention" in augmented_model.mlp_project_args.type:
+        if "latent_attention" in augmented_model.mlp_project_args.type:
             augmented_model.mlp_project.latents = torch.nn.Parameter(
                 [v for k, v in state_dict.items() if "latents" in k][0].cuda()
             )

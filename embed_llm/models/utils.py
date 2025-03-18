@@ -100,7 +100,7 @@ def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
         else sum(
             p.numel()
             for n, p in model.trainable_embedder.named_parameters()
-            if not is_cross_att(n) and not "lora" in n
+            if not is_cross_att(n) and  "lora" not in n
         )
     )
 
@@ -108,7 +108,7 @@ def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
         sum(
             p.numel()
             for n, p in model.llm.named_parameters()
-            if not is_cross_att(n) and not "lora" in n
+            if not is_cross_att(n) and  "lora" not in n
         )
         + train_embedder_params
     )
@@ -130,7 +130,7 @@ def is_cross_att(module_name: str):
     return (
         "cross_attention" in module_name
         or "gate" in module_name
-        or ("to_k" in module_name and not "cross_attend_block" in module_name)
+        or ("to_k" in module_name and "cross_attend_block" not in module_name)
         or "to_v" in module_name
     )
 

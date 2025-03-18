@@ -3,7 +3,6 @@ import torch.distributed
 import torch.nn as nn
 from pathlib import Path
 import safetensors.torch
-import subprocess as sp
 import safetensors
 import logging
 import numpy as np
@@ -517,7 +516,7 @@ class EmbedAugPipeline(nn.Module):
             ) and pipeline_args.do_pool:
                 if (
                     pipeline_args.do_pool
-                    and "attention" in augmented_pipeline.pipeline_args.pooling_module.type
+                    and "latent_attention" in augmented_pipeline.pipeline_args.pooling_module.type
                 ):
                     state_dict = load_state_dict(
                         Path(pooling_module_path), dtype=param_dtype

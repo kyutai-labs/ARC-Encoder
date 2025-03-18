@@ -3,9 +3,11 @@ import torch
 from torch import nn
 from einops import repeat
 from embed_llm.models.args import MLPProjectArgs, PoolingArgs
+from embed_llm.models.mistral.transformer_layers import Attention as Self_Attention
+from embed_llm.models.mistral.transformer_layers import RMSNorm
 from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
-import numpy as np
+
 
 def split_integer(x, n):
     base = x // n
@@ -14,6 +16,7 @@ def split_integer(x, n):
     for i in range(remainder):
         result[i] += 1
     return result
+
 
 class MLP_block(nn.Module):
     def __init__(
@@ -157,7 +160,7 @@ class ReversedLatentAttention(nn.Module):
         n_heads: int = 8,
         n_layers: int = 2,
         dtype: torch.dtype | None = None,
-        early_out: bool = False
+        early_out: bool = False,
     ):
         super().__init__()
         self.r = r
@@ -182,7 +185,6 @@ class ReversedLatentAttention(nn.Module):
             context_dim=hidden_dim,
         )
 
-
         if not early_out:
             # Attention as in the Perceiver IO decoder
             self.cross_attend_block_decoder = PreNorm(
@@ -200,24 +202,27 @@ class ReversedLatentAttention(nn.Module):
 
         self.mlp_layers = nn.ModuleList()
         self.mlp_layers.append(
-                PreNorm(
-                    latent_dim,
-                    MLP_block(
-                        in_dim=latent_dim, out_dim=latent_dim, act="gelu", dtype=dtype
-                    ),
-                )
+            PreNorm(
+                latent_dim,
+                MLP_block(
+                    in_dim=latent_dim, out_dim=latent_dim, act="gelu", dtype=dtype
+                ),
             )
+        )
         if not early_out:
-            for _ in range(1,n_layers):
+            for _ in range(1, n_layers):
                 self.mlp_layers.append(
                     PreNorm(
                         latent_dim,
                         MLP_block(
-                            in_dim=latent_dim, out_dim=latent_dim, act="gelu", dtype=dtype
+                            in_dim=latent_dim,
+                            out_dim=latent_dim,
+                            act="gelu",
+                            dtype=dtype,
                         ),
                     )
                 )
-        self.early_out = early_out  
+        self.early_out = early_out
 
     def forward(self, keys: torch.Tensor, seqlens: list[int]) -> torch.Tensor:
         b = len(seqlens)
@@ -230,13 +235,12 @@ class ReversedLatentAttention(nn.Module):
                 q_seqlen=[self.r] * b, kv_seqlen=seqlens
             ),
         )
- 
 
         hiddens = self.mlp_layers[0](hiddens) + hiddens
-        
+
         if self.early_out:
             return hiddens
-        
+
         hiddens = (
             self.cross_attend_block_decoder(
                 keys,
@@ -312,6 +316,34 @@ class LatentAttention(nn.Module):
         return hiddens
 
 
+class StandardAttention(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int = 4096,
+        n_heads: int = 8,
+        dtype: torch.dtype | None = None,
+    ):
+        super().__init__()
+
+        self.n_heads = n_heads
+        self.self_attend_block = Self_Attention(
+            hidden_dim,
+            n_heads=n_heads,
+            head_dim=hidden_dim // n_heads,
+            n_kv_heads=n_heads,
+        )
+        self.attention_norm = RMSNorm(hidden_dim, eps=1e-5)
+
+    def forward(self, queries: torch.Tensor, seqlens: list[int]) -> torch.Tensor:
+        r = self.self_attend_block(
+            self.attention_norm(queries),
+            mask=BlockDiagonalMask.from_seqlens(q_seqlen=seqlens, kv_seqlen=seqlens),
+        )
+        hiddens = r + queries
+
+        return hiddens
+
+
 class PoolingModule(nn.Module):
     def __init__(
         self, args: PoolingArgs, hidden_dim: int, dtype: torch.dtype | None = None
@@ -334,16 +366,23 @@ class PoolingModule(nn.Module):
                 n_heads=args.n_heads,
                 hidden_dim=hidden_dim,
                 dtype=dtype,
-                early_out=args.early_out
+                early_out=args.early_out,
             )
-            assert args.compress_rate * int(args.early_out) <= 0, "Cannot compress and early out"
+            assert args.compress_rate * int(args.early_out) <= 0, (
+                "Cannot compress and early out"
+            )
+        elif self.args.type == "standard_attention":
+            self.process = StandardAttention(
+                n_heads=args.n_heads,
+                hidden_dim=hidden_dim,
+                dtype=dtype,
+            )
         else:
             self.process = None
 
     def forward(
-        self, x: torch.Tensor, embed_seqlens: list[list[int]] | None = None 
+        self, x: torch.Tensor, embed_seqlens: list[list[int]] | None = None
     ) -> torch.Tensor:
-        
         """
         embed_seqlens: List of a list of embeddings size per sample in the batch
         """
@@ -356,53 +395,59 @@ class PoolingModule(nn.Module):
         if "attention" in self.args.type or self.args.type == "mean":
             # Full compression
             if self.args.compress_rate == 0:
-  
-                mean_mask = torch.block_diag(*[torch.ones(l) / l for l in sum(embed_seqlens, [])]).to(
-                    x.device
-                )
-                embed_seqlens = [[1]*len(l) for l in embed_seqlens]
+                mean_mask = torch.block_diag(
+                    *[torch.ones(t) / t for t in sum(embed_seqlens, [])]
+                ).to(x.device)
+                embed_seqlens = [[1] * len(t) for t in embed_seqlens]
             # No compression
             elif self.args.compress_rate == -1:
-                if self.args.type == "reversed_latent_attention" and self.args.early_out:
-                    embed_seqlens = [len(list_embs_per_pass)*[self.args.r] for list_embs_per_pass in embed_seqlens]            
+                if (
+                    self.args.type == "reversed_latent_attention"
+                    and self.args.early_out
+                ):
+                    embed_seqlens = [
+                        len(list_embs_per_pass) * [self.args.r]
+                        for list_embs_per_pass in embed_seqlens
+                    ]
                 else:
                     embed_seqlens = embed_seqlens
                 mean_mask = None
             # Partial compression
             else:
-                assert self.args.compress_rate > 0 
+                assert self.args.compress_rate > 0
                 new_embed_seqlens = []
                 mean_size = []
                 for pass_embs in embed_seqlens:
                     embed_seqlen = []
                     for embed_size in pass_embs:
                         compressed_embed_size = []
-                        
-                        if embed_size //self.args.compress_rate == 0:
-                            compressed_embed_size = [1]*embed_size
+
+                        if embed_size // self.args.compress_rate == 0:
+                            compressed_embed_size = [1] * embed_size
                         else:
-                            compressed_embed_size = split_integer(embed_size, self.args.compress_rate)
-                            
+                            compressed_embed_size = split_integer(
+                                embed_size, self.args.compress_rate
+                            )
+
                         mean_size.extend(compressed_embed_size)
                         embed_seqlen.append(len(compressed_embed_size))
                     new_embed_seqlens.append(embed_seqlen)
-                mean_mask = torch.block_diag(*[torch.ones(l)/l for l in mean_size]).to(
-                    x.device
-                )
+                mean_mask = torch.block_diag(
+                    *[torch.ones(t) / t for t in mean_size]
+                ).to(x.device)
                 embed_seqlens = new_embed_seqlens
-          
+
             out = out if mean_mask is None else mean_mask @ out
 
         elif self.args.type == "eos":
-            idx = torch.cumsum(torch.tensor(sum(embed_seqlens,[])), 0) - 1
+            idx = torch.cumsum(torch.tensor(sum(embed_seqlens, [])), 0) - 1
             out = out[idx, :]
-            embed_seqlens = [[1]*len(l) for l in embed_seqlens]
+            embed_seqlens = [[1] * len(t) for t in embed_seqlens]
         else:
             raise ValueError(f"Pooling type {self.args.type} not supported")
 
         # Embed seqlens becomes the number of tokens from embeddings linked to a passage
-        return out, embed_seqlens 
-
+        return out, embed_seqlens
 
 
 if __name__ == "__main__":

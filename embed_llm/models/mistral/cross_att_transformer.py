@@ -3,7 +3,6 @@ from typing import Iterable
 from functools import partial, reduce
 from dataclasses import dataclass
 import torch
-import json
 from torch import nn
 import math
 import random
@@ -874,7 +873,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     elif not self.shared_kv  and cross_att_cache is not None and cross_att_cache.full[str(layer_id)]:
                         xk, xv = cross_att_cache.cache_k[str(layer_id)], cross_att_cache.cache_v[str(layer_id)]
                         
-                    elif self.shared_kv and not embeddings is None:
+                    elif self.shared_kv and embeddings is not None:
                         pass
                     else:
                         xk, xv = None, None
