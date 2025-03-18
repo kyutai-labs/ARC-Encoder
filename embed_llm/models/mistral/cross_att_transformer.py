@@ -600,8 +600,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 pos_to_keep.extend([False] * size_embed)
                 # Insert token embeddings
                 h[size_embed + final_ind : size_embed + final_ind + size, :] = (
-                    token_embeds[sum(sum(embed_seqlens[:i],[])) : 
-                        sum(sum(embed_seqlens[:i],[])) + size, :]
+                    token_embeds[sum(seqlens[:i]) : 
+                        sum(seqlens[:i]) + size, :]
                 )
                 pos_to_keep.extend([True] * size)
                 final_ind += size_embed + size

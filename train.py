@@ -14,14 +14,10 @@ import numpy as np
 
 
 # Debugging
-import time
-from torch.autograd.profiler import profile, record_function
+
 import subprocess as sp
 
-# from embed_llm.generation.evaluation import (
-#     evaluate_reconstruction_model,
-#     evaluate_QA,
-# )
+
 from embed_llm.models.wrapped_models_training import (
     load_training_model,
     load_training_model_from_ckpt,
@@ -33,7 +29,7 @@ from embed_llm.training.args import (
     InstructionTuningArgs,
     WandbArgs,
 )
-from embed_llm.models.args import LoraArgs, EmbedAugArgs
+from embed_llm.models.args import LoraArgs
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.data.data_loader import build_data_loader
 from embed_llm.training.distributed import (
@@ -66,7 +62,6 @@ from embed_llm.monitoring.metrics_logger import (
 )
 
 from embed_llm.monitoring.utils import set_logger
-import os
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 # Define depending on the model

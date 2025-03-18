@@ -1,30 +1,29 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-8
+#SBATCH --array=0-10
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=inst_comp
-#SBATCH --dependency=afterok:673803_3
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx31,par2dc5-ai-prd-cl02s04dgx28,par2dc5-ai-prd-cl02s02dgx12,par2dc5-ai-prd-cl02s03dgx14,par2dc5-ai-prd-cl02s01dgx07,par2dc5-ai-prd-cl02s03dgx23,par2dc5-ai-prd-cl02s03dgx24
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx31,par2dc5-ai-prd-cl02s04dgx28,par2dc5-ai-prd-cl02s02dgx12,par2dc5-ai-prd-cl02s01dgx07,par2dc5-ai-prd-cl02s03dgx23,par2dc5-ai-prd-cl02s03dgx24,par2dc5-ai-prd-cl02s01dgx11,par2dc5-ai-prd-cl02s04dgx22
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/instruct/embed_llm_%A_%a.out
+
 
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
-
 # Get the configuration file for this job
 CONFIG_FILES=(
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp64_CA_alternate_Rec_Instruct.yaml
-/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_pref_Rec_Instruct.yaml 
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp32_CA_alternate_Rec_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp32_CA_begin_Rec_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp32_CA_pref_Rec_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp64_CA_begin_Rec_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/Comp64_CA_pref_Rec_Instruct.yaml
+/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_pref_Rec_Instruct.yaml 
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_alternate_Cont_ROPE_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_alternate_Rec_ROPE_Instruct.yaml
 /home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/CompNone_CA_begin_Cont_ROPE_Instruct.yaml

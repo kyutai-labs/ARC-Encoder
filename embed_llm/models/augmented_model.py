@@ -785,7 +785,6 @@ class EmbedAugPipeline(nn.Module):
         if not give_n_tokens:
             return final_texts
         else:
-            print('EMBED SEQLENS',embed_seqlens)
             return final_texts, n_context_tokens, sum(sum(embed_seqlens,[]))
 
 

@@ -1,73 +1,49 @@
-model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
+batch_size: 16
+ckpt_freq: 500
+
+data:
+  adapt_seq_len: true
+  shuffle: false
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/premixed_datasets/instruct_xRAG_1002.jsonl
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl
+eval_freq: 100
+exp_name: instruct_debug
 llm_name: Mistral7B
-run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
-exp_name: test_instruct
-start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/ToyPretraining_LLM_False_Emb_False_MaxEmb_1_0.2cont_0alpha_16BS_tmp/checkpoints/checkpoint_030000
-
-
-instruct_tuning:
-  alpha: 1.0
-  cross_entropy: false
-  do: true
-  kl: true
-  max_embeds: 1
-  temp: 1.0
-  tune_embedder: false
-  tune_llm: false
-  topk: 50
-
-
+log_freq: 10
 lora:
   enable: false
   rank: 64
   scaling: 2.0
-
-data:
-  adapt_seq_len: true
-  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl
-  shuffle: false
-  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/premixed_datasets/instruct_xRAG_1002.jsonl
-# data:
-#   adapt_seq_len: false
-#   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
-#   shuffle: false
-#   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
-
-# data:
-#   # train_data: /lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_train.jsonl
-#   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/test_instruct.jsonl
-#   shuffle: false
-#   train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/test_instruct.jsonl
-#   data_types: [instruct]
-#   adapt_seq_len: true
-
-# data:
-#   adapt_seq_len: true
-#   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl
-#   shuffle: false
-#   train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/premixed_datasets/instruct_xRAG_clean.jsonl
-
-seq_len: 1024
-batch_size: 32
-num_microbatches: 1
 max_steps: 10000
-optim:
-  max_lr: 5.0e-06
-  weight_decay: 0.1
-  warm_up_steps: 200
-  initial_lr: 1.0e-20
-  final_lr: 1.0e-10
-seed: 0
-log_freq: 5
-eval_freq: 100
-no_eval: true
-ckpt_freq: 500
-save_adapters: true
 
+optim:
+  final_lr: 1.0e-10
+  initial_lr: 1.0e-20
+  max_lr: 2.0e-06
+  warm_up_steps: 200
+  weight_decay: 0.1
+
+model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
+no_eval: false
+num_microbatches: 1
+
+start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/CompNone_CA_pref_Rec/checkpoints/checkpoint_030000
+instruct_tuning:
+  alpha: 2.0
+  cross_entropy: true
+  do: true
+  kl: true
+  max_embeds: 5
+  temp: 1.0
+  tune_embedder: false
+  tune_llm: false
+
+run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
+save_adapters: true
+seed: 0
+seq_len: 1024
 # wandb:
-#   project: embed_llm
-#   run_name: LT_FN_False_1_MLP_Latt_True_CA_2_CAL_every_True_DB
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
 #   offline: false
-
-
+#   project: embed_llm
+#   run_name: CompNone_CA_pref_Rec_Instruct
