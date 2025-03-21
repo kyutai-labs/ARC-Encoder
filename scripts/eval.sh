@@ -1,15 +1,15 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-1
+#SBATCH --array=0-19%8
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=16
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx10
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx16,par2dc5-ai-prd-cl02s04dgx24
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=eval_models
-#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/embed_llm_%A_%a.out
+#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/eval_dissect_%A_%a.out
 
 
 # Set up environment
@@ -17,8 +17,26 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-TrainEmbed_CA_Cont_Compress_nothing
-TrainEmbed_CA_Cont_Compress_64
+NTP_1
+NTP_10
+NTP_11
+NTP_12
+NTP_2
+NTP_3
+NTP_4
+NTP_5
+NTP_6
+NTP_7
+NTP_8
+NTP_9
+Dissect_MLPonly_earlytoks_pref_Rec
+Dissect_MLPonly_pref_Rec
+Dissect_MLP_SA_64POOL_pref_Rec
+Dissect_MLP_SA_pref_Rec
+Dissect_MLPonly_earlytoks_pref_Rec_Instruct
+Dissect_MLPonly_pref_Rec_Instruct
+Dissect_MLP_SA_64POOL_pref_Rec_Instruct
+Dissect_MLP_SA_pref_Rec_Instruct
 )
 
 
@@ -44,65 +62,55 @@ echo "Starting at: $(date)"
 
 
 case $RUN_NAME in
-*Comp*)
+
+*Instr*)
+  srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_dissect.json \
+        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1 --icl_before_pref --llmemb_icl_w_context
 
 
     srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64 --multi_passages 1
-    
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64 --multi_passages 3
-
-    ;;
-
-*nstruc*)
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_dissect.json \
+        --n_passages 500 --max_seq_len 64 --instruct_name $RUN_NAME --multi_passages 1 --ckpt 9000 --icl_before_pref --llmemb_icl_w_context
 
     srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --instruct_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64   --multi_passages 3
-
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --instruct_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64 --multi_passages 1
-
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --instruct_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64   --multi_passages 5
-
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --instruct_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64   --multi_passages 4
-
-
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --instruct_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64   --multi_passages 2
-
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --instruct_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_dissect.json \
+    --n_passages 500 --max_seq_len 64   --multi_passages 3 --icl_before_pref --llmemb_icl_w_context
     ;;
 *)
-
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64   --multi_passages 3
-
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64 --multi_passages 1
-
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64   --multi_passages 5
-
-    srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64   --multi_passages 4
+  srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_dissect.json \
+        --n_passages 500 --max_seq_len 64 --run_name $RUN_NAME --multi_passages 1 --icl_before_pref --llmemb_icl_w_context
 
 
     srun --gpus=$N_GPU \
-    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
-    --n_passages 500 --max_seq_len 64   --multi_passages 2
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_dissect.json \
+        --n_passages 500 --max_seq_len 64 --run_name $RUN_NAME --multi_passages 1 --ckpt 9000 --icl_before_pref --llmemb_icl_w_context
+
+    srun --gpus=$N_GPU \
+    micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_dissect.json \
+    --n_passages 500 --max_seq_len 64   --multi_passages 3 --icl_before_pref --llmemb_icl_w_context
+    ;;
+    # srun --gpus=$N_GPU \
+    # micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
+    # --n_passages 500 --max_seq_len 64   --multi_passages 3
+
+    # srun --gpus=$N_GPU \
+    # micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
+    # --n_passages 500 --max_seq_len 64 --multi_passages 1
+
+    # srun --gpus=$N_GPU \
+    # micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
+    # --n_passages 500 --max_seq_len 64   --multi_passages 5
+
+    # srun --gpus=$N_GPU \
+    # micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
+    # --n_passages 500 --max_seq_len 64   --multi_passages 4
+
+
+    # srun --gpus=$N_GPU \
+    # micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
+    # --n_passages 500 --max_seq_len 64   --multi_passages 2
 
     # srun --gpus=$N_GPU \
     # micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_final_multi.json \
@@ -167,7 +175,7 @@ case $RUN_NAME in
     # srun --gpus=$N_GPU \
     # micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_hybrid_focus.json \
     # --n_passages 500 --max_seq_len 64  --multi_passages 1
-    ;;
+    # ;;
 
 esac
 
