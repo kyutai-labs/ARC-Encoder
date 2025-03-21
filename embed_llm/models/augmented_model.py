@@ -14,6 +14,8 @@ from embed_llm.models.embedding_modules import (
     LatentAttention,
 )
 import yaml
+import json
+import pickle
 from mistral_inference.transformer import Transformer
 import os
 from embed_llm.retrieval.embeddings import encode_text, get_pretrained_embedder
@@ -96,6 +98,7 @@ class EmbedAugModel(nn.Module):
             self.pooling_module = None
 
         self.do_concat = pipeline_args.do_both or not pipeline_args.cross_att
+        self.normalize_embed = pipeline_args.normalize_embed
         self.tokenized_prompts = {}
 
     def forward(
@@ -130,7 +133,8 @@ class EmbedAugModel(nn.Module):
             embed_seqlens = embed_seqlens
 
         if embeddings is not None:
-            embeddings = F.normalize(embeddings, p=2, dim=-1)
+            if self.normalize_embed:
+                embeddings = F.normalize(embeddings, p=2, dim=-1)
 
             if self.mlp_project is not None:
                 if self.mlp_project_args.type == "mlp":
@@ -516,7 +520,7 @@ class EmbedAugPipeline(nn.Module):
             ) and pipeline_args.do_pool:
                 if (
                     pipeline_args.do_pool
-                    and "latent_attention" in augmented_pipeline.pipeline_args.pooling_module.type
+                    and "attention" in augmented_pipeline.pipeline_args.pooling_module.type
                 ):
                     state_dict = load_state_dict(
                         Path(pooling_module_path), dtype=param_dtype
@@ -584,7 +588,7 @@ class EmbedAugPipeline(nn.Module):
                 raise ValueError(
                     "Text conditioning must be a string or a list of strings"
                 )
-     
+
         if text_conditioning is None:
             w_embeds = False
         else:
@@ -635,11 +639,13 @@ class EmbedAugPipeline(nn.Module):
             ):
 
                 x = [
-                    self.tokenizer.encode(text, bos=True, eos=True)
+                    self.tokenizer.encode(text, bos=False, eos=False)
                     for l_text in text_conditioning
                     for text in l_text
                 ]
+
                 seqlens = [len(tokens) for tokens in x]
+
                 n_context_tokens = sum(seqlens)
                 x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
                     device
@@ -648,7 +654,6 @@ class EmbedAugPipeline(nn.Module):
                     input_ids=x, embeddings=None, seqlens=seqlens
                 )
                 
-       
                 if self.pipeline_args.do_pool:
                     # Here seqlens must be the number of tokens in each subpassage grouped by 
                     embed_seqlens = group_embed_seqlens(seqlens, [len(l_text) for l_text in text_conditioning])
@@ -664,7 +669,8 @@ class EmbedAugPipeline(nn.Module):
                 n_context_tokens = 0
     
             if embeddings is not None:
-                embeddings = F.normalize(embeddings, p=2, dim=-1) 
+                if self.pipeline_args.normalize_embed:
+                    embeddings = F.normalize(embeddings, p=2, dim=-1) 
 
                 if self.model.mlp_project is not None:
                     
@@ -703,13 +709,6 @@ class EmbedAugPipeline(nn.Module):
             # If not specified no prompt before embedding bos token is included after embedding
             if prompt_pre == "":
                 encoded_pre_embed_prompts.append([])
-                
-            elif len(prompt_pre) > 0 and not self.pipeline_args.w_prefix_prompt:
-                eval_logger_info(logger, "Including a prompt before embedding, not trained to do this")
-                encoded_pre_embed_prompts.append(
-                    self.tokenizer.encode(prompt_pre, bos=True, eos=False)
-                )
-                no_prefix = False
             else:
                 encoded_pre_embed_prompts.append(
                     self.tokenizer.encode(prompt_pre, bos=True, eos=False)
@@ -784,7 +783,7 @@ class EmbedAugPipeline(nn.Module):
         if not give_n_tokens:
             return final_texts
         else:
-            return final_texts, n_context_tokens, sum(sum(embed_seqlens,[]))
+            return final_texts, n_context_tokens, None if embed_seqlens is None else sum(sum(embed_seqlens,[])) 
 
 
 

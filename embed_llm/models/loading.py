@@ -195,6 +195,8 @@ def load_llm_model(
         model.for_embedding = True
         if pipeline_args.causal_embedder:
             model.causal_embedder = True
+        if not pipeline_args.rms_embed:
+            model.normalize_embed = False
     else:
         if pipeline_args.cross_att and pipeline_args.do_both:
             assert pipeline_args.cross_att, "If do_both, must do cross-attention"

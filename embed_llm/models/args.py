@@ -41,6 +41,7 @@ class EmbedAugArgs(Serializable):
     max_embeds: int = 1
     ca_rope: bool = False
     
+    
     # Could be simplified
     cross_att: bool = False
     cross_att_layers: int | None = None
@@ -50,6 +51,8 @@ class EmbedAugArgs(Serializable):
     do_both: bool = False
     w_embeds: bool = False
     causal_embedder: bool = False
+    normalize_embed: bool = True
+    rms_embed: bool = True
 
     
     # Remove later

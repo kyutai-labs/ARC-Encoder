@@ -11,7 +11,7 @@ from embed_llm.training.distributed import (
     get_rank,
 )
 
-from embed_llm.models.embedding_modules import LatentAttention, ReversedLatentAttention
+from embed_llm.models.embedding_modules import LatentAttention, ReversedLatentAttention, StandardAttention
 
 # Mistral specifics
 from embed_llm.models.mistral.transformer_layers import (
@@ -78,7 +78,7 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     )
 
     policies = [
-        torch_wrap.ModuleWrapPolicy([LatentAttention, ReversedLatentAttention]),
+        torch_wrap.ModuleWrapPolicy([LatentAttention, ReversedLatentAttention, StandardAttention]),
         fsdp_lora_policy,
         transformer_block_wrap_policy,
     ]

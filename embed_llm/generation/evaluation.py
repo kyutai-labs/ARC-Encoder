@@ -88,7 +88,7 @@ def create_prompt(
     if isinstance(doc, list):
         doc = "\n".join(doc)
     if wdoc:
-        return prefix + f"Document: {doc}\nQustiony: {query}\nAnswer:"
+        return prefix + f"Document: {doc}\nQuestion: {query}\nAnswer:"
     else:
         return prefix + f"Question: {query}\nAnswer:"
 
@@ -107,7 +107,7 @@ def evaluate_QA(
     icl_examples: int = 0,
     pipeline: EmbedAugPipeline | Transformer | None = None,
     w_embeds: bool = True,  # To test baseline LLM
-    query_w_context: bool = False,
+    query_w_context: bool = True,
     icl_w_context: bool = True,
     mistral: bool = False,
     max_multi_passage: int = 1,
@@ -116,6 +116,7 @@ def evaluate_QA(
     prompt_before_embed: bool = False,
     colbert: bool = False,
     split_to_multipassage: bool = False,
+    icl_before_pref: bool = False,
     seed: float = 0.42,
     with_scores: float = 0.0,
 ):
@@ -145,8 +146,7 @@ def evaluate_QA(
         instruct_name=instruct_name,
         ckpt=ckpt,
     )
-
-
+ 
     if mistral:
         mistral_tokenizer = MistralTokenizer.from_file(
             "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3"
@@ -342,19 +342,18 @@ def evaluate_QA(
                         text_conditioning = list(new_context[i : i + bs])
                     else:
                         text_conditioning = None
-           
-
+       
                     generated_sequence, embed_tokens, embeds = pipeline.generate(
                         prompt_pre_embed=(
                             [""] * bs
                             if not prompt_before_embed
                             else ["Based on the context "] * bs
-                        ),  # If model trained with task prefix before embedding
+                        ) if not icl_before_pref else [prompt_prefix+'Document: ']*bs,  # If model trained with task prefix before embedding
                         prompt_post_embed=(
                             context_prompt
                             if pipeline.pipeline_args.w_prefix_prompt
                             else no_context_prompt
-                        ),
+                        ) if not icl_before_pref else [f"\nQuestion: {query}\nAnswer:" for query in new_questions[i : i + bs]],
                         text_conditioning=text_conditioning,
                         temperature=temp,
                         max_tokens=max_seq_len,
@@ -364,8 +363,10 @@ def evaluate_QA(
                         give_n_tokens= True,
                         w_scores = None if len(scores) == 0 or (with_scores==0.) else list(new_scores[i:i+bs])
                     )
-              
-                    compress_ratio += embeds/embed_tokens
+                    if w_embeds:
+                        compress_ratio += embeds/embed_tokens
+                    else:
+                        compress_ratio += 1
                     generated_sequences.extend(generated_sequence)
                 else:
 
@@ -389,7 +390,7 @@ def evaluate_QA(
                             for gen in generated_sequence
                         ]
                     )
-
+  
             if METRIC_EVALUATION[benchmark] == get_em:
                 value_em = sum(
                     [
@@ -717,6 +718,9 @@ def evaluate_reconstruction_model(
         results_generation[str(temp)] = generated_sequences
 
     metrics = {bench: {} for bench in reconstruct_benchmarks}
+    
+    
+
     for temp in results_generation.keys():
         # for split in results_generation[temp].keys():
 
@@ -841,6 +845,7 @@ def arg_parser():
     parser.add_argument("--with_scores", type=float, default=0.0)
     parser.add_argument("--icl_exs", type=int, default=None)
     parser.add_argument("--llmemb_icl_w_context", action="store_true")
+    parser.add_argument("--icl_before_pref", action="store_true")
 
     return parser.parse_args()
 
@@ -1037,7 +1042,8 @@ if __name__ == "__main__":
             prompt_before_embed=args.prompt_before_embed,
             split_to_multipassage=args.split_to_multipassage,
             seed=args.seed,
-            with_scores = args.with_scores
+            with_scores = args.with_scores,
+            icl_before_pref=args.icl_before_pref
         )
 
         for icl_ex in icl_tests[1:]:
@@ -1061,5 +1067,6 @@ if __name__ == "__main__":
                 prompt_before_embed=args.prompt_before_embed,
                 split_to_multipassage=args.split_to_multipassage,
                 seed=args.seed,
-                with_scores = args.with_scores
+                with_scores = args.with_scores,
+                icl_before_pref=args.icl_before_pref
             )

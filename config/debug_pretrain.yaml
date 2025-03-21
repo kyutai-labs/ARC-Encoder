@@ -72,7 +72,7 @@ seed: 0
 log_freq: 1
 eval_freq: 1
 no_eval: true
-ckpt_freq: 10
+ckpt_freq: 3
 save_adapters: true
 
 

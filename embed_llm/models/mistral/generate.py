@@ -29,14 +29,15 @@ def generate(
     model = model.eval()
     B, V = len(prompt_post_embed), model.args.vocab_size
 
-    seqlens = [len(x) for x in prompt_post_embed]
+    seqlens = [len(x)+len(y) for x,y in zip(prompt_post_embed, prompt_pre_embed)]
 
     concat = cat_embeddings is not None
 
     # Cache
-    cache_window = (
-        max(seqlens) + max_tokens + 3 if concat else max(seqlens) + max_tokens
-    )  # 3 maximum number of embedding tokens for now
+    assert int(concat) == int(embed_seqlens is not None), "Concat and embed_seqlens must be activated together"
+    cache_window = ( max(seqlens) + max_tokens if not concat else 
+                    max(seqlens) + max_tokens + max([sum(seql) for seql in embed_seqlens])
+    )  
 
     cache = BufferCache(
         model.n_local_layers,
@@ -65,21 +66,14 @@ def generate(
     last_token_prelogits = None
 
 
+    insert_cat_embedds = []
     # Put in cache if trained with prefix prompt
     if sum([len(p) for p in prompt_pre_embed]) > 0:
-        prelogits_pre = model.generate(
-            torch.tensor(
-                (sum(prompt_pre_embed, [])), device=model.device, dtype=torch.long
-            ),
-            seqlens=[len(p) for p in prompt_pre_embed],
-            embeddings=embeddings,
-            embed_seqlens=embed_seqlens,
-            cache=cache,
-            cat_embeddings=None,
-            cross_att_cache=cross_att_cache,
-            w_scores=w_scores,
-        )
+        for i, p in enumerate(prompt_pre_embed):
+            prompt_post_embed[i] = p + prompt_post_embed[i]
+            insert_cat_embedds.append(len(p))
 
+    prompt = prompt_post_embed
     # One chunk if size not specified
     max_prompt_len = max(seqlens)
     if chunk_size is None:
@@ -88,20 +82,21 @@ def generate(
 
     # Encode prompt by chunks
     for s in range(0, max_prompt_len, chunk_size):
-        prompt_post_embed_chunks = [p[s : s + chunk_size] for p in prompt_post_embed]
-        assert all(len(p) > 0 for p in prompt_post_embed_chunks)
+        prompt_chunks = [p[s : s + chunk_size] for p in prompt]
+        assert all(len(p) > 0 for p in prompt_chunks)
 
         prelogits = model.generate(
             torch.tensor(
-                sum(prompt_post_embed_chunks, []), device=model.device, dtype=torch.long
+                sum(prompt_chunks, []), device=model.device, dtype=torch.long
             ),
             # images=flattened_images,
-            seqlens=[len(p) for p in prompt_post_embed_chunks],
+            seqlens=[len(p) for p in prompt_chunks],
             embeddings=embeddings,
             embed_seqlens=embed_seqlens,
             cache=cache,
             cat_embeddings=cat_embeddings,
             cross_att_cache=cross_att_cache,
+            insert_cat_embedds = B*[0] if len(insert_cat_embedds) == 0 else insert_cat_embedds,
             w_scores=w_scores,
         )
 
@@ -109,12 +104,12 @@ def generate(
         if s == 0 and concat:
             # Both in cache
             cat_embeddings = None
+            insert_cat_embedds = []
             
-
         last_token_prelogits = prelogits.index_select(
             0,
             torch.tensor(
-                [len(p) for p in prompt_post_embed_chunks], device=prelogits.device
+                [len(p) for p in prompt_chunks], device=prelogits.device
             ).cumsum(dim=0)
             - 1,
         )
@@ -149,7 +144,7 @@ def generate(
             embeddings=embeddings,
             embed_seqlens=embed_seqlens,
             cache=cache,
-            cat_embeddings=cat_embeddings,
+            cat_embeddings=None,
             cross_att_cache=cross_att_cache,
         )
 

@@ -411,6 +411,7 @@ class PoolingModule(nn.Module):
                     ]
                 else:
                     embed_seqlens = embed_seqlens
+                    
                 mean_mask = None
             # Partial compression
             else:
