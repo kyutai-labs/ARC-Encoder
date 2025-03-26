@@ -9,10 +9,14 @@ from embed_llm.models.lora import LoraArgs
 class PoolingArgs(Serializable):
     type: str = "latent_attention"  # latent_attention, mean
     r: int = 512  # Hidden dim of latent if latent attention pooling
-    n_heads: int = 8  # Number of heads in latent attention pooling
-    n_layers: int = 1
+    n_heads: int = 32  
+    dim: int = 4096
+    head_dim: int = 128
+    n_kv_heads: int = 8
+    n_layers: int = 0
     compress_rate: int = 0
     early_out: bool = False 
+    pool_type: str = "mean"
 
 
 @dataclass
@@ -53,6 +57,7 @@ class EmbedAugArgs(Serializable):
     causal_embedder: bool = False
     normalize_embed: bool = True
     rms_embed: bool = True
+    compression_schedule: dict[int,int] | None = None
 
     
     # Remove later

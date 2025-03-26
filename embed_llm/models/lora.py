@@ -168,7 +168,7 @@ class LoRALoaderMixin:
                     if "output" not in name and name.split(".")[1] not in self.layers:
                         logging.debug(
                             "Skipping parameter %s at pipeline rank %d",
-                            k,
+                            name,
                             self.pipeline_rank,  # type: ignore[attr-defined]
                         )
                             

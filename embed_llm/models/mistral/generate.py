@@ -34,7 +34,6 @@ def generate(
     concat = cat_embeddings is not None
 
     # Cache
-    assert int(concat) == int(embed_seqlens is not None), "Concat and embed_seqlens must be activated together"
     cache_window = ( max(seqlens) + max_tokens if not concat else 
                     max(seqlens) + max_tokens + max([sum(seql) for seql in embed_seqlens])
     )  
@@ -58,7 +57,7 @@ def generate(
                 embeddings.shape[0],
                 n_kv_heads=model.args.n_kv_heads,
                 head_dim=model.args.head_dim,
-                kv_seqlens=sum(embed_seqlens,[]),
+                kv_seqlens=[sum(seql) for seql in embed_seqlens],
                 cross_att_layers = model.cross_att_layers_id if not model.shared_kv else [0],
             ).to(model.device, dtype = model.dtype)
         )

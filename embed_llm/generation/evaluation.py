@@ -119,6 +119,7 @@ def evaluate_QA(
     icl_before_pref: bool = False,
     seed: float = 0.42,
     with_scores: float = 0.0,
+    compress_rate: int | None = None
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
@@ -145,6 +146,7 @@ def evaluate_QA(
         mistral=mistral,
         instruct_name=instruct_name,
         ckpt=ckpt,
+        compress_rate=compress_rate,
     )
  
     if mistral:
@@ -846,6 +848,7 @@ def arg_parser():
     parser.add_argument("--icl_exs", type=int, default=None)
     parser.add_argument("--llmemb_icl_w_context", action="store_true")
     parser.add_argument("--icl_before_pref", action="store_true")
+    parser.add_argument("--compress_rate", type=int, default=None)
 
     return parser.parse_args()
 
@@ -1043,7 +1046,8 @@ if __name__ == "__main__":
             split_to_multipassage=args.split_to_multipassage,
             seed=args.seed,
             with_scores = args.with_scores,
-            icl_before_pref=args.icl_before_pref
+            icl_before_pref=args.icl_before_pref,
+            compress_rate=args.compress_rate
         )
 
         for icl_ex in icl_tests[1:]:
@@ -1068,5 +1072,6 @@ if __name__ == "__main__":
                 split_to_multipassage=args.split_to_multipassage,
                 seed=args.seed,
                 with_scores = args.with_scores,
-                icl_before_pref=args.icl_before_pref
+                icl_before_pref=args.icl_before_pref,
+                compress_rate=args.compress_rate
             )

@@ -11,7 +11,7 @@ from embed_llm.training.distributed import (
     get_rank,
 )
 
-from embed_llm.models.embedding_modules import LatentAttention, ReversedLatentAttention, StandardAttention
+from embed_llm.models.embedding_modules import LatentAttention, ReversedLatentAttention, StandardAttention, AdaptivePoolingAttention
 
 # Mistral specifics
 from embed_llm.models.mistral.transformer_layers import (
@@ -78,7 +78,7 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     )
 
     policies = [
-        torch_wrap.ModuleWrapPolicy([LatentAttention, ReversedLatentAttention, StandardAttention]),
+        torch_wrap.ModuleWrapPolicy([LatentAttention, ReversedLatentAttention, StandardAttention,AdaptivePoolingAttention]),
         fsdp_lora_policy,
         transformer_block_wrap_policy,
     ]
@@ -131,8 +131,8 @@ def is_cross_att(module_name: str):
         "cross_attention" in module_name
         or "gate" in module_name
         or ("to_k" in module_name and "cross_attend_block" not in module_name)
-        or "to_v" in module_name
-    )
+        or "to_v" in module_name 
+    ) and 'process' not in module_name
 
 
 def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype):

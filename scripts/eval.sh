@@ -17,26 +17,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-NTP_1
-NTP_10
-NTP_11
-NTP_12
-NTP_2
-NTP_3
-NTP_4
-NTP_5
-NTP_6
-NTP_7
-NTP_8
-NTP_9
-Dissect_MLPonly_earlytoks_pref_Rec
-Dissect_MLPonly_pref_Rec
-Dissect_MLP_SA_64POOL_pref_Rec
-Dissect_MLP_SA_pref_Rec
-Dissect_MLPonly_earlytoks_pref_Rec_Instruct
-Dissect_MLPonly_pref_Rec_Instruct
-Dissect_MLP_SA_64POOL_pref_Rec_Instruct
-Dissect_MLP_SA_pref_Rec_Instruct
+TrainCausalPoolEmbed_CA_Rec_Distractor_Instruct
 )
 
 

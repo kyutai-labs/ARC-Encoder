@@ -348,7 +348,7 @@ class EmbedAugPipeline(nn.Module):
         if pipeline_args.trainable_embedder:
             assert Path(
                 ckpt_path + "/" + llm_name.lower() + "/trainable_embedder"
-            ).exists()
+            ).exists(), f"Path {ckpt_path + '/' + llm_name.lower() + '/trainable_embedder'} does not exist"
             trainable_embedder_path = (
                 ckpt_path + "/" + llm_name.lower() + "/trainable_embedder"
             )
@@ -386,12 +386,15 @@ class EmbedAugPipeline(nn.Module):
             ca_state_dict_path = (
                 ca_state_dict_path if ca_state_dict_path is not None else lora_path
             )
-            
+                
             pooling_module_path = (
                 pooling_state_dict_path
                 if pooling_state_dict_path is not None
                 else pooling_module_path
             )
+            
+            if pipeline_args.train_only_pooling and pooling_state_dict_path is  None:
+                print('Using Pooling from pre-trained !!!!!!!')
 
         if not pipeline_args.trainable_llm:
             llm_args.lora = None
@@ -798,6 +801,7 @@ def load_pipeline(
     mistral: bool = False,
     ckpt: int | None = None,
     instruct_name: str = None,
+    compress_rate: int | None = None,
 ) -> EmbedAugPipeline | Transformer:
     if pipeline is None and is_torchrun():
             torch.distributed.init_process_group()
@@ -888,6 +892,8 @@ def load_pipeline(
 
             ckpt = int(last_ckpt.split("_")[-1])
             eval_logger_info(logger,f"Evaluating checkpoint {ckpt}")
+            if compress_rate is not None:
+                pipeline.model.pooling_module.args.compression_rate = compress_rate
         else:
             pipeline: EmbedAugPipeline = pipeline
             ckpt = ckpt

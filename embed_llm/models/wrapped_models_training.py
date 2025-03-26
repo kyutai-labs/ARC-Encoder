@@ -543,6 +543,7 @@ def load_training_model_from_ckpt(
         ignored_states=ignored_state,
     )
 
+
     main_logger_info("Model sharded!")
 
     return (augmented_pipeline, wrapped_model)

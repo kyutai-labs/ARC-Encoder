@@ -1,5 +1,5 @@
 batch_size: 16
-ckpt_freq: 500
+ckpt_freq: 1
 
 data:
   adapt_seq_len: true
@@ -7,7 +7,7 @@ data:
   train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/premixed_datasets/instruct_xRAG_1002.jsonl
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl
 eval_freq: 100
-exp_name: instruct_debug
+exp_name: debug_instruct
 llm_name: Mistral7B
 log_freq: 10
 lora:
@@ -24,19 +24,19 @@ optim:
   weight_decay: 0.1
 
 model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-no_eval: false
+no_eval: true
 num_microbatches: 1
 
-start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/CompNone_CA_pref_Rec/checkpoints/checkpoint_030000
 instruct_tuning:
   alpha: 2.0
   cross_entropy: true
   do: true
   kl: true
-  max_embeds: 5
+  max_embeds: 1
   temp: 1.0
   tune_embedder: false
   tune_llm: false
+start_from_ckpt_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/Dissect_MLP_SA_64POOL_pref_Rec_nonorm/checkpoints/checkpoint_010000
 
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 save_adapters: true

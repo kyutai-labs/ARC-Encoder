@@ -420,11 +420,23 @@ def _train(
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
     
+    if args.pipeline.compression_schedule is not None:
+        chg_cmp = {int(k*args.max_steps/100):v for k, v in args.pipeline.compression_schedule.items()}
+        model.pooling_module.args.compress_rate = chg_cmp[0]
+        main_logger_info(f"Step {0} Compression rate changed to "+ str(chg_cmp[0]))
+        chg_cmp.pop(0)
+    
     while state.step < args.max_steps:
         state.start_step()
 
         is_last_step = state.step == args.max_steps
-
+        if args.pipeline.compression_schedule is not None:
+            if state.step in chg_cmp:
+                model.pooling_module.args.compress_rate = chg_cmp[state.step]
+                main_logger_info(f"Step {state.step} Compression rate changed to "+ str(chg_cmp[state.step]))
+                chg_cmp.pop(state.step)
+                
+            
         optimizer.zero_grad()
         loss = torch.tensor([0.0], device="cuda")
         bpc = torch.tensor([0.0], device="cuda")
@@ -527,7 +539,7 @@ def _train(
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
-
+            
             output = model(
                 x=x,
                 embeddings=embeddings,
@@ -539,7 +551,6 @@ def _train(
             mb_loss = compute_ce_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
-
             train_ppl += 2 ** (mb_loss.item())
            
             batch_bpc = 0
@@ -664,7 +675,6 @@ def _train(
                     
             loss += mb_loss.item()
             mb_loss.backward()
-       
             if y_mask is None:
                 n_batch_tokens += x.numel()
             else:

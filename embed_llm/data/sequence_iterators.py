@@ -1,8 +1,7 @@
 import dataclasses
-from dataclasses import dataclass
+
 import numpy as np
-from embed_llm.training.distributed import get_rank
-from embed_llm.data.tokenize import Mask, TokenSample, encode, Tokenizer
+from embed_llm.data.tokenize import Mask, TokenSample,  Tokenizer
 
 
 @dataclasses.dataclass()
@@ -287,12 +286,12 @@ def sequence_iterator_reconstruction(
             if further_embeds:
                 if len(embed_tokens) < abs(max_embeds):
                     embed_tokens.sort(key=len, reverse=True)
-                    l = len(embed_tokens)
-                    while l < abs(max_embeds):
+                    len_t = len(embed_tokens)
+                    while len_t < abs(max_embeds):
                         if len(embed_tokens[0]) > seq_len:
                             embed_tokens.append(embed_tokens[0][seq_len//2:])   
                             embed_tokens[0] = embed_tokens[0][:seq_len//2]
-                            l += 1
+                            len_t += 1
                             embed_tokens.sort(key=len, reverse=True)
                         else:
                             break
@@ -546,7 +545,7 @@ def sequence_iterator_decompress_usage(
         x_buffer
     ), f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
     
-    tokens, mask = sample.tokens, sample.masks[1:]
+    tokens, _ = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     embed_tokens = sample.passages.tokens
     data_type = sample.data_type

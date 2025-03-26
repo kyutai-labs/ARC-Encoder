@@ -202,7 +202,6 @@ class Checkpointer:
         ):
 
             trainable_embedder_modules = {}
-            pooling_modules = {}
         else:
             trainable_embedder_modules = {
                 k: m
@@ -210,15 +209,15 @@ class Checkpointer:
                 if is_trainable_fsdp(m)
             }
 
-            if self.pooling_module is None:
-                pooling_modules = {}
-            else:
-                pooling_modules = {
-                    k: m
-                    for k, m in self.pooling_module.named_modules()
-                    if all(p.requires_grad is True for p in module.parameters())
-                    and k == "process"
-                }
+        if self.pooling_module is None:
+            pooling_modules = {}
+        else:
+            pooling_modules = {
+                k: m
+                for k, m in self.pooling_module.named_modules()
+                if all(p.requires_grad is True for p in module.parameters())
+                and k == "process"
+            }
         llm_states = {}
         for key, module in llm_modules.items():
             assert isinstance(
@@ -283,6 +282,7 @@ class Checkpointer:
 
         pooling_modules_states = {}
         if self.pooling_module is not None:
+            
             for key, module in pooling_modules.items():
                 assert isinstance(
                     module, FullyShardedDataParallel
@@ -360,9 +360,11 @@ class Checkpointer:
                         llm_dst.parent / "pooling_module"
                     )
                     tmp_pooling_module_dst.mkdir(parents=True, exist_ok=True)
-            else:
-                tmp_pooling_module_dst = self._tmp(llm_dst.parent / "pooling_module")
-                tmp_pooling_module_dst.mkdir(parents=True, exist_ok=True)
+                    
+        if self.pipeline.pipeline_args.train_only_pooling:
+            assert self.trainable_embedder is not None
+            tmp_pooling_module_dst = self._tmp(llm_dst.parent / "pooling_module")
+            tmp_pooling_module_dst.mkdir(parents=True, exist_ok=True)
 
         (
             llm_states,
@@ -416,15 +418,16 @@ class Checkpointer:
                                 save_only_lora=False,
                             ),  # always use safetensors for checkpointing
                         )
-                else:
-                    safetensors.torch.save_file(
-                        pooling_module_states,
-                        self.consolidated_path(
-                            tmp_pooling_module_dst,
-                            use_safetensors=True,
-                            save_only_lora=False,
-                        ),  # always use safetensors for checkpointing
-                    )
+            if self.pipeline.pipeline_args.train_only_pooling:
+                assert self.trainable_embedder is not None
+                safetensors.torch.save_file(
+                    pooling_module_states,
+                    self.consolidated_path(
+                        tmp_pooling_module_dst,
+                        use_safetensors=True,
+                        save_only_lora=False,
+                    ),  # always use safetensors for checkpointing
+                )
 
             if self.pipeline is None:
                 self.write_llm_params_info(tmp_llm_dst.parent)
@@ -447,8 +450,9 @@ class Checkpointer:
                         tmp_pooling_module_dst.rename(
                             self.dst_dir(type="pooling_module")
                         )
-                else:
-                    tmp_pooling_module_dst.rename(self.dst_dir(type="pooling_module"))
+                        
+            if self.pipeline.pipeline_args.train_only_pooling:
+                tmp_pooling_module_dst.rename(self.dst_dir(type="pooling_module"))
 
             logger.info(
                 f"Done dumping checkpoint in {self.dst_dir(type='llm').parent} for step: {self.state.step}"
