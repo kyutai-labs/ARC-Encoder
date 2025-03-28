@@ -393,7 +393,15 @@ class AdaptivePoolingAttention(nn.Module):
             )
 
         elif self.pool_type == "conv":
-            raise NotImplementedError("Convolutional pooling not implemented yet")
+            print('No management of the compression rate, should divide by 2 the seqlens of the input')
+            self.conv = nn.Conv1d(
+                in_channels=hidden_dim,
+                out_channels=hidden_dim,
+                kernel_size=4,
+                stride=2,
+                padding=1,
+                bias=False,
+            )
 
         elif "sa" in self.pool_type:
             self.attention_norm = RMSNorm(hidden_dim, eps=1e-5)
@@ -447,7 +455,24 @@ class AdaptivePoolingAttention(nn.Module):
             )
 
         elif self.pool_type == "conv":
-            raise NotImplementedError("Convolutional pooling not implemented yet")
+            new_embed_seqlens = []
+            out = []
+            ind = 0
+            for size in sum(embed_seqlens, []):
+                if size < 2:
+                    out.append(x[ind: ind + size])
+                    new_embed_seqlens.append(size)
+                    ind += size
+                else:
+                    conv_x = self.conv(x[ind: ind + size].transpose(0, 1)).transpose(0, 1)
+                    out.append(conv_x)
+                    new_embed_seqlens.append(conv_x.shape[0])
+                    ind += size
+            out = torch.cat(out, dim=0)
+            new_embed_seqlens = group_embed_seqlens(
+                new_embed_seqlens, [len(t) for t in embed_seqlens]
+            )
+            return self.pooling_out_norm(out), new_embed_seqlens
         else:
             assert self.compress_rate > 0 or self.compress_rate == -1, (
                 "Compress rate must be greater than 0 or equal to -1 (no compression)"

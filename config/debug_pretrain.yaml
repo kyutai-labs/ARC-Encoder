@@ -3,12 +3,7 @@ llm_name: Mistral7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_pretrain
 
-toy_tests:
-  alpha: 2.0
-  do: false
-  kl_pretraining: true
-  temp: 1.0
-  tune_embedder: false
+
 
 model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
 no_eval: false
@@ -38,9 +33,9 @@ pipeline:
   normalize_embed: false
   pooled_cross_att: false
   pooling_module:
-    compress_rate: -1
+    compress_rate: 2
     type: adaptive_attention
-    pool_type: mean
+    pool_type: conv
   rms_embed: false
   shared_kv: false
   train_only_pooling: true
@@ -48,6 +43,7 @@ pipeline:
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
+
 
 
 data:

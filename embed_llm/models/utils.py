@@ -211,6 +211,8 @@ def initialize_proj_params(
                     torch.nn.init.ones_(param)
                 elif "norm" in m_name and "bias" in p_name:
                     torch.nn.init.zeros_(param)  # For the layernorm bias
+                elif "conv" in m_name and "weight" in p_name:
+                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
                 elif m_name.split(".")[-1] == "layer1":
                     torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
                 elif m_name.split(".")[-1] == "layer2":
