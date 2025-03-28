@@ -10,7 +10,6 @@ import logging
 import pickle
 import faiss
 import numpy as np
-from tqdm import tqdm
 from pathlib import Path
 import torch
 from typing import Union

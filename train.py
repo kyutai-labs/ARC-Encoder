@@ -41,7 +41,11 @@ from embed_llm.training.distributed import (
     set_device,
 )
 from embed_llm.training.eval import evaluate
-from embed_llm.training.loss import compute_ce_loss_with_mask, compute_kl_loss_with_mask, compute_bpt_loss
+from embed_llm.training.loss import (
+    compute_ce_loss_with_mask,
+    compute_kl_loss_with_mask,
+    compute_bpt_loss,
+)
 
 from embed_llm.training.utils import (
     TrainState,
@@ -62,11 +66,10 @@ from embed_llm.monitoring.metrics_logger import (
 )
 
 from embed_llm.monitoring.utils import set_logger
+import warnings
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 # Define depending on the model
-
-import warnings
 
 GB = 1024**3
 warnings.filterwarnings("ignore")
@@ -159,7 +162,10 @@ def _train(
         args.save(args_path)
 
     if args.instruct_tuning.do and get_rank() == 0:
-        print("Adapt seq len should be set to True and is currently:", args.data.adapt_seq_len)
+        print(
+            "Adapt seq len should be set to True and is currently:",
+            args.data.adapt_seq_len,
+        )
 
     # 3. Get loggers
     metrics_logger: MetricsLogger = MetricsLogger(
@@ -203,9 +209,9 @@ def _train(
     ):
         embedding_model = None
     else:
-        assert (
-            args.pipeline.embedder_name != ""
-        ), "`args.pipeline.embedder_name` should be set to a valid value."
+        assert args.pipeline.embedder_name != "", (
+            "`args.pipeline.embedder_name` should be set to a valid value."
+        )
         embedding_model = get_pretrained_embedder(
             args.pipeline.embedder_name, device_map="cuda"
         )
@@ -220,7 +226,6 @@ def _train(
         assert (
             args.hybrid_task.prop_noembed_continuation * int(args.hybrid_task.do) == 0.0
         ), "Noembed continuation should be deactivated when LLM not fine-tuned"
-
 
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
     args.pipeline.param_dtype = param_dtype
@@ -275,8 +280,12 @@ def _train(
         is_eval=False,
         continuation=args.continuation,
         hybrid_task=args.hybrid_task,
-        max_embeds = pipeline.pipeline_args.max_embeds if not args.instruct_tuning.do else min(pipeline.pipeline_args.max_embeds, args.instruct_tuning.max_embeds),
-        decompress_usage= '' if not args.toy_tests.do else args.toy_tests.decompress_usage,
+        max_embeds=pipeline.pipeline_args.max_embeds
+        if not args.instruct_tuning.do
+        else min(pipeline.pipeline_args.max_embeds, args.instruct_tuning.max_embeds),
+        decompress_usage=""
+        if not args.toy_tests.do
+        else args.toy_tests.decompress_usage,
     )
     main_logger_info("Data loader done")
     if not args.no_eval:
@@ -293,8 +302,14 @@ def _train(
             is_eval=True,
             continuation=False,
             hybrid_task=args.hybrid_task,
-            max_embeds = pipeline.pipeline_args.max_embeds if not args.instruct_tuning.do else min(pipeline.pipeline_args.max_embeds, args.instruct_tuning.max_embeds),
-            decompress_usage= '' if not args.toy_tests.do else args.toy_tests.decompress_usage,
+            max_embeds=pipeline.pipeline_args.max_embeds
+            if not args.instruct_tuning.do
+            else min(
+                pipeline.pipeline_args.max_embeds, args.instruct_tuning.max_embeds
+            ),
+            decompress_usage=""
+            if not args.toy_tests.do
+            else args.toy_tests.decompress_usage,
         )
 
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
@@ -310,8 +325,10 @@ def _train(
                 eval_batches.append(batch)
 
         if (
-            args.continuation > 0.0 or args.hybrid_task.do
-        ) and not args.instruct_tuning.do and  (not args.toy_tests.do or args.toy_tests.decompress_usage == ""):
+            (args.continuation > 0.0 or args.hybrid_task.do)
+            and not args.instruct_tuning.do
+            and (not args.toy_tests.do or args.toy_tests.decompress_usage == "")
+        ):
             eval_data_loader_4cont = build_data_loader(
                 tokenizer=pipeline.tokenizer,
                 args=args.data,
@@ -325,9 +342,9 @@ def _train(
                 is_eval=True,
                 continuation=True,
                 hybrid_task=args.hybrid_task,
-                max_embeds = pipeline.pipeline_args.max_embeds
+                max_embeds=pipeline.pipeline_args.max_embeds,
             )
-            
+
             # pre-load all eval batches, 40 batches * n_gpus * batch_size // n_gpus
             eval_batches_4cont = []
             while len(eval_batches_4cont) < 40:
@@ -349,9 +366,9 @@ def _train(
         weight_decay=args.optim.weight_decay,
     )
 
-    assert (
-        args.max_steps > args.optim.warm_up_steps
-    ), "Max steps should be greater than warm up steps"
+    assert args.max_steps > args.optim.warm_up_steps, (
+        "Max steps should be greater than warm up steps"
+    )
 
     scheduler = lr_scheduler.OneCycleLR(
         optimizer,
@@ -374,7 +391,9 @@ def _train(
         num_ckpt_keep=args.num_ckpt_keep,
         pipeline=pipeline,
         llm_name=args.llm_name,
-        instruction_tuning=args.instruct_tuning if args.instruct_tuning.do else (args.toy_tests if args.toy_tests.decompress_usage != "" else None),
+        instruction_tuning=args.instruct_tuning
+        if args.instruct_tuning.do
+        else (args.toy_tests if args.toy_tests.decompress_usage != "" else None),
     )
 
     # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
@@ -407,25 +426,27 @@ def _train(
                 {"prefix": prefix, "suffix": suffix}
             )
 
-
     if args.instruct_tuning.do:
-        topk = args.instruct_tuning.topk 
+        topk = args.instruct_tuning.topk
     elif args.toy_tests.do:
         topk = args.toy_tests.topk
     else:
         topk = None
-        
+
     main_logger_info("Start training")
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
-    
+
     if args.pipeline.compression_schedule is not None:
-        chg_cmp = {int(k*args.max_steps/100):v for k, v in args.pipeline.compression_schedule.items()}
+        chg_cmp = {
+            int(k * args.max_steps / 100): v
+            for k, v in args.pipeline.compression_schedule.items()
+        }
         model.pooling_module.args.compress_rate = chg_cmp[0]
-        main_logger_info(f"Step {0} Compression rate changed to "+ str(chg_cmp[0]))
+        main_logger_info(f"Step {0} Compression rate changed to " + str(chg_cmp[0]))
         chg_cmp.pop(0)
-    
+
     while state.step < args.max_steps:
         state.start_step()
 
@@ -433,10 +454,12 @@ def _train(
         if args.pipeline.compression_schedule is not None:
             if state.step in chg_cmp:
                 model.pooling_module.args.compress_rate = chg_cmp[state.step]
-                main_logger_info(f"Step {state.step} Compression rate changed to "+ str(chg_cmp[state.step]))
+                main_logger_info(
+                    f"Step {state.step} Compression rate changed to "
+                    + str(chg_cmp[state.step])
+                )
                 chg_cmp.pop(state.step)
-                
-            
+
         optimizer.zero_grad()
         loss = torch.tensor([0.0], device="cuda")
         bpc = torch.tensor([0.0], device="cuda")
@@ -458,7 +481,6 @@ def _train(
             # start_time = time.time()
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
 
-       
             # if get_rank() == 0:
             #     # to_gen = [int(tok) for tok in batch.x]
             #     # target = [int(tok) for tok in batch.y]
@@ -539,7 +561,7 @@ def _train(
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
-            
+
             output = model(
                 x=x,
                 embeddings=embeddings,
@@ -547,75 +569,121 @@ def _train(
                 embed_seqlens=embed_seqlens,
                 batch_type=batch.data_type,
             )
-        
+
             mb_loss = compute_ce_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
             train_ppl += 2 ** (mb_loss.item())
-           
+
             batch_bpc = 0
             ind = 0
             for i, size in enumerate(batch.sizes):
-                if len(pipeline.tokenizer.decode([int(tok) for tok in batch.y[ind : ind + size]]))==0:
+                if (
+                    len(
+                        pipeline.tokenizer.decode(
+                            [int(tok) for tok in batch.y[ind : ind + size]]
+                        )
+                    )
+                    == 0
+                ):
                     continue
-                loss_in_bits = torch.sum(compute_bpt_loss(output[ind:ind+size,...], 
-                                                        y[ind:ind+size], 
-                                                        None if y_mask is None else y_mask[ind:ind+size])).item()
-                batch_bpc += loss_in_bits/len(pipeline.tokenizer.decode([int(tok) for tok in batch.y[ind : ind + size]]))
+                loss_in_bits = torch.sum(
+                    compute_bpt_loss(
+                        output[ind : ind + size, ...],
+                        y[ind : ind + size],
+                        None if y_mask is None else y_mask[ind : ind + size],
+                    )
+                ).item()
+                batch_bpc += loss_in_bits / len(
+                    pipeline.tokenizer.decode(
+                        [int(tok) for tok in batch.y[ind : ind + size]]
+                    )
+                )
                 ind += size
 
-            bpc += batch_bpc/len(batch.sizes)
-       
-                
-            if (args.toy_tests.do and args.toy_tests.kl_pretraining) or (args.instruct_tuning.do and args.instruct_tuning.kl):
-                
-                if (args.continuation > 0.0 and batch.data_type == "continuation") or batch.data_type == "instruct":
-                    
+            bpc += batch_bpc / len(batch.sizes)
+
+            if (args.toy_tests.do and args.toy_tests.kl_pretraining) or (
+                args.instruct_tuning.do and args.instruct_tuning.kl
+            ):
+                if (
+                    args.continuation > 0.0 and batch.data_type == "continuation"
+                ) or batch.data_type == "instruct":
                     if batch.data_type == "instruct":
-                        # Remove the eos and the bos 
+                        # Remove the eos and the bos
                         contexts = []
                         for i in range(len(batch.to_embed)):
-                            contexts.append([pipeline.tokenizer.encode(' '.join(batch.to_embed[i]["text"]), bos = False, eos = False)])
+                            contexts.append(
+                                [
+                                    pipeline.tokenizer.encode(
+                                        " ".join(batch.to_embed[i]["text"]),
+                                        bos=False,
+                                        eos=False,
+                                    )
+                                ]
+                            )
                     else:
                         if batch.distract_list is None:
-                            contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
+                            contexts = [
+                                to_embed["tokens"] for to_embed in batch.to_embed
+                            ]
                         else:
                             contexts = []
-                            for embs, dist_id in zip(batch.to_embed, batch.distract_list):
+                            for embs, dist_id in zip(
+                                batch.to_embed, batch.distract_list
+                            ):
                                 if dist_id == -1:
                                     contexts.append(embs["tokens"])
                                 else:
-                                    contexts.append([emb for i, emb in enumerate(embs["tokens"]) if i != dist_id])
-                        
+                                    contexts.append(
+                                        [
+                                            emb
+                                            for i, emb in enumerate(embs["tokens"])
+                                            if i != dist_id
+                                        ]
+                                    )
+
                     x_wcontext = []
                     y_mask_wcontext = []
                     seqlens_wcontext = []
 
                     ind = 0
-                    assert len(contexts) == len(
-                        batch.sizes
-                    ), "Contexts and batch sizes should be the same"
+                    assert len(contexts) == len(batch.sizes), (
+                        "Contexts and batch sizes should be the same"
+                    )
                     for i, size in enumerate(batch.sizes):
-                        full_context = sum(contexts[i],[])
-             
+                        full_context = sum(contexts[i], [])
+
                         x_wcontext.extend(
                             full_context + batch.x[ind : ind + size].tolist()
                         )
-                        seqlens_wcontext.append(size  + len(full_context))
+                        seqlens_wcontext.append(size + len(full_context))
                         y_mask_wcontext.extend(
-                            [False] * len(full_context) 
-                            + ([True]*len(batch.x[ind: ind + size]) if (batch.y_mask is None or (args.instruct_tuning.do and args.instruct_tuning.no_mask))  else batch.y_mask[ind: ind + size].tolist()) 
+                            [False] * len(full_context)
+                            + (
+                                [True] * len(batch.x[ind : ind + size])
+                                if (
+                                    batch.y_mask is None
+                                    or (
+                                        args.instruct_tuning.do
+                                        and args.instruct_tuning.no_mask
+                                    )
+                                )
+                                else batch.y_mask[ind : ind + size].tolist()
+                            )
                         )
                         ind += size
-               
-                    x_wcontext = torch.from_numpy(np.array(x_wcontext)).cuda(non_blocking=True)
+
+                    x_wcontext = torch.from_numpy(np.array(x_wcontext)).cuda(
+                        non_blocking=True
+                    )
                     y_mask_wcontext = torch.from_numpy(np.array(y_mask_wcontext)).cuda(
                         non_blocking=True
                     )
 
-                    assert len(x_wcontext) == len(
-                        y_mask_wcontext
-                    ), "x_wcontext and y_mask_wcontext should be the same length"
+                    assert len(x_wcontext) == len(y_mask_wcontext), (
+                        "x_wcontext and y_mask_wcontext should be the same length"
+                    )
 
                     with torch.no_grad():
                         model.eval()
@@ -628,7 +696,7 @@ def _train(
                         )
                         # Get the logits for continuation of LLM with textual context
                         model.train()
-                    
+
                     # if get_rank() == 0:
                     #     print('Sizes wo context', seqlens)
                     #     print('Sizes w context',seqlens_wcontext)
@@ -636,12 +704,15 @@ def _train(
                     #     for cont in batch.to_embed[0]["tokens"]:
                     #         print('\nEmbed', pipeline.tokenizer.decode(cont))
                     #     print("\nX",pipeline.tokenizer.decode([int(tok) for tok in x[:seqlens[0]]]))
-        
-                        
-                    target_mask = y_mask_wcontext
-                    pred_mask = None if (args.instruct_tuning.do and args.instruct_tuning.no_mask) else y_mask
 
-                else: # Full reconstruction
+                    target_mask = y_mask_wcontext
+                    pred_mask = (
+                        None
+                        if (args.instruct_tuning.do and args.instruct_tuning.no_mask)
+                        else y_mask
+                    )
+
+                else:  # Full reconstruction
                     with torch.no_grad():
                         model.eval()
                         llm_output = model.forward(
@@ -652,7 +723,7 @@ def _train(
                             batch_type=batch.data_type,
                         )
                         model.train()
-                        
+
                     target_mask = y_mask
                     pred_mask = y_mask
 
@@ -661,18 +732,33 @@ def _train(
                     pred_logits=output,
                     target_mask=target_mask,
                     pred_mask=pred_mask,
-                    temp=args.toy_tests.temp if args.toy_tests.do else args.instruct_tuning.temp,
-                    topk =  topk,
+                    temp=args.toy_tests.temp
+                    if args.toy_tests.do
+                    else args.instruct_tuning.temp,
+                    topk=topk,
                 )
 
-                
                 kl_loss += kl_dv_loss.item()
 
-                if (args.instruct_tuning.do and args.instruct_tuning.cross_entropy) or args.toy_tests.do:
-                    mb_loss = mb_loss + (args.toy_tests.alpha if args.toy_tests.do else args.instruct_tuning.alpha) * kl_dv_loss 
+                if (
+                    args.instruct_tuning.do and args.instruct_tuning.cross_entropy
+                ) or args.toy_tests.do:
+                    mb_loss = (
+                        mb_loss
+                        + (
+                            args.toy_tests.alpha
+                            if args.toy_tests.do
+                            else args.instruct_tuning.alpha
+                        )
+                        * kl_dv_loss
+                    )
                 else:
-                    mb_loss = (args.toy_tests.alpha if args.toy_tests.do else args.instruct_tuning.alpha) * kl_dv_loss 
-                    
+                    mb_loss = (
+                        args.toy_tests.alpha
+                        if args.toy_tests.do
+                        else args.instruct_tuning.alpha
+                    ) * kl_dv_loss
+
             loss += mb_loss.item()
             mb_loss.backward()
             if y_mask is None:
@@ -763,7 +849,8 @@ def _train(
                 state=state,
                 instruction_tuning=args.instruct_tuning,
                 batches_cont=eval_batches_4cont,
-                train_llm = args.pipeline.trainable_llm or (args.instruct_tuning.do and args.instruct_tuning.tune_llm),
+                train_llm=args.pipeline.trainable_llm
+                or (args.instruct_tuning.do and args.instruct_tuning.tune_llm),
             )
 
             eval_logs = get_eval_logs(

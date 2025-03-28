@@ -1,38 +1,39 @@
-from typing import List, Union, Dict, Mapping, Optional, Tuple, TypedDict
-import torch
-import os
-import json
-import numpy as np
-from functools import partial
 from contextlib import nullcontext
+from functools import partial
+from typing import Dict, List, Mapping, Optional, Tuple, TypedDict, Union
+
+import numpy as np
+import torch
+from datasets import Dataset
+from einops import rearrange, repeat
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 from transformers import (
     AutoModel,
-    PreTrainedTokenizerFast,
     BatchEncoding,
     DataCollatorWithPadding,
+    MistralConfig,
+    MistralModel,
+    PreTrainedTokenizerFast,
 )
-from transformers.modeling_utils import PreTrainedModel
-from transformers.models.auto import AutoTokenizer
-from transformers.models.mistral.modeling_mistral import MISTRAL_INPUTS_DOCSTRING
-from transformers.modeling_outputs import BaseModelOutputWithPast
+from transformers.cache_utils import Cache, DynamicCache
 from transformers.modeling_attn_mask_utils import (
     _prepare_4d_attention_mask,
     _prepare_4d_attention_mask_for_sdpa,
 )
-from transformers import MistralModel, MistralConfig
-from transformers.cache_utils import Cache, DynamicCache
+from transformers.modeling_outputs import BaseModelOutputWithPast
+from transformers.modeling_utils import PreTrainedModel
+from transformers.models.auto import AutoTokenizer
+from transformers.models.mistral.modeling_mistral import MISTRAL_INPUTS_DOCSTRING
 from transformers.utils import (
     add_start_docstrings_to_model_forward,
     logging,
 )
-from einops import rearrange, repeat
-from tqdm.auto import tqdm
-from datasets import Dataset
-from torch.utils.data import DataLoader
+
 from .configuration_nvembed import (
-    NVEmbedConfig,
-    LatentAttentionConfig,
     BidirectionalMistralConfig,
+    LatentAttentionConfig,
+    NVEmbedConfig,
 )
 
 logger = logging.get_logger(__name__)
@@ -360,7 +361,7 @@ class LatentAttentionModel(PreTrainedModel):
 
     def __init__(self, config: LatentAttentionConfig):
         super().__init__(config)
-        ## cross-attention block
+        # cross-attention block
         num_latents, latent_dim, cross_heads, cross_dim_head = (
             config.num_latents_value,
             config.latent_dim,
@@ -387,13 +388,13 @@ class LatentAttentionModel(PreTrainedModel):
         )
 
     def forward(self, hiddens, attention_mask: torch.Tensor = None):
-        ## cross-attention block
+        # cross-attention block
         cross_attn, cross_ff = self.cross_attend_blocks
-        b, *_, device = *hiddens.shape, hiddens.device
+        b, *_, _ = *hiddens.shape, hiddens.device
         x = repeat(self.latents, "n d -> b n d", b=b)
         hiddens = cross_attn(hiddens, context=x, mask=None) + hiddens
         hiddens = cross_ff(hiddens) + hiddens
-        if attention_mask != None:
+        if attention_mask is not None:
             s = torch.sum(hiddens * attention_mask.unsqueeze(-1).float(), dim=1)
             d = attention_mask.sum(dim=1, keepdim=True).float()
             hiddens = s / d
@@ -447,7 +448,7 @@ class NVEmbedModel(PreTrainedModel):
         if (
             attention_mask is not None
             and self.padding_side == "right"
-            and self.is_mask_instruction == True
+            and self.is_mask_instruction
             and instruction_lens > 0
         ):
             # Mask out the instruction tokens for mean-pooling
@@ -495,7 +496,7 @@ class NVEmbedModel(PreTrainedModel):
 
         if (
             self.padding_side == "right"
-            and self.is_mask_instruction == True
+            and self.is_mask_instruction
             and len(instruction) > 0
         ):
             instruction_lens = len(self.tokenizer.tokenize(instruction))
@@ -524,12 +525,12 @@ class NVEmbedModel(PreTrainedModel):
     ):
         autocast_ctx = torch.autocast if torch.cuda.is_available() else nullcontext
         with autocast_ctx("cuda"):
-            ## decoder only layer
+            # decoder only layer
             outputs = self.embedding_model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
             )
-            ## latent attention layer
+            # latent attention layer
             embeds = self.latent_attention_model(
                 outputs.last_hidden_state,
                 pool_mask,
@@ -548,7 +549,7 @@ class NVEmbedModel(PreTrainedModel):
     ):
         if (
             self.padding_side == "right"
-            and self.is_mask_instruction == True
+            and self.is_mask_instruction
             and len(instruction) > 0
         ):
             instruction_lens = len(self.tokenizer.tokenize(instruction))
@@ -579,7 +580,7 @@ def custom_encode(
 ):
     if (
         model.padding_side == "right"
-        and model.is_mask_instruction == True
+        and model.is_mask_instruction
         and len(instruction) > 0
     ):
         instruction_lens = len(model.tokenizer.tokenize(instruction))
@@ -599,7 +600,9 @@ def custom_encode(
         batch_dict, instruction_lens, device=device
     )
     if pool:
-        return model(**features)["sentence_embeddings"].squeeze(1), torch.sum(batch_dict["attention_mask"], dim=1).numpy().tolist()
+        return model(**features)["sentence_embeddings"].squeeze(1), torch.sum(
+            batch_dict["attention_mask"], dim=1
+        ).numpy().tolist()
     else:
         features["pool_mask"] = None
         result = model(**features)["sentence_embeddings"]
@@ -613,12 +616,12 @@ def custom_encode(
         )
 
 
-## AutoModel Register
+# AutoModel Register
 AutoModel.register(NVEmbedConfig, NVEmbedModel)
 AutoModel.register(LatentAttentionConfig, LatentAttentionModel)
 AutoModel.register(BidirectionalMistralConfig, BidirectionalMistralModel)
 
-## Register for auto class
+# Register for auto class
 NVEmbedModel.register_for_auto_class("AutoModel")
 LatentAttentionModel.register_for_auto_class("AutoModel")
 BidirectionalMistralModel.register_for_auto_class("AutoModel")

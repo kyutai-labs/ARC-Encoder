@@ -56,20 +56,21 @@ class HybridTask(Serializable):
     prop_noembed_continuation: float = 0.0
     start_point: float = 0.0
 
+
 @dataclass
 class ToyTests(Serializable):
     do: bool = False
     kl_pretraining: bool = False
     alpha: float = 2.0
     temp: float = 1.0
-    decompress_usage: str = ''
+    decompress_usage: str = ""
     tune_llm: bool = False
     tune_embedder: bool = False
     topk: int | None = None
-    
+
+
 @dataclass
 class TrainArgs(Serializable):
-
     # if specified, instruct_tokenizer and model will be loaded
     # Path to the directory containing the initial model or model id: "mistral-small"
     model_id_or_path: str

@@ -16,18 +16,22 @@ class DataArgs(Serializable):
     # If the value is an empty string, no data will be used for the corresponding
     # data type.
     train_data: str = (
-        ""  # Each line in the jsonl files inside the data source directories must be a dictionary with a "text" key. See Readme for more details. Can be left empty.
+        ""  # Each line in the jsonl files inside the data source directories must be a dictionary with a "text" key.
+            # See Readme for more details. Can be left empty.
     )
     eval_data: str = (
-        ""  # Each line in the jsonl files inside the data source directories must be a dictionary with a "text" key. See Readme for more details. Can be left empty.
+        ""  # Each line in the jsonl files inside the data source directories must be a dictionary with a "text" key.
+            # See Readme for more details. Can be left empty.
     )
     shuffle: bool = False
     adapt_seq_len: bool = False
     data_types: list[str] = field(default_factory=lambda: ["reconstruction"])
     further_embeds: bool = False
     prob_distractor: float = 0.0
+
     def __post_init__(self) -> None:
         assert len(self.train_data.strip().split(",")) == len(
             self.data_types
-        ), f"Number of data sources {len(self.train_data.strip().split(','))} must match number of types {len(self.data_types)}."
+        ), f"Number of data sources {len(self.train_data.strip().split(','))} \
+            must match number of types {len(self.data_types)}."
         pass

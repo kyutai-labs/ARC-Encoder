@@ -1,26 +1,30 @@
 import functools
 import logging
 import math
+import os
 from typing import Callable
+
 import torch
 import torch.distributed.fsdp.wrap as torch_wrap
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 
-import os
-from embed_llm.training.distributed import (
-    get_rank,
-)
-
-from embed_llm.models.embedding_modules import LatentAttention, ReversedLatentAttention, StandardAttention, AdaptivePoolingAttention
-
-# Mistral specifics
-from embed_llm.models.mistral.transformer_layers import (
-    TransformerBlock as MistralTransformerBlock,
+from embed_llm.models.embedding_modules import (
+    AdaptivePoolingAttention,
+    LatentAttention,
+    ReversedLatentAttention,
+    StandardAttention,
 )
 from embed_llm.models.mistral.cross_att_transformer import (
     Cross_AttTransformerBlock as MistralCrossAttTransformerBlock,
 )
 
+# Mistral specifics
+from embed_llm.models.mistral.transformer_layers import (
+    TransformerBlock as MistralTransformerBlock,
+)
+from embed_llm.training.distributed import (
+    get_rank,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +33,11 @@ def main_logger_info(message: str) -> None:
     if get_rank() == 0:
         logger.info(message)
 
+
 def is_torchrun() -> bool:
     required_vars = ["MASTER_ADDR", "MASTER_PORT", "RANK", "WORLD_SIZE"]
     return all(var in os.environ for var in required_vars)
+
 
 def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     """
@@ -78,7 +84,14 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     )
 
     policies = [
-        torch_wrap.ModuleWrapPolicy([LatentAttention, ReversedLatentAttention, StandardAttention,AdaptivePoolingAttention]),
+        torch_wrap.ModuleWrapPolicy(
+            [
+                LatentAttention,
+                ReversedLatentAttention,
+                StandardAttention,
+                AdaptivePoolingAttention,
+            ]
+        ),
         fsdp_lora_policy,
         transformer_block_wrap_policy,
     ]
@@ -100,7 +113,7 @@ def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
         else sum(
             p.numel()
             for n, p in model.trainable_embedder.named_parameters()
-            if not is_cross_att(n) and  "lora" not in n
+            if not is_cross_att(n) and "lora" not in n
         )
     )
 
@@ -108,7 +121,7 @@ def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
         sum(
             p.numel()
             for n, p in model.llm.named_parameters()
-            if not is_cross_att(n) and  "lora" not in n
+            if not is_cross_att(n) and "lora" not in n
         )
         + train_embedder_params
     )
@@ -122,7 +135,10 @@ def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
         p.numel() for n, p in model.named_parameters() if is_cross_att(n)
     )
     main_logger_info(
-        f"\n LLM params:  {llm_params:,.0f} ({llm_params / num_params * 100:.2f}%),\n LoRA params: {lora_params:,.0f} ({lora_params / num_params * 100:.2f}%),\n MLP Projector params: {mlp_project_params:,.0f} ({mlp_project_params / num_params * 100:.2f}%),\n Pooling params: {pooling_params:,.0f}, ({pooling_params/ num_params * 100:.2f}%),\n Cross-Attention params: {cross_attention_params:,.0f} ({cross_attention_params / num_params * 100:.2f}%)"
+        f"\n LLM params:  {llm_params:,.0f} ({llm_params / num_params * 100:.2f}%), \
+            \n LoRA params: {lora_params:,.0f} ({lora_params / num_params * 100:.2f}%),\n MLP Projector params: {mlp_project_params:,.0f} \
+                ({mlp_project_params / num_params * 100:.2f}%),\n Pooling params: {pooling_params:,.0f}, ({pooling_params / num_params * 100:.2f}%),\n \
+                    Cross-Attention params: {cross_attention_params:,.0f} ({cross_attention_params / num_params * 100:.2f}%)"
     )
 
 
@@ -131,8 +147,8 @@ def is_cross_att(module_name: str):
         "cross_attention" in module_name
         or "gate" in module_name
         or ("to_k" in module_name and "cross_attend_block" not in module_name)
-        or "to_v" in module_name 
-    ) and 'process' not in module_name
+        or "to_v" in module_name
+    ) and "process" not in module_name
 
 
 def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype):
@@ -210,6 +226,7 @@ def initialize_proj_params(
                     )
                     param = module._parameters[p_name]
                     torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+
 
 def group_embed_seqlens(values: list[int], sizes: list[int]):
     result = []

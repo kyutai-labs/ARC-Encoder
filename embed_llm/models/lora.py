@@ -1,8 +1,9 @@
 import logging
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import NamedTuple
-from functools import partial
+
 import safetensors.torch
 import torch
 import torch.nn as nn
@@ -131,14 +132,14 @@ class LoRALoaderMixin:
     ) -> None:
         """Loads LoRA state_dict"""
         lora_dtypes = set([p.dtype for p in lora_state_dict.values()])
-        assert (
-            len(lora_dtypes) == 1
-        ), f"LoRA weights have multiple different dtypes {lora_dtypes}. All weights need to have the same dtype"
+        assert len(lora_dtypes) == 1, (
+            f"LoRA weights have multiple different dtypes {lora_dtypes}. All weights need to have the same dtype"
+        )
         lora_dtype = lora_dtypes.pop()
         # type: ignore[attr-defined]
-        assert (
-            lora_dtype == self.dtype
-        ), f"LoRA weights dtype differs from model's dtype {lora_dtype} != {self.dtype}"
+        assert lora_dtype == self.dtype, (
+            f"LoRA weights dtype differs from model's dtype {lora_dtype} != {self.dtype}"
+        )
 
         if not all("lora" in key for key in lora_state_dict.keys()):
             if cross_att:
@@ -171,8 +172,12 @@ class LoRALoaderMixin:
                             name,
                             self.pipeline_rank,  # type: ignore[attr-defined]
                         )
-                            
-                    elif 'output' in name and self.pipeline_rank == self.num_pipeline_ranks - 1 and (name + ".lora_B.weight") in lora_state_dict:
+
+                    elif (
+                        "output" in name
+                        and self.pipeline_rank == self.num_pipeline_ranks - 1
+                        and (name + ".lora_B.weight") in lora_state_dict
+                    ):
                         weight = (
                             module.weight
                             + (
@@ -184,7 +189,9 @@ class LoRALoaderMixin:
 
                         state_dict[name + ".weight"] = weight
 
-                    elif (name + ".lora_B.weight") in lora_state_dict and name.split(".")[1] in self.layers:
+                    elif (name + ".lora_B.weight") in lora_state_dict and name.split(
+                        "."
+                    )[1] in self.layers:
                         weight = (
                             module.weight
                             + (
@@ -204,7 +211,9 @@ class LoRALoaderMixin:
 
                 if k.split(".")[1] in self.layers:  # type: ignore[attr-defined]
                     state_dict[k] = v
-                elif "output" in k and self.pipeline_rank == self.num_pipeline_ranks - 1:
+                elif (
+                    "output" in k and self.pipeline_rank == self.num_pipeline_ranks - 1
+                ):
                     state_dict[k] = v
                 else:
                     logging.debug(

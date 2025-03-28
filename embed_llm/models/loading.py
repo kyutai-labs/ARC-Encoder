@@ -43,7 +43,6 @@ def load_args(
     pipe_path: str | None = None,
     pipe_args: EmbedAugArgs | None = None,
 ) -> tuple[ModelsArgs, EmbedAugArgs]:
-
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
 
     if pipe_path is not None:
@@ -61,14 +60,15 @@ def load_args(
         if "w_prefix_prompt" not in args or "max_embeds" not in args:
             with open(os.path.join(pipe_path, "../../args.yaml"), "r") as f:
                 train_args = yaml.safe_load(f)
-                
+
             w_prefix_prompt = train_args.get("prefix_prompt", False)
             pipeline_args.w_prefix_prompt = w_prefix_prompt
 
-            if train_args.get("hybrid_task",{}).get("do",False):
-                pipeline_args.max_embeds = train_args["hybrid_task"].get("max_embeds", 1)
+            if train_args.get("hybrid_task", {}).get("do", False):
+                pipeline_args.max_embeds = train_args["hybrid_task"].get(
+                    "max_embeds", 1
+                )
 
-            
         mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
         pipeline_args.mlp_project = mlp_project_args
 
@@ -101,7 +101,9 @@ def load_args(
             if pipeline_args.cross_att_layers is None
             else pipeline_args.cross_att_layers
         ),
-        begin_cross_att = False if pipeline_args.begin_cross_att is None else pipeline_args.begin_cross_att,
+        begin_cross_att=False
+        if pipeline_args.begin_cross_att is None
+        else pipeline_args.begin_cross_att,
         every_cross_att=(
             -1
             if pipeline_args.every_cross_att is None
@@ -110,7 +112,7 @@ def load_args(
         shared_kv=True if pipeline_args.shared_kv else False,
         pooled_cross_att=True if pipeline_args.pooled_cross_att else False,
         gate_bottleneck=getattr(pipeline_args, "gate_bottleneck", 1),
-        ca_rope = getattr(pipeline_args, "ca_rope", False),
+        ca_rope=getattr(pipeline_args, "ca_rope", False),
     )
 
     if args.get("rope_theta") is not None:
@@ -124,9 +126,9 @@ def load_args(
             f"Fine-tuning is not supported for older model versions with vocab_size 32000. Make sure to extend your model to vocab_size=32768 using `python -m utils.extend_model_vocab --original_model_ckpt {folder} --extended_model_ckpt {folder}_extended`."
         )
 
-    assert (
-        llm_args.vocab_size >= 32768
-    ), "Make sure to use a model with a vocab size of at least 32768"
+    assert llm_args.vocab_size >= 32768, (
+        "Make sure to use a model with a vocab size of at least 32768"
+    )
 
     if isinstance(pipeline_args.param_dtype, str):
         pipeline_args.param_dtype = getattr(torch, pipeline_args.param_dtype)
@@ -141,12 +143,12 @@ def load_state_dict(path: Path, dtype: torch.dtype) -> dict[str, torch.Tensor]:
     this_safetensors_path = Checkpointer.consolidated_path(path, use_safetensors=True)
     this_torch_path = Checkpointer.consolidated_path(path, use_safetensors=False)
 
-    assert (
-        this_safetensors_path.exists() or this_torch_path.exists()
-    ), f"Either {this_safetensors_path} or {this_torch_path} must exist."
-    assert not (
-        this_safetensors_path.exists() and this_torch_path.exists()
-    ), f"Only one of {this_safetensors_path} or {this_torch_path} should exist."
+    assert this_safetensors_path.exists() or this_torch_path.exists(), (
+        f"Either {this_safetensors_path} or {this_torch_path} must exist."
+    )
+    assert not (this_safetensors_path.exists() and this_torch_path.exists()), (
+        f"Only one of {this_safetensors_path} or {this_torch_path} should exist."
+    )
 
     if this_safetensors_path.exists():
         logger.info(f"Reloading model from {this_safetensors_path} ...")
@@ -180,10 +182,15 @@ def load_llm_model(
         if for_embedding:
             llm_args.cross_att_layers = -1
             llm_args.every_cross_att = -1
-        model = MistralTransformer(args=llm_args, checkpoint=checkpoint, pipeline_rank=pipeline_rank, num_pipeline_ranks=num_pipeline_rank)
+        model = MistralTransformer(
+            args=llm_args,
+            checkpoint=checkpoint,
+            pipeline_rank=pipeline_rank,
+            num_pipeline_ranks=num_pipeline_rank,
+        )
 
     embed_dim = model.args.dim
-    
+
     if not parll or (get_rank() == 0 or num_pipeline_rank > 1):
         state_dict = load_state_dict(folder, dtype=param_dtype)
         model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
@@ -210,7 +217,6 @@ def get_instruct_ckpts_paths(
     pipeline_args: EmbedAugArgs,
     llm_name: str,
 ) -> tuple[str, str, str, str, str]:
-
     embedder_lora_state_dict_path = None
     llm_lora_state_dict_path = None
     pooling_state_dict_path = None
@@ -225,8 +231,7 @@ def get_instruct_ckpts_paths(
     with open(instruct_ckpt + "/instruct.json", "r") as f:
         instruct_args = json.loads(f.read())
 
-
-    if pipeline_args.trainable_embedder and instruct_args['tune_embedder']:
+    if pipeline_args.trainable_embedder and instruct_args["tune_embedder"]:
         logger.info("Loading trainable embedder from " + trainable_embedder_path)
         embedder_lora_state_dict_path = trainable_embedder_path
 
@@ -240,7 +245,7 @@ def get_instruct_ckpts_paths(
     if pipeline_args.cross_att:
         ca_state_dict_path = ca_and_lora_path
 
-    if pipeline_args.trainable_llm and instruct_args['tune_llm']:
+    if pipeline_args.trainable_llm and instruct_args["tune_llm"]:
         llm_lora_state_dict_path = ca_and_lora_path
 
     return (
@@ -250,4 +255,3 @@ def get_instruct_ckpts_paths(
         ca_state_dict_path,
         llm_lora_state_dict_path,
     )
-

@@ -80,9 +80,9 @@ class DataDir:
     def jsonl_files(self):
         assert self.path.exists(), f"Make sure that {self.path} exists"
         jsonl_files = list(self.path.rglob("*jsonl"))
-        assert (
-            len(jsonl_files) > 0
-        ), f"{self.path} does not seem to have any files ending with '.jsonl'"
+        assert len(jsonl_files) > 0, (
+            f"{self.path} does not seem to have any files ending with '.jsonl'"
+        )
         return jsonl_files
 
 
@@ -115,15 +115,16 @@ def parse_data_sources(
             weight = float(weight_)
         else:
             raise ValueError(
-                f"{source} is not correctly formatted. Make sure to format each data source as <path/to/data>:<weight> or just <path/to/data>"
+                f"{source} is not correctly formatted. Make sure to format each data source as \
+                    <path/to/data>:<weight> or just <path/to/data>"
             )
 
-        assert (
-            path_ not in seen
-        ), f"{path_} seems to be duplicated. Make sure to only add it once."
-        assert (
-            weight > 0
-        ), f"Make sure to define strictly positive data sampling weights, not {weight}"
+        assert path_ not in seen, (
+            f"{path_} seems to be duplicated. Make sure to only add it once."
+        )
+        assert weight > 0, (
+            f"Make sure to define strictly positive data sampling weights, not {weight}"
+        )
 
         data: DataDir | DataFile
         if Path(path_).is_dir():
@@ -132,7 +133,8 @@ def parse_data_sources(
             data = DataFile(path=Path(path_))
         else:
             raise FileNotFoundError(
-                f"The path {path_} does not exist. Make sure {path_} is either a file or directory that contains training data."
+                f"The path {path_} does not exist. Make sure {path_} is either a file or \
+                    directory that contains training data."
             )
 
         sources.append(data)
@@ -144,9 +146,9 @@ def parse_data_sources(
     n_weights = [weight / sum_weights for weight in weights]
 
     assert min(n_weights) > 0
-    assert (
-        abs(1 - sum(n_weights)) < 1e-8
-    ), f"Defined data sampling weights {weights} must sum to 1."
+    assert abs(1 - sum(n_weights)) < 1e-8, (
+        f"Defined data sampling weights {weights} must sum to 1."
+    )
     return sources, n_weights
 
 
@@ -159,27 +161,27 @@ def sequence_iterator(
     continuation: float = 0.0,
     hybrid_task: HybridTask | None = None,
     max_embeds: int = 1,
-    decompress_usage: str = '',
+    decompress_usage: str = "",
     further_embeds: bool = False,
     prob_distractor: float = 0.0,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
     """
- 
+
     hybrid_training = False
     if is_finite:
         hybrid_training = False if hybrid_task is None else hybrid_task.do
         hybrid_task = None
-        
+
     x_buffer: list[int] = []
     y_buffer: list[int] = []
     to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]] = []
     mask_buffer: Mask = []
     sizes: list[int] = []
-    n_missing_cont = seq_len * 2 
+    n_missing_cont = seq_len * 2
     distract_list_rec: list[int] = []
-    
+
     x_buffer_cont: list[int] = []
     y_buffer_cont: list[int] = []
     to_embed_buffer_cont: list[dict[str, str | int | list[int] | list[str]]] = []
@@ -191,7 +193,7 @@ def sequence_iterator(
     n_missing = seq_len
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
-        if (hybrid_task is None or not hybrid_task.do) and decompress_usage == '':    
+        if (hybrid_task is None or not hybrid_task.do) and decompress_usage == "":
             rand_continue = np.random.rand()
             if (is_finite and continuation > 0) or continuation >= 1.0:
                 do_continuation = True
@@ -210,18 +212,20 @@ def sequence_iterator(
                         mask_buffer=mask_buffer_cont,
                         to_embed_buffer=to_embed_buffer_cont,
                         sizes=sizes_cont,
-                        seq_len=seq_len * 2, # To ensure max seq len to generate and max seq len to embed
+                        seq_len=seq_len
+                        * 2,  # To ensure max seq len to generate and max seq len to embed
                         tokenizer=tokenizer,
                         adapt_seq_len=adapt_seq_len,
-                        distract_list = distract_list_cont,
+                        distract_list=distract_list_cont,
                         n_missing=n_missing_cont,
                         data_type="continuation",
                         is_eval=is_finite,
                         cur_pos=cur_pos,
-                        max_embeds = max_embeds,
+                        max_embeds=max_embeds,
                         hybrid_training=hybrid_training,
-                        prob_distractor=prob_distractor)
-                    
+                        prob_distractor=prob_distractor,
+                    )
+
                     if len(res) == 3 and isinstance(res[0], SequenceEmbedMaskAndSizes):
                         yield res[0]
 
@@ -242,7 +246,7 @@ def sequence_iterator(
                             n_missing_cont,
                             sizes_cont,
                             distractor_buffer,
-                            distract_list_cont
+                            distract_list_cont,
                         ) = res
                         cur_pos = 0
                         break
@@ -259,14 +263,14 @@ def sequence_iterator(
                         tokenizer=tokenizer,
                         adapt_seq_len=adapt_seq_len,
                         n_missing=n_missing,
-                        distract_list = distract_list_rec,
+                        distract_list=distract_list_rec,
                         is_eval=is_finite,
                         cur_pos=cur_pos,
-                        max_embeds = max_embeds,
+                        max_embeds=max_embeds,
                         hybrid_training=hybrid_training,
-                        further_embeds= further_embeds,
+                        further_embeds=further_embeds,
                         distractor_buffer=distractor_buffer,
-                        prob_distractor=prob_distractor
+                        prob_distractor=prob_distractor,
                     )
 
                     if len(res) == 3 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -289,13 +293,12 @@ def sequence_iterator(
                             n_missing,
                             sizes,
                             distractor_buffer,
-                            distract_list_rec
+                            distract_list_rec,
                         ) = res
                         cur_pos = 0
                         break
-        
-                    
-        elif decompress_usage != '':
+
+        elif decompress_usage != "":
             while True:
                 res = sequence_iterator_decompress_usage(
                     sample=sample,
@@ -308,8 +311,8 @@ def sequence_iterator(
                     tokenizer=tokenizer,
                     n_missing=n_missing,
                     cur_pos=cur_pos,
-                    max_embeds = max_embeds,
-                    decompress_usage = decompress_usage
+                    max_embeds=max_embeds,
+                    decompress_usage=decompress_usage,
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -333,7 +336,6 @@ def sequence_iterator(
                     cur_pos = 0
                     break
         else:
-
             tokens, mask = sample.tokens, sample.masks[1:]
             cur_pos = 0
 
@@ -389,9 +391,8 @@ def build_dataset(
     shuffle: bool = False,
     continuation: float = 0.0,
     max_embeds: int = 1,
-    decompress_usage: str = '',
+    decompress_usage: str = "",
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
-
     data = args.train_data if not is_eval else args.eval_data
     sources, probabilities = parse_data_sources(data)
 
@@ -419,10 +420,10 @@ def build_dataset(
             adapt_seq_len=args.adapt_seq_len,
             continuation=continuation,
             hybrid_task=hybrid_task,
-            max_embeds = max_embeds,
-            decompress_usage = decompress_usage,
-            further_embeds = args.further_embeds,
-            prob_distractor = args.prob_distractor,
+            max_embeds=max_embeds,
+            decompress_usage=decompress_usage,
+            further_embeds=args.further_embeds,
+            prob_distractor=args.prob_distractor,
         )
         for it in dataset_iterators
     ]
@@ -529,7 +530,7 @@ def lazy_load_and_yield(
     rank: int,
     world_size: int,
     tokenizer: Tokenizer | None = None,
-    max_embeds: int = 1,    
+    max_embeds: int = 1,
 ):
     with jsonl_file.open() as file_handle:
         for idx, line in enumerate(file_handle):

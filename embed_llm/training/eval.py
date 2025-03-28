@@ -67,7 +67,7 @@ def evaluate(
                 )
 
                 eval_loss_embcont += compute_ce_loss_with_mask(output, y, y_mask)
-                
+
                 if train_llm:
                     output_rec_on_cont = model.forward(
                         x=x, embeddings=None, seqlens=seqlens
@@ -95,12 +95,12 @@ def evaluate(
                         mask.extend([True] * size)
                         # Trainable Embedder
 
-                    assert sum(seqlens) == len(
-                        input_ids
-                    ), f"Seqlens {sum(seqlens)} and input_ids {len(input_ids)} should be the same"
-                    assert sum(mask) == len(
-                        output
-                    ), f"Mask {sum(mask)} and output {len(output)} should be the same"
+                    assert sum(seqlens) == len(input_ids), (
+                        f"Seqlens {sum(seqlens)} and input_ids {len(input_ids)} should be the same"
+                    )
+                    assert sum(mask) == len(output), (
+                        f"Mask {sum(mask)} and output {len(output)} should be the same"
+                    )
 
                     assert torch.equal(
                         torch.tensor(torch.from_numpy(np.array(test_x))).cuda(), x
@@ -113,9 +113,9 @@ def evaluate(
                     ground_truth = torch.from_numpy(np.array(ground_truth)).cuda(
                         non_blocking=True
                     )
-                    assert torch.equal(
-                        torch.masked_select(ground_truth, mask), y
-                    ), "Ground truth and mask should be the same"
+                    assert torch.equal(torch.masked_select(ground_truth, mask), y), (
+                        "Ground truth and mask should be the same"
+                    )
 
                     output_wo_embed = model.forward(
                         x=input_ids, embeddings=None, seqlens=seqlens
@@ -148,31 +148,37 @@ def evaluate(
                     seqlens_wcontext = []
 
                     ind = 0
-                    assert len(contexts) == len(
-                        batch.sizes
-                    ), "Contexts and batch sizes should be the same"
+                    assert len(contexts) == len(batch.sizes), (
+                        "Contexts and batch sizes should be the same"
+                    )
 
                     for i, size in enumerate(batch.sizes):
-                        full_context = sum(contexts[i],[])
+                        full_context = sum(contexts[i], [])
                         x_wcontext.extend(
                             full_context + batch.x[ind : ind + size].tolist()
                         )
                         seqlens_wcontext.append(size + len(full_context))
                         y_mask_wcontext.extend(
                             [False] * len(full_context)
-                            + ([True]*len(batch.x[ind : ind + size]) if batch.y_mask is None else batch.y_mask[ind : ind + size].tolist()) 
+                            + (
+                                [True] * len(batch.x[ind : ind + size])
+                                if batch.y_mask is None
+                                else batch.y_mask[ind : ind + size].tolist()
+                            )
                         )
 
                         ind += size
 
-                    x_wcontext = torch.from_numpy(np.array(x_wcontext)).cuda(non_blocking=True)
+                    x_wcontext = torch.from_numpy(np.array(x_wcontext)).cuda(
+                        non_blocking=True
+                    )
                     y_mask_wcontext = torch.from_numpy(np.array(y_mask_wcontext)).cuda(
                         non_blocking=True
                     )
 
-                    assert len(x_wcontext) == len(
-                        y_mask_wcontext
-                    ), "x_rag and y_mask_rag should be the same length"
+                    assert len(x_wcontext) == len(y_mask_wcontext), (
+                        "x_rag and y_mask_rag should be the same length"
+                    )
                     rag_output = model.forward(
                         x=x_wcontext,
                         embeddings=embeddings,
@@ -191,9 +197,9 @@ def evaluate(
 
                     eval_kl_loss += kl_dv_loss
 
-                assert (
-                    batch.is_pad_only or y.abs().sum() != 0
-                ), "Pad sample is used to compute loss."
+                assert batch.is_pad_only or y.abs().sum() != 0, (
+                    "Pad sample is used to compute loss."
+                )
 
     # sum loss
     main_logger_info("Eval finished!")
@@ -204,27 +210,26 @@ def evaluate(
     state.this_eval_perplexity_rec = (2**eval_loss_rec).item()
 
     if batches_cont is not None:
-
         dist.all_reduce(eval_loss_embcont, op=dist.ReduceOp.SUM)
         eval_loss_embcont /= total_num_samples
         state.this_eval_loss_embcont = eval_loss_embcont.item()
         state.this_eval_perplexity_embcont = (2**eval_loss_embcont).item()
-        
+
         if train_llm:
             dist.all_reduce(eval_loss_textcont, op=dist.ReduceOp.SUM)
             dist.all_reduce(eval_loss_nocontext, op=dist.ReduceOp.SUM)
             eval_loss_textcont /= total_num_samples
             eval_loss_nocontext /= total_num_samples
-            state.this_eval_loss_nocontext = eval_loss_nocontext.item() 
-            state.this_eval_loss_textcont = eval_loss_textcont.item()  
-            state.this_eval_perplexity_textcont = (2**eval_loss_textcont).item() 
-            state.this_eval_perplexity_nocontext = (2**eval_loss_nocontext).item() 
+            state.this_eval_loss_nocontext = eval_loss_nocontext.item()
+            state.this_eval_loss_textcont = eval_loss_textcont.item()
+            state.this_eval_perplexity_textcont = (2**eval_loss_textcont).item()
+            state.this_eval_perplexity_nocontext = (2**eval_loss_nocontext).item()
         else:
             state.this_eval_loss_textcont = None
             state.this_eval_loss_nocontext = None
             state.this_eval_perplexity_textcont = None
             state.this_eval_perplexity_nocontext = None
-            
+
         state.this_eval_kl_loss = None
 
     elif instruction_tuning.do and instruction_tuning.kl:

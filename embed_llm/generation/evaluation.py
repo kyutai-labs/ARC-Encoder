@@ -2,14 +2,11 @@ import os
 import torch
 import json
 import numpy as np
-import pandas as pd
 import random
 from tqdm import tqdm, trange
 import argparse
 import logging
 import subprocess as sp
-from pathlib import Path
-from torch.autograd.profiler import profile, record_function
 from mistral_inference.transformer import Transformer
 from mistral_inference.generate import generate
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
@@ -42,17 +39,23 @@ EVAL_DATA_PATH = {
     "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",
 }
 
-METRIC_EVALUATION = {"NQ": get_em, "TRIVIAQA": get_em, "FactKG": get_acc_factchecking, "HotpotQA": get_em, "SQUAD": get_em}
+METRIC_EVALUATION = {
+    "NQ": get_em,
+    "TRIVIAQA": get_em,
+    "FactKG": get_acc_factchecking,
+    "HotpotQA": get_em,
+    "SQUAD": get_em,
+}
 
 
 logger = logging.getLogger(__name__)
+
 
 # Profiling memory
 def get_gpu_memory():
     command = "nvidia-smi"
     memory_free_info = sp.check_output(command.split()).decode("ascii")
     return memory_free_info
-
 
 
 def create_prompt_prefix(
@@ -67,18 +70,22 @@ def create_prompt_prefix(
     prompt = ""
     if not fact_checking:
         if docs is not None:
-            for query, answer, doc, _ in zip(queries, answers, docs, range(max_examples)):
+            for query, answer, doc, _ in zip(
+                queries, answers, docs, range(max_examples)
+            ):
                 prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
         else:
             for query, answer, _ in zip(queries, answers, range(max_examples)):
                 prompt += f"Question: {query}\nAnswer: {answer}\n\n"
     else:
         if docs is not None:
-            for query, answer, doc, _ in zip(queries, answers, docs, range(max_examples)):
-                prompt += f"Document: {doc}\nVerify the following claims with \"True\" or \"False\":\n{query}: {query}\nAnswer: {answer}\n\n"
+            for query, answer, doc, _ in zip(
+                queries, answers, docs, range(max_examples)
+            ):
+                prompt += f'Document: {doc}\nVerify the following claims with "True" or "False":\n{query}: {query}\nAnswer: {answer}\n\n'
         else:
             for query, answer, _ in zip(queries, answers, range(max_examples)):
-                prompt += f"Verify the following claims with \"True\" or \"False\":\n{query}: {query}\nAnswer: {answer}\n\n"
+                prompt += f'Verify the following claims with "True" or "False":\n{query}: {query}\nAnswer: {answer}\n\n'
     return prompt
 
 
@@ -91,7 +98,6 @@ def create_prompt(
         return prefix + f"Document: {doc}\nQuestion: {query}\nAnswer:"
     else:
         return prefix + f"Question: {query}\nAnswer:"
-
 
 
 def evaluate_QA(
@@ -119,12 +125,11 @@ def evaluate_QA(
     icl_before_pref: bool = False,
     seed: float = 0.42,
     with_scores: float = 0.0,
-    compress_rate: int | None = None
+    compress_rate: int | None = None,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
-
 
     # Loading model
     if not is_torchrun():
@@ -132,9 +137,8 @@ def evaluate_QA(
         device_count = torch.cuda.device_count()
         other_device = torch.device("cuda:1") if device_count > 1 else device
     else:
-        device = 'cuda'
+        device = "cuda"
         other_device = None
-   
 
     pipeline, ckpt = load_pipeline(
         run_name=run_name,
@@ -148,7 +152,7 @@ def evaluate_QA(
         ckpt=ckpt,
         compress_rate=compress_rate,
     )
- 
+
     if mistral:
         mistral_tokenizer = MistralTokenizer.from_file(
             "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3"
@@ -157,17 +161,16 @@ def evaluate_QA(
 
     results = {benchmark: {} for benchmark in benchmarks}
 
-
     # Creating dataset
     metrics = {}
 
     for benchmark in tqdm(
         benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
     ):
-        if benchmark == 'SQUAD' and max_multi_passage > 1:
+        if benchmark == "SQUAD" and max_multi_passage > 1:
             benchmarks.remove(benchmark)
             continue
-        
+
         metrics[benchmark] = {}
         eval_data = (
             EVAL_DATA_PATH[benchmark]
@@ -194,7 +197,7 @@ def evaluate_QA(
 
                 if max_multi_passage <= 1:
                     context.append(data["passages"][0].strip())
-                                    
+
                 else:
                     if split_to_multipassage:
                         l_sent = sent_tokenize(data["passages"][0])
@@ -202,26 +205,44 @@ def evaluate_QA(
                             l_sent = data["passages"][0].split(" ")
                         multi_passage = []
                         for i in range(max_multi_passage):
-                            multi_passage.append(' '.join(l_sent[i*len(l_sent)//max_multi_passage:(i+1)*len(l_sent)//max_multi_passage]))
+                            multi_passage.append(
+                                " ".join(
+                                    l_sent[
+                                        i * len(l_sent) // max_multi_passage : (i + 1)
+                                        * len(l_sent)
+                                        // max_multi_passage
+                                    ]
+                                )
+                            )
                         context.append(multi_passage)
                     else:
                         context.append(list(data["passages"][:max_multi_passage]))
-                    if 'scores' in data.keys() and with_scores > 0.:
-                        l_scores = [float(score) for score in  data['scores'][:max_multi_passage]]
-                        if with_scores == 1.: # Marche pas
-                            centered_scores = (np.array(l_scores) - np.min(l_scores))/(np.max(l_scores) - np.min(l_scores))
-                        elif with_scores == 2.: # Seul qui fonctionne
-                            centered_scores = (np.array(l_scores) - np.min(l_scores) + 1e-2)/(np.max(l_scores) - np.min(l_scores)+1e-2)
-                        elif with_scores == 3.: # Bof
-                            centered_scores = (np.array(l_scores) - np.mean(l_scores))/np.std(l_scores) + 1
-                        elif with_scores == 4.: # Nul
+                    if "scores" in data.keys() and with_scores > 0.0:
+                        l_scores = [
+                            float(score) for score in data["scores"][:max_multi_passage]
+                        ]
+                        if with_scores == 1.0:  # Marche pas
+                            centered_scores = (
+                                np.array(l_scores) - np.min(l_scores)
+                            ) / (np.max(l_scores) - np.min(l_scores))
+                        elif with_scores == 2.0:  # Seul qui fonctionne
+                            centered_scores = (
+                                np.array(l_scores) - np.min(l_scores) + 1e-2
+                            ) / (np.max(l_scores) - np.min(l_scores) + 1e-2)
+                        elif with_scores == 3.0:  # Bof
+                            centered_scores = (
+                                np.array(l_scores) - np.mean(l_scores)
+                            ) / np.std(l_scores) + 1
+                        elif with_scores == 4.0:  # Nul
                             centered_scores = l_scores
-                        elif with_scores == 5.: # Non
-                            centered_scores = (np.array(l_scores) - np.mean(l_scores))/np.std(l_scores)
+                        elif with_scores == 5.0:  # Non
+                            centered_scores = (
+                                np.array(l_scores) - np.mean(l_scores)
+                            ) / np.std(l_scores)
                         scores.append(centered_scores.tolist())
 
-        if with_scores > 0.:
-            print('Centered scores ex:', scores[0])
+        if with_scores > 0.0:
+            print("Centered scores ex:", scores[0])
         if benchmark == "NQ" and kilt:
             test_pairs = []
             with open(
@@ -247,9 +268,8 @@ def evaluate_QA(
             c = list(zip(questions, context, answers, scores))
             random.shuffle(c, random=lambda: seed)
             questions, context, answers, scores = zip(*c)
-            
 
-        eval_logger_info(logger,f"Evaluation dataset loaded for {benchmark}")
+        eval_logger_info(logger, f"Evaluation dataset loaded for {benchmark}")
 
         if mistral and isinstance(context[0], list):
             context = ["\n".join(doc) for doc in context]
@@ -260,7 +280,7 @@ def evaluate_QA(
                 answers=[answer[0] for answer in answers],
                 docs=context,
                 max_examples=icl_examples,
-                fact_checking = (benchmark == "FactKG")
+                fact_checking=(benchmark == "FactKG"),
             )
         else:
             prompt_prefix = create_prompt_prefix(
@@ -268,16 +288,15 @@ def evaluate_QA(
                 answers=[answer[0] for answer in answers],
                 docs=None,
                 max_examples=icl_examples,
-                fact_checking = (benchmark == "FactKG")
+                fact_checking=(benchmark == "FactKG"),
             )
- 
-        
+
         new_context, new_questions, new_answers = (
             list(context[icl_examples:]),
             list(questions[icl_examples:]),
             list(answers[icl_examples:]),
         )
-        
+
         if len(scores) > 0:
             new_scores = list(scores[icl_examples:])
             new_scores.reverse()
@@ -293,7 +312,6 @@ def evaluate_QA(
             for i in trange(0, n_samples, max_bs):
                 bs = min(max_bs, n_samples - i)
                 if w_embeds:
-
                     no_context_prompt = [
                         create_prompt(
                             prefix=prompt_prefix, doc="", query=query, wdoc=False
@@ -314,7 +332,6 @@ def evaluate_QA(
 
                 else:
                     if query_w_context:
-
                         no_context_prompt = [
                             create_prompt(
                                 prefix=prompt_prefix,
@@ -339,45 +356,55 @@ def evaluate_QA(
                         ]
 
                 if not mistral:
-
                     if w_embeds:
                         text_conditioning = list(new_context[i : i + bs])
                     else:
                         text_conditioning = None
-       
+
                     generated_sequence, embed_tokens, embeds = pipeline.generate(
                         prompt_pre_embed=(
                             [""] * bs
                             if not prompt_before_embed
                             else ["Based on the context "] * bs
-                        ) if not icl_before_pref else [prompt_prefix+'Document: ']*bs,  # If model trained with task prefix before embedding
+                        )
+                        if not icl_before_pref
+                        else [prompt_prefix + "Document: "]
+                        * bs,  # If model trained with task prefix before embedding
                         prompt_post_embed=(
                             context_prompt
                             if pipeline.pipeline_args.w_prefix_prompt
                             else no_context_prompt
-                        ) if not icl_before_pref else [f"\nQuestion: {query}\nAnswer:" for query in new_questions[i : i + bs]],
+                        )
+                        if not icl_before_pref
+                        else [
+                            f"\nQuestion: {query}\nAnswer:"
+                            for query in new_questions[i : i + bs]
+                        ],
                         text_conditioning=text_conditioning,
                         temperature=temp,
                         max_tokens=max_seq_len,
                         truncate_line=True,
                         device=device,
                         device_generation=other_device,
-                        give_n_tokens= True,
-                        w_scores = None if len(scores) == 0 or (with_scores==0.) else list(new_scores[i:i+bs])
+                        give_n_tokens=True,
+                        w_scores=None
+                        if len(scores) == 0 or (with_scores == 0.0)
+                        else list(new_scores[i : i + bs]),
                     )
                     if w_embeds:
-                        compress_ratio += embeds/embed_tokens
+                        compress_ratio += embeds / embed_tokens
                     else:
                         compress_ratio += 1
                     generated_sequences.extend(generated_sequence)
                 else:
-
                     tokens = [
                         mistral_tokenizer.encode(prompt, bos=True, eos=False)
                         for prompt in no_context_prompt
                     ]
 
-                    compress_ratio +=sum([len(token) for token in tokens])/sum([len(token) for token in tokens])
+                    compress_ratio += sum([len(token) for token in tokens]) / sum(
+                        [len(token) for token in tokens]
+                    )
                     generated_sequence, logprobs = generate(
                         model=mistral_model,
                         encoded_prompts=tokens,
@@ -392,7 +419,7 @@ def evaluate_QA(
                             for gen in generated_sequence
                         ]
                     )
-  
+
             if METRIC_EVALUATION[benchmark] == get_em:
                 value_em = sum(
                     [
@@ -416,13 +443,10 @@ def evaluate_QA(
                     metrics[benchmark]["F1"] = {}
                 metrics[benchmark]["F1"][str(temp)] = {}
 
-
                 n_answer_in_context = (
                     sum(
                         [
-                            metric_max_over_ground_truths(
-                                get_approx_em, cont, gts
-                            )
+                            metric_max_over_ground_truths(get_approx_em, cont, gts)
                             for cont, gts in zip(
                                 list(new_context), new_answers[:n_samples]
                             )
@@ -430,9 +454,11 @@ def evaluate_QA(
                     )
                     / n_samples
                 )
-          
-                value_xrag, _ = get_substring_match_score(generated_sequences, new_answers[:n_samples])
-   
+
+                value_xrag, _ = get_substring_match_score(
+                    generated_sequences, new_answers[:n_samples]
+                )
+
                 metrics[benchmark]["EM"][str(temp)] = {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
@@ -444,8 +470,8 @@ def evaluate_QA(
                     "xRAG metric": value_xrag,
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
-                    "compress_ratio":  compress_ratio/len(range(0, n_samples, max_bs)),
-                    "w_scores":with_scores,
+                    "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
+                    "w_scores": with_scores,
                 }
                 value_f1 = (
                     sum(
@@ -465,16 +491,19 @@ def evaluate_QA(
                     "Metric": value_f1,
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
-                    "compress_ratio":  compress_ratio/len(range(0, n_samples, max_bs)),
-                    "w_scores":with_scores,
+                    "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
+                    "w_scores": with_scores,
                 }
-                eval_logger_info(logger,'Prompt prefix: '+prompt_prefix)
-                eval_logger_info(logger,
-                    f"Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}"
+                eval_logger_info(logger, "Prompt prefix: " + prompt_prefix)
+                eval_logger_info(
+                    logger,
+                    f"Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
                 )
 
-                eval_logger_info(logger,
-                    f"Temperature: {temp}, bench: {benchmark},  EM {value_em}, Approx EM {value_approx}, F1 {value_f1}")
+                eval_logger_info(
+                    logger,
+                    f"Temperature: {temp}, bench: {benchmark},  EM {value_em}, Approx EM {value_approx}, F1 {value_f1}",
+                )
             else:
                 value = (
                     sum(
@@ -490,9 +519,7 @@ def evaluate_QA(
                 n_answer_in_context = (
                     sum(
                         [
-                            metric_max_over_ground_truths(
-                                get_approx_em, cont, gts
-                            )
+                            metric_max_over_ground_truths(get_approx_em, cont, gts)
                             for cont, gts in zip(
                                 list(new_context), new_answers[:n_samples]
                             )
@@ -500,7 +527,7 @@ def evaluate_QA(
                     )
                     / n_samples
                 )
-                eval_logger_info(logger,f"Temperature: {temp} {benchmark}  {value}")
+                eval_logger_info(logger, f"Temperature: {temp} {benchmark}  {value}")
 
                 metrics[benchmark][str(temp)] = {
                     "n_samples": n_samples,
@@ -509,19 +536,19 @@ def evaluate_QA(
                     "w_context_in_examples": icl_w_context,
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
-                    'prop context containing the answer': n_answer_in_context,
-                    "w_scores":with_scores,
+                    "prop context containing the answer": n_answer_in_context,
+                    "w_scores": with_scores,
                 }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
         if run_name is not None:
-                with open(
-                    "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-                    + run_name
-                    + "/results_generation.json",
-                    "a",
-                ) as f:
-                    json.dump(results, f)
+            with open(
+                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                + run_name
+                + "/results_generation.json",
+                "a",
+            ) as f:
+                json.dump(results, f)
         elif instruct_name is not None:
             with open(
                 "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
@@ -544,7 +571,11 @@ def evaluate_QA(
             run_name = "Mistral_no_RAG"
             ckpt = 0
 
-        run_name = instruct_name if instruct_name is not None and run_name is None else run_name
+        run_name = (
+            instruct_name
+            if instruct_name is not None and run_name is None
+            else run_name
+        )
         if run_name not in overall_results.keys():
             overall_results[run_name] = {}
         if str(ckpt) not in overall_results[run_name].keys():
@@ -564,10 +595,12 @@ def evaluate_QA(
                             metric
                         ].keys()
                     ):
-                        overall_results[run_name][str(ckpt)][benchmark][metric][temp] = []
-                    overall_results[run_name][str(ckpt)][benchmark][metric][temp].append(
-                        metrics[benchmark][metric][temp]
-                    )
+                        overall_results[run_name][str(ckpt)][benchmark][metric][
+                            temp
+                        ] = []
+                    overall_results[run_name][str(ckpt)][benchmark][metric][
+                        temp
+                    ].append(metrics[benchmark][metric][temp])
 
         with open(
             output_file,
@@ -596,7 +629,6 @@ def evaluate_reconstruction_model(
     instruct_name: str = None,
     prompt_before_embed: bool = False,
 ):
-
     reconstruct_benchmarks = [
         "Overlap",
         "Bleu",
@@ -618,16 +650,15 @@ def evaluate_reconstruction_model(
     if max_multi_passage > 1:
         eval_data = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_50_30_20.jsonl"
 
-    eval_logger_info(logger, "RUN NAME => "+ run_name)
-    
+    eval_logger_info(logger, "RUN NAME => " + run_name)
 
-   # Loading model
+    # Loading model
     if not is_torchrun():
         device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
         device_count = torch.cuda.device_count()
         other_device = torch.device("cuda:1") if device_count > 1 else device
     else:
-        device = 'cuda'
+        device = "cuda"
         other_device = None
 
     pipeline, ckpt = load_pipeline(
@@ -641,7 +672,6 @@ def evaluate_reconstruction_model(
         instruct_name=instruct_name,
         ckpt=ckpt,
     )
-
 
     lim_toks = max_seq_len
     valid_passage = []
@@ -685,7 +715,7 @@ def evaluate_reconstruction_model(
     assert n_passages == len(valid_passage)
 
     device_count = torch.cuda.device_count()
-    
+
     if not is_torchrun():
         other_device = device if device_count <= 1 else torch.device("cuda:1")
     else:
@@ -695,12 +725,11 @@ def evaluate_reconstruction_model(
         eval_logger_info(logger, f"Temperature: {temp}")
         generated_sequences = []
         for i in range(0, n_passages, max_batch_size):
-
             passage = list(valid_passage[i : i + max_batch_size])
             generated_sequence = pipeline.generate(
                 prompt_pre_embed=(
                     [""] * len(passage)
-                    if not prompt_before_embed  
+                    if not prompt_before_embed
                     else ["In other words, background: "] * len(passage)
                 ),
                 prompt_post_embed=(
@@ -712,16 +741,14 @@ def evaluate_reconstruction_model(
                 temperature=temp,
                 max_tokens=max_tokens,
                 truncate_line=False,
-                device=device if not is_torchrun() else 'cuda',
-                device_generation= other_device ,
+                device=device if not is_torchrun() else "cuda",
+                device_generation=other_device,
             )
 
             generated_sequences.extend(generated_sequence)
         results_generation[str(temp)] = generated_sequences
 
     metrics = {bench: {} for bench in reconstruct_benchmarks}
-    
-    
 
     for temp in results_generation.keys():
         # for split in results_generation[temp].keys():
@@ -774,12 +801,13 @@ def evaluate_reconstruction_model(
             "eval_data_type": eval_data_type,
         }
 
-        eval_logger_info(logger,
+        eval_logger_info(
+            logger,
             f"CKPT: {ckpt}, Temperature: {temp}, Overlap: {overlap}  \
             Bleu Score: {bleu_score} Truncated Bleu Score: {trunc_bleu_score} \
-            EM: {em} Meteor: {meteor_score} Bleu Score Avg: {bleu_score_avg}"
+            EM: {em} Meteor: {meteor_score} Bleu Score Avg: {bleu_score_avg}",
         )
-        
+
     if not is_torchrun() or torch.distributed.get_rank() == 0:
         with open(
             "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
@@ -855,14 +883,14 @@ def arg_parser():
 
 if __name__ == "__main__":
     set_logger(logging.INFO)
-  
+
     temp_tests = [0]
 
     args = arg_parser()
 
     if args.benchmarks == "all":
         benchmarks = ["NQ", "TRIVIAQA", "FactKG", "HotpotQA", "SQUAD"]
-    elif args.benchmarks == 'two_main':
+    elif args.benchmarks == "two_main":
         benchmarks = ["NQ", "TRIVIAQA"]
     else:
         benchmarks = [args.benchmarks]
@@ -882,18 +910,16 @@ if __name__ == "__main__":
 
     max_seq_len = args.max_seq_len
     n_passages = args.n_passages
-    
+
     if args.instruct_name is not None:
-        print('Evaluating with instruction:', args.instruct_name
-        )
+        print("Evaluating with instruction:", args.instruct_name)
     if args.run_name is not None:
-        print('Evuating run:', args.run_name)
+        print("Evuating run:", args.run_name)
     # Evaluate Mistral using their code
     if args.mistral:
-
-        assert (
-            not args.eval_reconstruction
-        ), "Cannot evaluate reconstruction with Mistral"
+        assert not args.eval_reconstruction, (
+            "Cannot evaluate reconstruction with Mistral"
+        )
         if args.multi_passages == 1:
             print("EVALUATING WITHOUT CONTEXT")
             mistral_model = evaluate_QA(
@@ -977,8 +1003,6 @@ if __name__ == "__main__":
             )
             torch.cuda.empty_cache()
 
-
-
     else:
         if args.eval_reconstruction:
             if args.multi_passages > 1:
@@ -1045,9 +1069,9 @@ if __name__ == "__main__":
             prompt_before_embed=args.prompt_before_embed,
             split_to_multipassage=args.split_to_multipassage,
             seed=args.seed,
-            with_scores = args.with_scores,
+            with_scores=args.with_scores,
             icl_before_pref=args.icl_before_pref,
-            compress_rate=args.compress_rate
+            compress_rate=args.compress_rate,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -1071,7 +1095,7 @@ if __name__ == "__main__":
                 prompt_before_embed=args.prompt_before_embed,
                 split_to_multipassage=args.split_to_multipassage,
                 seed=args.seed,
-                with_scores = args.with_scores,
+                with_scores=args.with_scores,
                 icl_before_pref=args.icl_before_pref,
-                compress_rate=args.compress_rate
+                compress_rate=args.compress_rate,
             )

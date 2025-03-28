@@ -1,4 +1,5 @@
-" This file create a config dictionary to launch training with the specified hyperparameters. "
+"This file create a config dictionary to launch training with the specified hyperparameters."
+
 import argparse
 import json
 

@@ -28,8 +28,7 @@ class Batch:
         assert isinstance(self.sizes, list)
         assert isinstance(self.to_embed, list)
         assert sum(self.sizes) == self.x.size == self.y.size
-        assert len(self.to_embed) == len(self.sizes)
-        
+        assert len(self.to_embed) == len(self.sizes)    
 
         if self.y_mask is not None:
             assert self.y_mask.size == self.y.size, (self.y_mask.shape, self.y.shape)
@@ -98,7 +97,7 @@ class Batchlist:
             if self.n_prefixes is None:
                 self.n_prefixes = []
             self.n_prefixes.append(n_prefixes)
-        
+   
         if distract_list is not None:
             if self.distract_list is None:
                 self.distract_list = []
@@ -139,7 +138,7 @@ class Batchlist:
         if self.distract_list is not None:
             distract_list = sum(self.distract_list, [])
         else:
-            distract_list   = None
+            distract_list = None
 
         return Batch(
             x_np,
@@ -200,7 +199,6 @@ def build_data_loader(
 
         batch_list = batch_list_dict[sample.data_type]
      
-    
         batch_list.add(
             sample.x,
             sample.y,
@@ -209,7 +207,7 @@ def build_data_loader(
             sample.mask,
             data_type=sample.data_type,
             n_prefixes=getattr(sample, "n_prefixes", None),
-            distract_list = getattr(sample, "distract_list", None),
+            distract_list=getattr(sample, "distract_list", None),
         )
         
         if len(batch_list) == batch_size:

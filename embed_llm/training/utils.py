@@ -12,7 +12,6 @@ from embed_llm.data.args import DataArgs
 
 
 def create_data_args(params_path: str):
-
     train_data = ""
     eval_data = ""
     adapt_seq_len = False
@@ -142,7 +141,7 @@ CONTINUATION_PROMPT = [
         "prefix": "",
         "suffix": "Continue this sentence in a way that maintains coherence and relevance: ",
     },
-     {
+    {
         "prefix": "",
         "suffix": " Carry on from here with what follows naturally: ",
     },

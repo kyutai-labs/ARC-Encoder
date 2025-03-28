@@ -1,7 +1,7 @@
 import dataclasses
 
 import numpy as np
-from embed_llm.data.tokenize import Mask, TokenSample,  Tokenizer
+from embed_llm.data.tokenize import Mask, TokenSample, Tokenizer
 
 
 @dataclasses.dataclass()
@@ -44,7 +44,6 @@ def sequence_iterator_one_task_4_all(
     start_point: float = 0.0,
     n_gap: int = 60,
 ) -> SequenceEmbedMaskAndSizes:
-
     x_buffer, y_buffer, to_embed_buffer, mask_buffer, sizes, n_prefixes = (
         [],
         [],
@@ -55,7 +54,7 @@ def sequence_iterator_one_task_4_all(
     )
 
     x, y = tokens[:-1], tokens[1:]
-    
+
     if max_embeds <= -1:
         nb_embed = abs(max_embeds)
     elif max_embeds > 1:
@@ -73,7 +72,6 @@ def sequence_iterator_one_task_4_all(
             )
             end_embed = seq_len
         else:
-            
             new_embed = []
             n_embed_toks = 0
 
@@ -105,7 +103,7 @@ def sequence_iterator_one_task_4_all(
         cur_pos += start_lm + size
 
     # If not enought to put seqlen in both embedding and x, split the rest in two parts
-    elif nb_embed == 1 and (len(x) - cur_pos) // 2 > max(n_gap,10) + 1:
+    elif nb_embed == 1 and (len(x) - cur_pos) // 2 > max(n_gap, 10) + 1:
         end_embed = (len(x) - cur_pos) // 2 - n_gap
         to_embed_buffer.append(
             {
@@ -126,28 +124,19 @@ def sequence_iterator_one_task_4_all(
 
     elif (
         nb_embed > 1
-        and (len(x) - cur_pos)//2 > 20 + 1 # At least 20 tokens to generate
-        and ((len(x) - cur_pos)//2) // nb_embed > 0
+        and (len(x) - cur_pos) // 2 > 20 + 1  # At least 20 tokens to generate
+        and ((len(x) - cur_pos) // 2) // nb_embed > 0
     ):
-    
         new_embed = []
         n_embed_toks = 0
 
         for i in range(nb_embed):
-            add_token = min(((len(x) - cur_pos)//2) // nb_embed, seq_len)
+            add_token = min(((len(x) - cur_pos) // 2) // nb_embed, seq_len)
             new_embed.append(
-                tokens[
-                    cur_pos
-                    + i * add_token : cur_pos
-                    + (i + 1) * add_token
-                ]
+                tokens[cur_pos + i * add_token : cur_pos + (i + 1) * add_token]
             )
             n_embed_toks += len(
-                tokens[
-                    cur_pos
-                    + i * add_token : cur_pos
-                    + (i + 1) * add_token
-                ]
+                tokens[cur_pos + i * add_token : cur_pos + (i + 1) * add_token]
             )
 
         to_embed_buffer.append(
@@ -173,9 +162,9 @@ def sequence_iterator_one_task_4_all(
     else:
         return None
 
-    assert (
-        len(mask_buffer) == len(x_buffer) == len(y_buffer)
-    ), f"{len(mask_buffer)} == {len(x_buffer)} == {len(y_buffer)}"
+    assert len(mask_buffer) == len(x_buffer) == len(y_buffer), (
+        f"{len(mask_buffer)} == {len(x_buffer)} == {len(y_buffer)}"
+    )
     assert sum(sizes) <= seq_len, f"{sum(sizes)} <= {seq_len}"
     assert len(to_embed_buffer) == len(sizes), f"{len(to_embed_buffer)} == {len(sizes)}"
 
@@ -189,7 +178,7 @@ def sequence_iterator_one_task_4_all(
                 mask=mask_buffer,
                 sizes=sizes,
                 data_type="one_4_all",
-                n_prefixes=n_prefixes
+                n_prefixes=n_prefixes,
             ),
             cur_pos,
         )
@@ -223,10 +212,10 @@ def sequence_iterator_reconstruction(
 
     assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
     if not adapt_seq_len:
-        assert n_missing == seq_len - len(
-            x_buffer
-        ), f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
-    
+        assert n_missing == seq_len - len(x_buffer), (
+            f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
+        )
+
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     embed_tokens = sample.passages.tokens
@@ -235,7 +224,7 @@ def sequence_iterator_reconstruction(
     while cur_pos < len(x):
         size = len(x[cur_pos : cur_pos + n_missing])
         curr_mask = mask[cur_pos : cur_pos + n_missing]
-        
+
         if not any(curr_mask):
             cur_pos += size
             # we have a sequence with a mask filled with False
@@ -245,8 +234,7 @@ def sequence_iterator_reconstruction(
         y_buffer.extend(y[cur_pos : cur_pos + n_missing])
         dist_idx = -1
         # If instruct data type do not split the passage into smaller embeddings
-        if data_type == "reconstruction" and len(embed_tokens) == 1: 
-            
+        if data_type == "reconstruction" and len(embed_tokens) == 1:
             if max_embeds <= -1:
                 nb_embed = abs(max_embeds)
             elif max_embeds > 1:
@@ -254,24 +242,39 @@ def sequence_iterator_reconstruction(
             elif max_embeds == 1:
                 nb_embed = 1
             new_embed = []
-            n_toks_per_embed = len(embed_tokens[0][cur_pos : cur_pos + n_missing]) // nb_embed
-            
+            n_toks_per_embed = (
+                len(embed_tokens[0][cur_pos : cur_pos + n_missing]) // nb_embed
+            )
+
             do_distract = True
             for i in range(nb_embed):
                 if np.random.rand() < prob_distractor and do_distract:
-                    if len(distractor_buffer)>0:
+                    if len(distractor_buffer) > 0:
                         new_embed.append(distractor_buffer[:n_toks_per_embed])
-                        distractor_buffer = embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
+                        distractor_buffer = embed_tokens[0][
+                            cur_pos + i * n_toks_per_embed : cur_pos
+                            + (i + 1) * n_toks_per_embed
+                        ]
                     else:
-                        distractor_buffer = embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
-                        new_embed.append(embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed])
+                        distractor_buffer = embed_tokens[0][
+                            cur_pos + i * n_toks_per_embed : cur_pos
+                            + (i + 1) * n_toks_per_embed
+                        ]
+                        new_embed.append(
+                            embed_tokens[0][
+                                cur_pos + i * n_toks_per_embed : cur_pos
+                                + (i + 1) * n_toks_per_embed
+                            ]
+                        )
                     do_distract = False
                     dist_idx = i
                 else:
                     new_embed.append(
-                        embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
+                        embed_tokens[0][
+                            cur_pos + i * n_toks_per_embed : cur_pos
+                            + (i + 1) * n_toks_per_embed
+                        ]
                     )
-              
 
             to_embed_buffer.append(
                 {
@@ -279,18 +282,19 @@ def sequence_iterator_reconstruction(
                     "tokens": new_embed,
                 }
             )
-           
+
         else:
             assert adapt_seq_len
-            # If we can use more embeddings and that one passage reaches the limit we split it in two embeddings and so on
+            # If we can use more embeddings and that one passage reaches the limit \
+            # we split it in two embeddings and so on
             if further_embeds:
                 if len(embed_tokens) < abs(max_embeds):
                     embed_tokens.sort(key=len, reverse=True)
                     len_t = len(embed_tokens)
                     while len_t < abs(max_embeds):
                         if len(embed_tokens[0]) > seq_len:
-                            embed_tokens.append(embed_tokens[0][seq_len//2:])   
-                            embed_tokens[0] = embed_tokens[0][:seq_len//2]
+                            embed_tokens.append(embed_tokens[0][seq_len // 2 :])
+                            embed_tokens[0] = embed_tokens[0][: seq_len // 2]
                             len_t += 1
                             embed_tokens.sort(key=len, reverse=True)
                         else:
@@ -300,7 +304,7 @@ def sequence_iterator_reconstruction(
             new_embed = []
             for i in range(len(embed_tokens)):
                 if np.random.rand() < prob_distractor and do_distract:
-                    if len(distractor_buffer)>0:
+                    if len(distractor_buffer) > 0:
                         new_embed.append(distractor_buffer)
                         distractor_buffer = embed_tokens[i]
                     else:
@@ -309,18 +313,18 @@ def sequence_iterator_reconstruction(
                     do_distract = False
                     dist_idx = i
                 else:
-                    new_embed.append(
-                        embed_tokens[i]
-                    )
-              
+                    new_embed.append(embed_tokens[i])
+
             new_embed_tokens = [toks[:seq_len] for toks in new_embed]
             new_embed_text = [tokenizer.decode(toks[:seq_len]) for toks in new_embed]
 
             to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
 
         if is_eval and hybrid_training:
-            curr_mask = [False] * (len(curr_mask)//10) + [True] * (len(curr_mask) - len(curr_mask)//10)
-            
+            curr_mask = [False] * (len(curr_mask) // 10) + [True] * (
+                len(curr_mask) - len(curr_mask) // 10
+            )
+
         mask_buffer.extend(curr_mask)
         distract_list.append(dist_idx)
         if not adapt_seq_len:
@@ -330,20 +334,23 @@ def sequence_iterator_reconstruction(
 
         cur_pos += size
         # if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
-        if n_missing == 0 or ((adapt_seq_len and cur_pos == len(x)) or len(x_buffer) == seq_len): 
-        # With adapt seq len just do not cut a sequence in the middle to fill the empty space 
-        # But still upper bounded by max_seq_len
+        if n_missing == 0 or (
+            (adapt_seq_len and cur_pos == len(x)) or len(x_buffer) == seq_len
+        ):
+            # With adapt seq len just do not cut a sequence in the middle to fill the empty space
+            # But still upper bounded by max_seq_len
 
             try:
                 assert len(mask_buffer) == len(x_buffer) == len(y_buffer), (
                     len(mask_buffer),
                     len(x_buffer),
-                    len(y_buffer),)
-                assert len(x_buffer) <= seq_len, f'Buffer to long {len(x_buffer)}'
+                    len(y_buffer),
+                )
+                assert len(x_buffer) <= seq_len, f"Buffer to long {len(x_buffer)}"
             except AssertionError as e:
                 print(e)
                 return [], [], [], [], seq_len, [], [], []
-            
+
             if not adapt_seq_len:
                 assert sum(sizes) == seq_len
                 assert seq_len == len(x_buffer)
@@ -351,19 +358,33 @@ def sequence_iterator_reconstruction(
             assert len(to_embed_buffer) == len(sizes)
             # we don't want to yield sequences with a mask filled with False
             if any(mask_buffer):
-                return SequenceEmbedMaskAndSizes(
-                    x=x_buffer,
-                    y=y_buffer,
-                    to_embed=to_embed_buffer,
-                    mask=mask_buffer,
-                    sizes=sizes,
-                    data_type=data_type,
-                    distract_list=distract_list
-                ), cur_pos, distractor_buffer
+                return (
+                    SequenceEmbedMaskAndSizes(
+                        x=x_buffer,
+                        y=y_buffer,
+                        to_embed=to_embed_buffer,
+                        mask=mask_buffer,
+                        sizes=sizes,
+                        data_type=data_type,
+                        distract_list=distract_list,
+                    ),
+                    cur_pos,
+                    distractor_buffer,
+                )
 
             if adapt_seq_len:
                 break
-    return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes, distractor_buffer,  distract_list
+    return (
+        x_buffer,
+        y_buffer,
+        to_embed_buffer,
+        mask_buffer,
+        n_missing,
+        sizes,
+        distractor_buffer,
+        distract_list,
+    )
+
 
 def sequence_iterator_continuation(
     x_buffer: list[int],
@@ -385,17 +406,15 @@ def sequence_iterator_continuation(
     hybrid_training: bool = False,
     prob_distractor: float = 0.5,
 ) -> SequenceEmbedMaskAndSizes:
-
     assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     embed_tokens = sample.passages.tokens
-    assert (
-        len(embed_tokens) == 1
-    ), "Continuation training only supports one passage per sample"
+    assert len(embed_tokens) == 1, (
+        "Continuation training only supports one passage per sample"
+    )
 
     while cur_pos < len(x):
-
         overall_size = len(x[cur_pos : cur_pos + n_missing])
         curr_mask = mask[cur_pos : cur_pos + n_missing]
         if not any(curr_mask):
@@ -409,18 +428,22 @@ def sequence_iterator_continuation(
                 len(to_embed_buffer),
                 len(sizes),
             )
-            
+
             # we don't want to yield sequences with a mask filled with False
             if any(mask_buffer):
-                return SequenceEmbedMaskAndSizes(
-                    x=x_buffer,
-                    y=y_buffer,
-                    to_embed=to_embed_buffer,
-                    mask=mask_buffer,
-                    sizes=sizes,
-                    data_type=data_type,
-                    distract_list=distract_list
-                ), len(x), distractor_buffer # ensures that it does not come back to this sample
+                return (
+                    SequenceEmbedMaskAndSizes(
+                        x=x_buffer,
+                        y=y_buffer,
+                        to_embed=to_embed_buffer,
+                        mask=mask_buffer,
+                        sizes=sizes,
+                        data_type=data_type,
+                        distract_list=distract_list,
+                    ),
+                    len(x),
+                    distractor_buffer,
+                )  # ensures that it does not come back to this sample
             else:
                 break
 
@@ -428,7 +451,9 @@ def sequence_iterator_continuation(
         if not is_eval or not hybrid_training:
             x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
             y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
-            mask_buffer.extend(mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
+            mask_buffer.extend(
+                mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]
+            )
 
             size = len(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
 
@@ -437,53 +462,66 @@ def sequence_iterator_continuation(
         else:
             x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 3 : upper_bound])
             y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 3 : upper_bound])
-            
-            mask_buffer.extend([False]*len(mask[cur_pos + (upper_bound - cur_pos) // 3 : cur_pos + (upper_bound - cur_pos) // 2 ]) + 
-                               mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
-            
 
+            mask_buffer.extend(
+                [False]
+                * len(
+                    mask[
+                        cur_pos + (upper_bound - cur_pos) // 3 : cur_pos
+                        + (upper_bound - cur_pos) // 2
+                    ]
+                )
+                + mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]
+            )
 
             size = len(x[cur_pos + (upper_bound - cur_pos) // 3 : upper_bound])
 
             sizes.append(size)
 
-
         if len(embed_tokens) > 1:
             print("Continuation training only supports one passage per sample")
-            
+
         if max_embeds <= -1:
             nb_embed = abs(max_embeds)
         elif max_embeds > 1:
             nb_embed = np.random.randint(1, max_embeds + 1)
         elif max_embeds == 1:
             nb_embed = 1
-            
-        if len(embed_tokens[0][
-                            cur_pos : cur_pos + (upper_bound - cur_pos) // 2
-                        ]) < 40:
+
+        if len(embed_tokens[0][cur_pos : cur_pos + (upper_bound - cur_pos) // 2]) < 40:
             nb_embed = 1
-            
+
         new_embed = []
-        n_toks_per_embed = len(embed_tokens[0][
-                            cur_pos : cur_pos + (upper_bound - cur_pos) // 2
-                        ]) // nb_embed
-        
+        n_toks_per_embed = (
+            len(embed_tokens[0][cur_pos : cur_pos + (upper_bound - cur_pos) // 2])
+            // nb_embed
+        )
+
         do_distract = True if nb_embed > 1 else False
         dist_idx = -1
         for i in range(nb_embed):
             if np.random.rand() < prob_distractor and do_distract:
-                if len(distractor_buffer)>0:
+                if len(distractor_buffer) > 0:
                     new_embed.append(distractor_buffer[:n_toks_per_embed])
-                    distractor_buffer = embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
+                    distractor_buffer = embed_tokens[0][
+                        cur_pos + i * n_toks_per_embed : cur_pos
+                        + (i + 1) * n_toks_per_embed
+                    ]
                 else:
-                    distractor_buffer = embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
+                    distractor_buffer = embed_tokens[0][
+                        cur_pos + i * n_toks_per_embed : cur_pos
+                        + (i + 1) * n_toks_per_embed
+                    ]
                     new_embed.append(distractor_buffer[:n_toks_per_embed])
                 do_distract = False
                 dist_idx = i
-  
+
             else:
                 new_embed.append(
-                    embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
+                    embed_tokens[0][
+                        cur_pos + i * n_toks_per_embed : cur_pos
+                        + (i + 1) * n_toks_per_embed
+                    ]
                 )
         to_embed_buffer.append(
             {
@@ -495,7 +533,7 @@ def sequence_iterator_continuation(
         cur_pos += overall_size
 
         if not adapt_seq_len:
-           n_missing -= overall_size
+            n_missing -= overall_size
 
         if n_missing == 0 or (adapt_seq_len and cur_pos == len(x)):
             assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
@@ -504,23 +542,32 @@ def sequence_iterator_continuation(
             assert len(to_embed_buffer) == len(sizes)
             # we don't want to yield sequences with a mask filled with False
             if any(mask_buffer):
-                return SequenceEmbedMaskAndSizes(
-                    x=x_buffer,
-                    y=y_buffer,
-                    to_embed=to_embed_buffer,
-                    mask=mask_buffer,
-                    sizes=sizes,
-                    data_type=data_type,
-                    distract_list=distract_list
-                ), cur_pos, distractor_buffer
+                return (
+                    SequenceEmbedMaskAndSizes(
+                        x=x_buffer,
+                        y=y_buffer,
+                        to_embed=to_embed_buffer,
+                        mask=mask_buffer,
+                        sizes=sizes,
+                        data_type=data_type,
+                        distract_list=distract_list,
+                    ),
+                    cur_pos,
+                    distractor_buffer,
+                )
 
             if adapt_seq_len:
                 break
-    return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes, distractor_buffer, distract_list
-
-
-
-
+    return (
+        x_buffer,
+        y_buffer,
+        to_embed_buffer,
+        mask_buffer,
+        n_missing,
+        sizes,
+        distractor_buffer,
+        distract_list,
+    )
 
 
 def sequence_iterator_decompress_usage(
@@ -541,10 +588,10 @@ def sequence_iterator_decompress_usage(
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
     """
     assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
-    assert n_missing == seq_len - len(
-        x_buffer
-    ), f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
-    
+    assert n_missing == seq_len - len(x_buffer), (
+        f"n_missing: {n_missing} | seq_len - len(x_buffer) {seq_len - len(x_buffer)}"
+    )
+
     tokens, _ = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     embed_tokens = sample.passages.tokens
@@ -553,21 +600,25 @@ def sequence_iterator_decompress_usage(
     while cur_pos < len(x):
         size = len(x[cur_pos : cur_pos + n_missing])
         # If instruct data type do not split the passage into smaller embeddings
-        if data_type == "reconstruction" and len(embed_tokens) == 1: 
-            
+        if data_type == "reconstruction" and len(embed_tokens) == 1:
             if max_embeds <= -1:
                 nb_embed = abs(max_embeds)
             elif max_embeds > 1:
                 nb_embed = np.random.randint(1, max_embeds + 1)
             elif max_embeds == 1:
                 nb_embed = 1
-                
+
             new_embed = []
-            n_toks_per_embed = len(embed_tokens[0][cur_pos : cur_pos + seq_len]) // nb_embed
-            
+            n_toks_per_embed = (
+                len(embed_tokens[0][cur_pos : cur_pos + seq_len]) // nb_embed
+            )
+
             for i in range(nb_embed):
                 new_embed.append(
-                    embed_tokens[0][cur_pos + i * n_toks_per_embed : cur_pos + (i + 1) * n_toks_per_embed]
+                    embed_tokens[0][
+                        cur_pos + i * n_toks_per_embed : cur_pos
+                        + (i + 1) * n_toks_per_embed
+                    ]
                 )
 
             to_embed_buffer.append(
@@ -576,53 +627,90 @@ def sequence_iterator_decompress_usage(
                     "tokens": new_embed,
                 }
             )
-           
-        else:
-            raise ValueError("Decompress usage only supports one passage per sample")   
 
-        if decompress_usage == 'middle_reconstruction':
+        else:
+            raise ValueError("Decompress usage only supports one passage per sample")
+
+        if decompress_usage == "middle_reconstruction":
             middle = len(x[cur_pos : cur_pos + seq_len]) // 2
             x_buffer.extend(x[cur_pos + middle : cur_pos + seq_len])
             y_buffer.extend(y[cur_pos + middle : cur_pos + seq_len])
             mask_buffer.extend(len(y[cur_pos + middle : cur_pos + seq_len]) * [True])
             x_size = len(x[cur_pos + middle : cur_pos + seq_len])
-        elif decompress_usage == 'one_over_two_reconstruction':
-            x_buffer.extend(x[cur_pos : cur_pos + seq_len:2])
-            y_buffer.extend(y[cur_pos : cur_pos + seq_len:2])
-            mask_buffer.extend(len(y[cur_pos : cur_pos + seq_len:2])*[True])
-            x_size = len(x[cur_pos : cur_pos + seq_len:2])
-        elif decompress_usage == 'reconstruct_one_every_two':
-            if len(tokens[cur_pos : cur_pos + seq_len+1: 2]) <= 1:
-                return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes
-            x_buffer.extend(tokens[cur_pos : cur_pos + seq_len + 1: 2][:-1])
-            y_buffer.extend(tokens[cur_pos : cur_pos + seq_len + 1: 2][1:])
-            mask_buffer.extend(len(tokens[cur_pos : cur_pos + seq_len + 1: 2][1:])*[True])
-            x_size = len(tokens[cur_pos : cur_pos + seq_len + 1: 2][:-1])
-        elif decompress_usage == 'reversed':
-            x_buffer.extend(y[cur_pos + seq_len-1: cur_pos:-1])
-            y_buffer.extend(x[cur_pos + seq_len-1: cur_pos:-1])
-            mask_buffer.extend(len(y[cur_pos + seq_len-1: cur_pos:-1])*[True])
-            x_size = len(y[cur_pos + seq_len-1: cur_pos:-1])
+        elif decompress_usage == "one_over_two_reconstruction":
+            x_buffer.extend(x[cur_pos : cur_pos + seq_len : 2])
+            y_buffer.extend(y[cur_pos : cur_pos + seq_len : 2])
+            mask_buffer.extend(len(y[cur_pos : cur_pos + seq_len : 2]) * [True])
+            x_size = len(x[cur_pos : cur_pos + seq_len : 2])
+        elif decompress_usage == "reconstruct_one_every_two":
+            if len(tokens[cur_pos : cur_pos + seq_len + 1 : 2]) <= 1:
+                return (
+                    x_buffer,
+                    y_buffer,
+                    to_embed_buffer[:-1],
+                    mask_buffer,
+                    n_missing,
+                    sizes,
+                )
+            x_buffer.extend(tokens[cur_pos : cur_pos + seq_len + 1 : 2][:-1])
+            y_buffer.extend(tokens[cur_pos : cur_pos + seq_len + 1 : 2][1:])
+            mask_buffer.extend(
+                len(tokens[cur_pos : cur_pos + seq_len + 1 : 2][1:]) * [True]
+            )
+            x_size = len(tokens[cur_pos : cur_pos + seq_len + 1 : 2][:-1])
+        elif decompress_usage == "reversed":
+            x_buffer.extend(y[cur_pos + seq_len - 1 : cur_pos : -1])
+            y_buffer.extend(x[cur_pos + seq_len - 1 : cur_pos : -1])
+            mask_buffer.extend(len(y[cur_pos + seq_len - 1 : cur_pos : -1]) * [True])
+            x_size = len(y[cur_pos + seq_len - 1 : cur_pos : -1])
             if x_size == 0:
-                return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes
-        elif decompress_usage == 'true_reversed':
+                return (
+                    x_buffer,
+                    y_buffer,
+                    to_embed_buffer[:-1],
+                    mask_buffer,
+                    n_missing,
+                    sizes,
+                )
+        elif decompress_usage == "true_reversed":
             if len(tokens[cur_pos : cur_pos + seq_len]) <= 1:
-                return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes
+                return (
+                    x_buffer,
+                    y_buffer,
+                    to_embed_buffer[:-1],
+                    mask_buffer,
+                    n_missing,
+                    sizes,
+                )
             x_buffer.extend(tokens[cur_pos : cur_pos + seq_len][::-1][:-1])
             y_buffer.extend(tokens[cur_pos : cur_pos + seq_len][::-1][1:])
-            mask_buffer.extend(len(tokens[cur_pos : cur_pos + seq_len][1:])*[True])
+            mask_buffer.extend(len(tokens[cur_pos : cur_pos + seq_len][1:]) * [True])
             x_size = len(tokens[cur_pos : cur_pos + seq_len][:-1])
-        elif decompress_usage == 'from_prefix_reconstruct':
-            if len(x[cur_pos : cur_pos + seq_len])<10:
-                return x_buffer, y_buffer, to_embed_buffer[:-1], mask_buffer, n_missing, sizes
-            start_prefix = np.random.randint(0,len(x[cur_pos : cur_pos + seq_len]) + 1 - 10)
-            x_buffer.extend(x[cur_pos + start_prefix: cur_pos + seq_len])
-            y_buffer.extend(y[cur_pos + start_prefix: cur_pos + seq_len])
-            mask_buffer.extend(5*[False]+len(y[cur_pos + start_prefix + 5: cur_pos + seq_len])*[True]) # Give 5 prefix overlapping tokens to set from where to reconstruct
-            x_size = len(x[cur_pos + start_prefix: cur_pos + seq_len])
+        elif decompress_usage == "from_prefix_reconstruct":
+            if len(x[cur_pos : cur_pos + seq_len]) < 10:
+                return (
+                    x_buffer,
+                    y_buffer,
+                    to_embed_buffer[:-1],
+                    mask_buffer,
+                    n_missing,
+                    sizes,
+                )
+            start_prefix = np.random.randint(
+                0, len(x[cur_pos : cur_pos + seq_len]) + 1 - 10
+            )
+            x_buffer.extend(x[cur_pos + start_prefix : cur_pos + seq_len])
+            y_buffer.extend(y[cur_pos + start_prefix : cur_pos + seq_len])
+            mask_buffer.extend(
+                5 * [False]
+                + len(y[cur_pos + start_prefix + 5 : cur_pos + seq_len]) * [True]
+            )  # Give 5 prefix overlapping tokens to set from where to reconstruct
+            x_size = len(x[cur_pos + start_prefix : cur_pos + seq_len])
         else:
-            raise NotImplementedError(f"Decompress usage {decompress_usage} not supported")
-            
+            raise NotImplementedError(
+                f"Decompress usage {decompress_usage} not supported"
+            )
+
         cur_pos += size
         sizes.append(x_size)
 
@@ -630,7 +718,9 @@ def sequence_iterator_decompress_usage(
 
         if n_missing <= 0:
             assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
-            assert all([size > 0 for size in sizes]), 'All sizes should be greater than 0'
+            assert all([size > 0 for size in sizes]), (
+                "All sizes should be greater than 0"
+            )
 
             assert len(to_embed_buffer) == len(sizes)
             # we don't want to yield sequences with a mask filled with False
@@ -641,7 +731,7 @@ def sequence_iterator_decompress_usage(
                     to_embed=to_embed_buffer,
                     mask=mask_buffer,
                     sizes=sizes,
-                    data_type=data_type
+                    data_type=data_type,
                 ), cur_pos
-                
+
     return x_buffer, y_buffer, to_embed_buffer, mask_buffer, n_missing, sizes

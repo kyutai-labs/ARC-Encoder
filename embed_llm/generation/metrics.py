@@ -28,8 +28,8 @@ def word_overlap(ground_truth: list[str] | str, predicted: list[str] | str) -> f
 
 
 class SimpleTokenizer(object):
-    ALPHA_NUM = r'[\p{L}\p{N}\p{M}]+'
-    NON_WS = r'[^\p{Z}\p{C}]'
+    ALPHA_NUM = r"[\p{L}\p{N}\p{M}]+"
+    NON_WS = r"[^\p{Z}\p{C}]"
 
     def __init__(self):
         """
@@ -37,8 +37,8 @@ class SimpleTokenizer(object):
             annotators: None or empty set (only tokenizes).
         """
         self._regexp = regex.compile(
-            '(%s)|(%s)' % (self.ALPHA_NUM, self.NON_WS),
-            flags=regex.IGNORECASE + regex.UNICODE + regex.MULTILINE
+            "(%s)|(%s)" % (self.ALPHA_NUM, self.NON_WS),
+            flags=regex.IGNORECASE + regex.UNICODE + regex.MULTILINE,
         )
 
     def tokenize(self, text, uncased=False):
@@ -51,8 +51,7 @@ class SimpleTokenizer(object):
 
 
 def _normalize(text):
-    return unicodedata.normalize('NFD', text)
-
+    return unicodedata.normalize("NFD", text)
 
 
 def has_answer(answers, text, tokenizer=SimpleTokenizer()) -> bool:
@@ -64,13 +63,12 @@ def has_answer(answers, text, tokenizer=SimpleTokenizer()) -> bool:
         answer = _normalize(answer)
         answer = tokenizer.tokenize(answer, uncased=True)
         for i in range(0, len(text) - len(answer) + 1):
-            if answer == text[i: i + len(answer)]:
+            if answer == text[i : i + len(answer)]:
                 return True
     return False
 
 
-
-def get_substring_match_score(outputs,answers):
+def get_substring_match_score(outputs, answers):
     """
     outputs: [string1,string2]
     answers: [
@@ -78,24 +76,23 @@ def get_substring_match_score(outputs,answers):
                 [string2_1,string2_2]
              ]
     """
-    import numpy as np
+
     assert len(outputs) == len(answers)
-    if not isinstance(answers[0],list):
+    if not isinstance(answers[0], list):
         answers = [[x] for x in answers]
     substring_match_scores = []
     answer_lengths = []
-    for output,answer in zip(outputs,answers):
-        if has_answer(answer,output): # EM evaluation
+    for output, answer in zip(outputs, answers):
+        if has_answer(answer, output):  # EM evaluation
             substring_match_scores.append(1.0)
         else:
             substring_match_scores.append(0.0)
-        
+
         answer_lengths.append(len(output.split()))
 
-    substring_match = round(sum(substring_match_scores)/len(outputs), 4)
-    lens = round(np.mean(answer_lengths), 4)
+    substring_match = round(sum(substring_match_scores) / len(outputs), 4)
 
-    return substring_match,substring_match_scores
+    return substring_match, substring_match_scores
 
 
 def get_bleu_score(
@@ -117,7 +114,8 @@ def get_bleu_score(
                 try:
                     pred_text = pred_text if not trunc else pred_text[: len(gt_text)]
                     metric.update(pred_text, [gt_text])
-                except:
+                except Exception as e:
+                    print(e)
                     print(
                         "Error with update:",
                         "\nGround-Truth: ",
@@ -144,7 +142,8 @@ def get_bleu_score(
                             pred_text if not trunc else pred_text[: len(gt_text)]
                         )
                         metric.update(pred_text, [gt_text])
-                except:
+                except Exception as e:
+                    print(e)
                     print(
                         "Error with update:",
                         "\nGround-Truth: ",
@@ -218,7 +217,6 @@ def get_approx_em(pred: str, ground_truth: str) -> int:
 
 
 def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
-
     if isinstance(ground_truth, str) and isinstance(predicted, str):
         assert len(ground_truth) > 0, "Ground truth set is empty"
         l_ground_truth = ground_truth.split(" ")
@@ -235,16 +233,18 @@ def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> flo
             )
         return meteor_avg_score / len(ground_truth)
 
+
 def get_acc_factchecking(pred: str, ground_truth: str) -> int:
-    if  str(ground_truth).lower() == "false":
+    if str(ground_truth).lower() == "false":
         answer = ["refutes", "no", "false"]
-    if  str(ground_truth).lower() == "true":
+    if str(ground_truth).lower() == "true":
         answer = ["supports", "yes", "true"]
-        
+
     assert answer == ["refutes", "no", "false"] or answer == ["supports", "yes", "true"]
     if pred.lower() in answer:
         return 1
     return 0
+
 
 # import regex
 # import unicodedata

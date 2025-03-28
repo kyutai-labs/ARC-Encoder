@@ -1,11 +1,11 @@
-" This file create a config dictionary to launch training with the specified hyperparameters. "
+"This file create a config dictionary to launch training with the specified hyperparameters."
+
 import argparse
 from hashlib import sha1
 import yaml
 
 
 def main(args):
-
     if args.llm_name == "Mistral7B":
         with open(
             "/home/hippolytepilchen/code/embed_llm/config/default/default_mistral.yaml"
@@ -43,9 +43,9 @@ def main(args):
     if not args.not_do_hybrid_task:
         config["hybrid_task"] = {}
         config["hybrid_task"]["do"] = not args.not_do_hybrid_task
-        config["hybrid_task"][
-            "prop_noembed_continuation"
-        ] = args.prop_noembed_continuation
+        config["hybrid_task"]["prop_noembed_continuation"] = (
+            args.prop_noembed_continuation
+        )
         config["hybrid_task"]["max_embeds"] = args.max_embeds
         config["hybrid_task"]["start_point"] = args.start_point
 
@@ -109,7 +109,6 @@ def main(args):
             args.prefix + sha1(name.encode("utf8")).hexdigest()[:8]
         )
     else:
-
         name = (
             "Hybrid_LLM_"
             + str(not args.not_train_llm)
@@ -132,7 +131,7 @@ def main(args):
     print(config["exp_name"])
     if args.llm_name == "Mistral7B":
         with open(
-            f'/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/{config["exp_name"]}.yaml',
+            f"/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/{config['exp_name']}.yaml",
             "w",
         ) as file:
             yaml.dump(config, file, sort_keys=False)
@@ -387,22 +386,18 @@ if __name__ == "__main__":
     # main(args)
 
     import os
-    import yaml
 
     path_config = (
         "/home/hippolytepilchen/code/embed_llm/config/experiments/train_configs/"
     )
-    
-    
-    filenames = [file for file in os.listdir(path_config)]  
+
+    filenames = [file for file in os.listdir(path_config)]
 
     for filename in filenames:
         if filename.endswith(".yaml"):
             with open(path_config + filename, "r") as file:
-                config = yaml.safe_load(file) 
-            config["exp_name"] = filename.split('.yam')[0] 
-            config['wandb']['run_name'] = filename.split('.yam')[0]
-            with open(
-                path_config + filename, "w"
-            ) as file:
+                config = yaml.safe_load(file)
+            config["exp_name"] = filename.split(".yam")[0]
+            config["wandb"]["run_name"] = filename.split(".yam")[0]
+            with open(path_config + filename, "w") as file:
                 yaml.dump(config, file)

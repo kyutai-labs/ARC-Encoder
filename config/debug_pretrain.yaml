@@ -28,19 +28,19 @@ pipeline:
   embedder_name: Mistral7B
   every_cross_att: 2
   gate_bottleneck: 8
-  max_embeds: 3
+  max_embeds: 1
   mlp_project:
     act: gelu
-    hidden_dim: 4096
+    hidden_dim: 1024
     n_layers: 1
     type: mlp
   n_truncated_layers: 8
   normalize_embed: false
   pooled_cross_att: false
   pooling_module:
-    compress_rate: 64
+    compress_rate: -1
     type: adaptive_attention
-    pool_type: svd
+    pool_type: mean
   rms_embed: false
   shared_kv: false
   train_only_pooling: true

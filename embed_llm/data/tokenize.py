@@ -32,13 +32,18 @@ def encode(
     data_path: str | None = None,
     max_embed: int = 1,
 ) -> TokenSample | None:
-
     return get_sample(data, data_path, tokenizer, max_embed)
 
 
-def get_sample(data: dict[str, object], data_path: str, tokenizer, max_embed: int = 1) -> str:
-    if "instruct_data" in data_path.lower() or "qa" in data_path.lower() or 'readcomp' in data_path.lower() or 'synth' in data_path.lower():
-
+def get_sample(
+    data: dict[str, object], data_path: str, tokenizer, max_embed: int = 1
+) -> str:
+    if (
+        "instruct_data" in data_path.lower()
+        or "qa" in data_path.lower()
+        or "readcomp" in data_path.lower()
+        or "synth" in data_path.lower()
+    ):
         question = data["question"]
 
         assert isinstance(data["answer"], str) or isinstance(data["answer"], list)
@@ -103,16 +108,17 @@ def get_sample(data: dict[str, object], data_path: str, tokenizer, max_embed: in
         sample = data["text"]
         if data.get("passage") is not None:
             passages = data["passage"]
-            
+
             if max_embed <= -1:
                 n_embed = -max_embed
             elif max_embed == 1:
                 n_embed = max_embed
             elif max_embed > 1:
                 n_embed = random.randint(1, max_embed)
-        
-                
-            embed_passage = [passages] if not isinstance(passages, list) else passages[:n_embed]
+
+            embed_passage = (
+                [passages] if not isinstance(passages, list) else passages[:n_embed]
+            )
         else:
             embed_passage = [sample]
 

@@ -529,7 +529,6 @@ def load_training_model_from_ckpt(
 
     torch.distributed.barrier()
     
-
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
@@ -542,7 +541,6 @@ def load_training_model_from_ckpt(
         param_init_fn=param_init_fn,
         ignored_states=ignored_state,
     )
-
 
     main_logger_info("Model sharded!")
 

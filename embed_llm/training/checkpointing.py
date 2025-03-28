@@ -149,7 +149,6 @@ class Checkpointer:
 
     @torch.no_grad()
     def retrieve_save_states(self, save_dtype: torch.dtype) -> dict[str, torch.Tensor]:
-
         # assert (
         #     self.llm.args.lora.enable
         # ), "Cannot save LoRA checkpoint as LoRA training is not enabled."
@@ -170,9 +169,7 @@ class Checkpointer:
             )
 
             # need to make sure only lowest fsdp wrap is used
-            is_leaf_node = (
-                is_fsdp and len(list(module.module.children())) == 0
-            )  # type: ignore
+            is_leaf_node = is_fsdp and len(list(module.module.children())) == 0  # type: ignore
 
             return is_fsdp and all_params_have_grads and is_leaf_node
 
@@ -200,7 +197,6 @@ class Checkpointer:
             self.instruction_tuning is not None
             and not self.instruction_tuning.tune_embedder
         ):
-
             trainable_embedder_modules = {}
         else:
             trainable_embedder_modules = {
@@ -220,9 +216,9 @@ class Checkpointer:
             }
         llm_states = {}
         for key, module in llm_modules.items():
-            assert isinstance(
-                module, FullyShardedDataParallel
-            ), "`module` should be an instance of `FullyShardedDataParallel`"
+            assert isinstance(module, FullyShardedDataParallel), (
+                "`module` should be an instance of `FullyShardedDataParallel`"
+            )
             parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
                 "_checkpoint_wrapped_module.", ""
             )
@@ -238,9 +234,9 @@ class Checkpointer:
 
         mlp_project_states = {}
         for key, module in mlp_project_modules.items():
-            assert isinstance(
-                module, FullyShardedDataParallel
-            ), "`module` should be an instance of `FullyShardedDataParallel`"
+            assert isinstance(module, FullyShardedDataParallel), (
+                "`module` should be an instance of `FullyShardedDataParallel`"
+            )
             parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
                 "_checkpoint_wrapped_module.", ""
             )
@@ -264,9 +260,9 @@ class Checkpointer:
 
         trainable_embedder_states = {}
         for key, module in trainable_embedder_modules.items():
-            assert isinstance(
-                module, FullyShardedDataParallel
-            ), "`module` should be an instance of `FullyShardedDataParallel`"
+            assert isinstance(module, FullyShardedDataParallel), (
+                "`module` should be an instance of `FullyShardedDataParallel`"
+            )
             parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
                 "_checkpoint_wrapped_module.", ""
             )
@@ -282,11 +278,10 @@ class Checkpointer:
 
         pooling_modules_states = {}
         if self.pooling_module is not None:
-            
             for key, module in pooling_modules.items():
-                assert isinstance(
-                    module, FullyShardedDataParallel
-                ), "`module` should be an instance of `FullyShardedDataParallel`"
+                assert isinstance(module, FullyShardedDataParallel), (
+                    "`module` should be an instance of `FullyShardedDataParallel`"
+                )
                 parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
                     "_checkpoint_wrapped_module.", ""
                 )
@@ -319,7 +314,6 @@ class Checkpointer:
         self,
         dtype: torch.dtype = torch.float16,
     ):
-
         llm_dst = self.dst_dir(type="llm")
         tmp_llm_dst = self._tmp(llm_dst)
 
@@ -344,11 +338,10 @@ class Checkpointer:
 
         if self.mlp_project is not None and self.mlp_project.n_layers > 0:
             tmp_mlp_project_dst.mkdir(parents=True, exist_ok=True)
-        
+
         if self.trainable_embedder is not None and (
             self.instruction_tuning is None or self.instruction_tuning.tune_embedder
         ):
-            
             if not self.pipeline.pipeline_args.train_only_pooling:
                 tmp_trainable_embedder_dst = self._tmp(
                     llm_dst.parent / "trainable_embedder"
@@ -360,7 +353,7 @@ class Checkpointer:
                         llm_dst.parent / "pooling_module"
                     )
                     tmp_pooling_module_dst.mkdir(parents=True, exist_ok=True)
-                    
+
         if self.pipeline.pipeline_args.train_only_pooling:
             assert self.trainable_embedder is not None
             tmp_pooling_module_dst = self._tmp(llm_dst.parent / "pooling_module")
@@ -450,7 +443,7 @@ class Checkpointer:
                         tmp_pooling_module_dst.rename(
                             self.dst_dir(type="pooling_module")
                         )
-                        
+
             if self.pipeline.pipeline_args.train_only_pooling:
                 tmp_pooling_module_dst.rename(self.dst_dir(type="pooling_module"))
 

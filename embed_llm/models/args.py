@@ -1,21 +1,23 @@
 from dataclasses import dataclass, field
+
 import torch
 from simple_parsing.helpers import Serializable
-from embed_llm.models.mistral.moe import MoeArgs
+
 from embed_llm.models.lora import LoraArgs
+from embed_llm.models.mistral.moe import MoeArgs
 
 
 @dataclass
 class PoolingArgs(Serializable):
     type: str = "latent_attention"  # latent_attention, mean
     r: int = 512  # Hidden dim of latent if latent attention pooling
-    n_heads: int = 32  
+    n_heads: int = 32
     dim: int = 4096
     head_dim: int = 128
     n_kv_heads: int = 8
     n_layers: int = 0
     compress_rate: int = 0
-    early_out: bool = False 
+    early_out: bool = False
     pool_type: str = "mean"
 
 
@@ -44,8 +46,7 @@ class EmbedAugArgs(Serializable):
     gate_bottleneck: int = 8
     max_embeds: int = 1
     ca_rope: bool = False
-    
-    
+
     # Could be simplified
     cross_att: bool = False
     cross_att_layers: int | None = None
@@ -57,9 +58,8 @@ class EmbedAugArgs(Serializable):
     causal_embedder: bool = False
     normalize_embed: bool = True
     rms_embed: bool = True
-    compression_schedule: dict[int,int] | None = None
+    compression_schedule: dict[int, int] | None = None
 
-    
     # Remove later
     do_pool: bool = False
 

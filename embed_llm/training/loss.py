@@ -23,51 +23,54 @@ def compute_kl_loss_with_mask(
     topk: int | None = None,
 ):
     if target_mask is None:
-        target_mask = torch.ones(target_logits.shape[0], dtype=torch.bool, device = target_logits.device)
+        target_mask = torch.ones(
+            target_logits.shape[0], dtype=torch.bool, device=target_logits.device
+        )
     if pred_mask is None:
-        pred_mask = torch.ones(pred_logits.shape[0], dtype=torch.bool, device = pred_logits.device)
-        
-    assert torch.sum(target_mask.int()) == torch.sum(
-        pred_mask.int()
-    ), "Mask should be the same for both logits."
+        pred_mask = torch.ones(
+            pred_logits.shape[0], dtype=torch.bool, device=pred_logits.device
+        )
 
-    assert target_logits.size(-1) == pred_logits.size(
-        -1
-    ), "Logits should have the same size."
+    assert torch.sum(target_mask.int()) == torch.sum(pred_mask.int()), (
+        "Mask should be the same for both logits."
+    )
+
+    assert target_logits.size(-1) == pred_logits.size(-1), (
+        "Logits should have the same size."
+    )
     n_vocab = target_logits.size(-1)
 
     # Select logits only for the tokens that are not masked.
     target_l = torch.masked_select(
         target_logits,
         torch.repeat_interleave(target_mask, n_vocab, dim=0).reshape(-1, n_vocab),
-    ).view(-1,n_vocab)
+    ).view(-1, n_vocab)
 
     pred_l = torch.masked_select(
         pred_logits,
         torch.repeat_interleave(pred_mask, n_vocab, dim=0).reshape(-1, n_vocab),
-    ).view(-1,n_vocab)
+    ).view(-1, n_vocab)
 
     if topk is not None:
-        _, topk_target_indices = torch.topk(target_l, k=topk, dim=-1)  
+        _, topk_target_indices = torch.topk(target_l, k=topk, dim=-1)
 
-        target_l = torch.gather(target_l, -1, topk_target_indices)  
+        target_l = torch.gather(target_l, -1, topk_target_indices)
         pred_l = torch.gather(pred_l, -1, topk_target_indices)
 
     loss_func = torch.nn.KLDivLoss(reduction="none")
     mb_loss = loss_func(
         F.log_softmax(pred_l / temp, dim=-1), F.softmax(target_l / temp, dim=-1)
-    ).sum()/torch.sum(target_mask)
+    ).sum() / torch.sum(target_mask)
     return mb_loss
 
 
 def compute_bpt_loss(logits, targets, target_mask: torch.Tensor | None):
-
     # Compute the cross-entropy loss
-    loss = F.cross_entropy(logits, targets, reduction='none')
+    loss = F.cross_entropy(logits, targets, reduction="none")
 
     # Convert the loss from nats to bits
     loss_in_bits = loss / torch.log(torch.tensor(2.0))
 
-    loss_in_bits = loss_in_bits  if target_mask is None else loss_in_bits * target_mask
+    loss_in_bits = loss_in_bits if target_mask is None else loss_in_bits * target_mask
 
     return loss_in_bits
