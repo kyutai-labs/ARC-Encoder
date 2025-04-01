@@ -56,8 +56,8 @@ class EmbedAugArgs(Serializable):
     do_both: bool = False
     w_embeds: bool = False
     causal_embedder: bool = False
-    normalize_embed: bool = True
-    rms_embed: bool = True
+    normalize_embed: bool = False
+    rms_embed: bool = False
     compression_schedule: dict[int, int] | None = None
     mean_hid4embed: list[int] | None = None
 

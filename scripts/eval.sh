@@ -1,12 +1,12 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0
+#SBATCH --array=0-6
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=16
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx29
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx02
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=eval_models
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/eval_dissect_%A_%a.out
@@ -17,7 +17,13 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-NoCompress_EmbMLP_Cont_L24_long
+NoCompress_MLP_Cont_L24_SL512_distill
+NoCompress_MLP_Rec_L16
+NoCompress_MLP_Rec_L8
+NoCompress_MLP_Rec_L4
+NoCompress_MLP_Cont_L8
+NoCompress_MLP_Cont_L4
+NoCompress_MLP_Cont_L16_res0
 )
 
 
@@ -67,6 +73,10 @@ case $RUN_NAME in
     srun --gpus=$N_GPU \
         micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_dissect.json \
         --n_passages 500 --max_seq_len 64 --run_name $RUN_NAME --multi_passages 1 --ckpt 9000 --icl_before_pref --llmemb_icl_w_context
+    
+    srun --gpus=$N_GPU \
+        micromamba run -n llm_embed python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_dissect.json \
+        --n_passages 500 --max_seq_len 64 --run_name $RUN_NAME --multi_passages 1 --ckpt 4000 --icl_before_pref --llmemb_icl_w_context
 
     srun --gpus=$N_GPU \
     micromamba run -n llm_embed python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/embed_llm/results/NVEmbed/eval_dissect.json \

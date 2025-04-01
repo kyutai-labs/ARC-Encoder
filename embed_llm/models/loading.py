@@ -56,6 +56,9 @@ def load_args(
                 if k in args
             }
         )
+        if 'rms_embed' not in args:
+            pipeline_args.rms_embed = True
+            pipeline_args.normalize_embed = True
 
         if "w_prefix_prompt" not in args or "max_embeds" not in args:
             with open(os.path.join(pipe_path, "../../args.yaml"), "r") as f:

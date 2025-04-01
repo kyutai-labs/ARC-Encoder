@@ -12,7 +12,6 @@ from embed_llm.models.embedding_modules import (
     AdaptivePoolingAttention,
     LatentAttention,
     ReversedLatentAttention,
-    StandardAttention,
 )
 from embed_llm.models.mistral.cross_att_transformer import (
     Cross_AttTransformerBlock as MistralCrossAttTransformerBlock,
@@ -88,7 +87,6 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
             [
                 LatentAttention,
                 ReversedLatentAttention,
-                StandardAttention,
                 AdaptivePoolingAttention,
             ]
         ),

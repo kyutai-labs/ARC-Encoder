@@ -11,6 +11,7 @@ from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 
 
 def group_embed_seqlens(values: list[int], sizes: list[int]):
+    # Format the seqlens list [n_seq*[n_emb1, n_emb2, ...]]
     result = []
     for size in sizes:
         if size <= len(values):
@@ -25,6 +26,7 @@ def group_embed_seqlens(values: list[int], sizes: list[int]):
 
 def split_integer(x, n):
     if n > 0:
+        # Split in n groupes of tokens 
         base = x // n
         remainder = x % n
         result = [base] * n
@@ -32,6 +34,7 @@ def split_integer(x, n):
             result[i] += 1
         return result
     else:
+        # Split in groups of n tokens
         n = -n
         base = x // n
         remainder = x % n
@@ -336,49 +339,6 @@ class LatentAttention(nn.Module):
         return hiddens
 
 
-class StandardAttention(nn.Module):
-    def __init__(
-        self,
-        hidden_dim: int = 4096,
-        n_heads: int = 8,
-    ):
-        super().__init__()
-
-        self.n_heads = n_heads
-        self.self_attend_block = Self_Attention(
-            hidden_dim,
-            n_heads=n_heads,
-            head_dim=hidden_dim // n_heads,
-            n_kv_heads=n_heads,
-        )
-        self.attention_norm = RMSNorm(hidden_dim, eps=1e-5)
-
-    def forward(
-        self, queries: torch.Tensor, seqlens: list[int], give_scores: bool = False
-    ) -> torch.Tensor:
-        if not give_scores:
-            r = self.self_attend_block(
-                self.attention_norm(queries),
-                mask=BlockDiagonalMask.from_seqlens(
-                    q_seqlen=seqlens, kv_seqlen=seqlens
-                ),
-            )
-            hiddens = r + queries
-
-            return hiddens
-        else:
-            r, attn = self.self_attend_block(
-                self.attention_norm(queries),
-                mask=BlockDiagonalMask.from_seqlens(
-                    q_seqlen=seqlens, kv_seqlen=seqlens
-                ),
-                show_attention=True,
-            )
-            hiddens = r + queries
-
-            return hiddens, attn
-
-
 class AdaptivePoolingAttention(nn.Module):
     def __init__(
         self,
@@ -396,7 +356,6 @@ class AdaptivePoolingAttention(nn.Module):
 
         if self.pool_type == "svd":
             self.attention_norm = RMSNorm(hidden_dim, eps=1e-5)
-            # Argument to replicate Mistral architecture
             self.self_attend_block = Self_Attention(
                 dim=hidden_dim,
                 n_heads=n_heads,
@@ -417,7 +376,6 @@ class AdaptivePoolingAttention(nn.Module):
 
         elif "sa" in self.pool_type:
             self.attention_norm = RMSNorm(hidden_dim, eps=1e-5)
-            # Argument to replicate Mistral architecture
             self.self_attend_block = Attention(
                 dim=hidden_dim,
                 n_heads=n_heads,
@@ -425,6 +383,7 @@ class AdaptivePoolingAttention(nn.Module):
             )
 
         elif self.pool_type == "mean":
+            # Argument to replicate Mistral architecture (+ -1 as compress rate)
             self.attention_norm = None
             self.self_attend_block = None
 
@@ -434,6 +393,8 @@ class AdaptivePoolingAttention(nn.Module):
         self.pooling_out_norm = RMSNorm(hidden_dim, eps=1e-5)
 
     def forward(self, x: torch.Tensor, embed_seqlens: list[list[int]]) -> torch.Tensor:
+        
+        new_embed_seqlens = []
         if self.pool_type == "svd":
             assert self.compress_rate > 0, "Compress rate must be greater than 0"
             r, attn = self.self_attend_block(
@@ -449,7 +410,6 @@ class AdaptivePoolingAttention(nn.Module):
             attn = torch.mean(attn, dim=0)
 
             out = []
-            new_embed_seqlens = []
             ind = 0
             for size in sum(embed_seqlens, []):
                 U, S, V = torch.svd(attn[ind: ind + size, ind: ind + size])
@@ -467,7 +427,6 @@ class AdaptivePoolingAttention(nn.Module):
             )
 
         elif self.pool_type == "conv":
-            new_embed_seqlens = []
             out = []
             ind = 0
             for size in sum(embed_seqlens, []):
@@ -485,50 +444,20 @@ class AdaptivePoolingAttention(nn.Module):
                 new_embed_seqlens, [len(t) for t in embed_seqlens]
             )
             return self.pooling_out_norm(out), new_embed_seqlens
+        
         else:
-            assert self.compress_rate > 0 or self.compress_rate <= -1, (
-                "Compress rate must be different than full compression (0)"
-            )
-            if self.compress_rate > 0:
-                new_embed_seqlens = []
-                pool_size = []
+            pool_size = []
+            if self.compress_rate != -1:
                 for pass_embs in embed_seqlens:
                     embed_seqlen = []
                     for embed_size in pass_embs:
                         compressed_embed_size = []
-
-                        if embed_size // self.compress_rate == 0:
+                        # <-1 means compression rate, >0 means number of tokens to compress to
+                        if self.compress_rate == 0:
+                            compressed_embed_size = [embed_size]
+                        elif self.compress_rate > 0 and embed_size // self.compress_rate == 0:
                             compressed_embed_size = [1] * embed_size
-                        else:
-                            compressed_embed_size = split_integer(
-                                embed_size, self.compress_rate
-                            )
-
-                        pool_size.extend(compressed_embed_size)
-                        embed_seqlen.append(len(compressed_embed_size))
-                    new_embed_seqlens.append(embed_seqlen)
-
-                if self.pool_type == "last_sa":
-                    pool_mask = torch.block_diag(
-                        *[
-                            torch.tensor([0.0] * (max(t - 1, 0)) + [1.0])
-                            for t in pool_size
-                        ]
-                    ).to(device=x.device, dtype=x.dtype)
-                else:
-                    pool_mask = torch.block_diag(
-                        *[torch.ones(t) / t for t in pool_size]
-                    ).to(device=x.device, dtype=x.dtype)
-                    
-            elif self.compress_rate < -1:
-                new_embed_seqlens = []
-                pool_size = []
-                for pass_embs in embed_seqlens:
-                    embed_seqlen = []
-                    for embed_size in pass_embs:
-                        compressed_embed_size = []
-
-                        if embed_size // abs(self.compress_rate) == 0:
+                        elif self.compress_rate < -1 and embed_size // abs(self.compress_rate) == 0:
                             compressed_embed_size = [embed_size]
                         else:
                             compressed_embed_size = split_integer(
@@ -549,10 +478,11 @@ class AdaptivePoolingAttention(nn.Module):
                 else:
                     pool_mask = torch.block_diag(
                         *[torch.ones(t) / t for t in pool_size]
-                    ).to(device=x.device, dtype=x.dtype)
+                    ).to(device=x.device, dtype=x.dtype)    
             else:
                 new_embed_seqlens = embed_seqlens
                 pool_mask = None
+                
             queries = x if pool_mask is None else pool_mask @ x
 
             if "mean_sa" in self.pool_type or "last_sa" in self.pool_type:
@@ -573,6 +503,7 @@ class AdaptivePoolingAttention(nn.Module):
                 out = r + queries
             else:
                 out = queries
+                
             return self.pooling_out_norm(out), new_embed_seqlens
 
 
@@ -582,6 +513,7 @@ class PoolingModule(nn.Module):
         self.args = args
 
         if self.args.type == "latent_attention":
+            # No learned RMSNorm at the end
             self.process = LatentAttention(
                 r=args.r,
                 n_layers=args.n_layers,
@@ -589,6 +521,7 @@ class PoolingModule(nn.Module):
                 hidden_dim=hidden_dim,
             )
         elif self.args.type == "reversed_latent_attention":
+            # No learned RMSNorm at the end
             self.process = ReversedLatentAttention(
                 r=args.r,
                 n_layers=args.n_layers,
@@ -598,11 +531,6 @@ class PoolingModule(nn.Module):
             )
             assert args.compress_rate * int(args.early_out) <= 0, (
                 "Cannot compress and early out"
-            )
-        elif self.args.type == "standard_attention":
-            self.process = StandardAttention(
-                n_heads=args.n_heads,
-                hidden_dim=hidden_dim,
             )
         elif self.args.type == "adaptive_attention":
             self.process = AdaptivePoolingAttention(
