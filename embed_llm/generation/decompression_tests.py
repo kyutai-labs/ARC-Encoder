@@ -214,7 +214,6 @@ def evaluate_toydecompression(
                 embeddings=embeddings,
                 embed_seqlens=embed_seqlens,
                 cat_embeddings=cat_embeddings,
-                show_attention=False,
             )
             logits_wo_embeds = llm.forward(
                 input.detach(),
@@ -222,7 +221,6 @@ def evaluate_toydecompression(
                 embeddings=None,
                 embed_seqlens=None,
                 cat_embeddings=None,
-                show_attention=False,
             )
             batch_bpc_wo = 0
             batch_bpc = 0

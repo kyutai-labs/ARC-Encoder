@@ -114,7 +114,6 @@ class Cross_Attention(nn.Module):
         xv: torch.Tensor,
         mask: BlockDiagonalMask | None = None,
         freqs_cis: torch.Tensor | None = None,
-        show_attention: bool = False,
         w_scores: list[float] | None = None,
         freqs_cis_ca: torch.Tensor | None = None,
     ) -> torch.Tensor:
@@ -136,7 +135,7 @@ class Cross_Attention(nn.Module):
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
 
-        if not show_attention and w_scores is None:
+        if w_scores is None:
             output = memory_efficient_attention(xq, key, val, mask)
             output = output.view(seqlen_sum, self.n_heads * self.head_dim)
 
@@ -165,10 +164,7 @@ class Cross_Attention(nn.Module):
             output = output.reshape(seqlen_sum, self.n_heads * self.head_dim)
 
             assert isinstance(output, torch.Tensor)
-            if show_attention:
-                return self.wo(output), attn
-            else:
-                return self.wo(output)
+            return self.wo(output)
 
 
 class Cross_AttTransformerBlock(nn.Module):
@@ -244,50 +240,30 @@ class Cross_AttTransformerBlock(nn.Module):
         cache: CacheView | None = None,
         self_mask: BlockDiagonalCausalMask | None = None,
         cross_att_mask: BlockDiagonalMask | None = None,
-        show_attention: bool = False,
         pool_att_embds: torch.Tensor | None = None,
         seqlens: list[int] | None = None,
         w_scores: list[float] | None = None,
         freqs_cis_ca: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        if not show_attention:
-            r = self.attention.forward(
-                self.attention_norm(x), freqs_cis, cache=cache, mask=self_mask
-            )
 
-        else:
-            r, attn_mtx = self.attention.forward(
-                self.attention_norm(x),
-                freqs_cis,
-                cache=cache,
-                mask=self_mask,
-                show_attention=True,
-            )
+        r = self.attention.forward(
+            self.attention_norm(x), freqs_cis, cache=cache, mask=self_mask
+        )
+
         h = x + r
 
         if not self.pooled_cross_att:
             if xk is not None and xv is not None:
-                if not show_attention:
-                    r = self.cross_attention.forward(
-                        x=self.attention_norm(h),
-                        mask=cross_att_mask,
-                        xk=xk,
-                        xv=xv,
-                        w_scores=w_scores,
-                        freqs_cis=freqs_cis,
-                        freqs_cis_ca=freqs_cis_ca,
-                    )
-                else:
-                    r, cross_attn_mtx = self.cross_attention.forward(
-                        x=self.attention_norm(h),
-                        mask=cross_att_mask,
-                        xk=xk,
-                        xv=xv,
-                        show_attention=True,
-                        w_scores=w_scores,
-                        freqs_cis=freqs_cis,
-                        freqs_cis_ca=freqs_cis_ca,
-                    )
+                r = self.cross_attention.forward(
+                    x=self.attention_norm(h),
+                    mask=cross_att_mask,
+                    xk=xk,
+                    xv=xv,
+                    w_scores=w_scores,
+                    freqs_cis=freqs_cis,
+                    freqs_cis_ca=freqs_cis_ca,
+                )
+
                 h = h + r * self.gate(
                     h
                 )  # (l, d) + (l, d) * (l, d) = (l, d) # r is a replica along l
@@ -297,15 +273,9 @@ class Cross_AttTransformerBlock(nn.Module):
                     embedding=pool_att_embds, seqlen=seqlens, w_scores=w_scores
                 )
 
-                if show_attention:
-                    cross_attn_mtx = None
-
         r = self.feed_forward.forward(self.ffn_norm(h))
         out = h + r
-        if not show_attention:
-            return out
-        else:
-            return out, attn_mtx, cross_attn_mtx
+        return out
 
 
 class Transformer(ModelBase, LoRALoaderMixin):
@@ -519,7 +489,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         tokenized_prompts: dict = {},
         embed_seqlens: list[list[int]] | None = None,
         cat_embeddings: torch.Tensor | None = None,
-        show_attention: bool = False,
         batch_type: str = "reconstruction",
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
@@ -674,87 +643,42 @@ class Transformer(ModelBase, LoRALoaderMixin):
         ):
             xk, xv = self.to_k(embeddings), self.to_v(embeddings)
 
-        if not show_attention:
-            for i in range(self.n_layers):
-                
-                if self.mean_hid4embed is not None and i in self.mean_hid4embed:
-                    self.residual_h = h if self.residual_h is None else self.residual_h + h
+        for i in range(self.n_layers):
+            
+            if self.mean_hid4embed is not None and i in self.mean_hid4embed:
+                self.residual_h = h if self.residual_h is None else self.residual_h + h
 
-                if str(i) in self.cross_att_layers_id:
-                    if not self.args.pooled_cross_att:
-                        if embeddings is not None and not self.shared_kv:
-                            xk, xv = (
-                                self.to_k[str(i)](embeddings),
-                                self.to_v[str(i)](embeddings),
-                            )
-                        elif embeddings is None:
-                            xk, xv = None, None
+            if str(i) in self.cross_att_layers_id:
+                if not self.args.pooled_cross_att:
+                    if embeddings is not None and not self.shared_kv:
+                        xk, xv = (
+                            self.to_k[str(i)](embeddings),
+                            self.to_v[str(i)](embeddings),
+                        )
+                    elif embeddings is None:
+                        xk, xv = None, None
 
-                        h = self.layers[str(i)](
-                            x=h,
-                            freqs_cis=freqs_cis,
-                            self_mask=self_att_mask,
-                            cross_att_mask=cross_att_mask,
-                            xk=xk,
-                            xv=xv,
-                            freqs_cis_ca=freqs_cis_ca,
-                        )
-                    else:
-                        h = self.layers[str(i)](
-                            x=h,
-                            freqs_cis=freqs_cis,
-                            self_mask=self_att_mask,
-                            pool_att_embds=embeddings,
-                            seqlens=seqlens,
-                        )
-                else:
                     h = self.layers[str(i)](
-                        x=h, freqs_cis=freqs_cis, mask=self_att_mask
-                    )
-
-        else:
-            attn_mtx = []
-            cross_att_mtx = []
-            for i in range(self.n_layers):
-                if str(i) in self.cross_att_layers_id:
-                    if not self.args.pooled_cross_att:
-                        if embeddings is not None and not self.shared_kv:
-                            xk, xv = (
-                                self.to_k[str(i)](embeddings),
-                                self.to_v[str(i)](embeddings),
-                            )
-                        elif embeddings is None:
-                            xk, xv = None, None
-
-                        h = self.layers[str(i)](
-                            x=h,
-                            freqs_cis=freqs_cis,
-                            self_mask=self_att_mask,
-                            cross_att_mask=cross_att_mask,
-                            xk=xk,
-                            xv=xv,
-                            freqs_cis_ca=freqs_cis_ca,
-                        )
-                    else:
-                        h = self.layers[str(i)](
-                            x=h,
-                            freqs_cis=freqs_cis,
-                            self_mask=self_att_mask,
-                            pool_att_embds=embeddings,
-                            seqlens=seqlens,
-                            cross_att_mask=cross_att_mask,
-                        )
-                else:
-                    h, attn_mat, cross_att_mtx = self.layers[str(i)](
                         x=h,
                         freqs_cis=freqs_cis,
-                        mask=self_att_mask,
-                        show_attention=True,
+                        self_mask=self_att_mask,
+                        cross_att_mask=cross_att_mask,
+                        xk=xk,
+                        xv=xv,
+                        freqs_cis_ca=freqs_cis_ca,
                     )
-                attn_mtx.append(attn_mat)
-                cross_att_mtx.append(cross_att_mtx)
-            self.pos_to_keep = []
-            return (attn_mtx,)
+                else:
+                    h = self.layers[str(i)](
+                        x=h,
+                        freqs_cis=freqs_cis,
+                        self_mask=self_att_mask,
+                        pool_att_embds=embeddings,
+                        seqlens=seqlens,
+                    )
+            else:
+                h = self.layers[str(i)](
+                    x=h, freqs_cis=freqs_cis, mask=self_att_mask
+                )
 
         normalized_h = self.norm(h)
 

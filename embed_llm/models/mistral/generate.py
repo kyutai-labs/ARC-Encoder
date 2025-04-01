@@ -19,7 +19,6 @@ def generate(
     cat_embeddings: torch.Tensor | None = None,
     w_scores: list[float] | None = None,
 ) -> tuple[list[list[int]], list[list[float]]]:
-
     if len(prompt_pre_embed) > 0 and not isinstance(prompt_pre_embed[0], list):
         prompt_pre_embed = [prompt_pre_embed]
 
@@ -29,14 +28,16 @@ def generate(
     model = model.eval()
     B, V = len(prompt_post_embed), model.args.vocab_size
 
-    seqlens = [len(x)+len(y) for x,y in zip(prompt_post_embed, prompt_pre_embed)]
+    seqlens = [len(x) + len(y) for x, y in zip(prompt_post_embed, prompt_pre_embed)]
 
     concat = cat_embeddings is not None
 
     # Cache
-    cache_window = ( max(seqlens) + max_tokens if not concat else 
-                    max(seqlens) + max_tokens + max([sum(seql) for seql in embed_seqlens])
-    )  
+    cache_window = (
+        max(seqlens) + max_tokens
+        if not concat
+        else max(seqlens) + max_tokens + max([sum(seql) for seql in embed_seqlens])
+    )
 
     cache = BufferCache(
         model.n_local_layers,
@@ -47,23 +48,24 @@ def generate(
         model.args.sliding_window,
     )
     cache.to(device=model.device, dtype=model.dtype)
-    
+
     cache.reset()
 
     cross_att_cache = (
-            None
-            if embeddings is None 
-            else CrossAttCache(
-                embeddings.shape[0],
-                n_kv_heads=model.args.n_kv_heads,
-                head_dim=model.args.head_dim,
-                kv_seqlens=[sum(seql) for seql in embed_seqlens],
-                cross_att_layers = model.cross_att_layers_id if not model.shared_kv else [0],
-            ).to(model.device, dtype = model.dtype)
-        )
-    assert cross_att_cache is None or all([not v for k,v in cross_att_cache.full.items()]), "Cross att cache not empty"
+        None
+        if embeddings is None
+        else CrossAttCache(
+            embeddings.shape[0],
+            n_kv_heads=model.args.n_kv_heads,
+            head_dim=model.args.head_dim,
+            kv_seqlens=[sum(seql) for seql in embed_seqlens],
+            cross_att_layers=model.cross_att_layers_id if not model.shared_kv else [0],
+        ).to(model.device, dtype=model.dtype)
+    )
+    assert cross_att_cache is None or all(
+        [not v for k, v in cross_att_cache.full.items()]
+    ), "Cross att cache not empty"
     last_token_prelogits = None
-
 
     insert_cat_embedds = []
     # Put in cache if trained with prefix prompt
@@ -78,16 +80,13 @@ def generate(
     if chunk_size is None:
         chunk_size = max_prompt_len
 
-
     # Encode prompt by chunks
     for s in range(0, max_prompt_len, chunk_size):
         prompt_chunks = [p[s : s + chunk_size] for p in prompt]
         assert all(len(p) > 0 for p in prompt_chunks)
 
         prelogits = model.generate(
-            torch.tensor(
-                sum(prompt_chunks, []), device=model.device, dtype=torch.long
-            ),
+            torch.tensor(sum(prompt_chunks, []), device=model.device, dtype=torch.long),
             # images=flattened_images,
             seqlens=[len(p) for p in prompt_chunks],
             embeddings=embeddings,
@@ -95,7 +94,9 @@ def generate(
             cache=cache,
             cat_embeddings=cat_embeddings,
             cross_att_cache=cross_att_cache,
-            insert_cat_embedds = B*[0] if len(insert_cat_embedds) == 0 else insert_cat_embedds,
+            insert_cat_embedds=B * [0]
+            if len(insert_cat_embedds) == 0
+            else insert_cat_embedds,
             w_scores=w_scores,
         )
 
@@ -104,7 +105,7 @@ def generate(
             # Both in cache
             cat_embeddings = None
             insert_cat_embedds = []
-            
+
         last_token_prelogits = prelogits.index_select(
             0,
             torch.tensor(
@@ -113,7 +114,7 @@ def generate(
             - 1,
         )
         assert last_token_prelogits.shape == (B, V)
-        
+
     # decode
     generated_tensors = []
     is_finished = torch.tensor([False for _ in range(B)])
@@ -126,7 +127,6 @@ def generate(
         temperature = [float(temperature)] * max_tokens
 
     for j in range(max_tokens):
-  
         next_token = sample(last_token_prelogits, temperature=temperature[j], top_p=0.8)
 
         if eos_id is not None:
@@ -158,7 +158,6 @@ def generate(
     else:
         generated_tokens = [[0] for _ in range(B)]
 
-        
     if eos_id is not None:
         truncated_list = []
         for i in range(B):
@@ -169,31 +168,6 @@ def generate(
                 truncated_list[i].append(tok)
         generated_tokens = truncated_list
     return generated_tokens
-
-
-def get_attention(
-    sentence: str,
-    embeddings: torch.Tensor,
-    tokenizer,
-    model: Transformer,
-    n_tokens,
-    bos: bool = True,
-) -> tuple[torch.Tensor, list[int]]:
-    token_ids = tokenizer.encode(sentence, bos=bos, eos=True)[:n_tokens]
-    tokens = tokenizer.id_to_piece(token_ids[:n_tokens])
-    if embeddings is not None or model.do_both:
-        tokens = ["<embed>"] + tokens
-    with torch.no_grad():
-        attention_weights, cross_att_weights = model.forward(
-            torch.tensor(token_ids).to(model.device),
-            seqlens=[len(token_ids)],
-            embeddings=embeddings.to(model.device),
-            embed_seqlens=[[embeddings.shape[0]]],
-            cat_embeddings=embeddings if model.do_both else None,
-            show_attention=True,
-        )
-
-    return attention_weights, cross_att_weights, tokens
 
 
 def sample(logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:

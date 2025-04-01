@@ -186,26 +186,11 @@ class TransformerBlock(nn.Module):
         freqs_cis: torch.Tensor,
         cache: CacheView | None = None,
         mask: BlockDiagonalMask | None = None,
-        show_attention: bool = False,
     ) -> torch.Tensor:
-
-        if not show_attention:
-            r = self.attention.forward(
-                self.attention_norm(x), freqs_cis, cache=cache, mask=mask
-            )
-            h = x + r
-            r = self.feed_forward.forward(self.ffn_norm(h))
-            out = h + r
-            return out
-        else:
-            r, attn = self.attention.forward(
-                self.attention_norm(x),
-                freqs_cis,
-                cache=cache,
-                mask=mask,
-                show_attention=True,
-            )
-            h = x + r
-            r = self.feed_forward.forward(self.ffn_norm(h))
-            out = h + r
-            return out, attn
+        r = self.attention.forward(
+            self.attention_norm(x), freqs_cis, cache=cache, mask=mask
+        )
+        h = x + r
+        r = self.feed_forward.forward(self.ffn_norm(h))
+        out = h + r
+        return out
