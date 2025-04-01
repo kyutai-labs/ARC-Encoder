@@ -1,7 +1,7 @@
 import dataclasses
 import pprint
 from pathlib import Path
-
+import math
 import safetensors
 import torch
 from torch.distributed.fsdp import BackwardPrefetch
@@ -220,12 +220,23 @@ def load_training_model(
     if (
         pipeline_args.do_pool
         and augmented_model.pooling_args is not None
-        and "latent_attention" in augmented_model.pooling_args.type
     ):
-        initialize_proj_params(
-            augmented_model.pooling_module, param_dtype, latents=True, device="cuda"
-        )
-        ignored_state = [augmented_model.pooling_module.process.latents]
+        if "latent_attention" in augmented_model.pooling_args.type:
+            initialize_proj_params(
+                augmented_model.pooling_module, param_dtype, latents=True, device="cuda"
+            )
+            ignored_state = [augmented_model.pooling_module.process.latents]
+        elif "conv" == augmented_model.pooling_args.pool_type:
+            augmented_model.pooling_module.process.conv._parameters['weight'] = torch.nn.Parameter(
+                torch.empty_like(augmented_model.pooling_module.process.conv.weight, device='cuda', dtype=param_dtype)
+            )
+            param = augmented_model.pooling_module.process.conv._parameters['weight']
+            torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+            ignored_state = [
+                augmented_model.pooling_module.process.conv
+            ]
+        else:
+            ignored_state = []
     else:
         ignored_state = []
 
@@ -422,6 +433,13 @@ def load_training_model_from_ckpt(
                 )
 
                 ignored_state = [augmented_model.pooling_module.process.latents]
+                
+            if 'conv' == augmented_model.pooling_args.pool_type:
+                augmented_model.pooling_module.process.conv.weight = torch.nn.Parameter(
+                    [v for k, v in state_dict.items() if "conv" in k][0].cuda()
+                )
+                ignored_state = [augmented_model.pooling_module.process.conv.weight]
+
             del state_dict
 
     if old_pipeline_args.mlp_project.n_layers > 0:
@@ -479,7 +497,7 @@ def load_training_model_from_ckpt(
         assert not any(
             p.is_meta
             for n, p in augmented_model.named_parameters()
-            if "latents" not in n
+            if ("latents" not in n) and ('conv' not in n)
         ), "All parameters should be initialized by now"
 
     else:
@@ -491,7 +509,7 @@ def load_training_model_from_ckpt(
         assert all(
             p.is_meta
             for n, p in augmented_model.named_parameters()
-            if "latents" not in n
+            if ("latents" not in n) and ('conv' not in n)
         ), "All parameters should be on meta"
 
     ignored_state = None if len(ignored_state) == 0 else ignored_state

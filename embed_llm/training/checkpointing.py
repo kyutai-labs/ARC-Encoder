@@ -333,7 +333,7 @@ class Checkpointer:
         ), "dst exists"
 
         tmp_llm_dst.mkdir(parents=True, exist_ok=True)
-        if self.llm.cross_att:
+        if self.llm.cross_att or self.pipeline.pipeline_args.trainable_llm:
             Path(tmp_llm_dst / "consolidated").mkdir(parents=True, exist_ok=True)
 
         if self.mlp_project is not None and self.mlp_project.n_layers > 0:

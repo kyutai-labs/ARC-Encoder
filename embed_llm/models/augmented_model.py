@@ -321,8 +321,7 @@ class EmbedAugPipeline(nn.Module):
 
         with open(os.path.join(ckpt_path, "../../args.yaml"), "r") as f:
             train_args = yaml.safe_load(f)
-        lora = LoraArgs(train_args["lora"])
-
+        lora = LoraArgs(**train_args["lora"])
         llm_args, pipeline_args = load_args(
             Path(llm_path),
             lora=lora,
@@ -458,7 +457,7 @@ class EmbedAugPipeline(nn.Module):
                 )
 
                 n_truncated_layers = pipeline_args.n_truncated_layers
-
+  
                 try:
                     del llm_embedder.output
                 except AttributeError:

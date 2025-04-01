@@ -182,6 +182,7 @@ def load_llm_model(
         if for_embedding:
             llm_args.cross_att_layers = -1
             llm_args.every_cross_att = -1
+
         model = MistralTransformer(
             args=llm_args,
             checkpoint=checkpoint,
@@ -204,6 +205,7 @@ def load_llm_model(
             model.causal_embedder = True
         if not pipeline_args.rms_embed:
             model.normalize_embed = False
+        model.mean_hid4embed = pipeline_args.mean_hid4embed
     else:
         if pipeline_args.cross_att and pipeline_args.do_both:
             assert pipeline_args.cross_att, "If do_both, must do cross-attention"

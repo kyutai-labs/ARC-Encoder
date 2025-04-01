@@ -24,12 +24,24 @@ def group_embed_seqlens(values: list[int], sizes: list[int]):
 
 
 def split_integer(x, n):
-    base = x // n
-    remainder = x % n
-    result = [base] * n
-    for i in range(remainder):
-        result[i] += 1
-    return result
+    if n > 0:
+        base = x // n
+        remainder = x % n
+        result = [base] * n
+        for i in range(remainder):
+            result[i] += 1
+        return result
+    else:
+        n = -n
+        base = x // n
+        remainder = x % n
+        result = [n] * base
+        if remainder > 0:
+            result.append(remainder)
+        assert sum(result) == x, (
+            f"Sum of result {sum(result)} must be equal to x {x} with n {n}"
+        )
+        return result
 
 
 class MLP_block(nn.Module):
@@ -474,8 +486,8 @@ class AdaptivePoolingAttention(nn.Module):
             )
             return self.pooling_out_norm(out), new_embed_seqlens
         else:
-            assert self.compress_rate > 0 or self.compress_rate == -1, (
-                "Compress rate must be greater than 0 or equal to -1 (no compression)"
+            assert self.compress_rate > 0 or self.compress_rate <= -1, (
+                "Compress rate must be different than full compression (0)"
             )
             if self.compress_rate > 0:
                 new_embed_seqlens = []
@@ -487,6 +499,37 @@ class AdaptivePoolingAttention(nn.Module):
 
                         if embed_size // self.compress_rate == 0:
                             compressed_embed_size = [1] * embed_size
+                        else:
+                            compressed_embed_size = split_integer(
+                                embed_size, self.compress_rate
+                            )
+
+                        pool_size.extend(compressed_embed_size)
+                        embed_seqlen.append(len(compressed_embed_size))
+                    new_embed_seqlens.append(embed_seqlen)
+
+                if self.pool_type == "last_sa":
+                    pool_mask = torch.block_diag(
+                        *[
+                            torch.tensor([0.0] * (max(t - 1, 0)) + [1.0])
+                            for t in pool_size
+                        ]
+                    ).to(device=x.device, dtype=x.dtype)
+                else:
+                    pool_mask = torch.block_diag(
+                        *[torch.ones(t) / t for t in pool_size]
+                    ).to(device=x.device, dtype=x.dtype)
+                    
+            elif self.compress_rate < -1:
+                new_embed_seqlens = []
+                pool_size = []
+                for pass_embs in embed_seqlens:
+                    embed_seqlen = []
+                    for embed_size in pass_embs:
+                        compressed_embed_size = []
+
+                        if embed_size // abs(self.compress_rate) == 0:
+                            compressed_embed_size = [embed_size]
                         else:
                             compressed_embed_size = split_integer(
                                 embed_size, self.compress_rate
@@ -530,7 +573,6 @@ class AdaptivePoolingAttention(nn.Module):
                 out = r + queries
             else:
                 out = queries
-
             return self.pooling_out_norm(out), new_embed_seqlens
 
 
@@ -610,8 +652,7 @@ class PoolingModule(nn.Module):
 
                 mean_mask = None
             # Partial compression
-            else:
-                assert self.args.compress_rate > 0
+            elif self.args.compress_rate > 0:
                 new_embed_seqlens = []
                 mean_size = []
                 for pass_embs in embed_seqlens:
@@ -633,6 +674,9 @@ class PoolingModule(nn.Module):
                     *[torch.ones(t) / t for t in mean_size]
                 ).to(x.device)
                 embed_seqlens = new_embed_seqlens
+                
+            else:
+                pass
 
             out = out if mean_mask is None else mean_mask @ out
 

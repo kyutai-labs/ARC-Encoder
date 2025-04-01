@@ -4,7 +4,11 @@ run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
 exp_name: test_pretrain
 
 
-
+lora:
+  enable: true
+  rank: 128
+  scaling: 2.0
+  
 model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
 no_eval: false
 num_microbatches: 1
@@ -26,24 +30,23 @@ pipeline:
   max_embeds: 1
   mlp_project:
     act: gelu
-    hidden_dim: 1024
+    hidden_dim: 4096
     n_layers: 1
     type: mlp
   n_truncated_layers: 8
-  normalize_embed: false
   pooled_cross_att: false
   pooling_module:
-    compress_rate: 2
+    compress_rate: -1
     type: adaptive_attention
-    pool_type: conv
+    pool_type: mean
   rms_embed: false
+  normalize_embed: false
   shared_kv: false
   train_only_pooling: true
   trainable_embedder: false
-  trainable_llm: false
+  trainable_llm: true
   w_embeds: true
   w_prefix_prompt: false
-
 
 
 data:
