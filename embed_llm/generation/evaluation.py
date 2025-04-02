@@ -1,7 +1,6 @@
 import os
 import torch
 import json
-import numpy as np
 import random
 from tqdm import tqdm, trange
 import argparse
@@ -16,9 +15,6 @@ from embed_llm.models.utils import is_torchrun
 from embed_llm.monitoring.utils import set_logger
 from embed_llm.generation.utils import eval_logger_info, ensure_reproducibility
 from embed_llm.generation.metrics import (
-    word_overlap,
-    get_bleu_score,
-    get_meteor,
     get_em,
     get_f1_score,
     metric_max_over_ground_truths,
@@ -27,10 +23,7 @@ from embed_llm.generation.metrics import (
     get_substring_match_score,
 )
 
-EVAL_DATA_PATH_COLBERT = {
-    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/nq_open_hf.jsonl",  # nq_data.jsonl
-    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_ColBert/triviaqa_data.jsonl",
-}
+
 EVAL_DATA_PATH = {
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",
@@ -117,14 +110,11 @@ def evaluate_QA(
     icl_w_context: bool = True,
     mistral: bool = False,
     max_multi_passage: int = 1,
-    kilt: bool = False,
     instruct_name: str = None,
     prompt_before_embed: bool = False,
-    colbert: bool = False,
     split_to_multipassage: bool = False,
     icl_before_pref: bool = False,
     seed: float = 0.42,
-    with_scores: float = 0.0,
     compress_rate: int | None = None,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
@@ -172,11 +162,8 @@ def evaluate_QA(
             continue
 
         metrics[benchmark] = {}
-        eval_data = (
-            EVAL_DATA_PATH[benchmark]
-            if not colbert
-            else EVAL_DATA_PATH_COLBERT[benchmark]
-        )
+        eval_data = EVAL_DATA_PATH[benchmark]
+
         context = []
         questions = []
         answers = []
@@ -217,44 +204,6 @@ def evaluate_QA(
                         context.append(multi_passage)
                     else:
                         context.append(list(data["passages"][:max_multi_passage]))
-                    if "scores" in data.keys() and with_scores > 0.0:
-                        l_scores = [
-                            float(score) for score in data["scores"][:max_multi_passage]
-                        ]
-                        if with_scores == 1.0:  # Marche pas
-                            centered_scores = (
-                                np.array(l_scores) - np.min(l_scores)
-                            ) / (np.max(l_scores) - np.min(l_scores))
-                        elif with_scores == 2.0:  # Seul qui fonctionne
-                            centered_scores = (
-                                np.array(l_scores) - np.min(l_scores) + 1e-2
-                            ) / (np.max(l_scores) - np.min(l_scores) + 1e-2)
-                        elif with_scores == 3.0:  # Bof
-                            centered_scores = (
-                                np.array(l_scores) - np.mean(l_scores)
-                            ) / np.std(l_scores) + 1
-                        elif with_scores == 4.0:  # Nul
-                            centered_scores = l_scores
-                        elif with_scores == 5.0:  # Non
-                            centered_scores = (
-                                np.array(l_scores) - np.mean(l_scores)
-                            ) / np.std(l_scores)
-                        scores.append(centered_scores.tolist())
-
-        if with_scores > 0.0:
-            print("Centered scores ex:", scores[0])
-        if benchmark == "NQ" and kilt:
-            test_pairs = []
-            with open(
-                "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/KILT/pair_NVembed_test_NQ.json",
-                "r",
-            ) as f:
-                for i, line in enumerate(f):
-                    test_pairs.append(json.loads(line))
-
-            questions = [pair["query"] for pair in test_pairs]
-            answers = [pair["answer"] for pair in test_pairs]
-            context = [pair["doc"] for pair in test_pairs]
 
         if len(scores) == 0:
             c = list(zip(questions, context, answers))
@@ -387,9 +336,6 @@ def evaluate_QA(
                         device=device,
                         device_generation=other_device,
                         give_n_tokens=True,
-                        w_scores=None
-                        if len(scores) == 0 or (with_scores == 0.0)
-                        else list(new_scores[i : i + bs]),
                     )
                     if w_embeds:
                         compress_ratio += embeds / embed_tokens
@@ -471,7 +417,6 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
-                    "w_scores": with_scores,
                 }
                 value_f1 = (
                     sum(
@@ -492,7 +437,6 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
-                    "w_scores": with_scores,
                 }
                 eval_logger_info(logger, "Prompt prefix: " + prompt_prefix)
                 eval_logger_info(
@@ -537,7 +481,6 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "1 passage splitted ?": split_to_multipassage,
                     "prop context containing the answer": n_answer_in_context,
-                    "w_scores": with_scores,
                 }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
@@ -614,240 +557,6 @@ def evaluate_QA(
     return pipeline, ckpt
 
 
-def evaluate_reconstruction_model(
-    run_name: str,
-    ckpt: int | None = None,
-    pipeline: EmbedAugPipeline | None = None,
-    output_file: str = None,
-    temperatures: list[float] = [0, 0.5, 0.7, 1],
-    max_seq_len: int = 256,
-    max_batch_size: int = 4,
-    tmp_path: str = None,
-    eval_data_type: str = "atlas",
-    n_passages: int = 100,
-    max_multi_passage: int = 1,
-    instruct_name: str = None,
-    prompt_before_embed: bool = False,
-):
-    reconstruct_benchmarks = [
-        "Overlap",
-        "Bleu",
-        "Trunc Bleu",
-        "AVG Bleu",
-        "Meteor",
-        "EM",
-    ]
-
-    llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
-
-    if eval_data_type == "atlas":
-        eval_data = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_standard.jsonl"
-    elif eval_data_type == "standard_dump":
-        eval_data = "/lustre/scwpod02/client/kyutai-interns/datasets/modular_finetuning/enwiki-20220120_valid.jsonl"
-    else:
-        raise ValueError("Invalid eval_data_type")
-
-    if max_multi_passage > 1:
-        eval_data = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/wiki_passages_pretraining/valid_atlas_enwiki-dec2021_50_30_20.jsonl"
-
-    eval_logger_info(logger, "RUN NAME => " + run_name)
-
-    # Loading model
-    if not is_torchrun():
-        device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
-        device_count = torch.cuda.device_count()
-        other_device = torch.device("cuda:1") if device_count > 1 else device
-    else:
-        device = "cuda"
-        other_device = None
-
-    pipeline, ckpt = load_pipeline(
-        run_name=run_name,
-        tmp_path=tmp_path,
-        llm_path=llm_path,
-        device=device,
-        max_bs=max_batch_size,
-        pipeline=pipeline,
-        mistral=False,
-        instruct_name=instruct_name,
-        ckpt=ckpt,
-    )
-
-    lim_toks = max_seq_len
-    valid_passage = []
-
-    if max_multi_passage == 1:
-        with open(eval_data, "r") as f:
-            for i, line in enumerate(f):
-                if i == n_passages:
-                    break
-
-                if eval_data_type == "standard_dump":
-                    valid_passage.append(
-                        pipeline.tokenizer.decode(
-                            pipeline.tokenizer.encode(
-                                json.loads(line)["text"].split("\n\n")[1],
-                                eos=True,
-                                bos=True,
-                            )[:lim_toks]
-                        )
-                    )
-                elif eval_data_type == "atlas":
-                    valid_passage.append(
-                        pipeline.tokenizer.decode(
-                            pipeline.tokenizer.encode(
-                                json.loads(line)["text"], eos=True, bos=True
-                            )[:lim_toks]
-                        )
-                    )
-    else:
-        with open(eval_data, "r") as f:
-            for i, line in enumerate(f):
-                if i == n_passages:
-                    break
-                valid_passage.append(json.loads(line)["passage"][:max_multi_passage])
-
-    max_tokens = lim_toks
-
-    results_generation = {}
-
-    n_passages = len(valid_passage)
-    assert n_passages == len(valid_passage)
-
-    device_count = torch.cuda.device_count()
-
-    if not is_torchrun():
-        other_device = device if device_count <= 1 else torch.device("cuda:1")
-    else:
-        other_device = None
-
-    for temp in temperatures:
-        eval_logger_info(logger, f"Temperature: {temp}")
-        generated_sequences = []
-        for i in range(0, n_passages, max_batch_size):
-            passage = list(valid_passage[i : i + max_batch_size])
-            generated_sequence = pipeline.generate(
-                prompt_pre_embed=(
-                    [""] * len(passage)
-                    if not prompt_before_embed
-                    else ["In other words, background: "] * len(passage)
-                ),
-                prompt_post_embed=(
-                    [""] * len(passage)
-                    if not pipeline.pipeline_args.w_prefix_prompt
-                    else [" is just another way of saying: "] * len(passage)
-                ),
-                text_conditioning=passage,
-                temperature=temp,
-                max_tokens=max_tokens,
-                truncate_line=False,
-                device=device if not is_torchrun() else "cuda",
-                device_generation=other_device,
-            )
-
-            generated_sequences.extend(generated_sequence)
-        results_generation[str(temp)] = generated_sequences
-
-    metrics = {bench: {} for bench in reconstruct_benchmarks}
-
-    for temp in results_generation.keys():
-        # for split in results_generation[temp].keys():
-
-        generated_sequences = results_generation[str(temp)]
-        gt_passage = (
-            valid_passage
-            if isinstance(valid_passage[0], str)
-            else [" ".join(p) for p in valid_passage]
-        )
-
-        overlap = word_overlap(gt_passage, generated_sequences)
-        metrics["Overlap"][temp] = {
-            "n_samples": n_passages,
-            "Metric": overlap,
-            "eval_data_type": eval_data_type,
-        }
-        bleu_score = get_bleu_score(gt_passage, generated_sequences)
-        metrics["Bleu"][temp] = {
-            "n_samples": n_passages,
-            "Metric": bleu_score,
-            "eval_data_type": eval_data_type,
-        }
-        trunc_bleu_score = get_bleu_score(gt_passage, generated_sequences, trunc=True)
-        metrics["Trunc Bleu"][temp] = {
-            "n_samples": n_passages,
-            "Metric": trunc_bleu_score,
-            "eval_data_type": eval_data_type,
-        }
-        bleu_score_avg = get_bleu_score(gt_passage, generated_sequences, avg=True)
-        metrics["AVG Bleu"][temp] = {
-            "n_samples": n_passages,
-            "Metric": bleu_score_avg,
-            "eval_data_type": eval_data_type,
-        }
-        meteor_score = get_meteor(gt_passage, generated_sequences)
-        metrics["Meteor"][temp] = {
-            "n_samples": n_passages,
-            "Metric": meteor_score,
-            "eval_data_type": eval_data_type,
-        }
-        em = np.mean(
-            np.array(
-                [get_em(gt, pred) for gt, pred in zip(gt_passage, generated_sequences)]
-            )
-        )
-        metrics["EM"][str(temp)] = {
-            "n_samples": n_passages,
-            "Metric": em,
-            "eval_data_type": eval_data_type,
-        }
-
-        eval_logger_info(
-            logger,
-            f"CKPT: {ckpt}, Temperature: {temp}, Overlap: {overlap}  \
-            Bleu Score: {bleu_score} Truncated Bleu Score: {trunc_bleu_score} \
-            EM: {em} Meteor: {meteor_score} Bleu Score Avg: {bleu_score_avg}",
-        )
-
-    if not is_torchrun() or torch.distributed.get_rank() == 0:
-        with open(
-            "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-            + run_name
-            + "/results_generation.json",
-            "a",
-        ) as f:
-            json.dump(metrics, f)
-
-        with open(
-            output_file,
-            "r",
-        ) as f:
-            overall_results = json.load(f)
-
-        if run_name not in overall_results.keys():
-            overall_results[run_name] = {}
-        if str(ckpt) not in list(overall_results[run_name].keys()):
-            overall_results[run_name][str(ckpt)] = {}
-        for benchmark in reconstruct_benchmarks:
-            if benchmark not in list(overall_results[run_name][str(ckpt)].keys()):
-                overall_results[run_name][str(ckpt)][benchmark] = {
-                    str(temp): [] for temp in temperatures
-                }
-
-        for benchmark in metrics.keys():
-            for temp in metrics[benchmark].keys():
-                overall_results[run_name][str(ckpt)][benchmark][temp].append(
-                    metrics[benchmark][temp]
-                )
-
-        with open(
-            output_file,
-            "w",
-        ) as f:
-            json.dump(overall_results, f)
-
-    return pipeline, ckpt
-
-
 def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -856,7 +565,6 @@ def arg_parser():
         default=None,
     )
     parser.add_argument("--ckpt", type=int, default=None)
-    parser.add_argument("--eval_reconstruction", action="store_true")
     parser.add_argument("--out_file", type=str, default=None)
     parser.add_argument("--n_passages", type=int, default=500)
     parser.add_argument("--max_seq_len", type=int, default=64)
@@ -864,15 +572,11 @@ def arg_parser():
     parser.add_argument("--mistral", action="store_true")
     parser.add_argument("--wo_embeds", action="store_false")
     parser.add_argument("--multi_passages", type=int, default=1)
-    parser.add_argument("--reconstruct_seq_len", type=int, default=256)
-    parser.add_argument("--reconstruct_npassages", type=int, default=500)
     parser.add_argument("--instruct_name", type=str, default=None)
-    parser.add_argument("--colbert", action="store_true")
     parser.add_argument("--benchmarks", type=str, default="all")
     parser.add_argument("--prompt_before_embed", action="store_true")
     parser.add_argument("--split_to_multipassage", action="store_true")
     parser.add_argument("--seed", type=float, default=0.42)
-    parser.add_argument("--with_scores", type=float, default=0.0)
     parser.add_argument("--icl_exs", type=int, default=None)
     parser.add_argument("--llmemb_icl_w_context", action="store_true")
     parser.add_argument("--icl_before_pref", action="store_true")
@@ -953,7 +657,6 @@ if __name__ == "__main__":
             icl_w_context=True,
             query_w_context=True,
             w_embeds=False,
-            colbert=args.colbert,
             max_multi_passage=args.multi_passages,
             split_to_multipassage=args.split_to_multipassage,
             seed=args.seed,
@@ -996,7 +699,6 @@ if __name__ == "__main__":
                 query_w_context=True,
                 w_embeds=False,
                 pipeline=mistral_model,
-                colbert=args.colbert,
                 max_multi_passage=args.multi_passages,
                 split_to_multipassage=args.split_to_multipassage,
                 seed=args.seed,
@@ -1004,51 +706,6 @@ if __name__ == "__main__":
             torch.cuda.empty_cache()
 
     else:
-        if args.eval_reconstruction:
-            if args.multi_passages > 1:
-                pipeline, ckpt = evaluate_reconstruction_model(
-                    args.run_name,
-                    ckpt=args.ckpt,
-                    output_file=output_file,
-                    temperatures=temp_tests,
-                    max_seq_len=args.reconstruct_seq_len,
-                    tmp_path=tmp_path,
-                    n_passages=args.reconstruct_npassages,
-                    max_multi_passage=args.multi_passages,
-                    instruct_name=args.instruct_name,
-                    prompt_before_embed=args.prompt_before_embed,
-                )
-                torch.cuda.empty_cache()
-            else:
-                eval_logger_info(logger, "Standard Dump")
-                pipeline, ckpt = evaluate_reconstruction_model(
-                    args.run_name,
-                    output_file=output_file,
-                    ckpt=args.ckpt,
-                    temperatures=temp_tests,
-                    max_seq_len=args.reconstruct_seq_len,
-                    tmp_path=tmp_path,
-                    eval_data_type="standard_dump",
-                    n_passages=args.reconstruct_npassages,
-                    instruct_name=args.instruct_name,
-                    prompt_before_embed=args.prompt_before_embed,
-                )
-                torch.cuda.empty_cache()
-                eval_logger_info(logger, "Atlas")
-                pipeline, ckpt = evaluate_reconstruction_model(
-                    args.run_name,
-                    output_file=output_file,
-                    temperatures=temp_tests,
-                    max_seq_len=args.reconstruct_seq_len,
-                    tmp_path=tmp_path,
-                    eval_data_type="atlas",
-                    pipeline=pipeline,
-                    ckpt=ckpt,
-                    n_passages=args.reconstruct_npassages,
-                    instruct_name=args.instruct_name,
-                    prompt_before_embed=args.prompt_before_embed,
-                )
-                torch.cuda.empty_cache()
 
         pipeline, ckpt = evaluate_QA(
             args.run_name,
@@ -1065,11 +722,9 @@ if __name__ == "__main__":
             icl_w_context=args.llmemb_icl_w_context,
             max_multi_passage=args.multi_passages,
             instruct_name=args.instruct_name,
-            colbert=args.colbert,
             prompt_before_embed=args.prompt_before_embed,
             split_to_multipassage=args.split_to_multipassage,
             seed=args.seed,
-            with_scores=args.with_scores,
             icl_before_pref=args.icl_before_pref,
             compress_rate=args.compress_rate,
         )
@@ -1091,11 +746,9 @@ if __name__ == "__main__":
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
                 instruct_name=args.instruct_name,
-                colbert=args.colbert,
                 prompt_before_embed=args.prompt_before_embed,
                 split_to_multipassage=args.split_to_multipassage,
                 seed=args.seed,
-                with_scores=args.with_scores,
                 icl_before_pref=args.icl_before_pref,
                 compress_rate=args.compress_rate,
             )
