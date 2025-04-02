@@ -52,7 +52,6 @@ class EmbedAugArgs(Serializable):
     # Could be simplified
     cross_att: bool = False
     cross_att_layers: int | None = None
-    pooled_cross_att: bool = False
     every_cross_att: int | None = None
     begin_cross_att: bool = False
     do_both: bool = False
@@ -92,7 +91,6 @@ class MistralModelArgs(Serializable):
     cross_att_layers: int | None = None
     begin_cross_att: bool = False
     shared_kv: bool = True
-    pooled_cross_att: bool = False
     every_cross_att: int | None = None
     gate_bottleneck: int = 1
     ca_rope: bool = False
