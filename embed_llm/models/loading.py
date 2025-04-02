@@ -112,7 +112,6 @@ def load_args(
             if pipeline_args.every_cross_att is None
             else pipeline_args.every_cross_att
         ),
-        shared_kv=True if pipeline_args.shared_kv else False,
         gate_bottleneck=getattr(pipeline_args, "gate_bottleneck", 1),
         ca_rope=getattr(pipeline_args, "ca_rope", False),
         insert_layer=getattr(pipeline_args, "insert_layer", -1),

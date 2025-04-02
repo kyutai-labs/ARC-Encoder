@@ -370,7 +370,7 @@ class AdaptivePoolingAttention(nn.Module):
         self.pool_type = pool_type
         self.compress_rate = compress_rate
 
-        if self.pool_type == "svd":
+        if "svd" in self.pool_type:
             self.attention_norm = RMSNorm(hidden_dim, eps=1e-5)
             self.self_attend_block = Self_Attention(
                 dim=hidden_dim,
@@ -412,7 +412,7 @@ class AdaptivePoolingAttention(nn.Module):
 
     def forward(self, x: torch.Tensor, embed_seqlens: list[list[int]]) -> torch.Tensor:
         new_embed_seqlens = []
-        if self.pool_type == "svd":
+        if "svd" in self.pool_type:
             assert self.compress_rate > 0, "Compress rate must be greater than 0"
             r, attn = self.self_attend_block(
                 self.attention_norm(x),

@@ -342,20 +342,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
         if pipeline_rank == num_pipeline_ranks - 1:
             self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-        self.shared_kv = args.shared_kv
         self.to_k = None
         self.to_v = None
 
-        if self.cross_att and self.shared_kv:
-            if pipeline_rank == 0:
-                self.to_k = nn.Linear(
-                    args.dim, args.n_kv_heads * args.head_dim, bias=False
-                )
-                self.to_v = nn.Linear(
-                    args.dim, args.n_kv_heads * args.head_dim, bias=False
-                )
-
-        elif self.cross_att:
+        if self.cross_att:
             k_layers = {}
             v_layers = {}
             for i in range(args.n_layers):
@@ -373,7 +363,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         end = min(self.n_layers, offset + num_layers_per_rank)
         self.layers = nn.ModuleDict({str(i): layers[i] for i in range(offset, end)})
 
-        if self.cross_att and not self.shared_kv:
+        if self.cross_att:
             self.to_k = nn.ModuleDict(
                 {
                     str(i): k_layers[str(i)]
@@ -507,9 +497,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         else:
             freqs_cis_ca = None
 
-        if self.cross_att and embeddings is not None and self.shared_kv:
-            xk, xv = self.to_k(embeddings), self.to_v(embeddings)
-
         for i in range(self.n_layers):
             if self.mean_hid4embed is not None and i in self.mean_hid4embed:
                 self.residual_h = h if self.residual_h is None else self.residual_h + h
@@ -530,13 +517,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
 
             if str(i) in self.cross_att_layers_id:
-                if embeddings is not None and not self.shared_kv:
+                if embeddings is not None:
                     xk, xv = (
                         self.to_k[str(i)](embeddings),
                         self.to_v[str(i)](embeddings),
                     )
-                elif embeddings is None:
-                    xk, xv = None, None
 
                 h = self.layers[str(i)](
                     x=h,
@@ -686,32 +671,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         else:
             freqs_cis_ca = None
 
-        if self.cross_att and embeddings is not None and self.shared_kv:
-            if not cross_att_cache.full:
-                if self.pipeline_rank == 0:
-                    xk, xv = self.to_k(embeddings), self.to_v(embeddings)
-                else:
-                    xk, xv = (
-                        torch.empty(
-                            len(embeddings),
-                            self.args.n_kv_heads * self.args.head_dim,
-                            device=self.device,
-                            dtype=self.dtype,
-                        ),
-                        torch.empty(
-                            len(embeddings),
-                            self.args.n_kv_heads * self.args.head_dim,
-                            device=self.device,
-                            dtype=self.dtype,
-                        ),
-                    )
-                    torch.distributed.broadcast(xk, src=0)
-                    torch.distributed.broadcast(xv, src=0)
-
-                cross_att_cache.fill(xk, xv, str(0))
-            else:
-                xk, xv = cross_att_cache.cache_k["0"], cross_att_cache.cache_v["0"]
-
         for local_layer_id, (layer_id, layer) in enumerate(self.layers.items()):
             if cat_embeddings is not None and self.args.insert_layer == int(layer_id):
                 assert insert_cat_embedds is not None, (
@@ -756,11 +715,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 cache_view = None
 
             if str(layer_id) in self.cross_att_layers_id:
-                if (
-                    embeddings is not None
-                    and not self.shared_kv
-                    and not cross_att_cache.full[str(layer_id)]
-                ):
+                if embeddings is not None and not cross_att_cache.full[str(layer_id)]:
                     xk, xv = (
                         self.to_k[str(layer_id)](embeddings),
                         self.to_v[str(layer_id)](embeddings),
@@ -768,17 +723,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     cross_att_cache.fill(xk, xv, str(layer_id))
 
                 elif (
-                    not self.shared_kv
-                    and cross_att_cache is not None
-                    and cross_att_cache.full[str(layer_id)]
+                    cross_att_cache is not None and cross_att_cache.full[str(layer_id)]
                 ):
                     xk, xv = (
                         cross_att_cache.cache_k[str(layer_id)],
                         cross_att_cache.cache_v[str(layer_id)],
                     )
-
-                elif self.shared_kv and embeddings is not None:
-                    pass
                 else:
                     xk, xv = None, None
 

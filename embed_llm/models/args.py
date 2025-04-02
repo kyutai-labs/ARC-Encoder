@@ -42,7 +42,6 @@ class EmbedAugArgs(Serializable):
     train_only_pooling: bool = False
     n_truncated_layers: int = 8
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
-    shared_kv: bool = False
     trainable_llm: bool = False
     w_prefix_prompt: bool = False
     gate_bottleneck: int = 8
@@ -90,7 +89,6 @@ class MistralModelArgs(Serializable):
     # Parameters specific for cross-attention models
     cross_att_layers: int | None = None
     begin_cross_att: bool = False
-    shared_kv: bool = True
     every_cross_att: int | None = None
     gate_bottleneck: int = 1
     ca_rope: bool = False

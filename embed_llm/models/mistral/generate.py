@@ -59,7 +59,7 @@ def generate(
             n_kv_heads=model.args.n_kv_heads,
             head_dim=model.args.head_dim,
             kv_seqlens=[sum(seql) for seql in embed_seqlens],
-            cross_att_layers=model.cross_att_layers_id if not model.shared_kv else [0],
+            cross_att_layers=model.cross_att_layers_id,
         ).to(model.device, dtype=model.dtype)
     )
     assert cross_att_cache is None or all(
