@@ -116,6 +116,7 @@ def load_args(
         pooled_cross_att=True if pipeline_args.pooled_cross_att else False,
         gate_bottleneck=getattr(pipeline_args, "gate_bottleneck", 1),
         ca_rope=getattr(pipeline_args, "ca_rope", False),
+        insert_layer=getattr(pipeline_args, "insert_layer", -1),
     )
 
     if args.get("rope_theta") is not None:
@@ -206,8 +207,6 @@ def load_llm_model(
         model.for_embedding = True
         if pipeline_args.causal_embedder:
             model.causal_embedder = True
-        if not pipeline_args.rms_embed:
-            model.normalize_embed = False
         model.mean_hid4embed = pipeline_args.mean_hid4embed
     else:
         if pipeline_args.cross_att and pipeline_args.do_both:

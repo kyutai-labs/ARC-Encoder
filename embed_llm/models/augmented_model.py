@@ -515,12 +515,16 @@ class EmbedAugPipeline(nn.Module):
                     and "attention"
                     in augmented_pipeline.pipeline_args.pooling_module.type
                 ):
+         
                     state_dict = load_state_dict(
                         Path(pooling_module_path), dtype=param_dtype
                     )
 
                     augmented_pipeline.model.pooling_module.process.load_state_dict(
                         state_dict
+                    )
+                    augmented_pipeline.model.pooling_module.process.pooling_out_norm.weight = torch.nn.Parameter(torch.ones_like(
+                        augmented_pipeline.model.pooling_module.process.pooling_out_norm.weight, requires_grad=False)
                     )
 
                     augmented_pipeline.model.pooling_module.process = (
@@ -539,6 +543,9 @@ class EmbedAugPipeline(nn.Module):
             augmented_pipeline.model = augmented_pipeline.model.to(device)
 
         augmented_pipeline.model.eval()
+        
+        for name, parm in augmented_pipeline.model.named_parameters():
+            parm.requires_grad = False
         augmented_pipeline.generate = augmented_pipeline.generate_mistral
 
         return augmented_pipeline
@@ -581,7 +588,7 @@ class EmbedAugPipeline(nn.Module):
                 raise ValueError(
                     "Text conditioning must be a string or a list of strings"
                 )
-
+                
         if text_conditioning is None:
             w_embeds = False
         else:

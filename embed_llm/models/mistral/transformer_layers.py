@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import random
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 
@@ -17,6 +18,142 @@ def repeat_kv(
     keys = torch.repeat_interleave(keys, repeats=repeats, dim=dim)
     values = torch.repeat_interleave(values, repeats=repeats, dim=dim)
     return keys, values
+
+
+def insert_embeds(
+    h: torch.Tensor,
+    embeds: torch.Tensor,
+    embed_seqlens: list[list[int]],
+    seqlens: list[int],
+    tok_embeddings: nn.Module | None = None,
+    insert_cat_embedds: list[int] | None = None,
+    tokenized_prompts: dict[str, list[dict[str, list[int]]]] | None = None,
+    batch_type: str | None = None,
+) -> tuple[torch.Tensor, list[int], list[int]]:
+    """
+    Args:
+        h: hidden states of the model
+        embeds: Embeddings to be prepended
+        tok_embeddings: token embedding layer (if prepended at layer 0)
+        embed_seqlens: list of lists of token lengths for each embedding
+        seqlens: list of token lengths for each input sequence
+        insert_cat_embedds: list of where to insert the embeddings (for generation)
+        tokenized_prompts: dictionary containing tokenized prompts (if prefix and suffix instruction)
+        batch_type: type of batch (reconstruction, continuation, etc.)
+    """
+    num_supp_toks = (
+        sum(sum(embed_seqlens, [])) if embed_seqlens is not None else embeds.shape[0]
+    )
+
+    prefixes = []
+    suffixes = []
+    if tokenized_prompts is not None:
+        for _ in range(len(seqlens)):
+            no_prefix = True
+            if (
+                tokenized_prompts.get(batch_type, False)
+                and len(tokenized_prompts[batch_type]) > 0
+            ):
+                tokenized_prompt = random.choice(tokenized_prompts[batch_type])
+                prefixes.append(tokenized_prompt["prefix"])
+                suffixes.append(tokenized_prompt["suffix"])
+                num_supp_toks += len(tokenized_prompt["prefix"]) + len(
+                    tokenized_prompt["suffix"]
+                )
+                if len(tokenized_prompt["prefix"]) > 0:
+                    no_prefix = False
+
+    new_h_states = torch.zeros(
+        (num_supp_toks + len(h), h.shape[-1]),
+        device=h.device,
+        dtype=h.dtype,
+    )
+
+    new_seqlens = []
+    pos_to_keep = []
+
+    # For training
+    final_ind = 0
+
+    # For generation
+    ind_h = 0
+    ind_toks = 0
+
+    for i, size in enumerate(seqlens):
+        assert size > 0
+        begin = 0 if i == 0 else sum(sum(embed_seqlens[:i], []))
+        end = sum(sum(embed_seqlens[: i + 1], []))
+        if len(suffixes) > 0:
+            if no_prefix:
+                # Insert embedding at the beginning of the sequence
+                size_embed = sum(embed_seqlens[i], []) + len(suffixes[i])
+
+                tok_after_embed = tok_embeddings(
+                    torch.tensor(suffixes[i], device=h.device)
+                )
+                new_h_states[final_ind : size_embed + final_ind, :] = torch.cat(
+                    [
+                        embeds[begin:end, :],
+                        tok_after_embed,
+                    ],
+                    dim=0,
+                )
+            else:
+                # Insert embedding at the beginning of the sequence
+                size_embed = (
+                    len(prefixes[i]) + sum(embed_seqlens[i], []) + len(suffixes[i])
+                )
+
+                tok_before_embed = tok_embeddings(
+                    torch.tensor(prefixes[i], device=h.device)
+                )
+                tok_after_embed = tok_embeddings(
+                    torch.tensor(suffixes[i], device=h.device)
+                )
+                new_h_states[final_ind : size_embed + final_ind, :] = torch.cat(
+                    [
+                        tok_before_embed,
+                        embeds[begin:end, :],
+                        tok_after_embed,
+                    ],
+                    dim=0,
+                )
+        elif insert_cat_embedds is None:
+            size_embed = sum(embed_seqlens[i])
+            new_h_states[final_ind : size_embed + final_ind, :] = embeds[begin:end, :]
+            pos_to_keep.extend([False] * size_embed)
+            # Insert token embeddings
+            new_h_states[size_embed + final_ind : size_embed + final_ind + size, :] = h[
+                sum(seqlens[:i]) : sum(seqlens[:i]) + size, :
+            ]
+            pos_to_keep.extend([True] * size)
+            final_ind += size_embed + size
+
+        else:
+            # Generation
+            size_embed = sum(embed_seqlens[i])
+            new_h_states[ind_h : insert_cat_embedds[i] + ind_h, :] = h[
+                ind_toks : insert_cat_embedds[i] + ind_toks, :
+            ]
+
+            pos_to_keep.extend([True] * insert_cat_embedds[i])
+            ind_h += insert_cat_embedds[i]
+            ind_toks += insert_cat_embedds[i]
+            new_h_states[ind_h : size_embed + ind_h, :] = embeds[begin:end, :]
+            ind_h += size_embed
+            pos_to_keep.extend([False] * size_embed)
+            # Insert token embeddings
+            new_h_states[ind_h : ind_h + size - insert_cat_embedds[i], :] = h[
+                ind_toks : ind_toks + size - insert_cat_embedds[i], :
+            ]
+            pos_to_keep.extend([True] * (size - insert_cat_embedds[i]))
+
+            ind_toks += size - insert_cat_embedds[i]
+            ind_h += size - insert_cat_embedds[i]
+
+        new_seqlens.append(size + size_embed)
+
+    return new_h_states, new_seqlens, pos_to_keep
 
 
 class Attention(nn.Module):

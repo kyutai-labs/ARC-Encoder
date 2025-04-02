@@ -17,12 +17,12 @@ def get_cache_sizes(
     elif isinstance(sliding_window, int):
         return n_layers * [sliding_window]
     else:
-        assert isinstance(
-            sliding_window, list
-        ), f"Expected list, got {type(sliding_window)}"
-        assert (
-            n_layers % len(sliding_window) == 0
-        ), f"Expected n_layers % len(sliding_window) == 0, got {n_layers} % {len(sliding_window)}"
+        assert isinstance(sliding_window, list), (
+            f"Expected list, got {type(sliding_window)}"
+        )
+        assert n_layers % len(sliding_window) == 0, (
+            f"Expected n_layers % len(sliding_window) == 0, got {n_layers} % {len(sliding_window)}"
+        )
         num_repeats = n_layers // len(sliding_window)
         return num_repeats * [
             w if w is not None else max_seq_len for w in sliding_window
@@ -116,11 +116,12 @@ class CacheView:
             return xk, xv
 
         # Make it a list of [(T, H, D)]
+
         xk: tuple[torch.Tensor] = torch.split(xk, self.metadata.seqlens)  # type: ignore
         xv: tuple[torch.Tensor] = torch.split(xv, self.metadata.seqlens)  # type: ignore
-        assert len(xk) == len(
-            self.kv_seqlens
-        ), f"Batch size is {len(self.kv_seqlens)}, got {len(xk)}"
+        assert len(xk) == len(self.kv_seqlens), (
+            f"Batch size is {len(self.kv_seqlens)}, got {len(xk)}"
+        )
 
         # Order elements in cache by position by unrotating
         cache_k = [unrotate(t, s) for t, s in zip(self.cache_k, self.kv_seqlens)]
@@ -153,12 +154,18 @@ class CacheView:
 
 
 class CrossAttCache:
-    def __init__(self, batch_size, n_kv_heads,  cross_att_layers, head_dim, kv_seqlens):
+    def __init__(self, batch_size, n_kv_heads, cross_att_layers, head_dim, kv_seqlens):
         self.n_kv_heads = n_kv_heads
         self.head_dim = head_dim
 
-        self.cache_k = {str(i):torch.empty((batch_size, n_kv_heads * head_dim)) for i in cross_att_layers}
-        self.cache_v = {str(i):torch.empty((batch_size, n_kv_heads * head_dim)) for i in cross_att_layers}
+        self.cache_k = {
+            str(i): torch.empty((batch_size, n_kv_heads * head_dim))
+            for i in cross_att_layers
+        }
+        self.cache_v = {
+            str(i): torch.empty((batch_size, n_kv_heads * head_dim))
+            for i in cross_att_layers
+        }
         self.mask = None
         # holds the valid length for each batch element in the cache
         self.kv_seqlens = kv_seqlens
@@ -173,11 +180,14 @@ class CrossAttCache:
         return BlockDiagonalMask.from_seqlens(
             q_seqlen=q_seqlens, kv_seqlen=self.kv_seqlens
         )
-        
+
     def to(self, device: torch.device, dtype: torch.dtype) -> "CrossAttCache":
-        
-        self.cache_k = {k:v.to(device=device, dtype=dtype) for k, v in self.cache_k.items()}
-        self.cache_v = {k:v.to(device=device, dtype=dtype) for k, v in self.cache_v.items()}
+        self.cache_k = {
+            k: v.to(device=device, dtype=dtype) for k, v in self.cache_k.items()
+        }
+        self.cache_v = {
+            k: v.to(device=device, dtype=dtype) for k, v in self.cache_v.items()
+        }
 
         return self
 
@@ -205,9 +215,9 @@ class BufferCache:
         self.cache_sizes: list[int] = get_cache_sizes(
             n_layers, max_seq_len, sliding_window
         )
-        assert (
-            len(self.cache_sizes) == n_layers
-        ), f"Expected {n_layers} cache sizes, got {len(self.cache_sizes)}"
+        assert len(self.cache_sizes) == n_layers, (
+            f"Expected {n_layers} cache sizes, got {len(self.cache_sizes)}"
+        )
 
         self.cache_k = {}
         self.cache_v = {}
@@ -268,9 +278,9 @@ class BufferCache:
             self.init_kvseqlens(len(seqlens))
 
         assert self.kv_seqlens is not None
-        assert len(seqlens) == len(
-            self.kv_seqlens
-        ), f"Batch size is {len(self.kv_seqlens)}, got {len(seqlens)}, did you forget to reset cache?"
+        assert len(seqlens) == len(self.kv_seqlens), (
+            f"Batch size is {len(self.kv_seqlens)}, got {len(seqlens)}, did you forget to reset cache?"
+        )
         seqpos = self.kv_seqlens.tolist()
         assert len(seqlens) > 0, seqlens
 

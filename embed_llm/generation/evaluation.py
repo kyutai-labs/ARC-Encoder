@@ -889,7 +889,7 @@ if __name__ == "__main__":
     args = arg_parser()
 
     if args.benchmarks == "all":
-        benchmarks = ["NQ", "TRIVIAQA", "FactKG", "HotpotQA", "SQUAD"]
+        benchmarks = ["NQ", "TRIVIAQA", "HotpotQA", "SQUAD"]
     elif args.benchmarks == "two_main":
         benchmarks = ["NQ", "TRIVIAQA"]
     else:
