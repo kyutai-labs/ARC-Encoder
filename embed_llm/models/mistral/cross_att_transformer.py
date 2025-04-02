@@ -88,7 +88,6 @@ class Cross_Attention(nn.Module):
         xv: torch.Tensor,
         mask: BlockDiagonalMask | None = None,
         freqs_cis: torch.Tensor | None = None,
-        w_scores: list[float] | None = None,
         freqs_cis_ca: torch.Tensor | None = None,
     ) -> torch.Tensor:
         seqlen_sum, _ = x.shape
@@ -109,36 +108,12 @@ class Cross_Attention(nn.Module):
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
 
-        if w_scores is None:
-            output = memory_efficient_attention(xq, key, val, mask)
-            output = output.view(seqlen_sum, self.n_heads * self.head_dim)
+        output = memory_efficient_attention(xq, key, val, mask)
+        output = output.view(seqlen_sum, self.n_heads * self.head_dim)
 
-            assert isinstance(output, torch.Tensor)
+        assert isinstance(output, torch.Tensor)
 
-            return self.wo(output)  # type: ignore
-        else:
-            scale = 1 / xq.shape[-1] ** 0.5
-            xq = xq * scale
-            xq = xq.transpose(1, 2)
-            key = key.transpose(1, 2)
-            val = val.transpose(1, 2)
-            attn = xq @ key.transpose(-2, -1)
-            attn_bias = mask
-            attn_shape = attn.shape
-            if attn_bias is not None:
-                attn = attn + attn_bias.materialize(attn_shape).to(attn.device)
-            if w_scores is not None:
-                assert len(w_scores) == attn.shape[-1]
-                # Multiply element wise according to the last dimension
-                score_inv_temp = torch.tensor(w_scores).to(attn.device)
-                attn = torch.einsum("bhsl,l->bhsl", attn, score_inv_temp)
-
-            attn = attn.softmax(-1)
-            output = (attn @ val).transpose(1, 2)
-            output = output.reshape(seqlen_sum, self.n_heads * self.head_dim)
-
-            assert isinstance(output, torch.Tensor)
-            return self.wo(output)
+        return self.wo(output)  # type: ignore
 
 
 class Cross_AttTransformerBlock(nn.Module):
@@ -202,9 +177,6 @@ class Cross_AttTransformerBlock(nn.Module):
         cache: CacheView | None = None,
         self_mask: BlockDiagonalCausalMask | None = None,
         cross_att_mask: BlockDiagonalMask | None = None,
-        pool_att_embds: torch.Tensor | None = None,
-        seqlens: list[int] | None = None,
-        w_scores: list[float] | None = None,
         freqs_cis_ca: torch.Tensor | None = None,
     ) -> torch.Tensor:
         r = self.attention.forward(
@@ -219,7 +191,6 @@ class Cross_AttTransformerBlock(nn.Module):
                 mask=cross_att_mask,
                 xk=xk,
                 xv=xv,
-                w_scores=w_scores,
                 freqs_cis=freqs_cis,
                 freqs_cis_ca=freqs_cis_ca,
             )
@@ -561,7 +532,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         cache: BufferCache | None,
         cross_att_cache: CrossAttCache | None,
         cat_embeddings: torch.Tensor | None = None,
-        w_scores: list[float] | None = None,
         insert_cat_embedds: list[int] | None = None,
     ) -> torch.Tensor:
         """Local forward pass.
@@ -744,7 +714,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                         else cross_att_cache.get_mask(seqlens.tolist())
                     ),
                     freqs_cis_ca=freqs_cis_ca,
-                    w_scores=w_scores,
                 )
 
             else:
@@ -773,7 +742,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         cache: BufferCache | None,
         cat_embeddings: torch.Tensor | None = None,
         cross_att_cache: CrossAttCache | None = None,
-        w_scores: list[float] | None = None,
         insert_cat_embedds: list[int] | None = None,
     ) -> torch.Tensor:
         h = self.generate_partial(
@@ -784,7 +752,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
             cross_att_cache=cross_att_cache,
             embed_seqlens=embed_seqlens,
             cat_embeddings=cat_embeddings,
-            w_scores=w_scores,
             insert_cat_embedds=insert_cat_embedds,
         )
         if self.pipeline_rank < self.num_pipeline_ranks - 1:

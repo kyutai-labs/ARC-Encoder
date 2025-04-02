@@ -167,7 +167,6 @@ def evaluate_QA(
         context = []
         questions = []
         answers = []
-        scores = []
         with open(eval_data, "r") as f:
             for line in f:
                 data = json.loads(line)
@@ -205,18 +204,13 @@ def evaluate_QA(
                     else:
                         context.append(list(data["passages"][:max_multi_passage]))
 
-        if len(scores) == 0:
-            c = list(zip(questions, context, answers))
+        c = list(zip(questions, context, answers))
 
-            # fixed_random = random.Random()
-            # fixed_random.seed(42)
-            # fixed_random.shuffle(c)
-            random.shuffle(c, random=lambda: seed)
-            questions, context, answers = zip(*c)
-        else:
-            c = list(zip(questions, context, answers, scores))
-            random.shuffle(c, random=lambda: seed)
-            questions, context, answers, scores = zip(*c)
+        # fixed_random = random.Random()
+        # fixed_random.seed(42)
+        # fixed_random.shuffle(c)
+        random.shuffle(c, random=lambda: seed)
+        questions, context, answers = zip(*c)
 
         eval_logger_info(logger, f"Evaluation dataset loaded for {benchmark}")
 
@@ -245,10 +239,6 @@ def evaluate_QA(
             list(questions[icl_examples:]),
             list(answers[icl_examples:]),
         )
-
-        if len(scores) > 0:
-            new_scores = list(scores[icl_examples:])
-            new_scores.reverse()
 
         new_context.reverse()
         new_questions.reverse()

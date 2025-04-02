@@ -17,7 +17,6 @@ def generate(
     eos_id: int | None = None,
     embed_seqlens: list[list[int]] | None = None,
     cat_embeddings: torch.Tensor | None = None,
-    w_scores: list[float] | None = None,
 ) -> tuple[list[list[int]], list[list[float]]]:
     if len(prompt_pre_embed) > 0 and not isinstance(prompt_pre_embed[0], list):
         prompt_pre_embed = [prompt_pre_embed]
@@ -97,7 +96,6 @@ def generate(
             insert_cat_embedds=B * [0]
             if len(insert_cat_embedds) == 0
             else insert_cat_embedds,
-            w_scores=w_scores,
         )
 
         # Stop concatenating after first chunk
