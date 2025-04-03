@@ -354,6 +354,99 @@ class LatentAttention(nn.Module):
         return hiddens
 
 
+class MT_Attention(nn.Module):
+    def __init__(
+        self,
+        c_q: int = 4,
+        c_k: int = 9,
+        c_h: int = 2,
+        hidden_dim: int = 4096,
+        n_heads: int = 32,
+        head_dim: int = 128,
+        conv_pool: bool = False,
+    ):
+        super().__init__()
+
+        # TODO Implement a conv such that it compresses the attention along the query axis
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.inner_dim = n_heads * head_dim
+
+        self.c_q = c_q
+        self.c_k = c_k
+        self.c_h = c_h
+
+        assert n_heads % c_h == 0, f"n_heads {n_heads} must be divisible by c_h {c_h}"
+
+        self.to_q = nn.Linear(hidden_dim, self.inner_dim, bias=False)
+        self.to_kv = nn.Linear(hidden_dim, 2 * self.inner_dim, bias=False)
+        self.to_out = nn.Linear(self.inner_dim, hidden_dim, bias=False)
+        self.cube_conv = nn.Conv2d(
+            in_channels=n_heads,
+            out_channels=n_heads,
+            kernel_size=(c_q, c_k),
+            stride=(1, 1),
+            # Pad too much if c_q or c_k is even and then truncate
+            padding=(c_q // 2, c_k // 2),
+            groups=n_heads // c_h,
+            bias=False,
+        )
+        torch.nn.init.dirac_(self.cube_conv.weight)
+
+        self.group_norm = nn.GroupNorm(
+            num_groups=n_heads // c_h, num_channels=n_heads, eps=1e-5, affine=True
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        context: torch.Tensor,
+        q_seqlen: list[int],
+        kv_seqlen: list[int],
+    ) -> torch.Tensor:
+        seqlen_sum, _ = x.shape
+        q = self.to_q(x)
+        context = x if context is None else context
+        k, v = self.to_kv(context).chunk(2, dim=-1)
+
+        # (Sq, H, D)
+        xq, key, val = map(
+            lambda t: t.reshape(t.shape[0], self.n_heads, self.head_dim),
+            (q, k, v),
+        )
+        scale = 1 / xq.shape[-1] ** 0.5
+
+        xq = xq * scale
+        xq = xq.transpose(0, 1)
+        key = key.transpose(0, 1)
+        val = val.transpose(0, 1)
+
+        # (H, Sq, Sk)
+        attn = xq @ key.transpose(-2, -1)
+
+        attn_bias = torch.block_diag(
+            *[
+                torch.ones(q_seqlen[i], kv_seqlen[i])
+                for i in range(len(q_seqlen))
+            ]
+        ).to(device=x.device, dtype=x.dtype).unsqueeze(0)
+        
+        attn = attn * attn_bias
+        attn = self.cube_conv(attn)
+
+        if self.c_q % 2 == 0:
+            attn = attn[:, :-1, :]
+        if self.c_k % 2 == 0:
+            attn = attn[:, :, :-1]
+
+        attn = attn + attn_bias
+        attn = attn.softmax(dim=-1)
+        out = (attn @ val).reshape(self.n_heads, seqlen_sum, self.head_dim)
+        out = self.group_norm(out.unsqueeze(0)).squeeze(0).transpose(0, 1)
+        out = out.reshape(seqlen_sum, self.inner_dim)
+        return self.to_out(out)
+
+
 class AdaptivePoolingAttention(nn.Module):
     def __init__(
         self,
@@ -362,7 +455,8 @@ class AdaptivePoolingAttention(nn.Module):
         compress_rate: int = 64,
         head_dim: int = 128,
         pool_type: str = "mean",
-        rms_norm: bool = True,
+        rms_norm: bool = False,
+        cont_att_norm: bool = False,
     ):
         super().__init__()
 
@@ -399,6 +493,22 @@ class AdaptivePoolingAttention(nn.Module):
                 n_heads=n_heads,
                 head_dim=head_dim,
             )
+            self.attention_context_norm = None
+            if cont_att_norm:
+                self.attention_context_norm = RMSNorm(hidden_dim, eps=1e-5)
+
+        elif "mta" in self.pool_type:
+            self.attention_norm = RMSNorm(hidden_dim, eps=1e-5)
+            self.self_attend_block = MT_Attention(
+                hidden_dim=hidden_dim,
+                n_heads=n_heads,
+                head_dim=head_dim,
+                conv_pool=(self.pool_type == "mta_conv_pool"),
+            )
+
+            self.attention_context_norm = None
+            if cont_att_norm:
+                self.attention_context_norm = RMSNorm(hidden_dim, eps=1e-5)
 
         elif self.pool_type == "mean":
             # Argument to replicate Mistral architecture (+ -1 as compress rate)
@@ -492,14 +602,17 @@ class AdaptivePoolingAttention(nn.Module):
                         embed_seqlen.append(len(compressed_embed_size))
                     new_embed_seqlens.append(embed_seqlen)
 
-                if self.pool_type == "last_sa":
+                if "last" in self.pool_type:
                     pool_mask = torch.block_diag(
                         *[
                             torch.tensor([0.0] * (max(t - 1, 0)) + [1.0])
                             for t in pool_size
                         ]
                     ).to(device=x.device, dtype=x.dtype)
+                elif "mta_conv_pool" in self.pool_type:
+                    pool_mask = None
                 else:
+                    # Mean pooling
                     pool_mask = torch.block_diag(
                         *[torch.ones(t) / t for t in pool_size]
                     ).to(device=x.device, dtype=x.dtype)
@@ -518,11 +631,27 @@ class AdaptivePoolingAttention(nn.Module):
                 )
                 r = self.self_attend_block(
                     self.attention_norm(queries),
-                    context=x,
-                    mask=BlockDiagonalMask.from_seqlens(
-                        q_seqlen=sum(new_embed_seqlens, []),
-                        kv_seqlen=sum(embed_seqlens, []),
-                    ),
+                    context=x
+                    if self.attention_context_norm is None
+                    else self.attention_context_norm(x),
+                    q_seqlen=sum(new_embed_seqlens, []),
+                    kv_seqlen=sum(embed_seqlens, []),
+                )
+                out = r + queries
+            elif "mta" in self.pool_type:
+                assert sum(sum(new_embed_seqlens, [])) == queries.shape[0], (
+                    "Sum of new_embed_seqlens must be equal to sum of embed_seqlens"
+                )
+                assert sum(sum(embed_seqlens, [])) == x.shape[0], (
+                    "Sum of embed_seqlens must be equal to sum of x"
+                )
+                r = self.self_attend_block(
+                    self.attention_norm(queries),
+                    context=x
+                    if self.attention_context_norm is None
+                    else self.attention_context_norm(x),
+                    q_seqlen=[sum(seql) for seql in new_embed_seqlens],
+                    kv_seqlen=[sum(seql) for seql in embed_seqlens],
                 )
                 out = r + queries
             else:
@@ -567,6 +696,7 @@ class PoolingModule(nn.Module):
                 compress_rate=args.compress_rate,
                 pool_type=self.args.pool_type,
                 rms_norm=args.rms_norm,
+                cont_att_norm=args.cont_att_norm,
             )
         else:
             self.process = None

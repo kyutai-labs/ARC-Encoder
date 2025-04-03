@@ -523,9 +523,6 @@ class EmbedAugPipeline(nn.Module):
                     augmented_pipeline.model.pooling_module.process.load_state_dict(
                         state_dict
                     )
-                    augmented_pipeline.model.pooling_module.process.pooling_out_norm.weight = torch.nn.Parameter(torch.ones_like(
-                        augmented_pipeline.model.pooling_module.process.pooling_out_norm.weight, requires_grad=False)
-                    )
 
                     augmented_pipeline.model.pooling_module.process = (
                         augmented_pipeline.model.pooling_module.process.to(device)

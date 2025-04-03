@@ -20,6 +20,7 @@ class PoolingArgs(Serializable):
     early_out: bool = False
     pool_type: str = "mean"
     rms_norm: bool = False
+    cont_att_norm: bool = False
 
 
 @dataclass

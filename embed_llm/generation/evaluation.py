@@ -66,6 +66,8 @@ def create_prompt_prefix(
             for query, answer, doc, _ in zip(
                 queries, answers, docs, range(max_examples)
             ):
+                if isinstance(doc, list):
+                    doc = "\n".join(doc)
                 prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
         else:
             for query, answer, _ in zip(queries, answers, range(max_examples)):
@@ -569,7 +571,7 @@ def arg_parser():
     parser.add_argument("--seed", type=float, default=0.42)
     parser.add_argument("--icl_exs", type=int, default=None)
     parser.add_argument("--llmemb_icl_w_context", action="store_true")
-    parser.add_argument("--icl_before_pref", action="store_true")
+    parser.add_argument("--icl_before_pref", action="store_true") 
     parser.add_argument("--compress_rate", type=int, default=None)
 
     return parser.parse_args()
