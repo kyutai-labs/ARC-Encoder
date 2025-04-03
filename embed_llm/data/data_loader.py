@@ -12,7 +12,7 @@ from embed_llm.data.tokenize import Tokenizer
 class Batch:
     x: np.ndarray
     y: np.ndarray
-    to_embed: list[dict[str, list[list[int]] | list[str]]]
+    to_embed: list[dict[str, list[int] | str]]
     sizes: list[int]
     y_mask: np.ndarray | None = None
     is_pad_only: bool = False
@@ -43,7 +43,7 @@ class Batch:
             assert self.y_mask is None
             # create all 0's mask for pad samples
             self.y_mask = np.zeros_like(self.x)
-            self.to_embed = [{"text": [""], "tokens": [[0]]} for _ in self.to_embed]
+            self.to_embed = [{"text": "", "tokens": [0]} for _ in self.to_embed]
         if self.n_prefixes is not None:
             assert len(self.n_prefixes) == len(self.to_embed)
         
@@ -55,7 +55,7 @@ class Batch:
 class Batchlist:
     x: list[list[int]] = dataclasses.field(default_factory=list)
     y: list[list[int]] = dataclasses.field(default_factory=list)
-    to_embed: list[list[dict[str, list[list[int]] | list[str]]]] = dataclasses.field(
+    to_embed: list[list[dict[str, list[int] | str]]] = dataclasses.field(
         default_factory=list
     )
     sizes: list[list[int]] = dataclasses.field(default_factory=list)
@@ -78,7 +78,7 @@ class Batchlist:
         self,
         x: list[int],
         y: list[int],
-        to_embed: list[dict[str, list[list[int]] | list[str]]],
+        to_embed: list[dict[str, list[int] | str]],
         sizes: list[int],
         y_mask: list[bool],
         data_type: str,
@@ -187,9 +187,8 @@ def build_data_loader(
         # Avoid empty samples
         if any(
             [
-                len(l_tokens) <= 1
+                len(embed["tokens"]) <= 1
                 for embed in sample.to_embed
-                for l_tokens in embed["tokens"]
             ]
         ):
             continue

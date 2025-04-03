@@ -271,22 +271,13 @@ def evaluate_haystack(
                 tokens = mistral_tokenizer.encode(ctx, bos=True, eos=False)
 
                 if not mistral:
-                    # TO modify
-                    splitted_tokens = []
-                    splitted_tokens = [
-                        tokens[i : i + len(tokens) // max_multi_passage]
-                        for i in range(0, len(tokens), len(tokens) // max_multi_passage)
-                    ]
-                    splitted_ctx = [
-                        mistral_tokenizer.decode(token) for token in splitted_tokens
-                    ]
+   
 
                     generated_sequence, embed_tokens, embeds = pipeline.generate(
-                        prompt_pre_embed=[""],
-                        prompt_post_embed=[
+                        batch_list_prompts=[
                             "\n\nQuestion: What is the best thing to do in San Francisco?\nAnswer:"
                         ],
-                        text_conditioning=[splitted_ctx],
+                        text_conditioning=ctx,
                         temperature=temp,
                         max_tokens=128,
                         truncate_line=False,

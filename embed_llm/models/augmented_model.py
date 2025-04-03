@@ -101,10 +101,11 @@ class EmbedAugModel(nn.Module):
         x: torch.Tensor,
         seqlens: list[int],
         embeddings: torch.Tensor | None = None,
-        embed_seqlens: list[list[int]] | None = None,
+        embed_seqlens: list[int] | None = None,
         batch_type: str = "reconstruction",
     ) -> torch.Tensor:
         cat_embeddings = None
+        
         if self.trainable_embedder is not None and embeddings is not None:
             embeddings = self.trainable_embedder(
                 input_ids=embeddings,
@@ -119,10 +120,6 @@ class EmbedAugModel(nn.Module):
                     embed_seqlens=embed_seqlens,
                 )
 
-            else:
-                embed_seqlens = [sum(batch_seqlen) for batch_seqlen in embed_seqlens]
-        else:
-            embed_seqlens = embed_seqlens
         if embeddings is not None:
             if self.normalize_embed:
                 embeddings = F.normalize(embeddings, p=2, dim=-1)
@@ -220,7 +217,7 @@ class EmbedAugPipeline(nn.Module):
                             embed_seqlens.extend(emb_seqlens)
                         else:
                             embed_seqlens.extend(
-                                [[1] * len(l_text) for l_text in subbatch]
+                                [1] * subbatch
                             )
                             subbatch = [
                                 el for sublist in subbatch for el in sublist
@@ -251,12 +248,8 @@ class EmbedAugPipeline(nn.Module):
                         # We keep all tokens so we can concatenate embeddings into one long sequence.
                         subbatch = [" ".join(sublist) for sublist in subbatch]
                         embed_seqlens.extend(emb_seqlens)
-                        new_embed_seqlens = []
-                        for seql in embed_seqlens:
-                            new_embed_seqlens.append([seql])
-                        embed_seqlens = new_embed_seqlens
                     else:
-                        embed_seqlens.extend([len(l_text) * [1] for l_text in subbatch])
+                        embed_seqlens.extend([1] * subbatch)
                         subbatch = [
                             el for sublist in subbatch for el in sublist
                         ]  # Flatten list of lists
@@ -281,15 +274,14 @@ class EmbedAugPipeline(nn.Module):
                     [
                         el
                         for sublist in embeddings
-                        for subsublist in sublist
-                        for el in subsublist
+                        for el in sublist
                     ]
                 )
             ).cuda(non_blocking=True)
             embed_seqlens = []
             for to_embed in batch.to_embed:
-                assert not any([len(l_tokens) <= 1 for l_tokens in to_embed["tokens"]])
-                embed_seqlens.append([len(l_tokens) for l_tokens in to_embed["tokens"]])
+                assert not len(to_embed["tokens"]) <= 1
+                embed_seqlens.append(len(to_embed["tokens"]))
 
         x = torch.from_numpy(batch.x).cuda(non_blocking=True)
         y = torch.from_numpy(batch.y).cuda(non_blocking=True)
@@ -553,10 +545,9 @@ class EmbedAugPipeline(nn.Module):
     @torch.inference_mode()
     def generate_mistral(
         self,
-        text_conditioning: str | list[str] | list[list[str]] | None,
+        text_to_embed: str | list[str] | list[list[str]] | None,
         device: str,
-        prompt_pre_embed: str | list[str] = "",
-        prompt_post_embed: str | list[str] = "",
+        batch_list_prompts: list[str] | list[list[str]]= [""],
         max_tokens: int = 100,
         temperature: float = 0.6,
         truncate_line: bool = False,
@@ -565,6 +556,19 @@ class EmbedAugPipeline(nn.Module):
         give_n_tokens: bool = False,
         **kwargs,
     ):
+        """
+        Args:
+            text_to_embed: Text to condition the generation on by compressing them. If None, no conditioning is applied.
+            prompt: Prompt to use for the generation. If None, no prompt is used. 
+            There must be a list of prompts for each text conditioning or list of text conditioning to locate where to insert the text conditioning embeddings.
+            max_tokens: Maximum number of tokens to generate.
+            temperature: Temperature to use for the generation.         
+            truncate_line: If True, the generated text is truncated to the first line.
+            device_generation: Device to use for the generation. If None, the device of the model is used (OOM issues).
+            give_n_tokens: If True, the number of tokens generated is returned.
+            **kwargs: Additional arguments to pass to the generation function.
+        """
+        
         if not is_torchrun():
             device_generation = (
                 device if device_generation is None else device_generation
@@ -572,23 +576,26 @@ class EmbedAugPipeline(nn.Module):
         else:
             device_generation = None
 
-        if isinstance(prompt_pre_embed, str):
-            prompt_pre_embed = [prompt_pre_embed]
-        if isinstance(prompt_post_embed, str):
-            prompt_post_embed = [prompt_post_embed]
+        if isinstance(batch_list_prompts, str):
+               batch_list_prompts = [batch_list_prompts]
 
-        if text_conditioning is not None:
-            if isinstance(text_conditioning, str):
-                text_conditioning = [[text_conditioning]]
-            elif isinstance(text_conditioning, list):
-                if isinstance(text_conditioning[0], str):
-                    text_conditioning = [[text] for text in text_conditioning]
+
+        if text_to_embed is not None:
+            if isinstance(text_to_embed, str):
+                assert isinstance(batch_list_prompts,list[str])
+                text_to_embed = [[text_to_embed]]
+                batch_list_prompts = [batch_list_prompts]
+            elif isinstance(text_to_embed, list):
+                if isinstance(text_to_embed[0], str):
+                    assert isinstance(batch_list_prompts[0], list[str]) 
+                    # Batch with one text per prompt
+                    text_to_embed = [[text] for text in text_to_embed]
             else:
                 raise ValueError(
                     "Text conditioning must be a string or a list of strings"
                 )
                 
-        if text_conditioning is None:
+        if text_to_embed is None:
             w_embeds = False
         else:
             w_embeds = self.pipeline_args.w_embeds
@@ -601,9 +608,9 @@ class EmbedAugPipeline(nn.Module):
                 if self.pipeline_args.cross_att and not self.pipeline_args.do_pool:
                     embeddings, embed_seqlens = encode_text(
                         (
-                            sum(text_conditioning, [])
-                            if isinstance(text_conditioning, list)
-                            else text_conditioning
+                            sum(text_to_embed, [])
+                            if isinstance(text_to_embed, list)
+                            else text_to_embed
                         ),
                         self.embed_model_name,
                         self.embedding_model,
@@ -619,9 +626,9 @@ class EmbedAugPipeline(nn.Module):
                 else:
                     embeddings, n_context_tokens = encode_text(
                         (
-                            sum(text_conditioning, [])
-                            if isinstance(text_conditioning, list)
-                            else text_conditioning
+                            sum(text_to_embed, [])
+                            if isinstance(text_to_embed, list)
+                            else text_to_embed
                         ),
                         self.embed_model_name,
                         self.embedding_model,
@@ -630,7 +637,7 @@ class EmbedAugPipeline(nn.Module):
                         no_pool=False,
                         give_n_tokens=True,
                     )
-                    embed_seqlens = [len(l_text) * [1] for l_text in text_conditioning]
+                    embed_seqlens = [len(l_text) * [1] for l_text in text_to_embed]
 
             elif w_embeds and (
                 self.pipeline_args.trainable_embedder
@@ -638,7 +645,7 @@ class EmbedAugPipeline(nn.Module):
             ):
                 x = [
                     self.tokenizer.encode(text, bos=False, eos=False)
-                    for l_text in text_conditioning
+                    for l_text in text_to_embed
                     for text in l_text
                 ]
 
@@ -655,7 +662,7 @@ class EmbedAugPipeline(nn.Module):
                 if self.pipeline_args.do_pool:
                     # Here seqlens must be the number of tokens in each subpassage grouped by
                     embed_seqlens = group_embed_seqlens(
-                        seqlens, [len(l_text) for l_text in text_conditioning]
+                        seqlens, [len(l_text) for l_text in text_to_embed]
                     )
                     embeddings, embed_seqlens = self.model.pooling_module(
                         x=embeddings.to(self.pipeline_args.param_dtype),
@@ -663,7 +670,7 @@ class EmbedAugPipeline(nn.Module):
                     )
                 else:
                     embed_seqlens = group_embed_seqlens(
-                        seqlens, [len(l_text) for l_text in text_conditioning]
+                        seqlens, [len(l_text) for l_text in text_to_embed]
                     )
 
             else:
@@ -703,7 +710,7 @@ class EmbedAugPipeline(nn.Module):
                 # Does not work with compress_rate != 0 for now
                 cat_embeddings = torch.empty(
                     (
-                        sum([len(l_text) for l_text in text_conditioning]),
+                        sum([len(l_text) for l_text in text_to_embed]),
                         self.model.llm.args.dim,
                     ),
                     device=self.model.llm.device,
@@ -711,7 +718,7 @@ class EmbedAugPipeline(nn.Module):
                 )
                 embeddings = torch.empty(
                     (
-                        sum([len(l_text) for l_text in text_conditioning]),
+                        sum([len(l_text) for l_text in text_to_embed]),
                         self.model.llm.args.dim,
                     ),
                     device=self.model.llm.device,
@@ -722,29 +729,34 @@ class EmbedAugPipeline(nn.Module):
         elif not w_embeds:
             cat_embeddings = None
             embeddings = None
-
-        encoded_pre_embed_prompts = []
-        encoded_post_embed_prompts = []
-        no_prefix = True
-        for prompt_pre, prompt_post in zip(prompt_pre_embed, prompt_post_embed):
-            # If not specified no prompt before embedding bos token is included after embedding
-            if prompt_pre == "":
-                encoded_pre_embed_prompts.append([])
+        do_concat = cat_embeddings is not None and (self.pipeline_args.do_both or not self.pipeline_args.cross_att)
+        encoded_prompt = []
+        insertion_lists = []
+        for l_prompts in batch_list_prompts:
+            prompt_tokens = []
+            insertion_list = []
+            
+            # Tokenize each part of the prompt separately to be able to insert the embeddings in between
+            if do_concat:
+                for index, prompt in enumerate(l_prompts):
+                    if index == 0:
+                        toks = self.tokenizer.encode(prompt, bos=True, eos=False)
+                        prompt_tokens.append(toks)
+                        insertion_list.append(len(toks))
+                    else:
+                        toks = self.tokenizer.encode(prompt, bos=False, eos=False)
+                        prompt_tokens.append(toks)
+                        insertion_list.append(len(toks))
+                encoded_prompt.append(prompt_tokens)
+                insertion_lists.append(insertion_list)
+            
+            # No need to insert in between tokens so tokenizer the full prompt in one go
             else:
-                encoded_pre_embed_prompts.append(
-                    self.tokenizer.encode(prompt_pre, bos=True, eos=False)
-                )
-                no_prefix = False
+                prompt = ''.join(l_prompts)
+                encoded_prompt.append(
+                    [self.tokenizer.encode(prompt, bos=True, eos=False)]
+                )   
 
-            # If no prompt before embedding bos token is included
-            if no_prefix:
-                encoded_post_embed_prompts.append(
-                    self.tokenizer.encode(prompt_post, bos=True, eos=False)
-                )
-            else:
-                encoded_post_embed_prompts.append(
-                    self.tokenizer.encode(prompt_post, bos=False, eos=False)
-                )
 
         eos_id = self.tokenizer.eos_id
 
@@ -752,27 +764,21 @@ class EmbedAugPipeline(nn.Module):
             torch.distributed.barrier()
        
         generated_tokens = mistral_generate(
-            prompt_pre_embed=encoded_pre_embed_prompts,
-            prompt_post_embed=encoded_post_embed_prompts,
+            prompt_tokens=encoded_prompt,
             embeddings=(
                 None
                 if embeddings is None or not self.pipeline_args.cross_att
                 else embeddings
             ),
+            insertion_lists=insertion_lists,
             model=self.model.llm
             if device_generation is None
             else self.model.llm.to(device_generation),
             max_tokens=max_tokens,
             temperature=temperature,
-            chunk_size=None,
             eos_id=eos_id,
             embed_seqlens=embed_seqlens,
-            cat_embeddings=(
-                None
-                if cat_embeddings is None
-                or (not self.pipeline_args.do_both and self.pipeline_args.cross_att)
-                else cat_embeddings
-            ),
+            cat_embeddings= None if not do_concat else cat_embeddings,
             **kwargs,
         )
         produced_text = [

@@ -83,15 +83,15 @@ def evaluate(
                     test_x = []
                     ind = 0
                     for to_embed, size in zip(batch.to_embed, batch.sizes):
-                        input_ids.extend(to_embed["tokens"][0])
+                        input_ids.extend(to_embed["tokens"])
                         test_x.extend(batch.x[ind : ind + size])
                         input_ids.extend(batch.x[ind : ind + size])
 
-                        ground_truth.extend(to_embed["tokens"][0])
+                        ground_truth.extend(to_embed["tokens"])
                         ground_truth.extend(batch.y[ind : ind + size])
-                        seqlens.append(len(to_embed["tokens"][0]) + size)
+                        seqlens.append(len(to_embed["tokens"]) + size)
                         ind += size
-                        mask.extend([False] * len(to_embed["tokens"][0]))
+                        mask.extend([False] * len(to_embed["tokens"]))
                         mask.extend([True] * size)
                         # Trainable Embedder
 
@@ -153,7 +153,7 @@ def evaluate(
                     )
 
                     for i, size in enumerate(batch.sizes):
-                        full_context = sum(contexts[i], [])
+                        full_context = contexts[i]
                         x_wcontext.extend(
                             full_context + batch.x[ind : ind + size].tolist()
                         )

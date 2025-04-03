@@ -19,7 +19,6 @@ from embed_llm.generation.metrics import (
     get_f1_score,
     metric_max_over_ground_truths,
     get_approx_em,
-    get_acc_factchecking,
     get_substring_match_score,
 )
 
@@ -27,7 +26,6 @@ from embed_llm.generation.metrics import (
 EVAL_DATA_PATH = {
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",
-    "FactKG": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_test.jsonl",
     "HotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl",
     "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",
 }
@@ -35,7 +33,6 @@ EVAL_DATA_PATH = {
 METRIC_EVALUATION = {
     "NQ": get_em,
     "TRIVIAQA": get_em,
-    "FactKG": get_acc_factchecking,
     "HotpotQA": get_em,
     "SQUAD": get_em,
 }
@@ -56,41 +53,86 @@ def create_prompt_prefix(
     answers: list[str],
     docs: list[str] | None = None,
     max_examples: int | None = None,
-    fact_checking: bool = False,
-) -> str:
+    compressed_doc_in_icl: bool = False,
+) -> tuple[list[str], list[str] | None]:
     max_examples = max_examples if max_examples is not None else len(queries)
+    prompt_str = []
+    to_embed_str = []
 
     prompt = ""
-    if not fact_checking:
-        if docs is not None:
+
+    if docs is not None:
+        if compressed_doc_in_icl:   
+            for query, answer, doc, index in zip(
+                queries, answers, docs, range(max_examples)
+            ):
+                if index == 0:
+                    prompt_str.append(
+                        "Document: "
+                    )
+                    to_embed_str.append(doc.strip())
+                elif index == max_examples - 1:
+                    prompt_str.append(
+                        f"\nQuestion: {query}\nAnswer: {answer}\n\n"
+                    )
+                else:
+                    prompt_str.append(
+                        f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
+                    )
+                    to_embed_str.append(doc.strip())
+                    
+        else:
             for query, answer, doc, _ in zip(
                 queries, answers, docs, range(max_examples)
             ):
                 prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
-        else:
-            for query, answer, _ in zip(queries, answers, range(max_examples)):
-                prompt += f"Question: {query}\nAnswer: {answer}\n\n"
+            to_embed_str = None
+            prompt_str.append(prompt)
+                
     else:
-        if docs is not None:
-            for query, answer, doc, _ in zip(
-                queries, answers, docs, range(max_examples)
-            ):
-                prompt += f'Document: {doc}\nVerify the following claims with "True" or "False":\n{query}: {query}\nAnswer: {answer}\n\n'
-        else:
-            for query, answer, _ in zip(queries, answers, range(max_examples)):
-                prompt += f'Verify the following claims with "True" or "False":\n{query}: {query}\nAnswer: {answer}\n\n'
-    return prompt
+        for query, answer, _ in zip(queries, answers, range(max_examples)):
+            prompt += f"Question: {query}\nAnswer: {answer}\n\n"
+            
+        prompt_str.append(prompt)
+        to_embed_str = None
+
+    return prompt_str, to_embed_str
 
 
 def create_prompt(
-    prefix: str, doc: str | list[str], query: str, wdoc: bool = True
-) -> str:
-    if isinstance(doc, list):
-        doc = "\n".join(doc)
-    if wdoc:
-        return prefix + f"Document: {doc}\nQuestion: {query}\nAnswer:"
+    prefix_prompt: list[str], prefix_embed: list[str] | None, 
+    doc: str, query: str, wdoc: bool = True, w_embeds: bool = True
+) -> tuple[list[str], list[str] | None]:
+            
+    list_prompt = prefix_prompt
+    
+    if prefix_embed is None and w_embeds:
+        prefix_embed = []
     else:
-        return prefix + f"Question: {query}\nAnswer:"
+        prefix_embed = prefix_embed
+        
+    assert int(wdoc)*int(w_embeds)==0, (
+        "Cannot use both text context and embeddings as the document in the same time"
+    )
+        
+    if wdoc:
+        return [''.join(list_prompt.append(f"Document: {doc}\nQuestion: {query}\nAnswer:"))], prefix_embed
+    else:
+        if w_embeds:
+            list_prompt.append(
+                "Document: "
+            )
+            prefix_embed.append(doc.strip())
+            list_prompt.append(
+                f"\nQuestion: {query}\nAnswer:"
+            )
+        else:
+            prefix_embed = None
+            list_prompt.append(
+                f"\nQuestion: {query}\nAnswer:"
+            )
+        
+        return list_prompt, prefix_embed
 
 
 def evaluate_QA(
@@ -106,16 +148,14 @@ def evaluate_QA(
     icl_examples: int = 0,
     pipeline: EmbedAugPipeline | Transformer | None = None,
     w_embeds: bool = True,  # To test baseline LLM
-    query_w_context: bool = True,
-    icl_w_context: bool = True,
+    query_w_context: bool = False,
+    icl_w_document: bool = True,
     mistral: bool = False,
     max_multi_passage: int = 1,
     instruct_name: str = None,
-    prompt_before_embed: bool = False,
-    split_to_multipassage: bool = False,
-    icl_before_pref: bool = False,
     seed: float = 0.42,
     compress_rate: int | None = None,
+    compressed_doc_in_icl: bool = False,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
@@ -185,24 +225,7 @@ def evaluate_QA(
                     context.append(data["passages"][0].strip())
 
                 else:
-                    if split_to_multipassage:
-                        l_sent = sent_tokenize(data["passages"][0])
-                        if len(l_sent) < max_multi_passage:
-                            l_sent = data["passages"][0].split(" ")
-                        multi_passage = []
-                        for i in range(max_multi_passage):
-                            multi_passage.append(
-                                " ".join(
-                                    l_sent[
-                                        i * len(l_sent) // max_multi_passage : (i + 1)
-                                        * len(l_sent)
-                                        // max_multi_passage
-                                    ]
-                                )
-                            )
-                        context.append(multi_passage)
-                    else:
-                        context.append(list(data["passages"][:max_multi_passage]))
+                    context.append('\n'.join(list((data["passages"][:max_multi_passage]))))
 
         c = list(zip(questions, context, answers))
 
@@ -214,25 +237,22 @@ def evaluate_QA(
 
         eval_logger_info(logger, f"Evaluation dataset loaded for {benchmark}")
 
-        if mistral and isinstance(context[0], list):
-            context = ["\n".join(doc) for doc in context]
-
-        if icl_w_context:
-            prompt_prefix = create_prompt_prefix(
-                queries=questions,
-                answers=[answer[0] for answer in answers],
-                docs=context,
-                max_examples=icl_examples,
-                fact_checking=(benchmark == "FactKG"),
+        if compressed_doc_in_icl:
+            assert w_embeds, (
+                "Compressed document in ICL is not compatible without embeddings"
             )
-        else:
-            prompt_prefix = create_prompt_prefix(
-                queries=questions,
-                answers=[answer[0] for answer in answers],
-                docs=None,
-                max_examples=icl_examples,
-                fact_checking=(benchmark == "FactKG"),
+        if query_w_context:
+            assert not w_embeds, (
+                "Query with context is not compatible with embeddings"
             )
+            
+        prompt_str, to_embed_str = create_prompt_prefix(
+            queries=questions,
+            answers=[answer[0] for answer in answers],
+            docs=None if not icl_w_document else context,
+            max_examples=icl_examples,
+            compressed_doc_in_icl=compressed_doc_in_icl,
+        )
 
         new_context, new_questions, new_answers = (
             list(context[icl_examples:]),
@@ -249,77 +269,29 @@ def evaluate_QA(
             generated_sequences = []
             n_samples = len(new_questions) if n_samples is None else n_samples
             for i in trange(0, n_samples, max_bs):
+                texts_to_embed = [] 
+                batch_list_prompts = []
                 bs = min(max_bs, n_samples - i)
-                if w_embeds:
-                    no_context_prompt = [
-                        create_prompt(
-                            prefix=prompt_prefix, doc="", query=query, wdoc=False
-                        )
-                        for query in new_questions[i : i + bs]
-                    ]
+                
+                for query, doc in zip(new_questions[i : i + bs], new_context[i : i + bs]):
+                    text_to_embed, batch_list_prompt = create_prompt(
+                        prefix_prompt=prompt_str,
+                        prefix_embed=to_embed_str,
+                        doc=doc,
+                        w_embeds=w_embeds,
+                        query=query,
+                        wdoc=query_w_context,
+                    )
+                    batch_list_prompts.append(batch_list_prompt)
+                    texts_to_embed.append(text_to_embed)
+  
 
-                    context_prompt = [
-                        create_prompt(
-                            prefix=" answer the question following the examples:\n\n"
-                            + prompt_prefix,
-                            doc="",
-                            query=query,
-                            wdoc=False,
-                        )
-                        for query in new_questions[i : i + bs]
-                    ]
-
-                else:
-                    if query_w_context:
-                        no_context_prompt = [
-                            create_prompt(
-                                prefix=prompt_prefix,
-                                doc=doc,
-                                query=query,
-                                wdoc=True,
-                            )
-                            for query, doc in zip(
-                                new_questions[i : i + bs],
-                                new_context[i : i + bs],
-                            )
-                        ]
-                    else:
-                        no_context_prompt = [
-                            create_prompt(
-                                prefix=prompt_prefix,
-                                doc="",
-                                query=query,
-                                wdoc=False,
-                            )
-                            for query in new_questions[i : i + bs]
-                        ]
 
                 if not mistral:
-                    if w_embeds:
-                        text_conditioning = list(new_context[i : i + bs])
-                    else:
-                        text_conditioning = None
 
                     generated_sequence, embed_tokens, embeds = pipeline.generate(
-                        prompt_pre_embed=(
-                            [""] * bs
-                            if not prompt_before_embed
-                            else ["Based on the context "] * bs
-                        )
-                        if not icl_before_pref
-                        else [prompt_prefix + "Document: "]
-                        * bs,  # If model trained with task prefix before embedding
-                        prompt_post_embed=(
-                            context_prompt
-                            if pipeline.pipeline_args.w_prefix_prompt
-                            else no_context_prompt
-                        )
-                        if not icl_before_pref
-                        else [
-                            f"\nQuestion: {query}\nAnswer:"
-                            for query in new_questions[i : i + bs]
-                        ],
-                        text_conditioning=text_conditioning,
+                        text_to_embed=texts_to_embed,
+                        batch_list_prompts=batch_list_prompts,
                         temperature=temp,
                         max_tokens=max_seq_len,
                         truncate_line=True,
@@ -334,8 +306,8 @@ def evaluate_QA(
                     generated_sequences.extend(generated_sequence)
                 else:
                     tokens = [
-                        mistral_tokenizer.encode(prompt, bos=True, eos=False)
-                        for prompt in no_context_prompt
+                        mistral_tokenizer.encode(prompt[0], bos=True, eos=False)
+                        for prompt in texts_to_embed
                     ]
 
                     compress_ratio += sum([len(token) for token in tokens]) / sum(
@@ -398,14 +370,13 @@ def evaluate_QA(
                 metrics[benchmark]["EM"][str(temp)] = {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
-                    "w_context_in_examples": icl_w_context,
+                    "w_context_in_examples": icl_w_document,
                     "w_context_w_query": query_w_context,
                     "Metric": value_em,
                     "approx_Metric": value_approx,
                     "Prop context containing the answer": n_answer_in_context,
                     "xRAG metric": value_xrag,
                     "n_passages": max_multi_passage,
-                    "1 passage splitted ?": split_to_multipassage,
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                 }
                 value_f1 = (
@@ -421,14 +392,13 @@ def evaluate_QA(
                 metrics[benchmark]["F1"][str(temp)] = {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
-                    "w_context_in_examples": icl_w_context,
+                    "w_context_in_examples": icl_w_document,
                     "w_context_w_query": query_w_context,
                     "Metric": value_f1,
                     "n_passages": max_multi_passage,
-                    "1 passage splitted ?": split_to_multipassage,
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                 }
-                eval_logger_info(logger, "Prompt prefix: " + prompt_prefix)
+
                 eval_logger_info(
                     logger,
                     f"Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
@@ -467,9 +437,8 @@ def evaluate_QA(
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
                     "Metric": value,
-                    "w_context_in_examples": icl_w_context,
+                    "w_context_in_examples": icl_w_document,
                     "n_passages": max_multi_passage,
-                    "1 passage splitted ?": split_to_multipassage,
                     "prop context containing the answer": n_answer_in_context,
                 }
 
@@ -564,12 +533,10 @@ def arg_parser():
     parser.add_argument("--multi_passages", type=int, default=1)
     parser.add_argument("--instruct_name", type=str, default=None)
     parser.add_argument("--benchmarks", type=str, default="all")
-    parser.add_argument("--prompt_before_embed", action="store_true")
-    parser.add_argument("--split_to_multipassage", action="store_true")
     parser.add_argument("--seed", type=float, default=0.42)
-    parser.add_argument("--icl_exs", type=int, default=None)
-    parser.add_argument("--llmemb_icl_w_context", action="store_true")
-    parser.add_argument("--icl_before_pref", action="store_true")
+    parser.add_argument("--n_icl_exs", type=int, default=None)
+    parser.add_argument("--icl_w_document", action="store_true")
+    parser.add_argument("--compressed_doc_in_icl", action="store_true")
     parser.add_argument("--compress_rate", type=int, default=None)
 
     return parser.parse_args()
@@ -588,7 +555,7 @@ if __name__ == "__main__":
         benchmarks = ["NQ", "TRIVIAQA"]
     else:
         benchmarks = [args.benchmarks]
-    icl_tests = [0, 2, 5] if args.icl_exs is None else [args.icl_exs]
+    icl_tests = [0, 2, 5] if args.n_icl_exs is None else [args.n_icl_exs]
     ensure_reproducibility(29)
 
     output_file = (
@@ -627,7 +594,7 @@ if __name__ == "__main__":
                 tmp_path=tmp_path,
                 icl_examples=icl_tests[0],
                 mistral=True,
-                icl_w_context=False,
+                icl_w_document=True,
                 query_w_context=False,
                 w_embeds=False,
             )
@@ -644,11 +611,10 @@ if __name__ == "__main__":
             tmp_path=tmp_path,
             icl_examples=icl_tests[0],
             mistral=True,
-            icl_w_context=True,
+            icl_w_document=True,
             query_w_context=True,
             w_embeds=False,
             max_multi_passage=args.multi_passages,
-            split_to_multipassage=args.split_to_multipassage,
             seed=args.seed,
         )
         torch.cuda.empty_cache()
@@ -667,7 +633,7 @@ if __name__ == "__main__":
                     tmp_path=tmp_path,
                     icl_examples=icl_ex,
                     mistral=True,
-                    icl_w_context=False,
+                    icl_w_document=False,
                     query_w_context=False,
                     w_embeds=False,
                     pipeline=mistral_model,
@@ -685,12 +651,11 @@ if __name__ == "__main__":
                 tmp_path=tmp_path,
                 icl_examples=icl_ex,
                 mistral=True,
-                icl_w_context=True,
+                icl_w_document=True,
                 query_w_context=True,
                 w_embeds=False,
                 pipeline=mistral_model,
                 max_multi_passage=args.multi_passages,
-                split_to_multipassage=args.split_to_multipassage,
                 seed=args.seed,
             )
             torch.cuda.empty_cache()
@@ -709,14 +674,12 @@ if __name__ == "__main__":
             tmp_path=tmp_path,
             icl_examples=icl_tests[0],
             w_embeds=args.wo_embeds,
-            icl_w_context=args.llmemb_icl_w_context,
+            icl_w_document=args.icl_w_document,
             max_multi_passage=args.multi_passages,
             instruct_name=args.instruct_name,
-            prompt_before_embed=args.prompt_before_embed,
-            split_to_multipassage=args.split_to_multipassage,
             seed=args.seed,
-            icl_before_pref=args.icl_before_pref,
             compress_rate=args.compress_rate,
+            compressed_doc_in_icl = args.compressed_doc_in_icl,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -731,14 +694,12 @@ if __name__ == "__main__":
                 tmp_path=tmp_path,
                 icl_examples=icl_ex,
                 w_embeds=args.wo_embeds,
-                icl_w_context=args.llmemb_icl_w_context,
+                icl_w_document=args.icl_w_document,
                 pipeline=pipeline,
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
                 instruct_name=args.instruct_name,
-                prompt_before_embed=args.prompt_before_embed,
-                split_to_multipassage=args.split_to_multipassage,
                 seed=args.seed,
-                icl_before_pref=args.icl_before_pref,
                 compress_rate=args.compress_rate,
+                compressed_doc_in_icl = args.compressed_doc_in_icl,
             )
