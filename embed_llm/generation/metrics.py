@@ -1,12 +1,8 @@
-from torcheval.metrics import BLEUScore
-from nltk.translate import meteor_score
 import re
 import string
-import numpy as np
 from collections import Counter
 import unicodedata
 import regex
-# nltk.download("wordnet")
 
 
 def word_overlap(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
@@ -95,66 +91,6 @@ def get_substring_match_score(outputs, answers):
     return substring_match, substring_match_scores
 
 
-def get_bleu_score(
-    ground_truth: list[str] | str,
-    predicted: list[str] | str,
-    avg: bool = False,
-    trunc: bool = False,
-) -> float:
-    if not avg:
-        metric = BLEUScore(n_gram=4)
-        if isinstance(ground_truth, str) and isinstance(predicted, str):
-            assert len(ground_truth) > 0, "Ground truth set is empty"
-            predicted = predicted if not trunc else predicted[: len(ground_truth)]
-            metric.update(predicted, [ground_truth])
-            return metric.compute().item()
-        elif isinstance(ground_truth, list) and isinstance(predicted, list):
-            for gt_text, pred_text in zip(ground_truth, predicted):
-                assert len(gt_text) > 0, "Ground truth set is empty"
-                try:
-                    pred_text = pred_text if not trunc else pred_text[: len(gt_text)]
-                    metric.update(pred_text, [gt_text])
-                except Exception as e:
-                    print(e)
-                    print(
-                        "Error with update:",
-                        "\nGround-Truth: ",
-                        gt_text,
-                        "\nPred: ",
-                        pred_text,
-                    )
-            return metric.compute().item()
-    else:
-        metrics = [BLEUScore(n_gram=i) for i in range(1, 5)]
-        if isinstance(ground_truth, str) and isinstance(predicted, str):
-            assert len(ground_truth) > 0, "Ground truth set is empty"
-            for metric in metrics:
-                predicted = predicted if not trunc else predicted[: len(ground_truth)]
-                metric.update(predicted, [ground_truth])
-            result = np.array([metric.compute().item() for metric in metrics])
-            return result.mean()
-        elif isinstance(ground_truth, list) and isinstance(predicted, list):
-            for gt_text, pred_text in zip(ground_truth, predicted):
-                assert len(gt_text) > 0, "Ground truth set is empty"
-                try:
-                    for metric in metrics:
-                        pred_text = (
-                            pred_text if not trunc else pred_text[: len(gt_text)]
-                        )
-                        metric.update(pred_text, [gt_text])
-                except Exception as e:
-                    print(e)
-                    print(
-                        "Error with update:",
-                        "\nGround-Truth: ",
-                        gt_text,
-                        "\nPred: ",
-                        pred_text,
-                    )
-            result = np.array([metric.compute().item() for metric in metrics])
-            return result.mean()
-
-
 def normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""
 
@@ -214,24 +150,6 @@ def get_approx_em(pred: str, ground_truth: str) -> int:
         if l_normed_pred[i : i + len_gt] == l_normed_gt:
             return 1
     return 0
-
-
-def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
-    if isinstance(ground_truth, str) and isinstance(predicted, str):
-        assert len(ground_truth) > 0, "Ground truth set is empty"
-        l_ground_truth = ground_truth.split(" ")
-        l_predicted = predicted.split(" ")
-        return meteor_score.single_meteor_score(l_ground_truth, l_predicted)
-    elif isinstance(ground_truth, list) and isinstance(predicted, list):
-        meteor_avg_score = 0
-        for gt_text, pred_text in zip(ground_truth, predicted):
-            assert len(gt_text) > 0, "Ground truth set is empty"
-            l_ground_truth = gt_text.split(" ")
-            l_predicted = pred_text.split(" ")
-            meteor_avg_score += meteor_score.single_meteor_score(
-                l_ground_truth, l_predicted
-            )
-        return meteor_avg_score / len(ground_truth)
 
 
 def get_acc_factchecking(pred: str, ground_truth: str) -> int:

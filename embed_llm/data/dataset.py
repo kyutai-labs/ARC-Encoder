@@ -176,7 +176,7 @@ def sequence_iterator(
 
     x_buffer: list[int] = []
     y_buffer: list[int] = []
-    to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]] = []
+    to_embed_buffer: list[dict[str, str | int]] = []
     mask_buffer: Mask = []
     sizes: list[int] = []
     n_missing_cont = seq_len * 2
@@ -184,7 +184,7 @@ def sequence_iterator(
 
     x_buffer_cont: list[int] = []
     y_buffer_cont: list[int] = []
-    to_embed_buffer_cont: list[dict[str, str | int | list[int] | list[str]]] = []
+    to_embed_buffer_cont: list[dict[str, str | int]] = []
     mask_buffer_cont: Mask = []
     sizes_cont: list[int] = []
     distractor_buffer: list[int] = []

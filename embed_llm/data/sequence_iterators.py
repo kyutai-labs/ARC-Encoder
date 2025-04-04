@@ -12,7 +12,7 @@ class SequenceEmbedMaskAndSizes:
 
     x: list[int]
     y: list[int]
-    to_embed: list[dict[str, str | int | list[int] | list[str]]]
+    to_embed: list[dict[str, str | int]]
     mask: Mask
     sizes: list[int]
     data_type: str
@@ -66,8 +66,8 @@ def sequence_iterator_one_task_4_all(
         if nb_embed == 1:
             to_embed_buffer.append(
                 {
-                    "text": [tokenizer.decode(tokens[cur_pos : cur_pos + seq_len])],
-                    "tokens": [tokens[cur_pos : cur_pos + seq_len]],
+                    "text": tokenizer.decode(tokens[cur_pos : cur_pos + seq_len]),
+                    "tokens": tokens[cur_pos : cur_pos + seq_len],
                 }
             )
             end_embed = seq_len
@@ -76,7 +76,7 @@ def sequence_iterator_one_task_4_all(
             n_embed_toks = 0
 
             for i in range(nb_embed):
-                new_embed.append(
+                new_embed.extend(
                     tokens[cur_pos + i * seq_len : cur_pos + (i + 1) * seq_len]
                 )
                 n_embed_toks += len(
@@ -85,7 +85,7 @@ def sequence_iterator_one_task_4_all(
 
             to_embed_buffer.append(
                 {
-                    "text": [tokenizer.decode(toks) for toks in new_embed],
+                    "text": ''.join([tokenizer.decode(toks) for toks in new_embed]),
                     "tokens": new_embed,
                 }
             )
@@ -107,8 +107,8 @@ def sequence_iterator_one_task_4_all(
         end_embed = (len(x) - cur_pos) // 2 - n_gap
         to_embed_buffer.append(
             {
-                "text": [tokenizer.decode(tokens[cur_pos : cur_pos + end_embed])],
-                "tokens": [tokens[cur_pos : cur_pos + end_embed]],
+                "text": tokenizer.decode(tokens[cur_pos : cur_pos + end_embed]),
+                "tokens": tokens[cur_pos : cur_pos + end_embed],
             }
         )
         min_rand = min(max(1, int(start_point * end_embed)), end_embed + n_gap)
@@ -132,7 +132,7 @@ def sequence_iterator_one_task_4_all(
 
         for i in range(nb_embed):
             add_token = min(((len(x) - cur_pos) // 2) // nb_embed, seq_len)
-            new_embed.append(
+            new_embed.extend(
                 tokens[cur_pos + i * add_token : cur_pos + (i + 1) * add_token]
             )
             n_embed_toks += len(
@@ -141,7 +141,7 @@ def sequence_iterator_one_task_4_all(
 
         to_embed_buffer.append(
             {
-                "text": [tokenizer.decode(toks) for toks in new_embed],
+                "text": ' '.join([tokenizer.decode(toks).strip() for toks in new_embed]),
                 "tokens": new_embed,
             }
         )
@@ -189,7 +189,7 @@ def sequence_iterator_one_task_4_all(
 def sequence_iterator_reconstruction(
     x_buffer: list[int],
     y_buffer: list[int],
-    to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]],
+    to_embed_buffer: list[dict[str, str | int]],
     mask_buffer: Mask,
     cur_pos: int,
     n_missing: int,
@@ -250,7 +250,7 @@ def sequence_iterator_reconstruction(
             for i in range(nb_embed):
                 if np.random.rand() < prob_distractor and do_distract:
                     if len(distractor_buffer) > 0:
-                        new_embed.append(distractor_buffer[:n_toks_per_embed])
+                        new_embed.extend(distractor_buffer[:n_toks_per_embed])
                         distractor_buffer = embed_tokens[0][
                             cur_pos + i * n_toks_per_embed : cur_pos
                             + (i + 1) * n_toks_per_embed
@@ -260,7 +260,7 @@ def sequence_iterator_reconstruction(
                             cur_pos + i * n_toks_per_embed : cur_pos
                             + (i + 1) * n_toks_per_embed
                         ]
-                        new_embed.append(
+                        new_embed.extend(
                             embed_tokens[0][
                                 cur_pos + i * n_toks_per_embed : cur_pos
                                 + (i + 1) * n_toks_per_embed
@@ -269,7 +269,7 @@ def sequence_iterator_reconstruction(
                     do_distract = False
                     dist_idx = i
                 else:
-                    new_embed.append(
+                    new_embed.extend(
                         embed_tokens[0][
                             cur_pos + i * n_toks_per_embed : cur_pos
                             + (i + 1) * n_toks_per_embed
@@ -278,7 +278,7 @@ def sequence_iterator_reconstruction(
 
             to_embed_buffer.append(
                 {
-                    "text": [tokenizer.decode(toks) for toks in new_embed],
+                    "text": ' '.join([tokenizer.decode(toks).strip() for toks in new_embed]),
                     "tokens": new_embed,
                 }
             )
@@ -293,7 +293,7 @@ def sequence_iterator_reconstruction(
                     len_t = len(embed_tokens)
                     while len_t < abs(max_embeds):
                         if len(embed_tokens[0]) > seq_len:
-                            embed_tokens.append(embed_tokens[0][seq_len // 2 :])
+                            embed_tokens.extend(embed_tokens[0][seq_len // 2 :])
                             embed_tokens[0] = embed_tokens[0][: seq_len // 2]
                             len_t += 1
                             embed_tokens.sort(key=len, reverse=True)
@@ -315,8 +315,8 @@ def sequence_iterator_reconstruction(
                 else:
                     new_embed.append(embed_tokens[i])
 
-            new_embed_tokens = [toks[:seq_len] for toks in new_embed]
-            new_embed_text = [tokenizer.decode(toks[:seq_len]) for toks in new_embed]
+            new_embed_tokens = sum([toks[:seq_len] for toks in new_embed],[])
+            new_embed_text = ' '.join([tokenizer.decode(toks[:seq_len]).strip() for toks in new_embed])
 
             to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
 
@@ -389,7 +389,7 @@ def sequence_iterator_reconstruction(
 def sequence_iterator_continuation(
     x_buffer: list[int],
     y_buffer: list[int],
-    to_embed_buffer: list[dict[str, str | int | list[int] | list[str]]],
+    to_embed_buffer: list[dict[str, str | int]],
     distractor_buffer: list[int],
     distract_list: list[int],
     n_missing: int,
@@ -502,7 +502,7 @@ def sequence_iterator_continuation(
         for i in range(nb_embed):
             if np.random.rand() < prob_distractor and do_distract:
                 if len(distractor_buffer) > 0:
-                    new_embed.append(distractor_buffer[:n_toks_per_embed])
+                    new_embed.extend(distractor_buffer[:n_toks_per_embed])
                     distractor_buffer = embed_tokens[0][
                         cur_pos + i * n_toks_per_embed : cur_pos
                         + (i + 1) * n_toks_per_embed
@@ -512,12 +512,12 @@ def sequence_iterator_continuation(
                         cur_pos + i * n_toks_per_embed : cur_pos
                         + (i + 1) * n_toks_per_embed
                     ]
-                    new_embed.append(distractor_buffer[:n_toks_per_embed])
+                    new_embed.extend(distractor_buffer[:n_toks_per_embed])
                 do_distract = False
                 dist_idx = i
 
             else:
-                new_embed.append(
+                new_embed.extend(
                     embed_tokens[0][
                         cur_pos + i * n_toks_per_embed : cur_pos
                         + (i + 1) * n_toks_per_embed
@@ -525,7 +525,7 @@ def sequence_iterator_continuation(
                 )
         to_embed_buffer.append(
             {
-                "text": [tokenizer.decode(toks) for toks in new_embed],
+                "text": ' '.join([tokenizer.decode(toks).strip() for toks in new_embed]),
                 "tokens": new_embed,
             }
         )
@@ -614,7 +614,7 @@ def sequence_iterator_decompress_usage(
             )
 
             for i in range(nb_embed):
-                new_embed.append(
+                new_embed.extend(
                     embed_tokens[0][
                         cur_pos + i * n_toks_per_embed : cur_pos
                         + (i + 1) * n_toks_per_embed
@@ -623,7 +623,7 @@ def sequence_iterator_decompress_usage(
 
             to_embed_buffer.append(
                 {
-                    "text": [tokenizer.decode(toks) for toks in new_embed],
+                    "text": ' '.join([tokenizer.decode(toks).strip() for toks in new_embed]),
                     "tokens": new_embed,
                 }
             )

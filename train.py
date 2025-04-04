@@ -484,8 +484,8 @@ def _train(
             # if get_rank() == 0:
             #     # to_gen = [int(tok) for tok in batch.x]
             #     # target = [int(tok) for tok in batch.y]
-            #     # embed = [[int(tokens) for l_tokens in batch.to_embed[i]["tokens"] for tokens in l_tokens] for i in range(len(batch.sizes))]
-            #     embed = [[int(tokens)  for tokens in l_tokens] for l_tokens in batch.to_embed[0]["tokens"]]
+            #     # embed = [[int(tokens) for tokens in batch.to_embed[i]["tokens"]] for i in range(len(batch.sizes))]
+
             #     # print('N_prefix', batch.n_prefixes[0])
             #     print('Sizes', batch.sizes)
             #     print("Embed seqlens", embed_seqlens)
@@ -519,13 +519,13 @@ def _train(
                     y_mask = []
                     ind = 0
                     for to_embed, size in zip(batch.to_embed, batch.sizes):
-                        x.extend(to_embed["tokens"][0])
+                        x.extend(to_embed["tokens"])
                         x.extend(batch.x[ind : ind + size])
-                        y.extend(to_embed["tokens"][0])
+                        y.extend(to_embed["tokens"])
                         y.extend(batch.y[ind : ind + size])
-                        seqlens.append(len(to_embed["tokens"][0]) + size)
+                        seqlens.append(len(to_embed["tokens"]) + size)
                         ind += size
-                        y_mask.extend([False] * len(to_embed["tokens"][0]))
+                        y_mask.extend([False] * len(to_embed["tokens"]))
                         y_mask.extend([True] * size)
 
                     x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
@@ -545,7 +545,7 @@ def _train(
                     y_mask = []
                     ind = 0
                     for to_embed, size in zip(batch.to_embed, batch.sizes):
-                        tokens = sum(to_embed["tokens"], [])
+                        tokens = to_embed["tokens"]
                         x.extend(tokens[:-1])
                         y.extend(tokens[1:])
                         seqlens.append(len(tokens) - 1)
@@ -614,13 +614,9 @@ def _train(
                         contexts = []
                         for i in range(len(batch.to_embed)):
                             contexts.append(
-                                [
-                                    pipeline.tokenizer.encode(
-                                        " ".join(batch.to_embed[i]["text"]),
-                                        bos=False,
-                                        eos=False,
-                                    )
-                                ]
+                                pipeline.tokenizer.encode(
+                                    batch.to_embed[i]["text"], bos=False, eos=False
+                                )
                             )
                     else:
                         if batch.distract_list is None:
@@ -628,20 +624,9 @@ def _train(
                                 to_embed["tokens"] for to_embed in batch.to_embed
                             ]
                         else:
-                            contexts = []
-                            for embs, dist_id in zip(
-                                batch.to_embed, batch.distract_list
-                            ):
-                                if dist_id == -1:
-                                    contexts.append(embs["tokens"])
-                                else:
-                                    contexts.append(
-                                        [
-                                            emb
-                                            for i, emb in enumerate(embs["tokens"])
-                                            if i != dist_id
-                                        ]
-                                    )
+                            raise NotImplementedError(
+                                "Cannot use distractor with self-Distillation"
+                            )
 
                     x_wcontext = []
                     y_mask_wcontext = []
@@ -652,7 +637,7 @@ def _train(
                         "Contexts and batch sizes should be the same"
                     )
                     for i, size in enumerate(batch.sizes):
-                        full_context = sum(contexts[i], [])
+                        full_context = contexts[i]
 
                         x_wcontext.extend(
                             full_context + batch.x[ind : ind + size].tolist()
@@ -701,8 +686,7 @@ def _train(
                     #     print('Sizes wo context', seqlens)
                     #     print('Sizes w context',seqlens_wcontext)
                     #     print('X Without Embed',pipeline.tokenizer.decode([int(tok) for tok in x_wcontext[:seqlens_wcontext[0]]]))
-                    #     for cont in batch.to_embed[0]["tokens"]:
-                    #         print('\nEmbed', pipeline.tokenizer.decode(cont))
+                    #     print('\nEmbed', pipeline.tokenizer.decode(batch.to_embed[0]["tokens"]))
                     #     print("\nX",pipeline.tokenizer.decode([int(tok) for tok in x[:seqlens[0]]]))
 
                     target_mask = y_mask_wcontext

@@ -254,13 +254,12 @@ def evaluate_toydecompression(
             ppl += 2 ** (batch_ce / len(ppl_tok_output[i : i + max_bs]))
         with torch.no_grad():
             generated_tokens = mistral_generate(
-                prompt_pre_embed=[[] * len(text_conditioning)],
-                prompt_post_embed=encoded_prompt_post,
+                prompt_tokens=[[prompt] for prompt in encoded_prompt_post],
+                insertion_lists=[[0] for _ in range(len(encoded_prompt_post))],
                 embeddings=embeddings,
                 model=llm,
                 max_tokens=gen_len,
                 temperature=temp,
-                chunk_size=None,
                 eos_id=pipeline.tokenizer.eos_id,
                 embed_seqlens=embed_seqlens,
                 cat_embeddings=cat_embeddings,
