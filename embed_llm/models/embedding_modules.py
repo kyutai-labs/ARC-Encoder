@@ -424,13 +424,14 @@ class MT_Attention(nn.Module):
         # (H, Sq, Sk)
         attn = xq @ key.transpose(-2, -1)
 
-        attn_bias = torch.block_diag(
-            *[
-                torch.ones(q_seqlen[i], kv_seqlen[i])
-                for i in range(len(q_seqlen))
-            ]
-        ).to(device=x.device, dtype=x.dtype).unsqueeze(0)
-        
+        attn_bias = (
+            torch.block_diag(
+                *[torch.ones(q_seqlen[i], kv_seqlen[i]) for i in range(len(q_seqlen))]
+            )
+            .to(device=x.device, dtype=x.dtype)
+            .unsqueeze(0)
+        )
+
         attn = attn * attn_bias
         attn = self.cube_conv(attn)
 
@@ -624,8 +625,8 @@ class AdaptivePoolingAttention(nn.Module):
                     if self.attention_context_norm is None
                     else self.attention_context_norm(x),
                     mask=BlockDiagonalMask.from_seqlens(
-                    q_seqlen=new_embed_seqlens,
-                    kv_seqlen=embed_seqlens,
+                        q_seqlen=new_embed_seqlens,
+                        kv_seqlen=embed_seqlens,
                     ),
                 )
                 out = r + queries
