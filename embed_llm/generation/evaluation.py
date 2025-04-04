@@ -9,7 +9,7 @@ import subprocess as sp
 from mistral_inference.transformer import Transformer
 from mistral_inference.generate import generate
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-from nltk.tokenize import sent_tokenize
+
 from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline
 from embed_llm.models.utils import is_torchrun
 from embed_llm.monitoring.utils import set_logger
@@ -62,25 +62,21 @@ def create_prompt_prefix(
     prompt = ""
 
     if docs is not None:
-        if compressed_doc_in_icl:   
+        if compressed_doc_in_icl:
             for query, answer, doc, index in zip(
                 queries, answers, docs, range(max_examples)
             ):
                 if index == 0:
-                    prompt_str.append(
-                        "Document: "
-                    )
+                    prompt_str.append("Document: ")
                     to_embed_str.append(doc.strip())
                 elif index == max_examples - 1:
-                    prompt_str.append(
-                        f"\nQuestion: {query}\nAnswer: {answer}\n\n"
-                    )
+                    prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\n")
                 else:
                     prompt_str.append(
                         f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
                     )
                     to_embed_str.append(doc.strip())
-                    
+
         else:
             for query, answer, doc, _ in zip(
                 queries, answers, docs, range(max_examples)
@@ -88,11 +84,11 @@ def create_prompt_prefix(
                 prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
             to_embed_str = None
             prompt_str.append(prompt)
-                
+
     else:
         for query, answer, _ in zip(queries, answers, range(max_examples)):
             prompt += f"Question: {query}\nAnswer: {answer}\n\n"
-            
+
         prompt_str.append(prompt)
         to_embed_str = None
 
@@ -100,39 +96,39 @@ def create_prompt_prefix(
 
 
 def create_prompt(
-    prefix_prompt: list[str], prefix_embed: list[str] | None, 
-    doc: str, query: str, wdoc: bool = True, w_embeds: bool = True
+    prefix_prompt: list[str],
+    prefix_embed: list[str] | None,
+    doc: str,
+    query: str,
+    wdoc: bool = True,
+    w_embeds: bool = True,
 ) -> tuple[list[str], list[str] | None]:
-            
-    list_prompt = prefix_prompt
-    
+    list_prompt = prefix_prompt.copy()
+
     if prefix_embed is None and w_embeds:
-        prefix_embed = []
+        list_embed = []
     else:
-        prefix_embed = prefix_embed
-        
-    assert int(wdoc)*int(w_embeds)==0, (
+        list_embed = prefix_embed.copy()
+
+    assert int(wdoc) * int(w_embeds) == 0, (
         "Cannot use both text context and embeddings as the document in the same time"
     )
-        
+
     if wdoc:
-        return [''.join(list_prompt.append(f"Document: {doc}\nQuestion: {query}\nAnswer:"))], prefix_embed
+        return [
+            "".join(list_prompt.append(f"Document: {doc}\nQuestion: {query}\nAnswer:"))
+        ], list_embed
     else:
         if w_embeds:
-            list_prompt.append(
-                "Document: "
-            )
-            prefix_embed.append(doc.strip())
-            list_prompt.append(
-                f"\nQuestion: {query}\nAnswer:"
-            )
+            last_prompt = list_prompt[-1]
+            list_prompt[-1] = ''.join([last_prompt, "Document: "])
+            list_embed.append(doc.strip())
+            list_prompt.append(f"\nQuestion: {query}\nAnswer:")
         else:
-            prefix_embed = None
-            list_prompt.append(
-                f"\nQuestion: {query}\nAnswer:"
-            )
-        
-        return list_prompt, prefix_embed
+            list_embed = None
+            list_prompt.append(f"\nQuestion: {query}\nAnswer:")
+
+        return list_prompt, list_embed
 
 
 def evaluate_QA(
@@ -225,7 +221,9 @@ def evaluate_QA(
                     context.append(data["passages"][0].strip())
 
                 else:
-                    context.append('\n'.join(list((data["passages"][:max_multi_passage]))))
+                    context.append(
+                        "\n".join(list((data["passages"][:max_multi_passage])))
+                    )
 
         c = list(zip(questions, context, answers))
 
@@ -242,10 +240,8 @@ def evaluate_QA(
                 "Compressed document in ICL is not compatible without embeddings"
             )
         if query_w_context:
-            assert not w_embeds, (
-                "Query with context is not compatible with embeddings"
-            )
-            
+            assert not w_embeds, "Query with context is not compatible with embeddings"
+
         prompt_str, to_embed_str = create_prompt_prefix(
             queries=questions,
             answers=[answer[0] for answer in answers],
@@ -269,12 +265,14 @@ def evaluate_QA(
             generated_sequences = []
             n_samples = len(new_questions) if n_samples is None else n_samples
             for i in trange(0, n_samples, max_bs):
-                texts_to_embed = [] 
+                texts_to_embed = []
                 batch_list_prompts = []
                 bs = min(max_bs, n_samples - i)
-                
-                for query, doc in zip(new_questions[i : i + bs], new_context[i : i + bs]):
-                    text_to_embed, batch_list_prompt = create_prompt(
+
+                for query, doc in zip(
+                    new_questions[i : i + bs], new_context[i : i + bs]
+                ):
+                    batch_list_prompt, text_to_embed = create_prompt(
                         prefix_prompt=prompt_str,
                         prefix_embed=to_embed_str,
                         doc=doc,
@@ -284,11 +282,8 @@ def evaluate_QA(
                     )
                     batch_list_prompts.append(batch_list_prompt)
                     texts_to_embed.append(text_to_embed)
-  
-
 
                 if not mistral:
-
                     generated_sequence, embed_tokens, embeds = pipeline.generate(
                         text_to_embed=texts_to_embed,
                         batch_list_prompts=batch_list_prompts,
@@ -378,6 +373,7 @@ def evaluate_QA(
                     "xRAG metric": value_xrag,
                     "n_passages": max_multi_passage,
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
+                    "compressed_icl": compressed_doc_in_icl,
                 }
                 value_f1 = (
                     sum(
@@ -397,6 +393,7 @@ def evaluate_QA(
                     "Metric": value_f1,
                     "n_passages": max_multi_passage,
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
+                    "compressed_icl": compressed_doc_in_icl,
                 }
 
                 eval_logger_info(
@@ -440,6 +437,7 @@ def evaluate_QA(
                     "w_context_in_examples": icl_w_document,
                     "n_passages": max_multi_passage,
                     "prop context containing the answer": n_answer_in_context,
+                    "compressed_icl": compressed_doc_in_icl,
                 }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
@@ -661,7 +659,6 @@ if __name__ == "__main__":
             torch.cuda.empty_cache()
 
     else:
-
         pipeline, ckpt = evaluate_QA(
             args.run_name,
             benchmarks,
@@ -679,7 +676,7 @@ if __name__ == "__main__":
             instruct_name=args.instruct_name,
             seed=args.seed,
             compress_rate=args.compress_rate,
-            compressed_doc_in_icl = args.compressed_doc_in_icl,
+            compressed_doc_in_icl=args.compressed_doc_in_icl,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -701,5 +698,5 @@ if __name__ == "__main__":
                 instruct_name=args.instruct_name,
                 seed=args.seed,
                 compress_rate=args.compress_rate,
-                compressed_doc_in_icl = args.compressed_doc_in_icl,
+                compressed_doc_in_icl=args.compressed_doc_in_icl,
             )

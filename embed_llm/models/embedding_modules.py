@@ -440,7 +440,6 @@ class AdaptivePoolingAttention(nn.Module):
 
             out = torch.cat(out, dim=0)
 
-
         elif self.pool_type == "conv":
             out = []
             ind = 0
@@ -461,15 +460,13 @@ class AdaptivePoolingAttention(nn.Module):
         else:
             pool_size = []
             if self.compress_rate != -1:
-     
                 for embed_size in embed_seqlens:
                     compressed_embed_size = []
                     # <-1 means compression rate, >0 means number of tokens to compress to
                     if self.compress_rate == 0:
                         compressed_embed_size = [embed_size]
                     elif (
-                        self.compress_rate > 0
-                        and embed_size // self.compress_rate == 0
+                        self.compress_rate > 0 and embed_size // self.compress_rate == 0
                     ):
                         compressed_embed_size = [1] * embed_size
                     elif (
@@ -481,9 +478,8 @@ class AdaptivePoolingAttention(nn.Module):
                         compressed_embed_size = split_integer(
                             embed_size, self.compress_rate
                         )
-
                     pool_size.extend(compressed_embed_size)
-                    new_embed_seqlens.extend(len(compressed_embed_size))
+                    new_embed_seqlens.append(len(compressed_embed_size))
 
                 if self.pool_type == "last_sa":
                     pool_mask = torch.block_diag(
@@ -523,7 +519,6 @@ class AdaptivePoolingAttention(nn.Module):
 
         if self.pooling_out_norm is not None:
             out = self.pooling_out_norm(out)
-
         return out, new_embed_seqlens
 
 
@@ -592,7 +587,7 @@ class PoolingModule(nn.Module):
                     self.args.type == "reversed_latent_attention"
                     and self.args.early_out
                 ):
-                    embed_seqlens = [self.args.r]*len(embed_seqlens) 
+                    embed_seqlens = [self.args.r] * len(embed_seqlens)
                 else:
                     embed_seqlens = embed_seqlens
 
@@ -601,7 +596,7 @@ class PoolingModule(nn.Module):
             elif self.args.compress_rate > 0:
                 new_embed_seqlens = []
                 mean_size = []
- 
+
                 for embed_size in embed_seqlens:
                     compressed_embed_size = []
 

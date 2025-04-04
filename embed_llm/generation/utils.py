@@ -50,11 +50,9 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
     ):
         key_list = [
             "run_name",
-            "EM Metric",
-            "EM approx_Metric",
-            "F1",
-            "xRAG metric",
             "ckpt",
+            "EM Metric",
+            "F1",
             "temp",
             "n_samples",
             "icl_examples",
@@ -63,8 +61,8 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "Prop_a_in_cont",
             "n_passages",
             "compress_ratio",
-            "w_scores",
-            "fine_tuned",
+            "EM approx_Metric",
+            "xRAG metric",
         ]
     elif benchmark.lower() == "factkg":
         key_list = [
@@ -77,21 +75,6 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "Metric",
             "Prop_a_in_cont",
             "n_passages",
-            "w_scores",
-        ]
-    elif benchmark.lower() == "reconstruction":
-        key_list = [
-            "run_name",
-            "ckpt",
-            "temp",
-            "n_samples",
-            "eval_data_type",
-            "Bleu",
-            "Trunc Bleu",
-            "AVG Bleu",
-            "Meteor",
-            "EM",
-            "Overlap",
         ]
     else:
         raise ValueError("Invalid benchmark")
@@ -100,44 +83,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
 
     for run_name in results.keys():
         for ckpt in results[run_name].keys():
-            if benchmark.lower() == "reconstruction":
-                for metric in [
-                    "Bleu",
-                    "Trunc Bleu",
-                    "AVG Bleu",
-                    "Meteor",
-                    "EM",
-                    "Overlap",
-                ]:
-                    if metric not in results[run_name][ckpt].keys():
-                        continue
-                    for temp in results[run_name][ckpt][metric].keys():
-                        for result in results[run_name][ckpt][metric][temp]:
-                            formated_results = pd.concat(
-                                [
-                                    formated_results,
-                                    pd.DataFrame(
-                                        {
-                                            "run_name": run_name,
-                                            "ckpt": int(ckpt),
-                                            "temp": float(temp),
-                                            metric: result["Metric"],
-                                            "n_samples": result["n_samples"],
-                                            "eval_data_type": result["eval_data_type"],
-                                        },
-                                        index=[0],
-                                    ),
-                                ]
-                            )
-                formated_results = (
-                    formated_results.groupby(
-                        ["run_name", "ckpt", "temp", "n_samples", "eval_data_type"]
-                    )
-                    .first()
-                    .reset_index()
-                )
-
-            elif (
+            if (
                 benchmark.lower() == "nq"
                 or benchmark.lower() == "triviaqa"
                 or benchmark.lower() == "hotpotqa"
@@ -159,31 +105,30 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                 "temp": float(temp),
                                                 "n_samples": res["n_samples"],
                                                 "icl_examples": res["icl_examples"],
+                                                "EM Metric": res.get("Metric", None),
+                                                "compress_ratio": res.get(
+                                                    "compress_ratio", None
+                                                ),
+                                                "compressed_icl": res.get(
+                                                    "compressed_icl", False
+                                                ),
                                                 "context_in_examples": res[
                                                     "w_context_in_examples"
                                                 ],
                                                 "context_w_query": res.get(
                                                     "w_context_w_query", False
                                                 ),
-                                                "xRAG metric": res.get(
-                                                    "xRAG metric", None
-                                                ),
-                                                "EM Metric": res.get("Metric", None),
-                                                "EM approx_Metric": res.get(
-                                                    "approx_Metric", None
-                                                ),
+                                                "n_passages": res.get("n_passages", 1),
                                                 "Prop_a_in_cont": res.get(
                                                     "Prop context containing the answer",
                                                     None,
                                                 ),
-                                                "n_passages": res.get("n_passages", 1),
-                                                "compress_ratio": res.get(
-                                                    "compress_ratio", None
+                                                "xRAG metric": res.get(
+                                                    "xRAG metric", None
                                                 ),
-                                                "fine_tuned": res.get(
-                                                    "fine_tuned", None
+                                                "EM approx_Metric": res.get(
+                                                    "approx_Metric", None
                                                 ),
-                                                "w_scores": res.get("w_scores", 0.0),
                                             },
                                             index=[0],
                                         ),
@@ -197,20 +142,24 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                         "temp": float(temp),
                                         "n_samples": res["n_samples"],
                                         "icl_examples": res["icl_examples"],
+                                        "F1": res.get("Metric", None),
+                                        "compress_ratio": res.get(
+                                            "compress_ratio", None
+                                        ),
+                                        "compressed_icl": res.get(
+                                            "compressed_icl", False
+                                        ),
                                         "context_in_examples": res[
                                             "w_context_in_examples"
                                         ],
                                         "context_w_query": res.get(
                                             "w_context_w_query", False
                                         ),
-                                        "F1": res.get("Metric", None),
                                         "Prop_a_in_cont": res.get(
                                             "Prop context containing the answer",
                                             None,
                                         ),
                                         "n_passages": res.get("n_passages", 1),
-                                        "w_scores": res.get("w_scores", 0.0),
-                                        "fine_tuned": res.get("fine_tuned", None),
                                     },
                                     index=[0],
                                 )
@@ -255,8 +204,6 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                             "icl_examples",
                             "context_in_examples",
                             "n_passages",
-                            "fine_tuned",
-                            "w_scores",
                         ]
                     )
                     .first()
@@ -273,7 +220,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                             "icl_examples",
                             "context_in_examples",
                             "n_passages",
-                            "w_scores",
+                            "compressed_icl",
                         ]
                     )
                     .first()

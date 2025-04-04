@@ -485,7 +485,7 @@ def _train(
             #     # to_gen = [int(tok) for tok in batch.x]
             #     # target = [int(tok) for tok in batch.y]
             #     # embed = [[int(tokens) for tokens in batch.to_embed[i]["tokens"]] for i in range(len(batch.sizes))]
-         
+
             #     # print('N_prefix', batch.n_prefixes[0])
             #     print('Sizes', batch.sizes)
             #     print("Embed seqlens", embed_seqlens)
@@ -613,10 +613,10 @@ def _train(
                         # Remove the eos and the bos
                         contexts = []
                         for i in range(len(batch.to_embed)):
-                            contexts.append(pipeline.tokenizer.encode(
-                                        batch.to_embed[i]["text"],
-                                        bos=False,
-                                        eos=False)
+                            contexts.append(
+                                pipeline.tokenizer.encode(
+                                    batch.to_embed[i]["text"], bos=False, eos=False
+                                )
                             )
                     else:
                         if batch.distract_list is None:
@@ -624,8 +624,10 @@ def _train(
                                 to_embed["tokens"] for to_embed in batch.to_embed
                             ]
                         else:
-                            raise NotImplementedError('Cannot use distractor with self-Distillation')
-                        
+                            raise NotImplementedError(
+                                "Cannot use distractor with self-Distillation"
+                            )
+
                     x_wcontext = []
                     y_mask_wcontext = []
                     seqlens_wcontext = []

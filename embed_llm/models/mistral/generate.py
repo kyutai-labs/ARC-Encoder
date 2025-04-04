@@ -11,29 +11,33 @@ def generate(
     *,
     max_tokens: int,
     temperature: float | list[float],
-    insertion_lists: list[list[int]] = [], # Index in the hidden states of where to insert the embeddings (based on each sequence length)
+    insertion_lists: list[
+        list[int]
+    ] = [],  # Index in the hidden states of where to insert the embeddings (based on each sequence length)
     embeddings: torch.Tensor | None = None,
     eos_id: int | None = None,
     embed_seqlens: list[list[int]] | None = None,
     cat_embeddings: torch.Tensor | None = None,
 ) -> tuple[list[list[int]], list[list[float]]]:
-    
-    if len(prompt_tokens[0])>0 and not isinstance(prompt_tokens[0][0], list):
+    if len(prompt_tokens[0]) > 0 and not isinstance(prompt_tokens[0][0], list):
         prompt_tokens = [prompt_tokens]
 
     model = model.eval()
     B, V = len(prompt_tokens), model.args.vocab_size
 
-    seqlens = [len(sum(prompt_part,[])) for prompt_part in prompt_tokens]
+    seqlens = [len(sum(prompt_part, [])) for prompt_part in prompt_tokens]
 
     concat = cat_embeddings is not None
-    
+
     if concat:
         assert len(insertion_lists) > 0
-        assert all([len(insert_id) == len(embed_id) 
-                    for insert_id, embed_id in zip(insertion_lists, embed_seqlens)]) 
+        assert all(
+            [
+                len(insert_id) == len(embed_id)
+                for insert_id, embed_id in zip(insertion_lists, embed_seqlens)
+            ]
+        )
 
-        
     # Cache
     cache_window = (
         max(seqlens) + max_tokens
@@ -69,18 +73,17 @@ def generate(
     ), "Cross att cache not empty"
     last_token_prelogits = None
 
-
     prelogits = model.generate(
-        torch.tensor(sum(sum(prompt_tokens,[]), []), device=model.device, dtype=torch.long),
-        seqlens=[len(sum(prompt_part,[])) for prompt_part in prompt_tokens],
+        torch.tensor(
+            sum(sum(prompt_tokens, []), []), device=model.device, dtype=torch.long
+        ),
+        seqlens=[len(sum(prompt_part, [])) for prompt_part in prompt_tokens],
         embeddings=embeddings,
         embed_seqlens=embed_seqlens,
         cache=cache,
         cat_embeddings=cat_embeddings,
         cross_att_cache=cross_att_cache,
-        insert_cat_embedds=None
-        if len(insertion_lists) == 0
-        else insertion_lists,
+        insert_cat_embedds=None if len(insertion_lists) == 0 else insertion_lists,
     )
 
     # Stop concatenating after first chunk
@@ -92,7 +95,8 @@ def generate(
     last_token_prelogits = prelogits.index_select(
         0,
         torch.tensor(
-           [len(sum(prompt_part,[])) for prompt_part in prompt_tokens], device=prelogits.device
+            [len(sum(prompt_part, [])) for prompt_part in prompt_tokens],
+            device=prelogits.device,
         ).cumsum(dim=0)
         - 1,
     )
@@ -123,8 +127,8 @@ def generate(
         last_token_prelogits = model.generate(
             next_token,
             seqlens=[1] * B,
-            embeddings=embeddings, 
-            embed_seqlens=embed_seqlens,  #Used if cross-attention only
+            embeddings=embeddings,
+            embed_seqlens=embed_seqlens,  # Used if cross-attention only
             cache=cache,
             cat_embeddings=None,
             cross_att_cache=cross_att_cache,
