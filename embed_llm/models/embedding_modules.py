@@ -438,7 +438,9 @@ class MT_Attention(nn.Module):
         if self.c_k % 2 == 0:
             attn = attn[:, :, :-1]
 
-        attn = attn + attn_bias
+        attn = attn + BlockDiagonalMask.from_seqlens(
+            q_seqlen=q_seqlen, kv_seqlen=kv_seqlen).materialize(attn.shape).to(
+            device=attn.device)
         attn = attn.softmax(dim=-1)
         out = (attn @ val).reshape(self.n_heads, seqlen_sum, self.head_dim)
         out = self.group_norm(out.unsqueeze(0)).squeeze(0).transpose(0, 1)
