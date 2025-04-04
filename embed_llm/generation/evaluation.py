@@ -121,7 +121,7 @@ def create_prompt(
     else:
         if w_embeds:
             last_prompt = list_prompt[-1]
-            list_prompt[-1] = ''.join([last_prompt, "Document: "])
+            list_prompt[-1] = "".join([last_prompt, "Document: "])
             list_embed.append(doc.strip())
             list_prompt.append(f"\nQuestion: {query}\nAnswer:")
         else:
@@ -295,7 +295,9 @@ def evaluate_QA(
                         give_n_tokens=True,
                     )
                     if w_embeds:
-                        compress_ratio += embeds / embed_tokens
+                        compress_ratio += (
+                            embed_tokens / embeds
+                        )  # N tokens to be compressed / final number of tokens after compression
                     else:
                         compress_ratio += 1
                     generated_sequences.extend(generated_sequence)
@@ -305,9 +307,7 @@ def evaluate_QA(
                         for prompt in texts_to_embed
                     ]
 
-                    compress_ratio += sum([len(token) for token in tokens]) / sum(
-                        [len(token) for token in tokens]
-                    )
+                    compress_ratio += 1
                     generated_sequence, logprobs = generate(
                         model=mistral_model,
                         encoded_prompts=tokens,
