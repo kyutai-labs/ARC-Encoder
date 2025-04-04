@@ -1,12 +1,12 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0
+#SBATCH --array=0-3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=16
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx03
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx01
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=eval_models
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/eval_dissect_%A_%a.out
@@ -18,7 +18,10 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-Div2Compress_MeanSA_MLP_Cont_L16_nonorm_SL128
+Div2Compress_MeanSA_MLP_Cont_L24_newrms
+Compr2_L16_Cont
+Compr2_L16_lastSA_Cont
+Compr2_L16_Cont_res
 )
 
 

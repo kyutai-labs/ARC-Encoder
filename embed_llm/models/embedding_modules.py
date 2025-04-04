@@ -367,7 +367,6 @@ class MT_Attention(nn.Module):
     ):
         super().__init__()
 
-        # TODO Implement a conv such that it compresses the attention along the query axis
         self.n_heads = n_heads
         self.head_dim = head_dim
         self.inner_dim = n_heads * head_dim
@@ -385,7 +384,7 @@ class MT_Attention(nn.Module):
             in_channels=n_heads,
             out_channels=n_heads,
             kernel_size=(c_q, c_k),
-            stride=(1, 1),
+            stride=(2 if conv_pool else 1, 1),
             # Pad too much if c_q or c_k is even and then truncate
             padding=(c_q // 2, c_k // 2),
             groups=n_heads // c_h,
@@ -634,8 +633,10 @@ class AdaptivePoolingAttention(nn.Module):
                     context=x
                     if self.attention_context_norm is None
                     else self.attention_context_norm(x),
-                    q_seqlen=sum(new_embed_seqlens, []),
-                    kv_seqlen=sum(embed_seqlens, []),
+                    mask=BlockDiagonalMask.from_seqlens(
+                        q_seqlen=sum(new_embed_seqlens, []),
+                        kv_seqlen=sum(embed_seqlens, []),
+                    ),
                 )
                 out = r + queries
             elif "mta" in self.pool_type:

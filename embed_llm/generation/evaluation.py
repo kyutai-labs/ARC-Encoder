@@ -330,7 +330,9 @@ def evaluate_QA(
                         give_n_tokens=True,
                     )
                     if w_embeds:
-                        compress_ratio += embeds / embed_tokens
+                        compress_ratio += (
+                            embed_tokens / embeds
+                        )  # N tokens to be compressed / final number of tokens after compression
                     else:
                         compress_ratio += 1
                     generated_sequences.extend(generated_sequence)
@@ -340,9 +342,7 @@ def evaluate_QA(
                         for prompt in no_context_prompt
                     ]
 
-                    compress_ratio += sum([len(token) for token in tokens]) / sum(
-                        [len(token) for token in tokens]
-                    )
+                    compress_ratio += 1
                     generated_sequence, logprobs = generate(
                         model=mistral_model,
                         encoded_prompts=tokens,
@@ -571,7 +571,7 @@ def arg_parser():
     parser.add_argument("--seed", type=float, default=0.42)
     parser.add_argument("--icl_exs", type=int, default=None)
     parser.add_argument("--llmemb_icl_w_context", action="store_true")
-    parser.add_argument("--icl_before_pref", action="store_true") 
+    parser.add_argument("--icl_before_pref", action="store_true")
     parser.add_argument("--compress_rate", type=int, default=None)
 
     return parser.parse_args()
@@ -698,7 +698,6 @@ if __name__ == "__main__":
             torch.cuda.empty_cache()
 
     else:
-
         pipeline, ckpt = evaluate_QA(
             args.run_name,
             benchmarks,

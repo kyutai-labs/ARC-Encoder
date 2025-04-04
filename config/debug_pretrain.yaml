@@ -27,7 +27,7 @@ pipeline:
   embedder_name: Mistral7B
   every_cross_att: 2
   gate_bottleneck: 8
-  max_embeds: 1
+  max_embeds: 2
   mlp_project:
     act: gelu
     hidden_dim: 4096
@@ -36,9 +36,9 @@ pipeline:
   n_truncated_layers: 31
   pooled_cross_att: false
   pooling_module:
-    compress_rate: -2
+    compress_rate: -1
     type: adaptive_attention
-    pool_type: mean_mta
+    pool_type: mean_sa
     rms_norm: false
   normalize_embed: false
   shared_kv: false
@@ -50,16 +50,18 @@ pipeline:
   insert_layer: 8
 
 
+
 data:
   adapt_seq_len: false
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
+  prob_distractor: 0.5
 
 seq_len: 256
-batch_size: 4
+batch_size: 16
 num_microbatches: 1
-max_steps: 10
+max_steps: 50
 optim:
   max_lr: 5.0e-05
   weight_decay: 0.1
