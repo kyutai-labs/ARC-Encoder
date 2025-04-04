@@ -391,7 +391,7 @@ class MT_Attention(nn.Module):
             bias=False,
         )
         torch.nn.init.dirac_(self.cube_conv.weight)
-
+        self.conv_pool = conv_pool
         self.group_norm = nn.GroupNorm(
             num_groups=n_heads // c_h, num_channels=n_heads, eps=1e-5, affine=True
         )
@@ -403,7 +403,6 @@ class MT_Attention(nn.Module):
         q_seqlen: list[int],
         kv_seqlen: list[int],
     ) -> torch.Tensor:
-        seqlen_sum, _ = x.shape
         q = self.to_q(x)
         context = x if context is None else context
         k, v = self.to_kv(context).chunk(2, dim=-1)
@@ -432,19 +431,54 @@ class MT_Attention(nn.Module):
         )
 
         attn = attn * attn_bias
-        attn = self.cube_conv(attn)
 
-        if self.c_q % 2 == 0:
-            attn = attn[:, :-1, :]
-        if self.c_k % 2 == 0:
-            attn = attn[:, :, :-1]
+        if self.conv_pool:
+            assert q_seqlen == kv_seqlen, (
+                "q_seqlen and kv_seqlen must be equal for conv pooling"
+            )
+            assert attn.shape[-1] == attn.shape[-2] == sum(q_seqlen)
+            new_q_seqlen = []
+            new_attn = []
+            ind_q = 0
+            for q_size in q_seqlen:
+                if q_size < self.c_q or q_size < self.c_k:
+                    new_attn.append(
+                        attn[:, ind_q : ind_q + q_size, ind_q : ind_q + q_size]
+                    )
+                    new_q_seqlen.append(q_size)
+                else:
+                    conv_att = self.cube_conv(
+                        attn[:, ind_q : ind_q + q_size, ind_q : ind_q + q_size]
+                    )
+                    if self.c_k % 2 == 0:
+                        conv_att = conv_att[:, :, :-1]
 
-        attn = attn + attn_bias
+                    new_attn.append(conv_att)
+                    new_q_seqlen.append(conv_att.shape[1])
+                    
+                ind_q += q_size
+               
+            attn = [] 
+            for h_dim in range(self.n_heads):
+                attn.append(torch.block_diag(*[attn_mat[h_dim, ...] for attn_mat in new_attn]).to(device=x.device, dtype=x.dtype))
+                
+            attn = torch.stack(attn, dim=0)
+            q_seqlen = new_q_seqlen
+        else:
+            attn = self.cube_conv(attn)
+            if self.c_q % 2 == 0:
+                attn = attn[:, :-1, :]
+            if self.c_k % 2 == 0:
+                attn = attn[:, :, :-1]
+        seqlen_sum = sum(q_seqlen)
+        attn = attn + BlockDiagonalMask.from_seqlens(
+            q_seqlen=q_seqlen, kv_seqlen=kv_seqlen
+        ).materialize(attn.shape).to(device=attn.device)
         attn = attn.softmax(dim=-1)
         out = (attn @ val).reshape(self.n_heads, seqlen_sum, self.head_dim)
         out = self.group_norm(out.unsqueeze(0)).squeeze(0).transpose(0, 1)
         out = out.reshape(seqlen_sum, self.inner_dim)
-        return self.to_out(out)
+        return self.to_out(out), q_seqlen
 
 
 class AdaptivePoolingAttention(nn.Module):
@@ -600,6 +634,7 @@ class AdaptivePoolingAttention(nn.Module):
                     ).to(device=x.device, dtype=x.dtype)
                 elif "mta_conv_pool" in self.pool_type:
                     pool_mask = None
+                    new_embed_seqlens = embed_seqlens
                 else:
                     # Mean pooling
                     pool_mask = torch.block_diag(
@@ -629,14 +664,14 @@ class AdaptivePoolingAttention(nn.Module):
                     ),
                 )
                 out = r + queries
-            elif "mta" in self.pool_type:
+            elif "mta" in self.pool_type and "mta_conv_pool" not in self.pool_type:
                 assert sum(new_embed_seqlens) == queries.shape[0], (
                     "Sum of new_embed_seqlens must be equal to sum of embed_seqlens"
                 )
                 assert sum(embed_seqlens) == x.shape[0], (
                     "Sum of embed_seqlens must be equal to sum of x"
                 )
-                r = self.self_attend_block(
+                r, _ = self.self_attend_block(
                     self.attention_norm(queries),
                     context=x
                     if self.attention_context_norm is None
@@ -645,6 +680,22 @@ class AdaptivePoolingAttention(nn.Module):
                     kv_seqlen=embed_seqlens,
                 )
                 out = r + queries
+            elif "mta_conv_pool" in self.pool_type:
+                assert sum(new_embed_seqlens) == queries.shape[0], (
+                    "Sum of new_embed_seqlens must be equal to sum of embed_seqlens"
+                )
+                assert sum(embed_seqlens) == x.shape[0], (
+                    "Sum of embed_seqlens must be equal to sum of x"
+                )
+                r, new_embed_seqlens = self.self_attend_block(
+                    self.attention_norm(queries),
+                    context=x
+                    if self.attention_context_norm is None
+                    else self.attention_context_norm(x),
+                    q_seqlen=new_embed_seqlens,
+                    kv_seqlen=embed_seqlens,
+                )
+                out = r
             else:
                 out = queries
 
