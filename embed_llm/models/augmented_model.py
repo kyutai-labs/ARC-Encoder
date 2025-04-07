@@ -17,10 +17,8 @@ from embed_llm.data.data_loader import Batch
 from embed_llm.generation.utils import eval_logger_info
 from embed_llm.models.args import EmbedAugArgs, LoraArgs, MistralModelArgs
 from embed_llm.models.embedding_modules import (
-    LatentAttention,
     MLP_project,
     PoolingModule,
-    ReversedLatentAttention,
 )
 from embed_llm.models.loading import (
     get_instruct_ckpts_paths,
@@ -65,22 +63,10 @@ class EmbedAugModel(nn.Module):
         )
 
         if self.mlp_project_args.n_layers > 0 and self.w_embeds:
-            if self.mlp_project_args.type == "mlp":
-                self.mlp_project = MLP_project(
-                    args=self.mlp_project_args, dtype=pipeline_args.param_dtype
-                )
-            elif self.mlp_project_args.type == "reversed_latent_attention":
-                self.mlp_project = ReversedLatentAttention(
-                    n_layers=self.mlp_project_args.n_layers
-                )
-            elif self.mlp_project_args.type == "latent_attention":
-                self.mlp_project = LatentAttention(
-                    n_layers=self.mlp_project_args.n_layers
-                )
-            else:
-                raise ValueError(
-                    f"MLP type {self.mlp_project_args.type} not supported."
-                )
+            self.mlp_project = MLP_project(
+                args=self.mlp_project_args, dtype=pipeline_args.param_dtype
+            )
+
         else:
             self.mlp_project = None
 
@@ -123,12 +109,9 @@ class EmbedAugModel(nn.Module):
                 embeddings = F.normalize(embeddings, p=2, dim=-1)
 
             if self.mlp_project is not None:
-                if self.mlp_project_args.type == "mlp":
-                    embeddings = self.mlp_project(embeddings)
-                    cat_embeddings = embeddings
-                else:
-                    embeddings = self.mlp_project(embeddings, seqlens=embed_seqlens)
-                    cat_embeddings = embeddings
+                embeddings = self.mlp_project(embeddings)
+                cat_embeddings = embeddings
+
             else:
                 cat_embeddings = embeddings
 
@@ -672,15 +655,9 @@ class EmbedAugPipeline(nn.Module):
                     embeddings = F.normalize(embeddings, p=2, dim=-1)
 
                 if self.model.mlp_project is not None:
-                    if self.pipeline_args.mlp_project.type == "mlp":
-                        cat_embeddings = self.model.mlp_project(
-                            embeddings.to(self.pipeline_args.param_dtype)
-                        )
-                    else:
-                        cat_embeddings = self.model.mlp_project(
-                            embeddings.to(self.pipeline_args.param_dtype),
-                            seqlens=embed_seqlens,
-                        )
+                    cat_embeddings = self.model.mlp_project(
+                        embeddings.to(self.pipeline_args.param_dtype)
+                    )
                 else:
                     cat_embeddings = embeddings
 

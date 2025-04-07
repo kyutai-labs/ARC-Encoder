@@ -254,12 +254,6 @@ def load_training_model(
     else:
         ignored_state = []
 
-    if "latent_attention" in augmented_model.mlp_project_args.type:
-        initialize_proj_params(
-            augmented_model.mlp_project, param_dtype, latents=True, device="cuda"
-        )
-        ignored_state.append(augmented_model.mlp_project.latents)
-
     ignored_state = None if len(ignored_state) == 0 else ignored_state
 
     torch.distributed.barrier()
@@ -472,12 +466,6 @@ def load_training_model_from_ckpt(
                 assign=True,
                 strict=True,
             )
-        if "latent_attention" in augmented_model.mlp_project_args.type:
-            augmented_model.mlp_project.latents = torch.nn.Parameter(
-                [v for k, v in state_dict.items() if "latents" in k][0].cuda()
-            )
-            ignored_state.append(augmented_model.mlp_project.latents)
-
         del state_dict
 
     if get_rank() == 0:

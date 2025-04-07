@@ -178,14 +178,8 @@ class Checkpointer:
             k: m for k, m in self.llm.named_modules() if is_trainable_fsdp(m)
         }
 
-        mlp_attention = False
         if self.mlp_project is None:
             mlp_project_modules = {}
-        elif any([("attend" in n) for n, m in self.mlp_project.named_modules()]):
-            mlp_attention = True
-            for name, module in self.mlp_project.named_modules():
-                mlp_project_modules = {name: module}
-                break
         else:
             mlp_project_modules = {
                 k: m
@@ -243,20 +237,12 @@ class Checkpointer:
             with module.summon_full_params(
                 module, writeback=True, offload_to_cpu=offload_to_cpu
             ):
-                if not mlp_attention:
-                    mlp_project_states.update(
-                        {
-                            f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
-                            for k, v in module.state_dict().items()
-                        }
-                    )
-                else:
-                    mlp_project_states.update(
-                        {
-                            f"{k}": v.to(dtype=save_dtype)
-                            for k, v in module.state_dict().items()
-                        }
-                    )
+                mlp_project_states.update(
+                    {
+                        f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                        for k, v in module.state_dict().items()
+                    }
+                )
 
         trainable_embedder_states = {}
         for key, module in trainable_embedder_modules.items():
