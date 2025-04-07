@@ -18,6 +18,7 @@ optim:
   max_lr: 5.0e-05
   warm_up_steps: 500
   weight_decay: 0.1
+
 pipeline:
   causal_embedder: true
   cross_att: false
@@ -27,18 +28,18 @@ pipeline:
   embedder_name: Mistral7B
   every_cross_att: 2
   gate_bottleneck: 8
-  max_embeds: 2
+  max_embeds: 1
   mlp_project:
     act: gelu
     hidden_dim: 4096
     n_layers: 1
     type: mlp
-  n_truncated_layers: 31
-  pooled_cross_att: false
+    first_rms_norm: true
+  n_truncated_layers: 8
   pooling_module:
     compress_rate: -1
     type: adaptive_attention
-    pool_type: mean_sa
+    pool_type: mean
     rms_norm: false
   normalize_embed: false
   shared_kv: false
@@ -47,8 +48,6 @@ pipeline:
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
-  insert_layer: 8
-
 
 
 data:

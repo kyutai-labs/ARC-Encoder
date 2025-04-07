@@ -26,14 +26,3 @@ class ModelBase(nn.Module, ABC):
         cache: BufferCache | None = None,  # not supported for now
     ) -> torch.Tensor:
         pass
-
-    # @staticmethod
-    # @abstractmethod
-    # def from_folder(
-    #     folder: Union[Path, str],
-    #     max_batch_size: int = 1,
-    #     num_pipeline_ranks: int = 1,
-    #     device: Union[torch.device, str] = "cuda",
-    #     dtype: Optional[torch.dtype] = None,
-    # ) -> "ModelBase":
-    #     pass

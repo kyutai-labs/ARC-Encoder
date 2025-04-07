@@ -79,11 +79,10 @@ class MLP_block(nn.Module):
         self.rms_norm = RMSNorm(in_dim, eps=1e-5) if rms_norm else None
 
     def forward(self, x):
-        out = (
-            self.act(self.layer1(x))
-            if self.rms_norm is None
-            else self.act(self.layer1(self.rms_norm(x)))
-        )
+        if self.rms_norm is None:
+            out = self.act(self.layer1(x))
+        else:
+            out = self.act(self.layer1(self.rms_norm(x)))
         out = self.layer2(out) + x
         return out
 

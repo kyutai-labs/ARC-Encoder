@@ -404,17 +404,14 @@ class Transformer(ModelBase, LoRALoaderMixin):
         seqlens: list[int],
         embeddings: torch.Tensor | None,
         tokenized_prompts: dict = {},
-        embed_seqlens: list[int]| None = None,
+        embed_seqlens: list[int] | None = None,
         cat_embeddings: torch.Tensor | None = None,
         batch_type: str = "reconstruction",
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
 
         if embeddings is not None:
-            assert (
-                embed_seqlens is None
-                or sum(embed_seqlens) == embeddings.shape[0]
-            ), (
+            assert embed_seqlens is None or sum(embed_seqlens) == embeddings.shape[0], (
                 sum(embed_seqlens),
                 embeddings.shape[0],
             )
@@ -441,11 +438,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
 
         if embeddings is not None:
-            mask_embed_seqlens = (
-                seqlens
-                if embed_seqlens is None
-                else embed_seqlens
-            )
+            mask_embed_seqlens = seqlens if embed_seqlens is None else embed_seqlens
             cross_att_mask = BlockDiagonalMask.from_seqlens(
                 q_seqlen=seqlens, kv_seqlen=mask_embed_seqlens
             )
@@ -461,9 +454,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
         if self.args.ca_rope and embed_seqlens is not None:
-            ca_positions = positions_from_sizes(
-                embed_seqlens, self.freqs_cis.device
-            )
+            ca_positions = positions_from_sizes(embed_seqlens, self.freqs_cis.device)
             freqs_cis_ca = self.freqs_cis[ca_positions]
         else:
             freqs_cis_ca = None
@@ -634,9 +625,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         if self.args.ca_rope and embed_seqlens is not None:
             # No generation so always the same as in the prefilling phase
-            ca_positions = positions_from_sizes(
-                embed_seqlens, self.freqs_cis.device
-            )
+            ca_positions = positions_from_sizes(embed_seqlens, self.freqs_cis.device)
             freqs_cis_ca = self.freqs_cis[ca_positions]
         else:
             freqs_cis_ca = None
@@ -828,9 +817,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             super().load_state_dict(state_dict, strict=strict, assign=assign)
 
 
-def positions_from_sizes(
-    sizes: Iterable[int], device
-) -> torch.Tensor:
+def positions_from_sizes(sizes: Iterable[int], device) -> torch.Tensor:
     return torch.tensor(
         reduce(operator.iadd, [list(range(s)) for s in sizes], []),
         dtype=torch.long,

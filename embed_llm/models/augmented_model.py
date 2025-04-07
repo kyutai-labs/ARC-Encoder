@@ -510,9 +510,11 @@ class EmbedAugPipeline(nn.Module):
                     )
             if pipeline_args.mlp_project.n_layers > 0:
                 print("Loading MLP projector")
-                augmented_pipeline.model.mlp_project.load_state_dict(
-                    safetensors.torch.load_file(mlp_path + "/consolidated.safetensors")
+                state_dict = safetensors.torch.load_file(
+                    mlp_path + "/consolidated.safetensors"
                 )
+
+                augmented_pipeline.model.mlp_project.load_state_dict(state_dict)
                 augmented_pipeline.model.mlp_project = (
                     augmented_pipeline.model.mlp_project.to(device)
                 )
@@ -740,7 +742,6 @@ class EmbedAugPipeline(nn.Module):
                         insertion_list.append(len(toks))
 
                 if len(embed_seqlens[i]) == len(insertion_list) - 1:
-                    
                     insertion_list = insertion_list[:-1]
                 else:
                     assert len(embed_seqlens[i]) == len(insertion_list), (

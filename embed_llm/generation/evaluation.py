@@ -77,6 +77,8 @@ def create_prompt_prefix(
                     )
                     to_embed_str.append(doc.strip())
 
+            if max_examples == 0:
+                prompt_str.append("")
         else:
             for query, answer, doc, _ in zip(
                 queries, answers, docs, range(max_examples)
@@ -195,6 +197,9 @@ def evaluate_QA(
     ):
         if benchmark == "SQUAD" and max_multi_passage > 1:
             benchmarks.remove(benchmark)
+            continue
+
+        if compressed_doc_in_icl and icl_examples == 0:
             continue
 
         metrics[benchmark] = {}

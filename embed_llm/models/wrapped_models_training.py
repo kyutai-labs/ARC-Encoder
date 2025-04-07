@@ -44,26 +44,25 @@ def load_training_model(
     checkpoint: bool = False,
     max_batch_size: int = 32,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
-
     if not train_args.pipeline.cross_att:
         assert train_args.pipeline.do_pool, "If not cross-attention, must do pooling"
 
     if train_args.pipeline.trainable_embedder:
-        assert (
-            not train_args.pipeline.train_only_pooling
-        ), "Can't have both trainable embedder and train only pooling"
+        assert not train_args.pipeline.train_only_pooling, (
+            "Can't have both trainable embedder and train only pooling"
+        )
 
     if train_args.pipeline.train_only_pooling:
-        assert (
-            not train_args.pipeline.trainable_embedder
-        ), "Can't have both trainable embedder and train only pooling"
+        assert not train_args.pipeline.trainable_embedder, (
+            "Can't have both trainable embedder and train only pooling"
+        )
 
     if train_args.hybrid_task.do:
         assert train_args.continuation == 0.0, "Continuation must be 0 for hybrid task"
-        assert (
-            train_args.textual_continuation == 0.0
-        ), "Continuation must be 0 for hybrid task"
-        
+        assert train_args.textual_continuation == 0.0, (
+            "Continuation must be 0 for hybrid task"
+        )
+
     llm_args, pipeline_args = load_args(
         folder,
         lora,
@@ -89,9 +88,9 @@ def load_training_model(
     )
 
     if not pipeline_args.w_embeds:
-        assert (
-            train_args.pipeline.mlp_project.n_layers == 0
-        ), "Only no MLP if no embeddings."
+        assert train_args.pipeline.mlp_project.n_layers == 0, (
+            "Only no MLP if no embeddings."
+        )
 
     # Load model and params for embedder
     if pipeline_args.trainable_embedder or pipeline_args.train_only_pooling:
@@ -138,7 +137,6 @@ def load_training_model(
         augmented_model = augmented_pipeline.get_model(llm=model)
 
     if get_rank() == 0:
-
         if lora.enable and pipeline_args.trainable_llm:
             main_logger_info("Initializing lora layers  for LLM ...")
             # initialize LoRA layers
@@ -170,9 +168,9 @@ def load_training_model(
             if "latents" not in n
         ), "All parameters should be initialized by now"
 
-        assert all(
-            p.dtype == param_dtype for p in augmented_model.parameters()
-        ), f"All parameters should be on {param_dtype}"
+        assert all(p.dtype == param_dtype for p in augmented_model.parameters()), (
+            f"All parameters should be on {param_dtype}"
+        )
 
         main_logger_info("Finished initialization!")
         param_init_fn = None
@@ -183,9 +181,9 @@ def load_training_model(
             m.to_empty(device=torch.cuda.current_device(), recurse=False)
             m.to(param_dtype)
 
-        assert all(
-            p.is_meta for p in augmented_model.parameters()
-        ), "All parameters should be on meta"
+        assert all(p.is_meta for p in augmented_model.parameters()), (
+            "All parameters should be on meta"
+        )
 
     if not pipeline_args.do_pool:
         augmented_model.pooling_args = None
@@ -212,29 +210,41 @@ def load_training_model(
             - pipeline_args.n_truncated_layers
         )
     # Since param latents not sharded, initialize on all devices
-    if (
-        pipeline_args.do_pool
-        and augmented_model.pooling_args is not None
-    ):
+    if pipeline_args.do_pool and augmented_model.pooling_args is not None:
         if "latent_attention" in augmented_model.pooling_args.type:
             initialize_proj_params(
                 augmented_model.pooling_module, param_dtype, latents=True, device="cuda"
             )
             ignored_state = [augmented_model.pooling_module.process.latents]
-        elif "conv" == augmented_model.pooling_args.pool_type and 'mta' not in augmented_model.pooling_args.pool_type:
-            augmented_model.pooling_module.process.conv._parameters['weight'] = torch.nn.Parameter(
-                torch.empty_like(augmented_model.pooling_module.process.conv.weight, device='cuda', dtype=param_dtype)
+        elif (
+            "conv" == augmented_model.pooling_args.pool_type
+            and "mta" not in augmented_model.pooling_args.pool_type
+        ):
+            augmented_model.pooling_module.process.conv._parameters["weight"] = (
+                torch.nn.Parameter(
+                    torch.empty_like(
+                        augmented_model.pooling_module.process.conv.weight,
+                        device="cuda",
+                        dtype=param_dtype,
+                    )
+                )
             )
-            param = augmented_model.pooling_module.process.conv._parameters['weight']
+            param = augmented_model.pooling_module.process.conv._parameters["weight"]
             torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-            ignored_state = [
-                augmented_model.pooling_module.process.conv
-            ]
-        elif augmented_model.pooling_args.pool_type == 'mta_conv_pool':
-            augmented_model.pooling_module.process.self_attend_block.cube_conv._parameters['weight'] = torch.nn.Parameter(
-                torch.empty_like(augmented_model.pooling_module.process.self_attend_block.cube_conv.weight, device='cuda', dtype=param_dtype)
+            ignored_state = [augmented_model.pooling_module.process.conv]
+        elif augmented_model.pooling_args.pool_type == "mta_conv_pool":
+            augmented_model.pooling_module.process.self_attend_block.cube_conv._parameters[
+                "weight"
+            ] = torch.nn.Parameter(
+                torch.empty_like(
+                    augmented_model.pooling_module.process.self_attend_block.cube_conv.weight,
+                    device="cuda",
+                    dtype=param_dtype,
+                )
             )
-            param = augmented_model.pooling_module.process.self_attend_block.cube_conv._parameters['weight']
+            param = augmented_model.pooling_module.process.self_attend_block.cube_conv._parameters[
+                "weight"
+            ]
             torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
             ignored_state = [
                 augmented_model.pooling_module.process.self_attend_block.cube_conv
@@ -312,7 +322,6 @@ def load_training_model_from_ckpt(
     checkpoint: bool = False,
     max_batch_size: int = 32,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
-
     lora_path = (
         ckpt_path + "/" + train_args.llm_name.lower() + "/consolidated/lora.safetensors"
     )
@@ -351,10 +360,10 @@ def load_training_model_from_ckpt(
     if not (
         old_pipeline_args.trainable_embedder or old_pipeline_args.train_only_pooling
     ):
-        assert (
-            not tune_embedder
-        ), "If no trainable embedder, embedder model can't be instruct tuned"
-        
+        assert not tune_embedder, (
+            "If no trainable embedder, embedder model can't be instruct tuned"
+        )
+
     if not tune_llm:
         assert not tune_llm, "If no trainable llm, llm model can't be instruct tuned"
         llm_args.lora = None
@@ -431,24 +440,26 @@ def load_training_model_from_ckpt(
                     state_dict, assign=True, strict=True
                 )
 
-            if 'latent_attention' in augmented_model.pooling_args.type:
+            if "latent_attention" in augmented_model.pooling_args.type:
                 augmented_model.pooling_module.process.latents = torch.nn.Parameter(
                     [v for k, v in state_dict.items() if "latents" in k][0].cuda()
                 )
 
                 ignored_state = [augmented_model.pooling_module.process.latents]
-                
-            if 'conv' == augmented_model.pooling_args.pool_type:
+
+            if "conv" == augmented_model.pooling_args.pool_type:
                 augmented_model.pooling_module.process.conv.weight = torch.nn.Parameter(
                     [v for k, v in state_dict.items() if "conv" in k][0].cuda()
                 )
                 ignored_state = [augmented_model.pooling_module.process.conv.weight]
-                
-            elif 'mta_conv_pool' == augmented_model.pooling_args.pool_type:
+
+            elif "mta_conv_pool" == augmented_model.pooling_args.pool_type:
                 augmented_model.pooling_module.process.self_attend_block.cube_conv.weight = torch.nn.Parameter(
                     [v for k, v in state_dict.items() if "conv" in k][0].cuda()
                 )
-                ignored_state = [augmented_model.pooling_module.process.self_attend_block.cube_conv.weight]
+                ignored_state = [
+                    augmented_model.pooling_module.process.self_attend_block.cube_conv.weight
+                ]
 
             del state_dict
 
@@ -494,7 +505,7 @@ def load_training_model_from_ckpt(
                 augmented_model.llm.load_lora(
                     Path(lora_path), cross_att=old_pipeline_args.cross_att
                 )
-                
+
             elif tune_llm:
                 initialize_lora_parameters(augmented_model.llm, param_dtype)
 
@@ -507,7 +518,7 @@ def load_training_model_from_ckpt(
         assert not any(
             p.is_meta
             for n, p in augmented_model.named_parameters()
-            if ("latents" not in n) and ('conv' not in n)
+            if ("latents" not in n) and ("conv" not in n)
         ), "All parameters should be initialized by now"
 
     else:
@@ -519,7 +530,7 @@ def load_training_model_from_ckpt(
         assert all(
             p.is_meta
             for n, p in augmented_model.named_parameters()
-            if ("latents" not in n) and ('conv' not in n)
+            if ("latents" not in n) and ("conv" not in n)
         ), "All parameters should be on meta"
 
     ignored_state = None if len(ignored_state) == 0 else ignored_state
@@ -538,7 +549,9 @@ def load_training_model_from_ckpt(
             param.requires_grad = True
         elif "mlp_project" in name:
             param.requires_grad = True
-        elif "pooling_module" in name and (tune_embedder or old_pipeline_args.train_only_pooling):
+        elif "pooling_module" in name and (
+            tune_embedder or old_pipeline_args.train_only_pooling
+        ):
             param.requires_grad = True
         else:
             param.requires_grad = False
@@ -556,7 +569,7 @@ def load_training_model_from_ckpt(
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
     torch.distributed.barrier()
-    
+
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
