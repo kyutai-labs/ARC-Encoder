@@ -190,6 +190,7 @@ def load_llm_model(
             checkpoint=checkpoint,
             pipeline_rank=pipeline_rank,
             num_pipeline_ranks=num_pipeline_rank,
+            is_embedder=for_embedding,
         )
 
     embed_dim = model.args.dim
@@ -202,7 +203,6 @@ def load_llm_model(
         logger.info("Embedder dim must match model dim if no MLP projector.")
 
     if for_embedding:
-        model.for_embedding = True
         if pipeline_args.causal_embedder:
             model.causal_embedder = True
         model.mean_hid4embed = pipeline_args.mean_hid4embed

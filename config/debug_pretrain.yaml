@@ -37,9 +37,9 @@ pipeline:
     first_rms_norm: true
   n_truncated_layers: 8
   pooling_module:
-    compress_rate: -1
+    compress_rate: -2
     type: adaptive_attention
-    pool_type: mean
+    pool_type: mta_conv_pool
     rms_norm: false
   normalize_embed: false
   shared_kv: false

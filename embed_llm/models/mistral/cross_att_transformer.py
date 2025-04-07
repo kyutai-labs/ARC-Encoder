@@ -211,6 +211,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         checkpoint: bool = False,
         pipeline_rank: int = 0,
         num_pipeline_ranks: int = 1,  # Don't use pipeline parallelism for now
+        is_embedder: bool = False,
     ):
         super().__init__()
 
@@ -310,7 +311,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         self.norm: None | RMSNorm = None
 
-        if pipeline_rank == num_pipeline_ranks - 1:
+        if pipeline_rank == num_pipeline_ranks - 1 and not is_embedder:
             self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
         self.to_k = None
@@ -360,7 +361,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 bias=False,
             )
 
-        self.for_embedding = False
+        self.for_embedding = is_embedder
         self.causal_embedder = False
         self.pos_to_keep = None
         self.mean_hid4embed = None
@@ -498,16 +499,16 @@ class Transformer(ModelBase, LoRALoaderMixin):
             else:
                 h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
 
-        normalized_h = self.norm(h)
-
-        if cat_embeddings is not None:
-            normalized_h = normalized_h[self.pos_to_keep]
-
         if self.for_embedding:
             if self.residual_h is not None:
                 h = (h + self.residual_h) / len(self.mean_hid4embed)
                 self.residual_h = None
             return h
+
+        normalized_h = self.norm(h)
+
+        if cat_embeddings is not None:
+            normalized_h = normalized_h[self.pos_to_keep]
 
         self.pos_to_keep = None
 

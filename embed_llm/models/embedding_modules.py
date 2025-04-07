@@ -385,14 +385,15 @@ class MT_Attention(nn.Module):
             kernel_size=(c_q, c_k),
             stride=(2 if conv_pool else 1, 1),
             # Pad too much if c_q or c_k is even and then truncate
-            padding=(c_q // 2, c_k // 2),
+            padding=(0, 0),
             groups=n_heads // c_h,
             bias=False,
         )
-        torch.nn.init.dirac_(self.cube_conv.weight)
+
         self.conv_pool = conv_pool
-        self.group_norm = nn.GroupNorm(
-            num_groups=n_heads // c_h, num_channels=n_heads, eps=1e-5, affine=True
+        self.norm = RMSNorm(
+            self.inner_dim,
+            eps=1e-8,
         )
 
     def forward(
@@ -440,43 +441,47 @@ class MT_Attention(nn.Module):
             new_attn = []
             ind_q = 0
             for q_size in q_seqlen:
-                if q_size < self.c_q or q_size < self.c_k:
-                    new_attn.append(
-                        attn[:, ind_q : ind_q + q_size, ind_q : ind_q + q_size]
-                    )
-                    new_q_seqlen.append(q_size)
-                else:
-                    conv_att = self.cube_conv(
-                        attn[:, ind_q : ind_q + q_size, ind_q : ind_q + q_size]
-                    )
-                    if self.c_k % 2 == 0:
-                        conv_att = conv_att[:, :, :-1]
-
-                    new_attn.append(conv_att)
-                    new_q_seqlen.append(conv_att.shape[1])
-                    
-                ind_q += q_size
-               
-            attn = [] 
-            for h_dim in range(self.n_heads):
-                attn.append(torch.block_diag(*[attn_mat[h_dim, ...] for attn_mat in new_attn]).to(device=x.device, dtype=x.dtype))
                 
+                if q_size < self.c_q or q_size < self.c_k:
+                    padded_attn = torch.nn.functional.pad(
+                        attn[:, ind_q : ind_q + q_size, ind_q : ind_q + q_size],
+                        (0, self.c_k - 1, 0, self.c_q - q_size),
+                        value=0,
+                    )
+                else:
+                    padded_attn = torch.nn.functional.pad(
+                        attn[:, ind_q : ind_q + q_size, ind_q : ind_q + q_size],
+                        (0, self.c_k - 1, 0, self.c_q // 2),
+                        value=0,
+                    )
+                    
+                conv_att = self.cube_conv(padded_attn)
+                new_attn.append(conv_att)
+                new_q_seqlen.append(conv_att.shape[1])
+                ind_q += q_size
+
+            attn = []
+            for h_dim in range(self.n_heads):
+                attn.append(
+                    torch.block_diag(
+                        *[attn_mat[h_dim, ...] for attn_mat in new_attn]
+                    ).to(device=x.device, dtype=x.dtype)
+                )
+
             attn = torch.stack(attn, dim=0)
             q_seqlen = new_q_seqlen
         else:
-            attn = self.cube_conv(attn)
-            if self.c_q % 2 == 0:
-                attn = attn[:, :-1, :]
-            if self.c_k % 2 == 0:
-                attn = attn[:, :, :-1]
+            padded_attn = torch.nn.functional.pad(
+                attn, (0, self.c_k - 1, 0, self.c_q - 1), value=0
+            )
+            attn = self.cube_conv(padded_attn)
         seqlen_sum = sum(q_seqlen)
         attn = attn + BlockDiagonalMask.from_seqlens(
             q_seqlen=q_seqlen, kv_seqlen=kv_seqlen
         ).materialize(attn.shape).to(device=attn.device)
         attn = attn.softmax(dim=-1)
-        out = (attn @ val).reshape(self.n_heads, seqlen_sum, self.head_dim)
-        out = self.group_norm(out.unsqueeze(0)).squeeze(0).transpose(0, 1)
-        out = out.reshape(seqlen_sum, self.inner_dim)
+        out = (attn @ val).reshape(seqlen_sum, self.inner_dim)
+        out = self.norm(out)
         return self.to_out(out), q_seqlen
 
 

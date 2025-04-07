@@ -216,9 +216,28 @@ def load_training_model(
                 augmented_model.pooling_module, param_dtype, latents=True, device="cuda"
             )
             ignored_state = [augmented_model.pooling_module.process.latents]
+        elif 'mta' in augmented_model.pooling_args.pool_type:
+            augmented_model.pooling_module.process.self_attend_block.cube_conv._parameters[
+                "weight"
+            ] = torch.nn.Parameter(
+                torch.empty_like(
+                    augmented_model.pooling_module.process.self_attend_block.cube_conv.weight,
+                    device="cuda",
+                    dtype=param_dtype,
+                )
+            )
+            param = augmented_model.pooling_module.process.self_attend_block.cube_conv._parameters[
+                "weight"
+            ]
+            if "mta_conv_pool" in augmented_model.pooling_args.pool_type:
+                torch.nn.init.constant_(param, 0.25)
+            else:
+                torch.nn.init.dirac_(param, groups=augmented_model.pooling_args.n_heads // 2)
+            ignored_state = [
+                augmented_model.pooling_module.process.self_attend_block.cube_conv
+            ]
         elif (
             "conv" == augmented_model.pooling_args.pool_type
-            and "mta" not in augmented_model.pooling_args.pool_type
         ):
             augmented_model.pooling_module.process.conv._parameters["weight"] = (
                 torch.nn.Parameter(
@@ -232,23 +251,6 @@ def load_training_model(
             param = augmented_model.pooling_module.process.conv._parameters["weight"]
             torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
             ignored_state = [augmented_model.pooling_module.process.conv]
-        elif augmented_model.pooling_args.pool_type == "mta_conv_pool":
-            augmented_model.pooling_module.process.self_attend_block.cube_conv._parameters[
-                "weight"
-            ] = torch.nn.Parameter(
-                torch.empty_like(
-                    augmented_model.pooling_module.process.self_attend_block.cube_conv.weight,
-                    device="cuda",
-                    dtype=param_dtype,
-                )
-            )
-            param = augmented_model.pooling_module.process.self_attend_block.cube_conv._parameters[
-                "weight"
-            ]
-            torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-            ignored_state = [
-                augmented_model.pooling_module.process.self_attend_block.cube_conv
-            ]
         else:
             ignored_state = []
     else:
