@@ -57,8 +57,8 @@ def load_args(
         )
 
         # Support for old checkpoints params.json
-        if "rms_embed" in args:
-            pipeline_args.pooling_module["rms_norm"] = args["rms_embed"]
+        if "rms_embed" in args and "rms_norm" not in pipeline_args.pooling_module and pipeline_args.pooling_module["type"] == "adaptive_attention":
+            pipeline_args.pooling_module["rms_norm"] = True 
             print("Loading OLD checkpoint careful !")
 
         mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
@@ -66,7 +66,6 @@ def load_args(
 
         pooling_args = PoolingArgs(**pipeline_args.pooling_module)
         pipeline_args.pooling_module = pooling_args
-
     else:
         pipeline_args = pipe_args
 
@@ -186,6 +185,12 @@ def load_llm_model(
 
     if not parll or (get_rank() == 0 or num_pipeline_rank > 1):
         state_dict = load_state_dict(folder, dtype=param_dtype)
+        
+        # For embedder remove the last norm beforehand
+        assert all([k in model.state_dict() for k in state_dict.keys() if not (k == 'norm.weight' and for_embedding)]), (
+            f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
+        ) 
+            
         model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
 
     if pipeline_args.mlp_project.n_layers == 0 and not for_embedding:

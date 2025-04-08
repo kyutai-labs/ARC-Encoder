@@ -479,6 +479,7 @@ def load_training_model_from_ckpt(
                 for k, v in state_dict.items()
                 if "lora" not in k and is_cross_att(k)
             }
+            assert all([k in augmented_model.llm.state_dict() for k in cross_att_state_dicts.keys()])
             augmented_model.llm.load_state_dict(
                 cross_att_state_dicts, assign=True, strict=False
             )

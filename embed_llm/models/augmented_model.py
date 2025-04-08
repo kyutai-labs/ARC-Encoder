@@ -388,7 +388,7 @@ class EmbedAugPipeline(nn.Module):
                 for k, v in state_dict.items()
                 if "lora" not in k and is_cross_att(k)
             }
-
+            assert all([k in llm.state_dict() for k in cross_att_state_dicts.keys()])
             llm.load_state_dict(cross_att_state_dicts, assign=True, strict=False)
 
         if instruct_ckpt is not None and llm_lora_state_dict_path is not None:
