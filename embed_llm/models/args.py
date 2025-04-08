@@ -21,6 +21,7 @@ class PoolingArgs(Serializable):
     pool_type: str = "mean"
     rms_norm: bool = False
     cont_att_norm: bool = False
+    mta_k_only_norm: bool = False
 
 
 @dataclass
@@ -32,7 +33,7 @@ class MLPProjectArgs(Serializable):
     out_dim: int | None = None
     type: str = "mlp"
     first_rms_norm: bool = False
-
+    
 
 @dataclass
 class EmbedAugArgs(Serializable):

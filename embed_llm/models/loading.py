@@ -1,12 +1,11 @@
 import json
 import logging
-import os
+
 from pathlib import Path
 
 import safetensors
 import safetensors.torch
 import torch
-import yaml
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 
 from embed_llm.models.args import (
@@ -56,21 +55,11 @@ def load_args(
                 if k in args
             }
         )
-        if 'rms_embed' not in args:
-            pipeline_args.rms_embed = True
-            pipeline_args.normalize_embed = True
 
-        if "w_prefix_prompt" not in args or "max_embeds" not in args:
-            with open(os.path.join(pipe_path, "../../args.yaml"), "r") as f:
-                train_args = yaml.safe_load(f)
-
-            w_prefix_prompt = train_args.get("prefix_prompt", False)
-            pipeline_args.w_prefix_prompt = w_prefix_prompt
-
-            if train_args.get("hybrid_task", {}).get("do", False):
-                pipeline_args.max_embeds = train_args["hybrid_task"].get(
-                    "max_embeds", 1
-                )
+        # Support for old checkpoints params.json
+        if "rms_embed" in args:
+            pipeline_args.pooling_module["rms_norm"] = args["rms_embed"]
+            print("Loading OLD checkpoint careful !")
 
         mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
         pipeline_args.mlp_project = mlp_project_args

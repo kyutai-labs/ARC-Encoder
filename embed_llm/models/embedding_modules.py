@@ -363,6 +363,7 @@ class MT_Attention(nn.Module):
         n_heads: int = 32,
         head_dim: int = 128,
         conv_pool: bool = False,
+        k_norm: bool = False,
     ):
         super().__init__()
 
@@ -377,15 +378,14 @@ class MT_Attention(nn.Module):
         assert n_heads % c_h == 0, f"n_heads {n_heads} must be divisible by c_h {c_h}"
 
         self.to_q = nn.Linear(hidden_dim, self.inner_dim, bias=False)
-        self.to_kv = nn.Linear(hidden_dim, 2 * self.inner_dim, bias=False)
+        self.to__k = nn.Linear(hidden_dim, self.inner_dim, bias=False)
+        self.to__v = nn.Linear(hidden_dim, self.inner_dim, bias=False)
         self.to_out = nn.Linear(self.inner_dim, hidden_dim, bias=False)
         self.cube_conv = nn.Conv2d(
             in_channels=n_heads,
             out_channels=n_heads,
             kernel_size=(c_q, c_k),
             stride=(2 if conv_pool else 1, 1),
-            # Pad too much if c_q or c_k is even and then truncate
-            padding=(0, 0),
             groups=n_heads // c_h,
             bias=False,
         )
@@ -396,6 +396,27 @@ class MT_Attention(nn.Module):
             eps=1e-8,
         )
 
+        if k_norm:
+            self.k_norm = RMSNorm(
+                self.inner_dim,
+                eps=1e-8,
+            )
+        else:
+            self.k_norm = None
+
+        self._register_load_state_dict_pre_hook(MT_Attention._load_hook)
+      
+    @staticmethod
+    def _load_hook(state_dict, prefix, *_):        
+        to_kv = prefix + "to_kv.weight"
+        if to_kv in state_dict:
+            weight = state_dict[to_kv]
+            two_inner_dim, hidden_dim = weight.shape
+            weight = weight.reshape(2, two_inner_dim // 2, hidden_dim)
+            state_dict[prefix + "to__k.weight"] = weight[0]
+            state_dict[prefix + "to__v.weight"] = weight[1]
+            state_dict.pop(to_kv)
+
     def forward(
         self,
         x: torch.Tensor,
@@ -403,9 +424,14 @@ class MT_Attention(nn.Module):
         q_seqlen: list[int],
         kv_seqlen: list[int],
     ) -> torch.Tensor:
-        q = self.to_q(x)
         context = x if context is None else context
-        k, v = self.to_kv(context).chunk(2, dim=-1)
+
+        q = self.to_q(x)
+        k = self.to__k(context if self.k_norm is None else self.k_norm(context))
+        v = self.to__v(context)
+
+        if self.k_norm is not None:
+            k = self.k_norm(k)
 
         # (Sq, H, D)
         xq, key, val = map(
@@ -441,7 +467,6 @@ class MT_Attention(nn.Module):
             new_attn = []
             ind_q = 0
             for q_size in q_seqlen:
-                
                 if q_size < self.c_q or q_size < self.c_k:
                     padded_attn = torch.nn.functional.pad(
                         attn[:, ind_q : ind_q + q_size, ind_q : ind_q + q_size],
@@ -454,27 +479,39 @@ class MT_Attention(nn.Module):
                         (0, self.c_k - 1, 0, self.c_q // 2),
                         value=0,
                     )
-                    
+
                 conv_att = self.cube_conv(padded_attn)
                 new_attn.append(conv_att)
                 new_q_seqlen.append(conv_att.shape[1])
                 ind_q += q_size
 
-            attn = []
-            for h_dim in range(self.n_heads):
-                attn.append(
-                    torch.block_diag(
-                        *[attn_mat[h_dim, ...] for attn_mat in new_attn]
-                    ).to(device=x.device, dtype=x.dtype)
-                )
-
-            attn = torch.stack(attn, dim=0)
             q_seqlen = new_q_seqlen
         else:
-            padded_attn = torch.nn.functional.pad(
-                attn, (0, self.c_k - 1, 0, self.c_q - 1), value=0
+            new_attn = []
+            ind_q = 0
+            ind_k = 0
+            for q_size, k_size in zip(q_seqlen, kv_seqlen):
+                padded_attn = torch.nn.functional.pad(
+                    attn[:, ind_q : ind_q + q_size, ind_k : ind_k + k_size],
+                    (0, self.c_k - 1, 0, self.c_q - 1),
+                    value=0,
+                )
+
+                conv_att = self.cube_conv(padded_attn)
+                new_attn.append(conv_att)
+                ind_q += q_size
+                ind_k += k_size
+
+        attn = []
+        for h_dim in range(self.n_heads):
+            attn.append(
+                torch.block_diag(*[attn_mat[h_dim, ...] for attn_mat in new_attn]).to(
+                    device=x.device, dtype=x.dtype
+                )
             )
-            attn = self.cube_conv(padded_attn)
+
+        attn = torch.stack(attn, dim=0)
+
         seqlen_sum = sum(q_seqlen)
         attn = attn + BlockDiagonalMask.from_seqlens(
             q_seqlen=q_seqlen, kv_seqlen=kv_seqlen
@@ -495,6 +532,7 @@ class AdaptivePoolingAttention(nn.Module):
         pool_type: str = "mean",
         rms_norm: bool = False,
         cont_att_norm: bool = False,
+        mta_k_only_norm: bool = False,
     ):
         super().__init__()
 
@@ -542,6 +580,7 @@ class AdaptivePoolingAttention(nn.Module):
                 n_heads=n_heads,
                 head_dim=head_dim,
                 conv_pool=(self.pool_type == "mta_conv_pool"),
+                k_norm=mta_k_only_norm,
             )
 
             self.attention_context_norm = None
@@ -742,6 +781,7 @@ class PoolingModule(nn.Module):
                 pool_type=self.args.pool_type,
                 rms_norm=args.rms_norm,
                 cont_att_norm=args.cont_att_norm,
+                mta_k_only_norm=args.mta_k_only_norm,
             )
         else:
             self.process = None

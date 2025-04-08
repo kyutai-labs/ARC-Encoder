@@ -711,6 +711,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         if cache is not None:
             cache.update_seqlens(seqlens.tolist())
+
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             torch.distributed.send(h, dst=self.pipeline_rank + 1)
             return h
@@ -744,6 +745,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             cat_embeddings=cat_embeddings,
             insert_cat_embedds=insert_cat_embedds,
         )
+
         if self.pipeline_rank < self.num_pipeline_ranks - 1:
             # ignore the intermediate activations as we'll get the final output from
             # the last stage

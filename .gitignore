@@ -20,6 +20,7 @@ embed_llm/continuation_test.ipynb
 results/ColBERT
 results/gate_values
 results/old
+results/NVEmbed/Old
 results/toy_tests
 scripts/toy_tests.sh
 scripts/create_data_*

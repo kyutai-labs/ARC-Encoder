@@ -182,6 +182,7 @@ class EmbedAugPipeline(nn.Module):
                 # Maximum not to cause memory errors or also unspecified launch failure
                 subbatch_size = 16 if batch_size > 16 else batch_size
                 for i, to_embed in enumerate(batch.to_embed):
+
                     subbatch.append(to_embed["text"])
                     if len(subbatch) == subbatch_size:
                         if not self.pipeline_args.do_pool:
@@ -255,7 +256,7 @@ class EmbedAugPipeline(nn.Module):
             for to_embed in batch.to_embed:
                 assert not len(to_embed["tokens"]) <= 1
                 embed_seqlens.append(len(to_embed["tokens"]))
-
+            
         x = torch.from_numpy(batch.x).cuda(non_blocking=True)
         y = torch.from_numpy(batch.y).cuda(non_blocking=True)
         y_mask = (
@@ -625,13 +626,13 @@ class EmbedAugPipeline(nn.Module):
                 x = torch.from_numpy(
                     np.array([el for sublist in x for el in sublist])
                 ).to(device)
+                
                 embeddings = self.model.trainable_embedder(
                     input_ids=x, embeddings=None, seqlens=seqlens
                 )
 
                 if self.pipeline_args.do_pool:
                     # Here seqlens must be the number of tokens in each subpassage grouped by
-
                     embeddings, embed_seqlens = self.model.pooling_module(
                         x=embeddings.to(self.pipeline_args.param_dtype),
                         embed_seqlens=seqlens,
@@ -639,7 +640,7 @@ class EmbedAugPipeline(nn.Module):
                     embed_seqlens = group_embed_seqlens(
                         embed_seqlens, [len(l_text) for l_text in text_to_embed]
                     )
-                else:
+                else:   
                     embed_seqlens = group_embed_seqlens(
                         seqlens, [len(l_text) for l_text in text_to_embed]
                     )
@@ -652,6 +653,7 @@ class EmbedAugPipeline(nn.Module):
 
             if embeddings is not None:
                 if self.pipeline_args.normalize_embed:
+                    print('Normalizing embeddings')
                     embeddings = F.normalize(embeddings, p=2, dim=-1)
 
                 if self.model.mlp_project is not None:
