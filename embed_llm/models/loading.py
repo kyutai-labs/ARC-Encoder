@@ -102,7 +102,6 @@ def load_args(
         ),
         gate_bottleneck=getattr(pipeline_args, "gate_bottleneck", 1),
         ca_rope=getattr(pipeline_args, "ca_rope", False),
-        insert_layer=getattr(pipeline_args, "insert_layer", -1),
     )
 
     if args.get("rope_theta") is not None:
@@ -185,11 +184,12 @@ def load_llm_model(
 
     if not parll or (get_rank() == 0 or num_pipeline_rank > 1):
         state_dict = load_state_dict(folder, dtype=param_dtype)
-        
+
         # For embedder remove the last norm beforehand
-        assert all([k in model.state_dict() for k in state_dict.keys() if not (k == 'norm.weight' and for_embedding)]), (
-            f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
-        ) 
+        if llm_args.lora is None or not llm_args.lora.enable:
+            assert all([k in model.state_dict() for k in state_dict.keys() if not (k == 'norm.weight' and for_embedding)]), (
+                f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
+            ) 
             
         model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
 

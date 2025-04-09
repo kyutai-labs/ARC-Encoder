@@ -61,7 +61,6 @@ class EmbedAugArgs(Serializable):
     normalize_embed: bool = False
     compression_schedule: dict[int, int] | None = None
     mean_hid4embed: list[int] | None = None
-    insert_layer: int = -1
 
     # Remove later
     do_pool: bool = False
@@ -94,7 +93,6 @@ class MistralModelArgs(Serializable):
     every_cross_att: int | None = None
     gate_bottleneck: int = 1
     ca_rope: bool = False
-    insert_layer: int = -1
     
     # vision_encoder: VisionEncoderArgs] | None = None
     """ If adding new args take care giving it to load args """

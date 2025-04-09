@@ -419,7 +419,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         token_embeds = self.tok_embeddings(input_ids)
 
-        if cat_embeddings is not None and self.args.insert_layer == -1:
+        if cat_embeddings is not None:
             h, seqlens, pos_to_keep = insert_embeds(
                 token_embeds,
                 cat_embeddings,
@@ -463,21 +463,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         for i in range(self.n_layers):
             if self.mean_hid4embed is not None and i in self.mean_hid4embed:
                 self.residual_h = h if self.residual_h is None else self.residual_h + h
-
-            if cat_embeddings is not None and self.args.insert_layer == i:
-                h, seqlens, pos_to_keep = insert_embeds(
-                    h,
-                    cat_embeddings,
-                    embed_seqlens=embed_seqlens,
-                    seqlens=seqlens,
-                )
-
-                self.pos_to_keep = torch.tensor(
-                    pos_to_keep, device=self.device, dtype=torch.bool
-                )
-                positions = positions_from_sizes(seqlens, self.freqs_cis.device)
-                freqs_cis = self.freqs_cis[positions].to(device=h.device)
-                self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
 
             if str(i) in self.cross_att_layers_id:
                 if embeddings is not None:
@@ -556,7 +541,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             assert self.tok_embeddings is not None
             token_embeds = self.tok_embeddings(input_ids)
 
-            if cat_embeddings is not None and self.args.insert_layer == -1:
+            if cat_embeddings is not None:
                 assert insert_cat_embedds is not None, (
                     "Insert cat embeddings must be provided"
                 )
@@ -601,25 +586,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
         if cache is not None:
             input_metadata = cache.get_input_metadata(seqlens.tolist())
         else:
-            if cat_embeddings is None or self.args.insert_embeds == -1:
-                input_metadata = [
-                    SimpleInputMetadata.from_seqlens(seqlens.tolist(), self.device)
-                    for _ in range(len(self.layers))
-                ]
-            else:
-                input_metadata = []
-                for i in range(self.args.insert_layer):
-                    input_metadata.append(
-                        SimpleInputMetadata.from_seqlens(seqlens, self.device)
-                    )
-                new_seqlens = [
-                    size + sum(embed_size)
-                    for size, embed_size in zip(seqlens, embed_seqlens)
-                ]
-                for j in range(self.args.insert_layer, len(self.layers)):
-                    input_metadata.append(
-                        SimpleInputMetadata.from_seqlens(new_seqlens, self.device)
-                    )
+            input_metadata = [
+                SimpleInputMetadata.from_seqlens(seqlens.tolist(), self.device)
+                for _ in range(len(self.layers))
+            ]
 
         # freqs_cis is always the same for every layer
         freqs_cis = self.freqs_cis[input_metadata[0].positions]
@@ -632,38 +602,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
             freqs_cis_ca = None
 
         for local_layer_id, (layer_id, layer) in enumerate(self.layers.items()):
-            if cat_embeddings is not None and self.args.insert_layer == int(layer_id):
-                assert insert_cat_embedds is not None, (
-                    "Insert cat embeddings must be provided"
-                )
-
-                h, new_seqlens, pos_to_keep = insert_embeds(
-                    h,
-                    cat_embeddings,
-                    embed_seqlens=embed_seqlens,
-                    seqlens=seqlens,
-                    insert_cat_embedds=insert_cat_embedds,
-                )
-                self.pos_to_keep = torch.tensor(
-                    pos_to_keep, device=self.device, dtype=torch.bool
-                )
-
-                freqs_cis = self.freqs_cis[
-                    positions_from_sizes(new_seqlens, device=h.device)
-                ].to(device=h.device)
-                input_metadata = []
-                for i in range(self.args.insert_layer):
-                    input_metadata.append(
-                        SimpleInputMetadata.from_seqlens(
-                            seqlens, self.device, prefill=True
-                        )
-                    )
-
-                for j in range(self.args.insert_layer, len(self.layers)):
-                    input_metadata.append(cache.get_input_metadata(new_seqlens)[j])
-                seqlens = torch.tensor(
-                    new_seqlens, device=self.device, dtype=torch.long
-                )
 
             if cache is not None:
                 assert input_metadata is not None
