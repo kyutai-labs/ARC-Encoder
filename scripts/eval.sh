@@ -9,7 +9,7 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/embed_llm
 #SBATCH --job-name=eval_models
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/eval_dissect_%A_%a.out
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s01dgx16
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx04
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if already used
