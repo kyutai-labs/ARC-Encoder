@@ -26,7 +26,7 @@ def group_embed_seqlens(values: list[int], sizes: list[int]):
 
 def split_integer(x, n):
     if n > 0:
-        # Split in n groupes of tokens
+        # Split in n groups of tokens
         base = x // n
         remainder = x % n
         result = [base] * n
@@ -38,9 +38,12 @@ def split_integer(x, n):
         n = -n
         base = x // n
         remainder = x % n
-        result = [n] * base
         if remainder > 0:
-            result.append(remainder)
+            result = (base + 1) * [x // (base + 1)]
+            for i in range(x % (base + 1)):
+                result[i] += 1
+        else:
+            result = [n] * base
         assert sum(result) == x, (
             f"Sum of result {sum(result)} must be equal to x {x} with n {n}"
         )
@@ -405,9 +408,9 @@ class MT_Attention(nn.Module):
             self.k_norm = None
 
         self._register_load_state_dict_pre_hook(MT_Attention._load_hook)
-      
+
     @staticmethod
-    def _load_hook(state_dict, prefix, *_):        
+    def _load_hook(state_dict, prefix, *_):
         to_kv = prefix + "to_kv.weight"
         if to_kv in state_dict:
             weight = state_dict[to_kv]

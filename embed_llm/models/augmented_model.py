@@ -91,7 +91,6 @@ class EmbedAugModel(nn.Module):
         batch_type: str = "reconstruction",
     ) -> torch.Tensor:
         cat_embeddings = None
-
         if self.trainable_embedder is not None and embeddings is not None:
             embeddings = self.trainable_embedder(
                 input_ids=embeddings,
@@ -103,7 +102,6 @@ class EmbedAugModel(nn.Module):
                     x=embeddings,
                     embed_seqlens=embed_seqlens,
                 )
-
         if embeddings is not None:
             if self.normalize_embed:
                 embeddings = F.normalize(embeddings, p=2, dim=-1)

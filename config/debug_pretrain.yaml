@@ -30,9 +30,9 @@ pipeline:
     first_rms_norm: true
   n_truncated_layers: 32
   pooling_module:
-    compress_rate: -1
+    compress_rate: -128
     type: adaptive_attention
-    pool_type: mean
+    pool_type: mean_sa
   train_only_pooling: true
   w_embeds: true
   causal_embedder: true
@@ -46,7 +46,7 @@ data:
 
 
 seq_len: 256
-batch_size: 2
+batch_size: 16
 num_microbatches: 1
 max_steps: 50
 optim:
@@ -57,7 +57,7 @@ optim:
   final_lr: 1.0e-10
 
 seed: 0
-log_freq: 10
+log_freq: 1
 eval_freq: 50
 no_eval: false
 ckpt_freq: 500

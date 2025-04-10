@@ -482,30 +482,30 @@ def _train(
             x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
 
             # if get_rank() == 0:
-            # to_gen = [
-            #     int(tok)
-            #     for tok in batch.x[sum(batch.sizes[:2]) :]
-            # ]
-            # # target = [int(tok) for tok in batch.y]
-            # embed = [
-            #     [int(tokens) for tokens in batch.to_embed[i]["tokens"]]
-            #     for i in range(len(batch.sizes))
-            # ]
+            #     # to_gen = [
+            #     #     int(tok)
+            #     #     for tok in batch.x[sum(batch.sizes[:2]) :]
+            #     # ]
+            #     # # target = [int(tok) for tok in batch.y]
+            #     # embed = [
+            #     #     [int(tokens) for tokens in batch.to_embed[i]["tokens"]]
+            #     #     for i in range(len(batch.sizes))
+            #     # ]
 
-            # # print('N_prefix', batch.n_prefixes[0])
-            # print('X len', len(batch.x))
-            # print("Sizes", batch.sizes)
-            # print("Embed seqlens", embed_seqlens)
-            # print("To embed", [pipeline.tokenizer.decode(emb) for emb in embed[2:]])
-            # print(
-            #     "To generate",
-            #     to_gen[:10],
-            #     to_gen[-10:],
-            #     pipeline.tokenizer.decode(to_gen)[:],
-            # )
-            # print("Target",[pipeline.tokenizer.decode(target[0 if i == 0 else sum(batch.sizes[:i]) :sum(batch.sizes[:i+1])]) for i in range(len(batch.sizes))])
-            # if y_mask is not None:
-            #     print('Mask', [[sum(y_mask[0 if i == 0 else sum(batch.sizes[:i]) :sum(batch.sizes[:i+1])]),len(y_mask[0 if i == 0 else sum(batch.sizes[:i]) :sum(batch.sizes[:i+1])])] for i in range(len(batch.sizes))])
+            #     # # print('N_prefix', batch.n_prefixes[0])
+            #     print('X len', len(batch.x))
+            #     print("Sizes", batch.sizes)
+            #     print("Embed seqlens", embed_seqlens)
+            #     # print("To embed", [pipeline.tokenizer.decode(emb) for emb in embed[2:]])
+            #     # print(
+            #     #     "To generate",
+            #     #     to_gen[:10],
+            #     #     to_gen[-10:],
+            #     #     pipeline.tokenizer.decode(to_gen)[:],
+            #     # )
+            #     # print("Target",[pipeline.tokenizer.decode(target[0 if i == 0 else sum(batch.sizes[:i]) :sum(batch.sizes[:i+1])]) for i in range(len(batch.sizes))])
+            #     # if y_mask is not None:
+            #     #     print('Mask', [[sum(y_mask[0 if i == 0 else sum(batch.sizes[:i]) :sum(batch.sizes[:i+1])]),len(y_mask[0 if i == 0 else sum(batch.sizes[:i]) :sum(batch.sizes[:i+1])])] for i in range(len(batch.sizes))])
 
             if args.textual_continuation * args.continuation > 0.0 or (
                 args.hybrid_task.prop_noembed_continuation > 0.0 and args.hybrid_task.do

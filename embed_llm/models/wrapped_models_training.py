@@ -193,7 +193,6 @@ def load_training_model(
         assert (
             augmented_model.trainable_embedder.n_layers
             >= pipeline_args.n_truncated_layers
-            > 0
         ), "Truncated layers must be less than total layers"
         removed_layers = []
         for i in range(augmented_model.trainable_embedder.n_layers):
