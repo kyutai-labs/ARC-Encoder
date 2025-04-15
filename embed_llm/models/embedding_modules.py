@@ -6,8 +6,68 @@ from einops import repeat
 from embed_llm.models.args import MLPProjectArgs, PoolingArgs
 from embed_llm.models.mistral.transformer_layers import Attention as Self_Attention
 from embed_llm.models.mistral.transformer_layers import RMSNorm
-from xformers.ops.fmha.attn_bias import BlockDiagonalMask
+from xformers.ops.fmha.attn_bias import BlockDiagonalMask, BlockDiagonalCausalMask
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
+
+
+def partition_list(arr, k):
+    """
+    Partition a list into k contiguous blocks with sums as close as possible.
+
+    Args:
+        arr: List of values to partition
+        k: Number of partitions to create
+
+    Returns:
+        List of lists representing the partitions
+    """
+    n = len(arr)
+    if k > n:
+        return "Cannot partition into more groups than elements"
+
+    # Calculate prefix sums for fast range sum calculation
+    prefix_sum = [0] * (n + 1)
+    for i in range(n):
+        prefix_sum[i + 1] = prefix_sum[i] + arr[i]
+
+    # dp[i][j] = minimum possible maximum sum when dividing first i elements into j groups
+    dp = [[float("inf")] * (k + 1) for _ in range(n + 1)]
+
+    # track where each partition ends
+    partition_end = [[-1] * (k + 1) for _ in range(n + 1)]
+
+    # Base case: 0 elements into 0 groups is valid with sum 0
+    dp[0][0] = 0
+
+    # Fill the DP table
+    for i in range(1, n + 1):  # For each prefix of the array
+        for j in range(1, min(i, k) + 1):  # For each number of groups
+            for prev in range(
+                j - 1, i
+            ):  # Try different ending positions for the last group
+                # Calculate the sum of current partition
+                current_sum = prefix_sum[i] - prefix_sum[prev]
+
+                # The maximum sum will be the max of:
+                # 1. The maximum sum from previous partitions
+                # 2. The sum of the current partition
+                max_sum = max(dp[prev][j - 1], current_sum)
+
+                # If this is better than our current answer, update
+                if max_sum < dp[i][j]:
+                    dp[i][j] = max_sum
+                    partition_end[i][j] = prev
+    # Reconstruct the partitions
+    result = []
+    i, j = n, k
+    
+    while j > 0:
+        prev = partition_end[i][j]
+        result.append(arr[prev:i])
+        i, j = prev, j - 1
+    
+    # Reverse the result since we built it backwards
+    return result[::-1]
 
 
 def group_embed_seqlens(values: list[int], sizes: list[int]):
@@ -24,30 +84,39 @@ def group_embed_seqlens(values: list[int], sizes: list[int]):
     return result
 
 
-def split_integer(x, n):
-    if n > 0:
-        # Split in n groups of tokens
-        base = x // n
-        remainder = x % n
-        result = [base] * n
-        for i in range(remainder):
-            result[i] += 1
+def split_integer(x: int, n: int, attn: torch.Tensor | None = None) -> list[int]:
+    if attn is None:
+        if n > 0:
+            # Split in n groups of tokens
+            base = x // n
+            remainder = x % n
+            result = [base] * n
+            for i in range(remainder):
+                result[i] += 1
+            return result
+        else:
+            # Split in groups of n tokens
+            n = -n
+            base = x // n
+            remainder = x % n
+            if remainder > 0:
+                result = (base + 1) * [x // (base + 1)]
+                for i in range(x % (base + 1)):
+                    result[i] += 1
+            else:
+                result = [n] * base
+            assert sum(result) == x, (
+                f"Sum of result {sum(result)} must be equal to x {x} with n {n}"
+            )
         return result
     else:
-        # Split in groups of n tokens
-        n = -n
-        base = x // n
-        remainder = x % n
-        if remainder > 0:
-            result = (base + 1) * [x // (base + 1)]
-            for i in range(x % (base + 1)):
-                result[i] += 1
-        else:
-            result = [n] * base
-        assert sum(result) == x, (
-            f"Sum of result {sum(result)} must be equal to x {x} with n {n}"
-        )
-        return result
+        # Split such that the compression ratio is |n|
+        n = abs(n)
+        n_vectors = (x + (n - 1)) // n
+        overall_attn = attn.sum(dim=0) / attn.std(dim=0)
+        overall_attn_std = (overall_attn / torch.diagonal(overall_attn)).std(dim=-1)
+        partition_l = partition_list(overall_attn_std.detach().cpu().numpy().tolist(), n_vectors)
+        return [len(part) for part in partition_l] 
 
 
 class MLP_block(nn.Module):
@@ -167,6 +236,7 @@ class Attention(nn.Module):
         n_heads: int,
         head_dim: int,
         context_dim: int = None,
+        causality: bool = False,
     ):
         super().__init__()
 
@@ -363,16 +433,23 @@ class MT_Attention(nn.Module):
         c_k: int = 9,
         c_h: int = 2,
         hidden_dim: int = 4096,
+        post_sftmx: bool = False,
         n_heads: int = 32,
         head_dim: int = 128,
         conv_pool: bool = False,
         k_norm: bool = False,
+        compress_rate: int = -1,
+        causality: bool = False,
+        non_fixed_pooling: bool = False,
     ):
         super().__init__()
 
         self.n_heads = n_heads
         self.head_dim = head_dim
         self.inner_dim = n_heads * head_dim
+        self.causality = causality
+        self.non_fixed_pooling = non_fixed_pooling
+        self.post_sftmx = post_sftmx
 
         self.c_q = c_q
         self.c_k = c_k
@@ -393,6 +470,7 @@ class MT_Attention(nn.Module):
             bias=False,
         )
 
+        self.compress_rate = compress_rate
         self.conv_pool = conv_pool
         self.norm = RMSNorm(
             self.inner_dim,
@@ -406,7 +484,9 @@ class MT_Attention(nn.Module):
             )
         else:
             self.k_norm = None
-
+            
+        if self.non_fixed_pooling:
+            assert self.post_sftmx and not self.conv_pool
         self._register_load_state_dict_pre_hook(MT_Attention._load_hook)
 
     @staticmethod
@@ -450,16 +530,80 @@ class MT_Attention(nn.Module):
 
         # (H, Sq, Sk)
         attn = xq @ key.transpose(-2, -1)
+        if self.post_sftmx:
+            if self.causality:
+                attn = attn + BlockDiagonalCausalMask.from_seqlens(
+                    q_seqlen=q_seqlen, kv_seqlen=kv_seqlen
+                ).materialize(attn.shape).to(device=attn.device)
+            else:
+                attn = attn + BlockDiagonalMask.from_seqlens(
+                    q_seqlen=q_seqlen, kv_seqlen=kv_seqlen
+                ).materialize(attn.shape).to(device=attn.device)
+            attn = attn.softmax(dim=-1)
 
-        attn_bias = (
-            torch.block_diag(
-                *[torch.ones(q_seqlen[i], kv_seqlen[i]) for i in range(len(q_seqlen))]
+            if not self.conv_pool:
+                pool_size = []
+                new_q_seqlens = []
+                ind_seq = 0
+                if self.compress_rate != -1:
+                    for embed_size in q_seqlen:
+                        compressed_embed_size = []
+                        # <-1 means compression rate, >0 means number of tokens to compress to
+                        if self.compress_rate == 0:
+                            compressed_embed_size = [embed_size]
+                        elif (
+                            self.compress_rate > 0
+                            and embed_size // self.compress_rate == 0
+                        ):
+                            compressed_embed_size = [1] * embed_size
+                        elif (
+                            self.compress_rate < -1
+                            and embed_size // abs(self.compress_rate) == 0
+                        ):
+                            compressed_embed_size = [embed_size]
+                        else:
+                            compressed_embed_size = split_integer(
+                                embed_size,
+                                self.compress_rate,
+                                attn[
+                                    :,
+                                    ind_seq : ind_seq + embed_size,
+                                    ind_seq : ind_seq + embed_size,
+                                ]
+                                if self.non_fixed_pooling
+                                else None,
+                            )
+                        pool_size.extend(compressed_embed_size)
+                        new_q_seqlens.append(len(compressed_embed_size))
+                        ind_seq += embed_size
+                    q_seqlen = new_q_seqlens
+                else:
+                    pool_mask = None
+
+                # Mean pooling
+                pool_mask = (
+                    torch.block_diag(*[torch.ones(t) / t for t in pool_size])
+                    .to(device=x.device, dtype=x.dtype)
+                    .unsqueeze(0)
+                )
+
+                pool_mask = pool_mask.expand(self.n_heads, -1, -1)
+
+                attn = attn if pool_mask is None else pool_mask @ attn
+
+        else:
+            # Sequence block max
+            attn_bias = (
+                torch.block_diag(
+                    *[
+                        torch.ones(q_seqlen[i], kv_seqlen[i])
+                        for i in range(len(q_seqlen))
+                    ]
+                )
+                .to(device=x.device, dtype=x.dtype)
+                .unsqueeze(0)
             )
-            .to(device=x.device, dtype=x.dtype)
-            .unsqueeze(0)
-        )
-
-        attn = attn * attn_bias
+            attn = attn * attn_bias
 
         if self.conv_pool:
             assert q_seqlen == kv_seqlen, (
@@ -512,14 +656,21 @@ class MT_Attention(nn.Module):
                     device=x.device, dtype=x.dtype
                 )
             )
-
+        seqlen_sum = sum(q_seqlen)
         attn = torch.stack(attn, dim=0)
 
-        seqlen_sum = sum(q_seqlen)
-        attn = attn + BlockDiagonalMask.from_seqlens(
-            q_seqlen=q_seqlen, kv_seqlen=kv_seqlen
-        ).materialize(attn.shape).to(device=attn.device)
-        attn = attn.softmax(dim=-1)
+        if not self.post_sftmx:
+            if self.causality:
+                attn = attn + BlockDiagonalCausalMask.from_seqlens(
+                    q_seqlen=q_seqlen, kv_seqlen=kv_seqlen
+                ).materialize(attn.shape).to(device=attn.device)
+            else:
+                attn = attn + BlockDiagonalMask.from_seqlens(
+                    q_seqlen=q_seqlen, kv_seqlen=kv_seqlen
+                ).materialize(attn.shape).to(device=attn.device)
+
+            attn = attn.softmax(dim=-1)
+
         out = (attn @ val).reshape(seqlen_sum, self.inner_dim)
         out = self.norm(out)
         return self.to_out(out), q_seqlen
@@ -536,9 +687,12 @@ class AdaptivePoolingAttention(nn.Module):
         rms_norm: bool = False,
         cont_att_norm: bool = False,
         mta_k_only_norm: bool = False,
+        post_sftmx: bool = False,
+        att_causality: bool = False,
+        non_fixed_pooling: bool = False,
     ):
         super().__init__()
-
+        self.causality = att_causality
         self.n_heads = n_heads
         self.pool_type = pool_type
         self.compress_rate = compress_rate
@@ -584,6 +738,10 @@ class AdaptivePoolingAttention(nn.Module):
                 head_dim=head_dim,
                 conv_pool=(self.pool_type == "mta_conv_pool"),
                 k_norm=mta_k_only_norm,
+                post_sftmx=post_sftmx,
+                compress_rate=compress_rate,
+                causality=att_causality,
+                non_fixed_pooling=non_fixed_pooling,
             )
 
             self.attention_context_norm = None
@@ -678,7 +836,7 @@ class AdaptivePoolingAttention(nn.Module):
                             for t in pool_size
                         ]
                     ).to(device=x.device, dtype=x.dtype)
-                elif "mta_conv_pool" in self.pool_type:
+                elif self.pool_type != "mean_mta":
                     pool_mask = None
                     new_embed_seqlens = embed_seqlens
                 else:
@@ -707,10 +865,18 @@ class AdaptivePoolingAttention(nn.Module):
                     mask=BlockDiagonalMask.from_seqlens(
                         q_seqlen=new_embed_seqlens,
                         kv_seqlen=embed_seqlens,
+                    )
+                    if not self.causality
+                    else BlockDiagonalCausalMask.from_seqlens(
+                        q_seqlen=new_embed_seqlens,
+                        kv_seqlen=embed_seqlens,
                     ),
                 )
                 out = r + queries
-            elif "mta" in self.pool_type and "mta_conv_pool" not in self.pool_type:
+            elif self.pool_type == "mean_mta":
+                assert not self.self_attend_block.post_sftmx, (
+                    "Mean pooling with MTA is not supported with post softmax"
+                )
                 assert sum(new_embed_seqlens) == queries.shape[0], (
                     "Sum of new_embed_seqlens must be equal to sum of embed_seqlens"
                 )
@@ -726,7 +892,7 @@ class AdaptivePoolingAttention(nn.Module):
                     kv_seqlen=embed_seqlens,
                 )
                 out = r + queries
-            elif "mta_conv_pool" in self.pool_type:
+            elif "mta" in self.pool_type:
                 assert sum(new_embed_seqlens) == queries.shape[0], (
                     "Sum of new_embed_seqlens must be equal to sum of embed_seqlens"
                 )
@@ -785,6 +951,9 @@ class PoolingModule(nn.Module):
                 rms_norm=args.rms_norm,
                 cont_att_norm=args.cont_att_norm,
                 mta_k_only_norm=args.mta_k_only_norm,
+                post_sftmx=args.post_sftmx,
+                att_causality=args.att_causality,
+                non_fixed_pooling=args.non_fixed_pooling,
             )
         else:
             self.process = None

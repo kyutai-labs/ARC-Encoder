@@ -22,6 +22,9 @@ class PoolingArgs(Serializable):
     rms_norm: bool = False
     cont_att_norm: bool = False
     mta_k_only_norm: bool = False
+    post_sftmx: bool = False
+    att_causality: bool = False
+    non_fixed_pooling: bool = False
 
 
 @dataclass

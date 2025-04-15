@@ -28,14 +28,17 @@ pipeline:
     n_layers: 1
     type: mlp
     first_rms_norm: true
-  n_truncated_layers: 32
+  n_truncated_layers: 16
   pooling_module:
-    compress_rate: -128
+    compress_rate: -8
     type: adaptive_attention
-    pool_type: mean_sa
+    pool_type: post_sfmx_mean_mta
+    cont_att_norm: true
+    post_sftmx: true
   train_only_pooling: true
-  w_embeds: true
+  w_embeds: true  
   causal_embedder: true
+
 
 
 data:
