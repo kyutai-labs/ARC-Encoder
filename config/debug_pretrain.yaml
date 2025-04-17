@@ -48,6 +48,7 @@ data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
+  insert_embeddings: false
 
 
 seq_len: 256

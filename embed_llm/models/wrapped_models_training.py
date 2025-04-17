@@ -86,7 +86,9 @@ def load_training_model(
             # initialize LoRA layers
             initialize_lora_parameters(augmented_model.llm, param_dtype)
 
-        initialize_lora_parameters(augmented_model.embedder, param_dtype)
+        if lora_embedder.enable:
+            main_logger_info("Initializing lora layers for embedder ...")
+            initialize_lora_parameters(augmented_model.embedder, param_dtype)
 
         assert not any(
             p.is_meta

@@ -22,7 +22,7 @@ def repeat_kv(
 def insert_embeds(
     h: torch.Tensor,
     embeds: torch.Tensor,
-    embed_seqlens: list[list[int]],
+    embed_seqlens: list[list[int]] | list[int],
     seqlens: list[int],
     tok_embeddings: nn.Module | None = None,
     insert_cat_embedds: list[list[int]] | None = None,
@@ -49,11 +49,14 @@ def insert_embeds(
         else:
             assert sum(embed_seqlens) == embeds.shape[0]
 
+    if insert_cat_embedds is None:
+        insert_cat_embedds = [[0] for _ in embed_seqlens]
+        
+        
     prefixes = []
     suffixes = []
     if tokenized_prompts is not None:
         for _ in range(len(seqlens)):
-            no_prefix = True
             if (
                 tokenized_prompts.get(batch_type, False)
                 and len(tokenized_prompts[batch_type]) > 0
@@ -64,8 +67,6 @@ def insert_embeds(
                 num_supp_toks += len(tokenized_prompt["prefix"]) + len(
                     tokenized_prompt["suffix"]
                 )
-                if len(tokenized_prompt["prefix"]) > 0:
-                    no_prefix = False
 
     new_h_states = torch.zeros(
         (num_supp_toks + len(h), h.shape[-1]),
@@ -76,9 +77,6 @@ def insert_embeds(
     new_seqlens = []
     pos_to_keep = []
 
-    # For training
-    final_ind = 0
-
     # For generation
     ind_h = 0
     ind_toks = 0
@@ -88,85 +86,49 @@ def insert_embeds(
         assert size > 0
 
         # Used during training only
-        if len(suffixes) > 0:
-            begin = 0 if i == 0 else sum(embed_seqlens[:i])
-            end = sum(embed_seqlens[: i + 1])
-            if no_prefix:
-                # Insert embedding at the beginning of the sequence
-                size_embed = embed_seqlens[i] + len(suffixes[i])
+        if len(prefixes) > 0:
+            tok_before_embed = tok_embeddings(
+                torch.tensor(prefixes[i], device=h.device)
+            )
+            new_h_states[ind_h : len(prefixes[i]) + ind_h, :] = tok_before_embed
+            ind_h += len(prefixes[i])
 
-                tok_after_embed = tok_embeddings(
-                    torch.tensor(suffixes[i], device=h.device)
-                )
-                new_h_states[final_ind : size_embed + final_ind, :] = torch.cat(
-                    [
-                        embeds[begin:end, :],
-                        tok_after_embed,
-                    ],
-                    dim=0,
-                )
-            else:
-                # Insert embedding at the beginning of the sequence
-                size_embed = len(prefixes[i]) + embed_seqlens[i] + len(suffixes[i])
-
-                tok_before_embed = tok_embeddings(
-                    torch.tensor(prefixes[i], device=h.device)
-                )
-                tok_after_embed = tok_embeddings(
-                    torch.tensor(suffixes[i], device=h.device)
-                )
-                new_h_states[final_ind : size_embed + final_ind, :] = torch.cat(
-                    [
-                        tok_before_embed,
-                        embeds[begin:end, :],
-                        tok_after_embed,
-                    ],
-                    dim=0,
-                )
-        # During training, we insert the embeddings at the beginning of the sequence
-        elif insert_cat_embedds is None:
-            begin = 0 if i == 0 else sum(embed_seqlens[:i])
-            end = sum(embed_seqlens[: i + 1])
-            size_embed = embed_seqlens[i]
-            new_h_states[final_ind : size_embed + final_ind, :] = embeds[begin:end, :]
-            pos_to_keep.extend([False] * size_embed)
-            # Insert token embeddings
-            new_h_states[size_embed + final_ind : size_embed + final_ind + size, :] = h[
-                sum(seqlens[:i]) : sum(seqlens[:i]) + size, :
+        size_embed = sum(embed_seqlens[i])
+        for sub_embed_size, insert_idx in zip(
+            embed_seqlens[i], insert_cat_embedds[i]
+        ):
+            new_h_states[ind_h : insert_idx + ind_h, :] = h[
+                ind_toks : insert_idx + ind_toks, :
             ]
-            pos_to_keep.extend([True] * size)
-            final_ind += size_embed + size
 
-        # During generation, we insert the embeddings at specific positions
-        else:
-            size_embed = sum(embed_seqlens[i])
-            for sub_embed_size, insert_idx in zip(
-                embed_seqlens[i], insert_cat_embedds[i]
-            ):
-                new_h_states[ind_h : insert_idx + ind_h, :] = h[
-                    ind_toks : insert_idx + ind_toks, :
-                ]
+            pos_to_keep.extend([True] * insert_idx)
+            ind_h += insert_idx
+            ind_toks += insert_idx
+            new_h_states[ind_h : sub_embed_size + ind_h, :] = embeds[
+                ind_embeds : ind_embeds + sub_embed_size, :
+            ]
+            ind_h += sub_embed_size
+            ind_embeds += sub_embed_size
+            pos_to_keep.extend([False] * sub_embed_size)
 
-                pos_to_keep.extend([True] * insert_idx)
-                ind_h += insert_idx
-                ind_toks += insert_idx
-                new_h_states[ind_h : sub_embed_size + ind_h, :] = embeds[
-                    ind_embeds : ind_embeds + sub_embed_size, :
-                ]
-                ind_h += sub_embed_size
-                ind_embeds += sub_embed_size
-                pos_to_keep.extend([False] * sub_embed_size)
+        if ind_toks < sum(seqlens[: i + 1]):
+            left_toks = sum(seqlens[: i + 1]) - ind_toks
+            # Insert the remaining tokens
+            new_h_states[ind_h : ind_h + left_toks, :] = h[
+                ind_toks : ind_toks + left_toks, :
+            ]
+            pos_to_keep.extend([True] * (left_toks))
 
-            if ind_toks < sum(seqlens[: i + 1]):
-                left_toks = sum(seqlens[: i + 1]) - ind_toks
-                # Insert the remaining tokens
-                new_h_states[ind_h : ind_h + left_toks, :] = h[
-                    ind_toks : ind_toks + left_toks, :
-                ]
-                pos_to_keep.extend([True] * (left_toks))
-
-                ind_toks += left_toks
-                ind_h += left_toks
+            ind_toks += left_toks
+            ind_h += left_toks
+            
+        if len(suffixes) > 0:
+            tok_after_embed = tok_embeddings(
+                torch.tensor(suffixes[i], device=h.device)
+            )
+            new_h_states[ind_h : ind_h + len(suffixes[i]), :] = tok_after_embed
+            ind_h += len(suffixes[i])
+        
 
         new_seqlens.append(size + size_embed)
     assert len(pos_to_keep) == len(new_h_states), f"len(pos_to_keep): {len(pos_to_keep)} != len(new_h_states): {len(new_h_states)}"

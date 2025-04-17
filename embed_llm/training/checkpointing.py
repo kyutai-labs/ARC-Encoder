@@ -189,8 +189,7 @@ class Checkpointer:
                         for k, v in module.state_dict().items()
                     }
                 )
-        print('Saved modules for embedder:', embedder_states.keys())
-        print('Saved modules for llm:', llm_states.keys())
+
         bridge_modules_states = {}
         if self.bridge_module is not None:
             for key, module in bridge_modules.items():

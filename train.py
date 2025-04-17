@@ -357,33 +357,27 @@ def _train(
 
             # print('Number of M to predict', sum(batch.y == 1899))
             # start_time = time.time()
-            x, y, y_mask, seqlens, embeddings, embed_seqlens = pipeline.prepare_forward(batch)
+            x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = pipeline.prepare_forward(batch)
 
             # if get_rank() == 0:
-            #     # to_gen = [
-            #     #     int(tok)
-            #     #     for tok in batch.x[sum(batch.sizes[:2]) :]
-            #     # ]
-            #     # # target = [int(tok) for tok in batch.y]
-            #     # embed = [
-            #     #     [int(tokens) for tokens in batch.to_embed[i]["tokens"]]
-            #     #     for i in range(len(batch.sizes))
-            #     # ]
-
-            #     # # print('N_prefix', batch.n_prefixes[0])
+            #     to_gen = [
+            #         int(tok)
+            #         for tok in batch.x[:insert_cat_embedds[0][0]]
+            #     ]
+            #     # target = [int(tok) for tok in batch.y]
+            #     embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"]]
+            #     continuation = [
+            #         int(tok)
+            #         for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
+            #     ]
+            #     print('Beginning',pipeline.tokenizer.decode(to_gen))
+            #     print('Embed', pipeline.tokenizer.decode(embed))
+            #     print('Continuation', pipeline.tokenizer.decode(continuation))
             #     print('X len', len(batch.x))
             #     print("Sizes", batch.sizes)
             #     print("Embed seqlens", embed_seqlens)
-            #     # print("To embed", [pipeline.tokenizer.decode(emb) for emb in embed[2:]])
-            #     # print(
-            #     #     "To generate",
-            #     #     to_gen[:10],
-            #     #     to_gen[-10:],
-            #     #     pipeline.tokenizer.decode(to_gen)[:],
-            #     # )
-            #     # print("Target",[pipeline.tokenizer.decode(target[0 if i == 0 else sum(batch.sizes[:i]) :sum(batch.sizes[:i+1])]) for i in range(len(batch.sizes))])
-            #     # if y_mask is not None:
-            #     #     print('Mask', [[sum(y_mask[0 if i == 0 else sum(batch.sizes[:i]) :sum(batch.sizes[:i+1])]),len(y_mask[0 if i == 0 else sum(batch.sizes[:i]) :sum(batch.sizes[:i+1])])] for i in range(len(batch.sizes))])
+            #     print('Insert cat embedds', insert_cat_embedds)
+
 
             if args.textual_continuation * args.continuation > 0.0:
                 rand_noembed_continuation = (
@@ -427,6 +421,7 @@ def _train(
                 embeddings=embeddings,
                 seqlens=seqlens,
                 embed_seqlens=embed_seqlens,
+                insert_cat_embedds=insert_cat_embedds,
             )
 
             mb_loss = compute_ce_loss_with_mask(
