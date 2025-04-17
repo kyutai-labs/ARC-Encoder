@@ -41,7 +41,7 @@ def maybe_load_local_dataset(
     path: Path,
     rank: int,
     world_size: int,
-    tokenizer: Tokenizer | None = None, # type: ignore
+    tokenizer: Tokenizer | None = None,  # type: ignore
     max_embeds: int = 1,
 ) -> list[TokenSample]:
     global _LOADED_DATASETS
@@ -153,7 +153,7 @@ def parse_data_sources(
 def sequence_iterator(
     ds_it: Iterator[TokenSample],
     seq_len: int,
-    tokenizer: Tokenizer, # type: ignore
+    tokenizer: Tokenizer,  # type: ignore
     is_finite: bool,
     adapt_seq_len: bool = False,
     continuation: float = 0.0,
@@ -201,7 +201,7 @@ def sequence_iterator(
                         to_embed_buffer=to_embed_buffer_cont,
                         insert_embed_list=insert_embed_cont_list,
                         sizes=sizes_cont,
-                        seq_len=seq_len,  
+                        seq_len=seq_len,
                         tokenizer=tokenizer,
                         n_missing=n_missing_cont,
                         data_type="continuation",
@@ -314,14 +314,16 @@ def sequence_iterator(
             to_embed_buffer.append({"text": "", "tokens": []})
             if len(insert_embed_cont_list) > 0:
                 insert_embed_cont_list.append([0])
-            
+
             yield SequenceEmbedMaskAndSizes(
                 x=x_buffer,
                 y=y_buffer,
                 to_embed=to_embed_buffer,
                 mask=mask_buffer,
                 sizes=sizes,
-                insert_embed_list=insert_embed_cont_list if int(continuation) == 1 or isinstance(continuation, float) else [],
+                insert_embed_list=insert_embed_cont_list
+                if int(continuation) == 1 or isinstance(continuation, float)
+                else [],
                 data_type=(
                     "continuation"
                     if int(continuation) == 1 or isinstance(continuation, float)
@@ -332,7 +334,7 @@ def sequence_iterator(
 
 def build_dataset(
     args: DataArgs,
-    tokenizer: Tokenizer, # type: ignore
+    tokenizer: Tokenizer,  # type: ignore
     seq_len: int,
     rank: int,
     world_size: int,
@@ -398,7 +400,7 @@ def get_dataset_iterator(
     world_size: int,
     is_finite: bool,
     shuffle_at_epoch: bool,
-    tokenizer: Tokenizer, # type: ignore
+    tokenizer: Tokenizer,  # type: ignore
     seed: int | None = None,
     max_embeds: int = 1,
 ) -> Iterator[TokenSample]:
@@ -450,7 +452,7 @@ def preload_and_yield(
     rank: int,
     world_size: int,
     rng: np.random.RandomState,
-    tokenizer: Tokenizer | None = None, # type: ignore
+    tokenizer: Tokenizer | None = None,  # type: ignore
     max_embeds: int = 1,
 ) -> Iterator[TokenSample] | Iterator[str]:
     # only instruct data has to be chunked
@@ -474,7 +476,7 @@ def lazy_load_and_yield(
     jsonl_file: Path,
     rank: int,
     world_size: int,
-    tokenizer: Tokenizer | None = None, # type: ignore
+    tokenizer: Tokenizer | None = None,  # type: ignore
     max_embeds: int = 1,
 ):
     with jsonl_file.open() as file_handle:

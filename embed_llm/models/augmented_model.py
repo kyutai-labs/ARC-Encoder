@@ -64,10 +64,8 @@ class EmbedAugModel(nn.Module):
                 input_ids=embeddings,
                 seqlens=embed_seqlens,
             )
-            # Only one insertion of embedding per sample 
-            embed_seqlens = group_embed_seqlens(
-                    embed_seqlens, [1] * len(seqlens)
-                )
+            # Only one insertion of embedding per sample
+            embed_seqlens = group_embed_seqlens(embed_seqlens, [1] * len(seqlens))
 
             if self.bridge_module is not None:
                 # Bridge module
@@ -134,7 +132,7 @@ class EmbedAugPipeline(nn.Module):
             else None
         )
         seqlens = batch.sizes
-        
+
         insert_cat_embedds = batch.insert_embed_list
 
         return x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds
@@ -210,7 +208,7 @@ class EmbedAugPipeline(nn.Module):
             llm_embedder.load_lora(
                 Path(ckpt_path + "/embedder/lora.safetensors"),
             )
-            
+
         elif pipeline_args.embedder_params.trained_layers > 0:
             trained_layers_state_dict = load_state_dict(
                 Path(ckpt_path + "/embedder"), dtype=param_dtype
@@ -225,9 +223,7 @@ class EmbedAugPipeline(nn.Module):
             )
             llm_embedder.load_state_dict(trained_layers_state_dict, strict=False)
         else:
-            print(
-                "No trained layers, not loading any new state dict for the embedder"
-            )
+            print("No trained layers, not loading any new state dict for the embedder")
 
         llm_embedder = llm_embedder.to(device)
 

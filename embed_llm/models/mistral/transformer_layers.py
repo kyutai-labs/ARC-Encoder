@@ -51,8 +51,7 @@ def insert_embeds(
 
     if insert_cat_embedds is None:
         insert_cat_embedds = [[0] for _ in embed_seqlens]
-        
-        
+
     prefixes = []
     suffixes = []
     if tokenized_prompts is not None:
@@ -94,9 +93,7 @@ def insert_embeds(
             ind_h += len(prefixes[i])
 
         size_embed = sum(embed_seqlens[i])
-        for sub_embed_size, insert_idx in zip(
-            embed_seqlens[i], insert_cat_embedds[i]
-        ):
+        for sub_embed_size, insert_idx in zip(embed_seqlens[i], insert_cat_embedds[i]):
             new_h_states[ind_h : insert_idx + ind_h, :] = h[
                 ind_toks : insert_idx + ind_toks, :
             ]
@@ -121,17 +118,16 @@ def insert_embeds(
 
             ind_toks += left_toks
             ind_h += left_toks
-            
+
         if len(suffixes) > 0:
-            tok_after_embed = tok_embeddings(
-                torch.tensor(suffixes[i], device=h.device)
-            )
+            tok_after_embed = tok_embeddings(torch.tensor(suffixes[i], device=h.device))
             new_h_states[ind_h : ind_h + len(suffixes[i]), :] = tok_after_embed
             ind_h += len(suffixes[i])
-        
 
         new_seqlens.append(size + size_embed)
-    assert len(pos_to_keep) == len(new_h_states), f"len(pos_to_keep): {len(pos_to_keep)} != len(new_h_states): {len(new_h_states)}"
+    assert len(pos_to_keep) == len(new_h_states), (
+        f"len(pos_to_keep): {len(pos_to_keep)} != len(new_h_states): {len(new_h_states)}"
+    )
     return new_h_states, new_seqlens, pos_to_keep
 
 

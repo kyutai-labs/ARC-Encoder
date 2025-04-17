@@ -8,7 +8,6 @@ import fire
 import torch.cuda
 import torch.distributed as dist
 from torch.optim import AdamW, lr_scheduler
-from functools import partial
 import numpy as np
 
 
@@ -152,7 +151,6 @@ def _train(
         args.pipeline.param_dtype = "float32" if args.mixed_precision else "bfloat16"
         args.save(args_path)
 
-
     # 3. Get loggers
     metrics_logger: MetricsLogger = MetricsLogger(
         run_dir,
@@ -179,9 +177,8 @@ def _train(
         raise ValueError(
             "Invalid folder path. Please set `args.initial_model` to a valid folder path."
         )
-    
-    """ Load LLM and tokenizers """
 
+    """ Load LLM and tokenizers """
 
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
     args.pipeline.param_dtype = param_dtype
@@ -195,7 +192,6 @@ def _train(
         param_dtype=param_dtype,
         max_batch_size=args.batch_size,
     )
-
 
     main_logger_info("Model loading done")
     main_logger_info(
@@ -229,7 +225,7 @@ def _train(
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
             continuation=False,
-            max_embeds=pipeline.pipeline_args.max_embeds
+            max_embeds=pipeline.pipeline_args.max_embeds,
         )
 
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
@@ -307,7 +303,6 @@ def _train(
         pipeline=pipeline,
     )
 
-
     if args.pipeline.w_prefix_prompt:
         model.tokenize_prompts = {}
         main_logger_info("Using paraphrase prompt")
@@ -318,7 +313,6 @@ def _train(
             model.tokenized_prompts["reconstruction"].append(
                 {"prefix": prefix, "suffix": suffix}
             )
-
 
         model.tokenize_prompts["continuation"] = []
         for prompt in CONTINUATION_PROMPT:
@@ -337,11 +331,10 @@ def _train(
         state.start_step()
 
         is_last_step = state.step == args.max_steps
-       
+
         optimizer.zero_grad()
         loss = torch.tensor([0.0], device="cuda")
         bpc = torch.tensor([0.0], device="cuda")
-        kl_loss = torch.tensor([0.0], device="cuda")
         n_batch_tokens: int = 0
 
         # Number of steps to accumulate gradients before doing an optimizer step.
@@ -357,7 +350,9 @@ def _train(
 
             # print('Number of M to predict', sum(batch.y == 1899))
             # start_time = time.time()
-            x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = pipeline.prepare_forward(batch)
+            x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
+                pipeline.prepare_forward(batch)
+            )
 
             # if get_rank() == 0:
             #     to_gen = [
@@ -377,7 +372,6 @@ def _train(
             #     print("Sizes", batch.sizes)
             #     print("Embed seqlens", embed_seqlens)
             #     print('Insert cat embedds', insert_cat_embedds)
-
 
             if args.textual_continuation * args.continuation > 0.0:
                 rand_noembed_continuation = (
@@ -411,7 +405,6 @@ def _train(
                     y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
                     batch.data_type = "textual_continuation"
                     embeddings = None
-
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
@@ -448,10 +441,14 @@ def _train(
                         None if y_mask is None else y_mask[ind : ind + size],
                     )
                 ).item()
-                batch_bpc += loss_in_bits / len(
-                    pipeline.tokenizer.decode(
-                        [int(tok) for tok in batch.y[ind : ind + size]]
+                batch_bpc += loss_in_bits / (
+                    len(
+                        pipeline.tokenizer.decode(
+                            [int(tok) for tok in batch.y[ind : ind + size]]
+                        )
                     )
+                    if y_mask is None
+                    else torch.sum(y_mask[ind : ind + size]).item()
                 )
                 ind += size
 
@@ -515,13 +512,6 @@ def _train(
             else bpc / (args.num_microbatches).item()
         )
         bpc_avg = avg_aggregate(bpc_item)
-        kl_loss_item = (
-            kl_loss.item()
-            if args.num_microbatches <= 1
-            else kl_loss / (args.num_microbatches).item()
-        )
-        kl_loss_avg = avg_aggregate(kl_loss_item)
-
 
         if not args.no_eval and (
             (args.eval_freq > 0 and state.step % args.eval_freq == 0)

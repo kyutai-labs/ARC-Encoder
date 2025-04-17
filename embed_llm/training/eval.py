@@ -53,8 +53,8 @@ def evaluate(
 
         for i, batch in enumerate(batches_cont):
             with torch.no_grad():
-                x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = prepare_batch_fn(
-                    batch
+                x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
+                    prepare_batch_fn(batch)
                 )
 
                 output = model.forward(
@@ -128,7 +128,9 @@ def evaluate(
 
     for i, batch in enumerate(batches_rec):
         with torch.no_grad():
-            x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = prepare_batch_fn(batch)
+            x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
+                prepare_batch_fn(batch)
+            )
 
             output = model.forward(
                 x=x,

@@ -1,6 +1,5 @@
 import dataclasses
 
-import numpy as np
 from embed_llm.data.tokenize import Mask, TokenSample, Tokenizer
 
 
@@ -32,9 +31,11 @@ class SequenceEmbedMaskAndSizes:
                 self.insert_embed_list = None
             elif len(self.insert_embed_list) == 1:
                 assert 1 == len(self.sizes)
-                
+
             else:
-                assert len(sum(self.insert_embed_list,[])) == len(self.sizes), (f'{self.insert_embed_list}, {self.sizes}')
+                assert len(sum(self.insert_embed_list, [])) == len(self.sizes), (
+                    f"{self.insert_embed_list}, {self.sizes}"
+                )
 
 
 def sequence_iterator_reconstruction(
@@ -47,7 +48,7 @@ def sequence_iterator_reconstruction(
     sizes: list[int],
     sample: TokenSample,
     seq_len: int,
-    tokenizer: Tokenizer, # type: ignore
+    tokenizer: Tokenizer,  # type: ignore
     adapt_seq_len: bool = False,
 ) -> SequenceEmbedMaskAndSizes:
     """
@@ -78,7 +79,6 @@ def sequence_iterator_reconstruction(
         y_buffer.extend(y[cur_pos : cur_pos + n_missing])
         # If instruct data type do not split the passage into smaller embeddings
         if data_type == "reconstruction" and len(embed_tokens) == 1:
-
             new_embed = embed_tokens[0][cur_pos : cur_pos + n_missing]
 
             to_embed_buffer.append(
@@ -171,7 +171,7 @@ def sequence_iterator_continuation(
     sample: TokenSample,
     cur_pos: int,
     seq_len: int,
-    tokenizer: Tokenizer, # type: ignore
+    tokenizer: Tokenizer,  # type: ignore
     data_type: str = "continuation",
 ) -> SequenceEmbedMaskAndSizes:
     assert 0 <= len(x_buffer) < seq_len, len(x_buffer)
@@ -217,14 +217,11 @@ def sequence_iterator_continuation(
 
         x_buffer.extend(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
         y_buffer.extend(y[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
-        mask_buffer.extend(
-            mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound]
-        )
+        mask_buffer.extend(mask[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
 
         size = len(x[cur_pos + (upper_bound - cur_pos) // 2 : upper_bound])
 
         sizes.append(size)
-
 
         if len(embed_tokens) > 1:
             print("Continuation training only supports one passage per sample")
@@ -269,7 +266,6 @@ def sequence_iterator_continuation(
     )
 
 
-
 def sequence_iterator_inserted_embed_continuation(
     x_buffer: list[int],
     y_buffer: list[int],
@@ -281,10 +277,10 @@ def sequence_iterator_inserted_embed_continuation(
     sample: TokenSample,
     cur_pos: int,
     seq_len: int,
-    tokenizer: Tokenizer, # type: ignore
+    tokenizer: Tokenizer,  # type: ignore
     data_type: str = "continuation",
 ) -> SequenceEmbedMaskAndSizes:
-    assert 0 <= len(x_buffer) < 2*seq_len, len(x_buffer)
+    assert 0 <= len(x_buffer) < 2 * seq_len, len(x_buffer)
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     size = 0
@@ -321,19 +317,23 @@ def sequence_iterator_inserted_embed_continuation(
             else:
                 break
 
-        upper_bound_non_embed_prefix = max(0, overall_size - 2 * seq_len) 
+        upper_bound_non_embed_prefix = max(0, overall_size - 2 * seq_len)
         # either you can continue 256 tokens of embeddings by 256 tokens then the spared ones are put before the embeddings
-        
-        x_buffer.extend(x[cur_pos: cur_pos + upper_bound_non_embed_prefix])
-        y_buffer.extend(y[cur_pos: cur_pos + upper_bound_non_embed_prefix])
-        mask_buffer.extend([False]*len(mask[cur_pos: cur_pos + upper_bound_non_embed_prefix]))
-        
-        size += len(x[cur_pos: cur_pos + upper_bound_non_embed_prefix])
-        cur_pos += len(x[cur_pos: cur_pos + upper_bound_non_embed_prefix])
+
+        x_buffer.extend(x[cur_pos : cur_pos + upper_bound_non_embed_prefix])
+        y_buffer.extend(y[cur_pos : cur_pos + upper_bound_non_embed_prefix])
+        mask_buffer.extend(
+            [False] * len(mask[cur_pos : cur_pos + upper_bound_non_embed_prefix])
+        )
+
+        size += len(x[cur_pos : cur_pos + upper_bound_non_embed_prefix])
+        cur_pos += len(x[cur_pos : cur_pos + upper_bound_non_embed_prefix])
 
         insert_embed_list.append([size])
-        left_tokens = max(min(n_missing-upper_bound_non_embed_prefix, len(x) - cur_pos),0)
-        new_embed = x[cur_pos : cur_pos + left_tokens//2]
+        left_tokens = max(
+            min(n_missing - upper_bound_non_embed_prefix, len(x) - cur_pos), 0
+        )
+        new_embed = x[cur_pos : cur_pos + left_tokens // 2]
         to_embed_buffer.append(
             {
                 "text": " ".join(
@@ -342,23 +342,24 @@ def sequence_iterator_inserted_embed_continuation(
                 "tokens": new_embed,
             }
         )
-        
-        cur_pos += len(x[cur_pos : cur_pos + left_tokens//2])
-        
-        x_buffer.extend(x[cur_pos: cur_pos + left_tokens//2])
-        y_buffer.extend(y[cur_pos: cur_pos + left_tokens//2])
-        
-        mask_buffer.extend([True]*len(mask[cur_pos: cur_pos + left_tokens//2]))
-        
-        size += len(x[cur_pos : cur_pos + left_tokens//2])
-        cur_pos += len(x[cur_pos : cur_pos + left_tokens//2])
-       
-        
+
+        cur_pos += len(x[cur_pos : cur_pos + left_tokens // 2])
+
+        x_buffer.extend(x[cur_pos : cur_pos + left_tokens // 2])
+        y_buffer.extend(y[cur_pos : cur_pos + left_tokens // 2])
+
+        mask_buffer.extend([True] * len(mask[cur_pos : cur_pos + left_tokens // 2]))
+
+        size += len(x[cur_pos : cur_pos + left_tokens // 2])
+        cur_pos += len(x[cur_pos : cur_pos + left_tokens // 2])
+
         sizes.append(size)
         n_missing -= overall_size
         if n_missing == 0:
             assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
-            assert len(x_buffer) <= seq_len*2, f"Buffer to long {len(x_buffer)} | {seq_len*2}"
+            assert len(x_buffer) <= seq_len * 2, (
+                f"Buffer to long {len(x_buffer)} | {seq_len * 2}"
+            )
 
             assert len(to_embed_buffer) == len(sizes)
             # we don't want to yield sequences with a mask filled with False
