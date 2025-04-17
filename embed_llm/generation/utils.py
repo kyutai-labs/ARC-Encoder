@@ -204,6 +204,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                             "icl_examples",
                             "context_in_examples",
                             "n_passages",
+                            "compress_ratio",
                         ]
                     )
                     .first()
@@ -221,6 +222,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                             "context_in_examples",
                             "n_passages",
                             "compressed_icl",
+                            "compress_ratio",
                         ]
                     )
                     .first()

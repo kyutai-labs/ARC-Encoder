@@ -7,7 +7,6 @@ from pathlib import Path
 import fire
 import torch.cuda
 import torch.distributed as dist
-import torch.distributed
 from torch.optim import AdamW, lr_scheduler
 from functools import partial
 import numpy as np
@@ -18,15 +17,10 @@ import numpy as np
 import subprocess as sp
 
 
-from embed_llm.models.wrapped_models_training import (
-    load_training_model,
-    load_training_model_from_ckpt,
-)
-from embed_llm.retrieval.embeddings import get_pretrained_embedder
+from embed_llm.models.wrapped_models_training import load_training_model
 from embed_llm.training.args import (
     TrainArgs,
     OptimArgs,
-    InstructionTuningArgs,
     WandbArgs,
 )
 from embed_llm.models.args import LoraArgs
@@ -43,7 +37,6 @@ from embed_llm.training.distributed import (
 from embed_llm.training.eval import evaluate
 from embed_llm.training.loss import (
     compute_ce_loss_with_mask,
-    compute_kl_loss_with_mask,
     compute_bpt_loss,
 )
 
@@ -53,7 +46,6 @@ from embed_llm.training.utils import (
     set_random_seed,
     PARAPHRASE_PROMPT,
     CONTINUATION_PROMPT,
-    INSTRUCT_PROMPT,
     create_data_args,
 )
 
@@ -107,7 +99,6 @@ def train(train_config: str | dict, data_config: str = None):
         args: TrainArgs = TrainArgs(**train_params)
         args.optim = OptimArgs(**args.optim)
         args.lora = LoraArgs(**args.lora)
-        args.instruct_tuning = InstructionTuningArgs(**args.instruct_tuning)
 
     else:
         raise ValueError("Config should be a string or a dictionary")
@@ -161,11 +152,6 @@ def _train(
         args.pipeline.param_dtype = "float32" if args.mixed_precision else "bfloat16"
         args.save(args_path)
 
-    if args.instruct_tuning.do and get_rank() == 0:
-        print(
-            "Adapt seq len should be set to True and is currently:",
-            args.data.adapt_seq_len,
-        )
 
     # 3. Get loggers
     metrics_logger: MetricsLogger = MetricsLogger(
@@ -193,74 +179,23 @@ def _train(
         raise ValueError(
             "Invalid folder path. Please set `args.initial_model` to a valid folder path."
         )
-
-    """ Load embedder model or use the one from the LLM """
-    if args.start_from_ckpt_path is not None:
-        trainable_embedder = Path(
-            args.start_from_ckpt_path + "/" + args.llm_name.lower() + "/pooling_module"
-        ).exists()
-    else:
-        trainable_embedder = args.pipeline.trainable_embedder
-
-    if (
-        args.pipeline.trainable_embedder
-        or trainable_embedder
-        or args.pipeline.train_only_pooling
-    ):
-        embedding_model = None
-    else:
-        assert args.pipeline.embedder_name != "", (
-            "`args.pipeline.embedder_name` should be set to a valid value."
-        )
-        embedding_model = get_pretrained_embedder(
-            args.pipeline.embedder_name, device_map="cuda"
-        )
-        embedding_model.config.max_length = (
-            embedding_model.config.max_length if args.seq_len is None else args.seq_len
-        )
-
-        embedding_model.eval()
+    
     """ Load LLM and tokenizers """
 
-    if not args.pipeline.trainable_llm:
-        assert (
-            args.hybrid_task.prop_noembed_continuation * int(args.hybrid_task.do) == 0.0
-        ), "Noembed continuation should be deactivated when LLM not fine-tuned"
 
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
     args.pipeline.param_dtype = param_dtype
 
-    assert args.lora is not None, "`args.lora` should be set to a valid value."
+    pipeline, model = load_training_model(
+        train_args=args,
+        folder=model_folder,
+        lora_llm=args.lora_llm,
+        lora_embedder=args.lora_embedder,
+        checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
+        param_dtype=param_dtype,
+        max_batch_size=args.batch_size,
+    )
 
-    if args.start_from_ckpt_path is None:
-        pipeline, model = load_training_model(
-            train_args=args,
-            folder=model_folder,
-            lora=args.lora,
-            embedding_model=embedding_model,
-            checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
-            param_dtype=param_dtype,
-            max_batch_size=args.batch_size,
-        )
-    else:
-        pipeline, model = load_training_model_from_ckpt(
-            train_args=args,
-            folder=model_folder,
-            lora=args.lora,
-            embedding_model=embedding_model,
-            checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
-            param_dtype=param_dtype,
-            ckpt_path=args.start_from_ckpt_path,
-            max_batch_size=args.batch_size,
-            tune_embedder=(
-                (args.instruct_tuning.do and args.instruct_tuning.tune_embedder)
-                or (args.toy_tests.do and args.toy_tests.tune_embedder)
-            ),
-            tune_llm=(
-                (args.instruct_tuning.do and args.instruct_tuning.tune_llm)
-                or (args.toy_tests.do and args.toy_tests.tune_llm)
-            ),
-        )
 
     main_logger_info("Model loading done")
     main_logger_info(
@@ -268,7 +203,6 @@ def _train(
     )
 
     """ Load  Dataloader"""
-    main_logger_info("If multi-passage, pooled cross-attention should be deactivated")
     train_data_loader = build_data_loader(
         tokenizer=pipeline.tokenizer,
         args=args.data,
@@ -279,13 +213,7 @@ def _train(
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
         continuation=args.continuation,
-        hybrid_task=args.hybrid_task,
-        max_embeds=pipeline.pipeline_args.max_embeds
-        if not args.instruct_tuning.do
-        else min(pipeline.pipeline_args.max_embeds, args.instruct_tuning.max_embeds),
-        decompress_usage=""
-        if not args.toy_tests.do
-        else args.toy_tests.decompress_usage,
+        max_embeds=pipeline.pipeline_args.max_embeds,
     )
     main_logger_info("Data loader done")
     if not args.no_eval:
@@ -301,15 +229,7 @@ def _train(
             world_size=get_world_size(),  # DDP world_size
             is_eval=True,
             continuation=False,
-            hybrid_task=args.hybrid_task,
             max_embeds=pipeline.pipeline_args.max_embeds
-            if not args.instruct_tuning.do
-            else min(
-                pipeline.pipeline_args.max_embeds, args.instruct_tuning.max_embeds
-            ),
-            decompress_usage=""
-            if not args.toy_tests.do
-            else args.toy_tests.decompress_usage,
         )
 
         # pre-load all eval batches, 40 batches * n_gpus * batch_size // 4
@@ -324,11 +244,7 @@ def _train(
             else:
                 eval_batches.append(batch)
 
-        if (
-            (args.continuation > 0.0 or args.hybrid_task.do)
-            and not args.instruct_tuning.do
-            and (not args.toy_tests.do or args.toy_tests.decompress_usage == "")
-        ):
+        if args.continuation > 0.0:
             eval_data_loader_4cont = build_data_loader(
                 tokenizer=pipeline.tokenizer,
                 args=args.data,
@@ -341,7 +257,6 @@ def _train(
                 world_size=get_world_size(),  # DDP world_size
                 is_eval=True,
                 continuation=True,
-                hybrid_task=args.hybrid_task,
                 max_embeds=pipeline.pipeline_args.max_embeds,
             )
 
@@ -390,14 +305,8 @@ def _train(
         optimizer=optimizer,
         num_ckpt_keep=args.num_ckpt_keep,
         pipeline=pipeline,
-        llm_name=args.llm_name,
-        instruction_tuning=args.instruct_tuning
-        if args.instruct_tuning.do
-        else (args.toy_tests if args.toy_tests.decompress_usage != "" else None),
     )
 
-    # 11. Prepare forward function to adapt batch to LLM forward input and calculate embedding, train!
-    prepare_batch_fn = partial(pipeline.prepare_forward, batch_size=args.batch_size)
 
     if args.pipeline.w_prefix_prompt:
         model.tokenize_prompts = {}
@@ -409,14 +318,7 @@ def _train(
             model.tokenized_prompts["reconstruction"].append(
                 {"prefix": prefix, "suffix": suffix}
             )
-        # There is already a template prompt with each dataset (in tokenizer for Read Comp and QA and in the data for the rest)
-        model.tokenized_prompts["instruct"] = []
-        for prompt in INSTRUCT_PROMPT:
-            prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
-            suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
-            model.tokenized_prompts["instruct"].append(
-                {"prefix": prefix, "suffix": suffix}
-            )
+
 
         model.tokenize_prompts["continuation"] = []
         for prompt in CONTINUATION_PROMPT:
@@ -426,40 +328,16 @@ def _train(
                 {"prefix": prefix, "suffix": suffix}
             )
 
-    if args.instruct_tuning.do:
-        topk = args.instruct_tuning.topk
-    elif args.toy_tests.do:
-        topk = args.toy_tests.topk
-    else:
-        topk = None
-
     main_logger_info("Start training")
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
 
-    if args.pipeline.compression_schedule is not None:
-        chg_cmp = {
-            int(k * args.max_steps / 100): v
-            for k, v in args.pipeline.compression_schedule.items()
-        }
-        model.pooling_module.args.compress_rate = chg_cmp[0]
-        main_logger_info(f"Step {0} Compression rate changed to " + str(chg_cmp[0]))
-        chg_cmp.pop(0)
-
     while state.step < args.max_steps:
         state.start_step()
 
         is_last_step = state.step == args.max_steps
-        if args.pipeline.compression_schedule is not None:
-            if state.step in chg_cmp:
-                model.pooling_module.args.compress_rate = chg_cmp[state.step]
-                main_logger_info(
-                    f"Step {state.step} Compression rate changed to "
-                    + str(chg_cmp[state.step])
-                )
-                chg_cmp.pop(state.step)
-
+       
         optimizer.zero_grad()
         loss = torch.tensor([0.0], device="cuda")
         bpc = torch.tensor([0.0], device="cuda")
@@ -479,7 +357,7 @@ def _train(
 
             # print('Number of M to predict', sum(batch.y == 1899))
             # start_time = time.time()
-            x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
+            x, y, y_mask, seqlens, embeddings, embed_seqlens = pipeline.prepare_forward(batch)
 
             # if get_rank() == 0:
             #     # to_gen = [
@@ -507,9 +385,7 @@ def _train(
             #     # if y_mask is not None:
             #     #     print('Mask', [[sum(y_mask[0 if i == 0 else sum(batch.sizes[:i]) :sum(batch.sizes[:i+1])]),len(y_mask[0 if i == 0 else sum(batch.sizes[:i]) :sum(batch.sizes[:i+1])])] for i in range(len(batch.sizes))])
 
-            if args.textual_continuation * args.continuation > 0.0 or (
-                args.hybrid_task.prop_noembed_continuation > 0.0 and args.hybrid_task.do
-            ):
+            if args.textual_continuation * args.continuation > 0.0:
                 rand_noembed_continuation = (
                     torch.rand(1).cuda()
                     if get_rank() == 0
@@ -542,40 +418,15 @@ def _train(
                     batch.data_type = "textual_continuation"
                     embeddings = None
 
-                elif (
-                    rand_noembed_continuation
-                    < args.hybrid_task.prop_noembed_continuation
-                    and args.hybrid_task.do
-                ):
-                    x = []
-                    y = []
-                    seqlens = []
-                    y_mask = []
-                    ind = 0
-                    for to_embed, size in zip(batch.to_embed, batch.sizes):
-                        tokens = to_embed["tokens"]
-                        x.extend(tokens[:-1])
-                        y.extend(tokens[1:])
-                        seqlens.append(len(tokens) - 1)
-                        y_mask.extend(
-                            [False] * ((len(tokens) - 1) // 2)
-                            + [True] * (len(tokens) - 1 - ((len(tokens) - 1) // 2))
-                        )
-
-                    x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
-                    y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
-                    y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
-                    batch.data_type = "noembed_continuation"
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
 
-            output = model(
+            output = model.forward(
                 x=x,
                 embeddings=embeddings,
                 seqlens=seqlens,
                 embed_seqlens=embed_seqlens,
-                batch_type=batch.data_type,
             )
 
             mb_loss = compute_ce_loss_with_mask(
@@ -611,146 +462,6 @@ def _train(
 
             bpc += batch_bpc / len(batch.sizes)
 
-            if (args.toy_tests.do and args.toy_tests.kl_pretraining) or (
-                args.instruct_tuning.do and args.instruct_tuning.kl
-            ):
-                if (
-                    args.continuation > 0.0 and batch.data_type == "continuation"
-                ) or batch.data_type == "instruct":
-                    if batch.data_type == "instruct":
-                        # Remove the eos and the bos
-                        contexts = []
-                        for i in range(len(batch.to_embed)):
-                            contexts.append(
-                                pipeline.tokenizer.encode(
-                                    batch.to_embed[i]["text"], bos=False, eos=False
-                                )
-                            )
-                    else:
-                        if batch.distract_list is None:
-                            contexts = [
-                                to_embed["tokens"] for to_embed in batch.to_embed
-                            ]
-                        else:
-                            raise NotImplementedError(
-                                "Cannot use distractor with self-Distillation"
-                            )
-
-                    x_wcontext = []
-                    y_mask_wcontext = []
-                    seqlens_wcontext = []
-
-                    ind = 0
-                    assert len(contexts) == len(batch.sizes), (
-                        "Contexts and batch sizes should be the same"
-                    )
-                    for i, size in enumerate(batch.sizes):
-                        full_context = contexts[i]
-
-                        x_wcontext.extend(
-                            full_context + batch.x[ind : ind + size].tolist()
-                        )
-                        seqlens_wcontext.append(size + len(full_context))
-                        y_mask_wcontext.extend(
-                            [False] * len(full_context)
-                            + (
-                                [True] * len(batch.x[ind : ind + size])
-                                if (
-                                    batch.y_mask is None
-                                    or (
-                                        args.instruct_tuning.do
-                                        and args.instruct_tuning.no_mask
-                                    )
-                                )
-                                else batch.y_mask[ind : ind + size].tolist()
-                            )
-                        )
-                        ind += size
-
-                    x_wcontext = torch.from_numpy(np.array(x_wcontext)).cuda(
-                        non_blocking=True
-                    )
-                    y_mask_wcontext = torch.from_numpy(np.array(y_mask_wcontext)).cuda(
-                        non_blocking=True
-                    )
-
-                    assert len(x_wcontext) == len(y_mask_wcontext), (
-                        "x_wcontext and y_mask_wcontext should be the same length"
-                    )
-
-                    with torch.no_grad():
-                        model.eval()
-                        llm_output = model(
-                            x=x_wcontext,
-                            embeddings=None,
-                            seqlens=seqlens_wcontext,
-                            embed_seqlens=None,
-                            batch_type=batch.data_type,
-                        )
-                        # Get the logits for continuation of LLM with textual context
-                        model.train()
-
-                    # if get_rank() == 0:
-                    #     print('Sizes wo context', seqlens)
-                    #     print('Sizes w context',seqlens_wcontext)
-                    #     print('X Without Embed',pipeline.tokenizer.decode([int(tok) for tok in x_wcontext[:seqlens_wcontext[0]]]))
-                    #     print('\nEmbed', pipeline.tokenizer.decode(batch.to_embed[0]["tokens"]))
-                    #     print("\nX",pipeline.tokenizer.decode([int(tok) for tok in x[:seqlens[0]]]))
-
-                    target_mask = y_mask_wcontext
-                    pred_mask = (
-                        None
-                        if (args.instruct_tuning.do and args.instruct_tuning.no_mask)
-                        else y_mask
-                    )
-
-                else:  # Full reconstruction
-                    with torch.no_grad():
-                        model.eval()
-                        llm_output = model.forward(
-                            x=x,
-                            embeddings=None,
-                            seqlens=seqlens,
-                            embed_seqlens=None,
-                            batch_type=batch.data_type,
-                        )
-                        model.train()
-
-                    target_mask = y_mask
-                    pred_mask = y_mask
-
-                kl_dv_loss = compute_kl_loss_with_mask(
-                    target_logits=llm_output.detach(),
-                    pred_logits=output,
-                    target_mask=target_mask,
-                    pred_mask=pred_mask,
-                    temp=args.toy_tests.temp
-                    if args.toy_tests.do
-                    else args.instruct_tuning.temp,
-                    topk=topk,
-                )
-
-                kl_loss += kl_dv_loss.item()
-
-                if (
-                    args.instruct_tuning.do and args.instruct_tuning.cross_entropy
-                ) or args.toy_tests.do:
-                    mb_loss = (
-                        mb_loss
-                        + (
-                            args.toy_tests.alpha
-                            if args.toy_tests.do
-                            else args.instruct_tuning.alpha
-                        )
-                        * kl_dv_loss
-                    )
-                else:
-                    mb_loss = (
-                        args.toy_tests.alpha
-                        if args.toy_tests.do
-                        else args.instruct_tuning.alpha
-                    ) * kl_dv_loss
-
             loss += mb_loss.item()
             mb_loss.backward()
             if y_mask is None:
@@ -773,10 +484,7 @@ def _train(
         grad_norm = torch.tensor([0.0], device="cuda")
         for name, p in model.named_parameters():
             if p.requires_grad:
-                if (
-                    args.textual_continuation * args.continuation == 0.0
-                    and args.hybrid_task.prop_noembed_continuation == 0.0
-                ):
+                if args.textual_continuation * args.continuation == 0.0:
                     assert p.grad is not None, f"None grad for this param {name}"
                     if torch.any(torch.isnan(p.grad)).item():
                         print(f"Grad contains NaN for this param {name}")
@@ -819,14 +527,6 @@ def _train(
         )
         kl_loss_avg = avg_aggregate(kl_loss_item)
 
-        if not (args.toy_tests.do and args.toy_tests.kl_pretraining):
-            if not args.instruct_tuning.do:
-                kl_loss_avg = None
-            else:
-                if not args.instruct_tuning.cross_entropy:
-                    bpc_avg = None
-                if not args.instruct_tuning.kl:
-                    kl_loss_avg = None
 
         if not args.no_eval and (
             (args.eval_freq > 0 and state.step % args.eval_freq == 0)
@@ -836,13 +536,11 @@ def _train(
             # write perplexity to state
             evaluate(
                 model=model,
-                prepare_batch_fn=prepare_batch_fn,
+                prepare_batch_fn=pipeline.prepare_forward,
                 batches_rec=eval_batches,
                 state=state,
-                instruction_tuning=args.instruct_tuning,
                 batches_cont=eval_batches_4cont,
-                train_llm=args.pipeline.trainable_llm
-                or (args.instruct_tuning.do and args.instruct_tuning.tune_llm),
+                train_llm=args.pipeline.trainable_llm,
             )
 
             eval_logs = get_eval_logs(
@@ -854,9 +552,7 @@ def _train(
                 eval_loss_textcont=state.this_eval_loss_textcont,
                 eval_ppl_embcont=state.this_eval_perplexity_embcont,
                 eval_loss_embcont=state.this_eval_loss_embcont,
-                eval_kl_loss=state.this_eval_kl_loss,
                 train_bpc=bpc_avg,
-                train_kl=kl_loss_avg,
                 eval_loss_nocontext=state.this_eval_loss_nocontext,
                 eval_ppl_nocontext=state.this_eval_perplexity_nocontext,
             )
@@ -878,7 +574,6 @@ def _train(
                 allocated_mem=torch.cuda.memory_allocated(),
                 train_args=args,
                 bpc=bpc_avg,
-                kl=kl_loss_avg,
                 batch_type=batch.data_type,
             )
             main_logger_info(
@@ -897,6 +592,8 @@ def _train(
         ):
             checkpointer.save_checkpoint(
                 dtype=param_dtype,
+                save_only_lora_4_llm=args.lora_llm.enable,
+                save_only_lora_4_embedder=args.lora_embedder.enable,
             )
 
     main_logger_info("done!")

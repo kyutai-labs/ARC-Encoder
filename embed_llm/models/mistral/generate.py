@@ -1,6 +1,6 @@
 import torch
-from embed_llm.models.mistral.cache import BufferCache, CrossAttCache
-from embed_llm.models.mistral.cross_att_transformer import Transformer
+from embed_llm.models.mistral.cache import BufferCache
+from embed_llm.models.enhanced_transformer import Transformer
 
 
 @torch.inference_mode()
@@ -14,7 +14,6 @@ def generate(
     insertion_lists: list[
         list[int]
     ] = [],  # Index in the hidden states of where to insert the embeddings (based on each sequence length)
-    embeddings: torch.Tensor | None = None,
     eos_id: int | None = None,
     embed_seqlens: list[list[int]] | None = None,
     cat_embeddings: torch.Tensor | None = None,
@@ -57,20 +56,6 @@ def generate(
 
     cache.reset()
 
-    cross_att_cache = (
-        None
-        if embeddings is None
-        else CrossAttCache(
-            embeddings.shape[0],
-            n_kv_heads=model.args.n_kv_heads,
-            head_dim=model.args.head_dim,
-            kv_seqlens=[sum(seql) for seql in embed_seqlens],
-            cross_att_layers=model.cross_att_layers_id,
-        ).to(model.device, dtype=model.dtype)
-    )
-    assert cross_att_cache is None or all(
-        [not v for k, v in cross_att_cache.full.items()]
-    ), "Cross att cache not empty"
     last_token_prelogits = None
 
     prelogits = model.generate(
@@ -78,11 +63,9 @@ def generate(
             sum(sum(prompt_tokens, []), []), device=model.device, dtype=torch.long
         ),
         seqlens=[len(sum(prompt_part, [])) for prompt_part in prompt_tokens],
-        embeddings=embeddings,
         embed_seqlens=embed_seqlens,
         cache=cache,
         cat_embeddings=cat_embeddings,
-        cross_att_cache=cross_att_cache,
         insert_cat_embedds=None if len(insertion_lists) == 0 else insertion_lists,
     )
 
@@ -127,11 +110,9 @@ def generate(
         last_token_prelogits = model.generate(
             next_token,
             seqlens=[1] * B,
-            embeddings=embeddings,
             embed_seqlens=embed_seqlens,  # Used if cross-attention only
             cache=cache,
             cat_embeddings=None,
-            cross_att_cache=cross_att_cache,
         )
 
         assert last_token_prelogits.shape == (

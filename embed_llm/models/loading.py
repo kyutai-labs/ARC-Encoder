@@ -12,15 +12,16 @@ from embed_llm.models.args import (
     EmbedAugArgs,
     LoraArgs,
     MistralModelArgs,
-    MLPProjectArgs,
+    EmbedderArgs,
     PoolingArgs,
+    BridgeArgs,
 )
 
 # Mistral specifics
-from embed_llm.models.mistral.cross_att_transformer import (
+from embed_llm.models.enhanced_transformer import (
     Transformer as MistralTransformer,
 )
-from embed_llm.models.mistral.moe import MoeArgs
+
 from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_tokenizer
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.training.distributed import (
@@ -56,25 +57,17 @@ def load_args(
             }
         )
 
-        # Support for old checkpoints params.json
-        if "rms_embed" in args and "rms_norm" not in pipeline_args.pooling_module and pipeline_args.pooling_module["type"] == "adaptive_attention":
-            pipeline_args.pooling_module["rms_norm"] = True 
-            print("Loading OLD checkpoint careful !")
+        pipeline_args.embedder_params = EmbedderArgs(**pipeline_args.embedder_params)
 
-        mlp_project_args = MLPProjectArgs(**pipeline_args.mlp_project)
-        pipeline_args.mlp_project = mlp_project_args
+        pooling_args = PoolingArgs(**pipeline_args.embedder_params.pooling_module)
+        pipeline_args.embedder_params.pooling_module = pooling_args
 
-        pooling_args = PoolingArgs(**pipeline_args.pooling_module)
-        pipeline_args.pooling_module = pooling_args
+        pipeline_args.bridge_module = BridgeArgs(**pipeline_args.bridge_module)
     else:
         pipeline_args = pipe_args
 
     with open(folder / "params.json", "r") as f:
         args = json.loads(f.read())
-
-    if not pipeline_args.cross_att:
-        pipeline_args.cross_att_layers = None
-        pipeline_args.every_cross_att = None
 
     llm_args = MistralModelArgs(
         lora=lora,
@@ -87,28 +80,10 @@ def load_args(
         norm_eps=args["norm_eps"],
         vocab_size=args["vocab_size"],
         max_batch_size=max_batch_size,
-        cross_att_layers=(
-            -1
-            if pipeline_args.cross_att_layers is None
-            else pipeline_args.cross_att_layers
-        ),
-        begin_cross_att=False
-        if pipeline_args.begin_cross_att is None
-        else pipeline_args.begin_cross_att,
-        every_cross_att=(
-            -1
-            if pipeline_args.every_cross_att is None
-            else pipeline_args.every_cross_att
-        ),
-        gate_bottleneck=getattr(pipeline_args, "gate_bottleneck", 1),
-        ca_rope=getattr(pipeline_args, "ca_rope", False),
     )
 
     if args.get("rope_theta") is not None:
         llm_args.rope_theta = args["rope_theta"]
-
-    if args.get("moe") is not None:
-        llm_args.moe = MoeArgs(**args["moe"])
 
     if llm_args.vocab_size == 32000:
         raise ValueError(
@@ -154,7 +129,7 @@ def load_state_dict(path: Path, dtype: torch.dtype) -> dict[str, torch.Tensor]:
     return model_state_dict
 
 
-def load_llm_model(
+def load_model(
     llm_args: ModelsArgs,
     pipeline_args: EmbedAugArgs,
     folder: Path,
@@ -164,90 +139,28 @@ def load_llm_model(
     parll: bool = True,
     pipeline_rank: int = 0,
     num_pipeline_rank: int = 1,
-) -> tuple[torch.nn.Module, Tokenizer, int]:
-    tokenizer = load_mistral_tokenizer(folder).instruct_tokenizer.tokenizer
+) -> tuple[torch.nn.Module, int]:
     with torch.device("meta"):
-        # Remove cross-attention if for trainable embedder
-        if for_embedding:
-            llm_args.cross_att_layers = -1
-            llm_args.every_cross_att = -1
-
         model = MistralTransformer(
             args=llm_args,
             checkpoint=checkpoint,
+            embedder_args=pipeline_args.embedder_params if for_embedding else None,
             pipeline_rank=pipeline_rank,
             num_pipeline_ranks=num_pipeline_rank,
-            is_embedder=for_embedding,
         )
-
-    embed_dim = model.args.dim
 
     if not parll or (get_rank() == 0 or num_pipeline_rank > 1):
         state_dict = load_state_dict(folder, dtype=param_dtype)
 
-        # For embedder remove the last norm beforehand
-        if llm_args.lora is None or not llm_args.lora.enable:
-            assert all([k in model.state_dict() for k in state_dict.keys() if not (k == 'norm.weight' and for_embedding)]), (
+        if not for_embedding and (llm_args.lora is None or not llm_args.lora.enable):
+            assert all([k in model.state_dict() for k in state_dict.keys()]), (
                 f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
-            ) 
-            
+            )
+
         model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
 
-    if pipeline_args.mlp_project.n_layers == 0 and not for_embedding:
-        logger.info("Embedder dim must match model dim if no MLP projector.")
-
     if for_embedding:
-        if pipeline_args.causal_embedder:
-            model.causal_embedder = True
-        model.mean_hid4embed = pipeline_args.mean_hid4embed
+        return model
     else:
-        if pipeline_args.cross_att and pipeline_args.do_both:
-            assert pipeline_args.cross_att, "If do_both, must do cross-attention"
-            assert pipeline_args.do_pool, "If do_both, must do pooling"
-
-    return model, tokenizer, embed_dim
-
-
-def get_instruct_ckpts_paths(
-    instruct_ckpt: str,
-    pipeline_args: EmbedAugArgs,
-    llm_name: str,
-) -> tuple[str, str, str, str, str]:
-    embedder_lora_state_dict_path = None
-    llm_lora_state_dict_path = None
-    pooling_state_dict_path = None
-    mlp_state_dict_path = None
-    ca_state_dict_path = None
-
-    ca_and_lora_path = instruct_ckpt + "/" + llm_name + "/consolidated/lora.safetensors"
-
-    trainable_embedder_path = instruct_ckpt + "/" + llm_name + "/trainable_embedder"
-    mlp_path = instruct_ckpt + "/" + "MLP_projector"
-
-    with open(instruct_ckpt + "/instruct.json", "r") as f:
-        instruct_args = json.loads(f.read())
-
-    if pipeline_args.trainable_embedder and instruct_args["tune_embedder"]:
-        logger.info("Loading trainable embedder from " + trainable_embedder_path)
-        embedder_lora_state_dict_path = trainable_embedder_path
-
-    if Path(instruct_ckpt + "/" + llm_name + "/pooling_module").exists():
-        pooling_state_dict_path = instruct_ckpt + "/" + llm_name + "/pooling_module"
-
-    if pipeline_args.mlp_project.n_layers > 0:
-        logger.info("Loading MLP projector from " + mlp_path)
-        mlp_state_dict_path = mlp_path
-
-    if pipeline_args.cross_att:
-        ca_state_dict_path = ca_and_lora_path
-
-    if pipeline_args.trainable_llm and instruct_args["tune_llm"]:
-        llm_lora_state_dict_path = ca_and_lora_path
-
-    return (
-        embedder_lora_state_dict_path,
-        pooling_state_dict_path,
-        mlp_state_dict_path,
-        ca_state_dict_path,
-        llm_lora_state_dict_path,
-    )
+        tokenizer = load_mistral_tokenizer(folder).instruct_tokenizer.tokenizer
+        return model, tokenizer

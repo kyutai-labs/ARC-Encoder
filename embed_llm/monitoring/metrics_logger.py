@@ -24,7 +24,6 @@ def get_train_logs(
     allocated_mem: float,
     train_args: TrainArgs,
     bpc: float | None = None,
-    kl: float | None = None,
     batch_type: str = "reconstruction",
 ) -> dict[str, float | int]:
     metrics = {
@@ -40,7 +39,6 @@ def get_train_logs(
         "avg_wps": state.avg_wps,
         "eta_in_seconds": state.eta,
         "Bit per Character": bpc,
-        "KL": kl,
         "batch_type": batch_type,
     }
 
@@ -57,8 +55,6 @@ def get_eval_logs(
     eval_ppl_embcont: float | None = None,
     eval_loss_embcont: float | None = None,
     train_bpc: float | None = None,
-    train_kl: float | None = None,
-    eval_kl_loss: float | None = None,
     eval_loss_nocontext: float | None = None,
     eval_ppl_nocontext: float | None = None,
 ) -> dict[str, float | int]:
@@ -85,11 +81,6 @@ def get_eval_logs(
     if train_bpc is not None:
         eval_dict["train_bpc"] = train_bpc
 
-    if train_kl is not None:
-        eval_dict["train_kl"] = train_kl
-
-    if eval_kl_loss is not None:
-        eval_dict["eval_kl_loss"] = eval_kl_loss
 
     if eval_loss_nocontext is not None:
         eval_dict["eval_loss_nocontext"] = eval_loss_nocontext
@@ -125,7 +116,6 @@ def train_log_msg(
         ("avg_wps", ".1f", "avg_words_per_second"),
         ("eta", "%Y-%m-%d %H:%M:%S", "ETA"),
         ("Bit per Character", ".3f", None),
-        ("KL", ".3f", "KL"),
         ("batch_type", "s", "Batch Type"),
         ("seen_tokens", "d", "Seen Tokens"),
     ]:
@@ -153,8 +143,6 @@ def eval_log_msg(logs: dict[str, float | int]) -> str:
         ("eval_ppl_embcont", ".3f", "Eval Embcont PPL"),
         ("eval_loss_embcont", ".3f", "Eval Embcont Loss"),
         ("train_bpc", ".3f", "Training BPC"),
-        ("train_kl", ".3f", "Training KL"),
-        ("eval_kl_loss", ".3f", "eval_kl_loss"),
         ("eval_loss_nocontext", ".3f", "eval_loss_nocontext"),
         ("eval_perplexity_nocontext", ".3f", "PPL continuation wo context"),
     ]:

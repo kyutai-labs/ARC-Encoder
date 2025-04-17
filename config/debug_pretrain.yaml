@@ -1,14 +1,20 @@
 model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-llm_name: Mistral7B
-run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/
+run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
 exp_name: test_pretrain
-continuation: 1.0
 
-lora:
+continuation: 1.0
+textual_continuation: 0.0
+
+lora_llm:
+  enable: true
+  rank: 128
+  scaling: 2.0
+
+lora_embedder:
   enable: false
   rank: 128
   scaling: 2.0
-  
+
 model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
 no_eval: false
 num_microbatches: 1
@@ -20,24 +26,20 @@ optim:
   weight_decay: 0.1
 
 pipeline:
-  do_pool: true
-  embedder_name: Mistral7B
-  mlp_project:
-    act: gelu
-    hidden_dim: 4096
-    n_layers: 1
-    type: mlp
-    first_rms_norm: true
-  n_truncated_layers: 16
-  pooling_module:
-    compress_rate: -8
-    type: adaptive_attention
-    pool_type: post_sfmx_mean_mta
-    cont_att_norm: true
-    post_sftmx: true
-  train_only_pooling: true
-  w_embeds: true  
-  causal_embedder: true
+  embedder_params: 
+    n_truncated_layers: 15
+    compress_rates: [-1, -2, -1]
+    trained_layers: 1
+    mean_hid4embed: null
+    causal_embedder: true
+    pooling_module:
+      pool_type: 'mean'
+  trainable_llm: true
+  w_prefix_prompt: false
+  max_embeds: 1
+  w_embeds: true
+  bridge_module: 
+    bridge_type: null
 
 
 
@@ -62,9 +64,8 @@ optim:
 seed: 0
 log_freq: 1
 eval_freq: 50
-no_eval: false
-ckpt_freq: 500
-save_adapters: true
+no_eval: true
+ckpt_freq: 5
 
 
 # wandb:

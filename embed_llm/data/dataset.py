@@ -7,14 +7,11 @@ from typing import Iterator
 import numpy as np
 import torch.distributed as dist
 from embed_llm.training.distributed import get_rank
-from embed_llm.training.args import HybridTask
 from embed_llm.data.args import DataArgs
 from embed_llm.data.tokenize import Mask, TokenSample, encode, Tokenizer
 from embed_llm.data.sequence_iterators import (
     sequence_iterator_continuation,
     sequence_iterator_reconstruction,
-    sequence_iterator_one_task_4_all,
-    sequence_iterator_decompress_usage,
     SequenceEmbedMaskAndSizes,
 )
 
@@ -159,20 +156,12 @@ def sequence_iterator(
     is_finite: bool,
     adapt_seq_len: bool = False,
     continuation: float = 0.0,
-    hybrid_task: HybridTask | None = None,
     max_embeds: int = 1,
-    decompress_usage: str = "",
     further_embeds: bool = False,
-    prob_distractor: float = 0.0,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
     """
-
-    hybrid_training = False
-    if is_finite:
-        hybrid_training = False if hybrid_task is None else hybrid_task.do
-        hybrid_task = None
 
     x_buffer: list[int] = []
     y_buffer: list[int] = []
@@ -180,127 +169,69 @@ def sequence_iterator(
     mask_buffer: Mask = []
     sizes: list[int] = []
     n_missing_cont = seq_len * 2
-    distract_list_rec: list[int] = []
 
     x_buffer_cont: list[int] = []
     y_buffer_cont: list[int] = []
     to_embed_buffer_cont: list[dict[str, str | int]] = []
     mask_buffer_cont: Mask = []
     sizes_cont: list[int] = []
-    distractor_buffer: list[int] = []
-    distract_list_cont: list[int] = []
+
     cur_pos = 0
     n_missing = seq_len
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
-        if (hybrid_task is None or not hybrid_task.do) and decompress_usage == "":
-            rand_continue = np.random.rand()
-            if (is_finite and continuation > 0) or continuation >= 1.0:
-                do_continuation = True
-            elif continuation == 0.0:
-                do_continuation = False
-            else:
-                do_continuation = rand_continue < continuation
 
-            if do_continuation:
-                while True:
-                    res = sequence_iterator_continuation(
-                        distractor_buffer=distractor_buffer,
-                        sample=sample,
-                        x_buffer=x_buffer_cont,
-                        y_buffer=y_buffer_cont,
-                        mask_buffer=mask_buffer_cont,
-                        to_embed_buffer=to_embed_buffer_cont,
-                        sizes=sizes_cont,
-                        seq_len=seq_len
-                        * 2,  # To ensure max seq len to generate and max seq len to embed
-                        tokenizer=tokenizer,
-                        adapt_seq_len=adapt_seq_len,
-                        distract_list=distract_list_cont,
-                        n_missing=n_missing_cont,
-                        data_type="continuation",
-                        is_eval=is_finite,
-                        cur_pos=cur_pos,
-                        max_embeds=max_embeds,
-                        hybrid_training=hybrid_training,
-                        prob_distractor=prob_distractor,
-                    )
+        rand_continue = np.random.rand()
+        if (is_finite and continuation > 0) or continuation >= 1.0:
+            do_continuation = True
+        elif continuation == 0.0:
+            do_continuation = False
+        else:
+            do_continuation = rand_continue < continuation
 
-                    if len(res) == 3 and isinstance(res[0], SequenceEmbedMaskAndSizes):
-                        yield res[0]
-
-                        x_buffer_cont, y_buffer_cont = [], []
-                        mask_buffer_cont = []
-                        to_embed_buffer_cont = []
-                        sizes_cont = []
-                        distract_list_cont = []
-                        n_missing_cont = seq_len * 2
-                        cur_pos = res[1]
-                        distractor_buffer = res[2]
-                    else:
-                        (
-                            x_buffer_cont,
-                            y_buffer_cont,
-                            to_embed_buffer_cont,
-                            mask_buffer_cont,
-                            n_missing_cont,
-                            sizes_cont,
-                            distractor_buffer,
-                            distract_list_cont,
-                        ) = res
-                        cur_pos = 0
-                        break
-            else:
-                while True:
-                    res = sequence_iterator_reconstruction(
-                        sample=sample,
-                        x_buffer=x_buffer,
-                        y_buffer=y_buffer,
-                        mask_buffer=mask_buffer,
-                        to_embed_buffer=to_embed_buffer,
-                        sizes=sizes,
-                        seq_len=seq_len,
-                        tokenizer=tokenizer,
-                        adapt_seq_len=adapt_seq_len,
-                        n_missing=n_missing,
-                        distract_list=distract_list_rec,
-                        is_eval=is_finite,
-                        cur_pos=cur_pos,
-                        max_embeds=max_embeds,
-                        hybrid_training=hybrid_training,
-                        further_embeds=further_embeds,
-                        distractor_buffer=distractor_buffer,
-                        prob_distractor=prob_distractor,
-                    )
-
-                    if len(res) == 3 and isinstance(res[0], SequenceEmbedMaskAndSizes):
-                        yield res[0]
-
-                        x_buffer, y_buffer = [], []
-                        mask_buffer = []
-                        to_embed_buffer = []
-                        sizes = []
-                        n_missing = seq_len
-                        cur_pos = res[1]
-                        distractor_buffer = res[2]
-                        distract_list_rec = []
-                    else:
-                        (
-                            x_buffer,
-                            y_buffer,
-                            to_embed_buffer,
-                            mask_buffer,
-                            n_missing,
-                            sizes,
-                            distractor_buffer,
-                            distract_list_rec,
-                        ) = res
-                        cur_pos = 0
-                        break
-
-        elif decompress_usage != "":
+        if do_continuation:
             while True:
-                res = sequence_iterator_decompress_usage(
+                res = sequence_iterator_continuation(
+                    sample=sample,
+                    x_buffer=x_buffer_cont,
+                    y_buffer=y_buffer_cont,
+                    mask_buffer=mask_buffer_cont,
+                    to_embed_buffer=to_embed_buffer_cont,
+                    sizes=sizes_cont,
+                    seq_len=seq_len
+                    * 2,  # To ensure max seq len to generate and max seq len to embed
+                    tokenizer=tokenizer,
+                    adapt_seq_len=adapt_seq_len,
+                    n_missing=n_missing_cont,
+                    data_type="continuation",
+                    is_eval=is_finite,
+                    cur_pos=cur_pos,
+                    max_embeds=max_embeds,
+                )
+
+                if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
+                    yield res[0]
+
+                    x_buffer_cont, y_buffer_cont = [], []
+                    mask_buffer_cont = []
+                    to_embed_buffer_cont = []
+                    sizes_cont = []
+                    n_missing_cont = seq_len * 2
+                    cur_pos = res[1]
+                else:
+                    (
+                        x_buffer_cont,
+                        y_buffer_cont,
+                        to_embed_buffer_cont,
+                        mask_buffer_cont,
+                        n_missing_cont,
+                        sizes_cont,
+                    ) = res
+                    cur_pos = 0
+                    break
+        else:
+            while True:
+                res = sequence_iterator_reconstruction(
                     sample=sample,
                     x_buffer=x_buffer,
                     y_buffer=y_buffer,
@@ -309,10 +240,12 @@ def sequence_iterator(
                     sizes=sizes,
                     seq_len=seq_len,
                     tokenizer=tokenizer,
+                    adapt_seq_len=adapt_seq_len,
                     n_missing=n_missing,
+                    is_eval=is_finite,
                     cur_pos=cur_pos,
                     max_embeds=max_embeds,
-                    decompress_usage=decompress_usage,
+                    further_embeds=further_embeds,
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -335,26 +268,6 @@ def sequence_iterator(
                     ) = res
                     cur_pos = 0
                     break
-        else:
-            tokens, mask = sample.tokens, sample.masks[1:]
-            cur_pos = 0
-
-            while cur_pos < len(tokens[:-1]):
-                res = sequence_iterator_one_task_4_all(
-                    mask=mask,
-                    tokens=tokens,
-                    seq_len=seq_len,
-                    tokenizer=tokenizer,
-                    cur_pos=cur_pos,
-                    max_embeds=max_embeds,
-                    start_point=hybrid_task.start_point,
-                )
-                if res is None:
-                    break
-
-                else:
-                    yield res[0]
-                    cur_pos = res[1]
 
     if is_finite:
         # if dataloader is in eval, pad to seq length
@@ -386,12 +299,10 @@ def build_dataset(
     rank: int,
     world_size: int,
     is_eval: bool,
-    hybrid_task: HybridTask | None,
     seed: int | None = None,
     shuffle: bool = False,
     continuation: float = 0.0,
     max_embeds: int = 1,
-    decompress_usage: str = "",
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     data = args.train_data if not is_eval else args.eval_data
     sources, probabilities = parse_data_sources(data)
@@ -419,11 +330,8 @@ def build_dataset(
             tokenizer=tokenizer,
             adapt_seq_len=args.adapt_seq_len,
             continuation=continuation,
-            hybrid_task=hybrid_task,
             max_embeds=max_embeds,
-            decompress_usage=decompress_usage,
             further_embeds=args.further_embeds,
-            prob_distractor=args.prob_distractor,
         )
         for it in dataset_iterators
     ]

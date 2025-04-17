@@ -8,7 +8,6 @@ from embed_llm.models.lora import maybe_lora
 from embed_llm.training.args import LoraArgs
 
 from embed_llm.models.mistral.cache import CacheView
-from embed_llm.models.mistral.moe import MoeArgs, MoeLayer
 from embed_llm.models.mistral.rope import apply_rotary_emb
 
 
@@ -23,7 +22,7 @@ def repeat_kv(
 def insert_embeds(
     h: torch.Tensor,
     embeds: torch.Tensor,
-    embed_seqlens: list[list[int]] | list[int],
+    embed_seqlens: list[list[int]],
     seqlens: list[int],
     tok_embeddings: nn.Module | None = None,
     insert_cat_embedds: list[list[int]] | None = None,
@@ -307,7 +306,6 @@ class TransformerBlock(nn.Module):
         head_dim: int,
         norm_eps: float,
         lora: LoraArgs | None = None,
-        moe: MoeArgs | None = None,
     ):
         super().__init__()
         self.n_heads = n_heads
@@ -323,17 +321,8 @@ class TransformerBlock(nn.Module):
         self.ffn_norm = RMSNorm(dim, eps=norm_eps)
 
         self.feed_forward: nn.Module
-        if moe is not None:
-            self.feed_forward = MoeLayer(
-                experts=[
-                    FeedForward(dim=dim, hidden_dim=hidden_dim, lora=lora)
-                    for _ in range(moe.num_experts)
-                ],
-                gate=nn.Linear(dim, moe.num_experts, bias=False),
-                moe_args=moe,
-            )
-        else:
-            self.feed_forward = FeedForward(dim=dim, hidden_dim=hidden_dim, lora=lora)
+
+        self.feed_forward = FeedForward(dim=dim, hidden_dim=hidden_dim, lora=lora)
 
     def forward(
         self,

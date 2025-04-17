@@ -150,9 +150,7 @@ def evaluate_QA(
     icl_w_document: bool = True,
     mistral: bool = False,
     max_multi_passage: int = 1,
-    instruct_name: str = None,
     seed: float = 0.42,
-    compress_rate: int | None = None,
     compressed_doc_in_icl: bool = False,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
@@ -176,9 +174,7 @@ def evaluate_QA(
         max_bs=max_bs,
         pipeline=pipeline,
         mistral=mistral,
-        instruct_name=instruct_name,
         ckpt=ckpt,
-        compress_rate=compress_rate,
     )
 
     if mistral:
@@ -448,16 +444,8 @@ def evaluate_QA(
     if not is_torchrun() or torch.distributed.get_rank() == 0:
         if run_name is not None:
             with open(
-                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/"
                 + run_name
-                + "/results_generation.json",
-                "a",
-            ) as f:
-                json.dump(results, f)
-        elif instruct_name is not None:
-            with open(
-                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
-                + instruct_name
                 + "/results_generation.json",
                 "a",
             ) as f:
@@ -476,11 +464,6 @@ def evaluate_QA(
             run_name = "Mistral_no_RAG"
             ckpt = 0
 
-        run_name = (
-            instruct_name
-            if instruct_name is not None and run_name is None
-            else run_name
-        )
         if run_name not in overall_results.keys():
             overall_results[run_name] = {}
         if str(ckpt) not in overall_results[run_name].keys():
@@ -534,13 +517,12 @@ def arg_parser():
     parser.add_argument("--mistral", action="store_true")
     parser.add_argument("--wo_embeds", action="store_false")
     parser.add_argument("--multi_passages", type=int, default=1)
-    parser.add_argument("--instruct_name", type=str, default=None)
     parser.add_argument("--benchmarks", type=str, default="all")
     parser.add_argument("--seed", type=float, default=0.42)
     parser.add_argument("--n_icl_exs", type=int, default=None)
     parser.add_argument("--icl_w_document", action="store_true")
     parser.add_argument("--compressed_doc_in_icl", action="store_true")
-    parser.add_argument("--compress_rate", type=int, default=None)
+    parser.add_argument("--tmp_path", type=str, default="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/")
 
     return parser.parse_args()
 
@@ -554,8 +536,6 @@ if __name__ == "__main__":
 
     if args.benchmarks == "all":
         benchmarks = ["NQ", "TRIVIAQA", "HotpotQA", "SQUAD"]
-    elif args.benchmarks == "two_main":
-        benchmarks = ["NQ", "TRIVIAQA"]
     else:
         benchmarks = [args.benchmarks]
     icl_tests = [0, 2, 5] if args.n_icl_exs is None else [args.n_icl_exs]
@@ -566,7 +546,7 @@ if __name__ == "__main__":
         if args.out_file is None
         else args.out_file
     )
-    tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/"
+    tmp_path = args.tmp_path
 
     if not os.path.exists(output_file):
         with open(output_file, "w") as f:
@@ -575,8 +555,6 @@ if __name__ == "__main__":
     max_seq_len = args.max_seq_len
     n_passages = args.n_passages
 
-    if args.instruct_name is not None:
-        print("Evaluating with instruction:", args.instruct_name)
     if args.run_name is not None:
         print("Evuating run:", args.run_name)
     # Evaluate Mistral using their code
@@ -678,9 +656,7 @@ if __name__ == "__main__":
             w_embeds=args.wo_embeds,
             icl_w_document=args.icl_w_document,
             max_multi_passage=args.multi_passages,
-            instruct_name=args.instruct_name,
             seed=args.seed,
-            compress_rate=args.compress_rate,
             compressed_doc_in_icl=args.compressed_doc_in_icl,
         )
 
@@ -700,8 +676,6 @@ if __name__ == "__main__":
                 pipeline=pipeline,
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
-                instruct_name=args.instruct_name,
                 seed=args.seed,
-                compress_rate=args.compress_rate,
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
             )

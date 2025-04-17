@@ -37,44 +37,10 @@ class WandbArgs(Serializable):
 
 
 @dataclass
-class InstructionTuningArgs(Serializable):
-    do: bool = False
-    cross_entropy: bool = True
-    kl: bool = False
-    alpha: float = 2.0
-    temp: float = 1.0
-    tune_llm: bool = False
-    tune_embedder: bool = False
-    max_embeds: int = 1
-    no_mask: bool = False
-    topk: int | None = None
-
-
-@dataclass
-class HybridTask(Serializable):
-    do: bool = False
-    prop_noembed_continuation: float = 0.0
-    start_point: float = 0.0
-
-
-@dataclass
-class ToyTests(Serializable):
-    do: bool = False
-    kl_pretraining: bool = False
-    alpha: float = 2.0
-    temp: float = 1.0
-    decompress_usage: str = ""
-    tune_llm: bool = False
-    tune_embedder: bool = False
-    topk: int | None = None
-
-
-@dataclass
 class TrainArgs(Serializable):
     # if specified, instruct_tokenizer and model will be loaded
     # Path to the directory containing the initial model or model id: "mistral-small"
     model_id_or_path: str
-    llm_name: str
     # Path to the directory where everything will be saved. It needs to be empty.
     run_dir: str
     # Name of the wandb run, if None it will be set to the name of the run_dir.
@@ -94,10 +60,9 @@ class TrainArgs(Serializable):
 
     # Number of steps between each checkpoint saving. If inferior to 1, only the last checkpoint will be saved.
     ckpt_freq: int = 0
-    save_adapters: bool = True  # Not used argument TODO Remove
+
     # If True, no checkpoint will be saved. This is useful for development.
     no_ckpt: bool = False
-    start_from_ckpt_path: str | None = None
     num_ckpt_keep: int = 3
     eval_freq: int = 0
     no_eval: bool = True
@@ -107,26 +72,20 @@ class TrainArgs(Serializable):
     checkpoint: bool = True
 
     world_size: int = field(init=False, default=None)
-    quant: bool = False  # False
 
     # logging
     wandb: WandbArgs = field(default_factory=WandbArgs)
 
     # LoRA
-    lora: LoraArgs = field(default_factory=LoraArgs)
-
+    lora_llm: LoraArgs = field(default_factory=LoraArgs)
+    lora_embedder: LoraArgs = field(default_factory=LoraArgs)
     # Pretrained embedder to use off the shelf
     pipeline: EmbedAugArgs = field(default_factory=EmbedAugArgs)
-    instruct_tuning: InstructionTuningArgs = field(
-        default_factory=InstructionTuningArgs
-    )
     mixed_precision: bool = True
 
     # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
     continuation: float = 0.0
     textual_continuation: float = 0.0
-    hybrid_task: HybridTask = field(default_factory=HybridTask)
-    toy_tests: ToyTests = field(default_factory=ToyTests)
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None
@@ -142,11 +101,3 @@ class TrainArgs(Serializable):
 
         if self.model_id_or_path is not None:
             Path(self.model_id_or_path).exists()
-
-        if "gemma" in self.llm_name:
-            assert self.variant is not None
-
-        if not self.save_adapters:
-            logging.warning(
-                "You have disabled `save_adapters` and are thus merging the trained LoRA checkpoint into the base model upon checkpointing. This might lead to OOM errors - make sure you have enough CPU and GPU memory."
-            )

@@ -10,15 +10,6 @@ import torch.nn as nn
 from simple_parsing.helpers import Serializable
 
 
-def is_cross_att(module_name: str):
-    return (
-        "cross_attention" in module_name
-        or "gate" in module_name
-        or "to_k" in module_name
-        or "to_v" in module_name
-    )
-
-
 @dataclass
 class LoraArgs(Serializable):
     enable: bool = False
@@ -112,9 +103,7 @@ class LoRALinear(nn.Module):
 
 
 class LoRALoaderMixin:
-    def load_lora(
-        self, lora_path: Path | str, scaling: float = 2.0, cross_att: bool = False
-    ) -> None:
+    def load_lora(self, lora_path: Path | str, scaling: float = 2.0) -> None:
         """Loads LoRA checkpoint"""
 
         lora_path = Path(lora_path)
@@ -122,13 +111,12 @@ class LoRALoaderMixin:
 
         state_dict = safetensors.torch.load_file(lora_path)
 
-        self._load_lora_state_dict(state_dict, scaling=scaling, cross_att=cross_att)
+        self._load_lora_state_dict(state_dict, scaling=scaling)
 
     def _load_lora_state_dict(
         self,
         lora_state_dict: dict[str, torch.Tensor],
         scaling: float = 2.0,
-        cross_att: bool = False,
     ) -> None:
         """Loads LoRA state_dict"""
         lora_dtypes = set([p.dtype for p in lora_state_dict.values()])
@@ -141,18 +129,6 @@ class LoRALoaderMixin:
             f"LoRA weights dtype differs from model's dtype {lora_dtype} != {self.dtype}"
         )
 
-        if not all("lora" in key for key in lora_state_dict.keys()):
-            if cross_att:
-                print(
-                    "Not only LoRA weights found in the checkpoint. Skipping other weights."
-                )
-                lora_state_dict = {
-                    k: v for k, v in lora_state_dict.items() if "lora" in k
-                }
-            else:
-                raise ValueError(
-                    "Not only LoRA weights found in the checkpoint. Skipping other weights."
-                )
         # move tensors to device
         # type: ignore[attr-defined]
         lora_state_dict = {k: v.to(self.device) for k, v in lora_state_dict.items()}
@@ -164,7 +140,7 @@ class LoRALoaderMixin:
             # type: ignore[attr-defined]
             named_modules = dict(self.named_modules())
             for name, module in named_modules.items():
-                if isinstance(module, nn.Linear) and not is_cross_att(name):
+                if isinstance(module, nn.Linear):
                     # type: ignore[attr-defined]
                     if "output" not in name and name.split(".")[1] not in self.layers:
                         logging.debug(

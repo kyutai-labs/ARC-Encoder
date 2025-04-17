@@ -5,9 +5,9 @@ import torch.distributed as dist
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 from embed_llm.data.data_loader import Batch
 from embed_llm.training.distributed import get_rank, get_world_size
-from embed_llm.training.loss import compute_ce_loss_with_mask, compute_kl_loss_with_mask
+from embed_llm.training.loss import compute_ce_loss_with_mask
 from embed_llm.training.utils import TrainState
-from embed_llm.training.args import InstructionTuningArgs
+
 
 logger = logging.getLogger("eval")
 
@@ -22,7 +22,6 @@ def evaluate(
     prepare_batch_fn: object,
     batches_rec: list[Batch],
     state: TrainState,
-    instruction_tuning: InstructionTuningArgs | None = None,
     batches_cont: list[Batch] | None = None,
     train_llm: bool = False,
 ):
@@ -63,7 +62,6 @@ def evaluate(
                     embeddings=embeddings,
                     seqlens=seqlens,
                     embed_seqlens=embed_seqlens,
-                    batch_type=batch.data_type,
                 )
 
                 eval_loss_embcont += compute_ce_loss_with_mask(output, y, y_mask)
@@ -125,7 +123,6 @@ def evaluate(
                     )
 
     eval_loss_rec = torch.tensor(0.0).cuda()
-    eval_kl_loss = torch.tensor([0.0], device="cuda")
     main_logger_info(f"Start eval for {len(batches_rec)} reconstruction batches")
 
     for i, batch in enumerate(batches_rec):
@@ -137,66 +134,9 @@ def evaluate(
                 embeddings=embeddings,
                 seqlens=seqlens,
                 embed_seqlens=embed_seqlens,
-                batch_type=batch.data_type,
             )
             if not batch.is_pad_only:
                 eval_loss_rec += compute_ce_loss_with_mask(output, y, y_mask)
-                if instruction_tuning.do and instruction_tuning.kl:
-                    contexts = [to_embed["tokens"] for to_embed in batch.to_embed]
-                    x_wcontext = []
-                    y_mask_wcontext = []
-                    seqlens_wcontext = []
-
-                    ind = 0
-                    assert len(contexts) == len(batch.sizes), (
-                        "Contexts and batch sizes should be the same"
-                    )
-
-                    for i, size in enumerate(batch.sizes):
-                        full_context = contexts[i]
-                        x_wcontext.extend(
-                            full_context + batch.x[ind : ind + size].tolist()
-                        )
-                        seqlens_wcontext.append(size + len(full_context))
-                        y_mask_wcontext.extend(
-                            [False] * len(full_context)
-                            + (
-                                [True] * len(batch.x[ind : ind + size])
-                                if batch.y_mask is None
-                                else batch.y_mask[ind : ind + size].tolist()
-                            )
-                        )
-
-                        ind += size
-
-                    x_wcontext = torch.from_numpy(np.array(x_wcontext)).cuda(
-                        non_blocking=True
-                    )
-                    y_mask_wcontext = torch.from_numpy(np.array(y_mask_wcontext)).cuda(
-                        non_blocking=True
-                    )
-
-                    assert len(x_wcontext) == len(y_mask_wcontext), (
-                        "x_rag and y_mask_rag should be the same length"
-                    )
-                    rag_output = model.forward(
-                        x=x_wcontext,
-                        embeddings=embeddings,
-                        seqlens=seqlens_wcontext,
-                        embed_seqlens=embed_seqlens,
-                        batch_type=batch.data_type,
-                    )
-
-                    kl_dv_loss = compute_kl_loss_with_mask(
-                        target_logits=rag_output,
-                        pred_logits=output,
-                        target_mask=y_mask_wcontext,
-                        pred_mask=y_mask,
-                        temp=instruction_tuning.temp,
-                    )
-
-                    eval_kl_loss += kl_dv_loss
-
                 assert batch.is_pad_only or y.abs().sum() != 0, (
                     "Pad sample is used to compute loss."
                 )
@@ -230,25 +170,11 @@ def evaluate(
             state.this_eval_perplexity_textcont = None
             state.this_eval_perplexity_nocontext = None
 
-        state.this_eval_kl_loss = None
-
-    elif instruction_tuning.do and instruction_tuning.kl:
-        dist.all_reduce(eval_kl_loss, op=dist.ReduceOp.SUM)
-        eval_kl_loss /= total_num_samples
-        state.this_eval_kl_loss = eval_kl_loss.item()
-        state.this_eval_loss_textcont = None
-        state.this_eval_loss_embcont = None
-        state.this_eval_loss_nocontext = None
-        state.this_eval_perplexity_textcont = None
-        state.this_eval_perplexity_embcont = None
-        state.this_eval_perplexity_nocontext = None
-
     else:
         state.this_eval_loss_textcont = None
         state.this_eval_loss_embcont = None
         state.this_eval_perplexity_textcont = None
         state.this_eval_perplexity_embcont = None
-        state.this_eval_kl_loss = None
         state.this_eval_loss_nocontext = None
         state.this_eval_perplexity_nocontext = None
 

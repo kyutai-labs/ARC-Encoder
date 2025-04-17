@@ -2,7 +2,6 @@ import dataclasses
 from typing import Iterator
 import numpy as np
 
-from embed_llm.training.args import HybridTask
 from embed_llm.data.args import DataArgs
 from embed_llm.data.dataset import build_dataset
 from embed_llm.data.tokenize import Tokenizer
@@ -18,7 +17,6 @@ class Batch:
     is_pad_only: bool = False
     data_type: str = "reconstruction"
     n_prefixes: list[int] | None = None
-    distract_list: list[int] | None = None
 
     def __post_init__(self):
         assert self.x.ndim == 1
@@ -28,7 +26,7 @@ class Batch:
         assert isinstance(self.sizes, list)
         assert isinstance(self.to_embed, list)
         assert sum(self.sizes) == self.x.size == self.y.size
-        assert len(self.to_embed) == len(self.sizes)    
+        assert len(self.to_embed) == len(self.sizes)
 
         if self.y_mask is not None:
             assert self.y_mask.size == self.y.size, (self.y_mask.shape, self.y.shape)
@@ -46,9 +44,6 @@ class Batch:
             self.to_embed = [{"text": "", "tokens": [0]} for _ in self.to_embed]
         if self.n_prefixes is not None:
             assert len(self.n_prefixes) == len(self.to_embed)
-        
-        if self.distract_list is not None:
-            assert len(self.distract_list) == len(self.to_embed), (len(self.distract_list), len(self.to_embed))
 
 
 @dataclasses.dataclass
@@ -62,7 +57,6 @@ class Batchlist:
     y_mask: list[list[bool]] = dataclasses.field(default_factory=list)
     data_type: str = None
     n_prefixes: list[list[int]] | None = None
-    distract_list: list[list[int]] | None = None
 
     def __post_init__(self):
         assert self.x == [], "`Batchlist` has to be empty at init."
@@ -83,7 +77,6 @@ class Batchlist:
         y_mask: list[bool],
         data_type: str,
         n_prefixes: list[int] | None = None,
-        distract_list: list[int] | None = None,
     ):
         self.x.append(x)
         self.y.append(y)
@@ -97,11 +90,6 @@ class Batchlist:
             if self.n_prefixes is None:
                 self.n_prefixes = []
             self.n_prefixes.append(n_prefixes)
-   
-        if distract_list is not None:
-            if self.distract_list is None:
-                self.distract_list = []
-            self.distract_list.append(distract_list)
 
         assert self.data_type == data_type
 
@@ -113,7 +101,6 @@ class Batchlist:
         self.y_mask = []
         self.data_type = None
         self.n_prefixes = None
-        self.distract_list = None
 
     @staticmethod
     def flatten_to_numpy(list_of_lists: list[list[object]], dtype) -> np.ndarray:
@@ -134,11 +121,6 @@ class Batchlist:
             n_prefixes = sum(self.n_prefixes, [])
         else:
             n_prefixes = None
-            
-        if self.distract_list is not None:
-            distract_list = sum(self.distract_list, [])
-        else:
-            distract_list = None
 
         return Batch(
             x_np,
@@ -148,7 +130,6 @@ class Batchlist:
             y_mask_np,
             data_type=self.data_type,
             n_prefixes=n_prefixes,
-            distract_list=distract_list,
         )
 
 
@@ -162,9 +143,7 @@ def build_data_loader(
     is_eval: bool,
     seed: int | None = None,
     continuation: float = 0.0,
-    hybrid_task: HybridTask | None = None,
     max_embeds: int = 1,
-    decompress_usage: str = "",
 ) -> Iterator[Batch]:
     dataset = build_dataset(
         args=args,
@@ -175,9 +154,7 @@ def build_data_loader(
         world_size=world_size,
         is_eval=is_eval,
         continuation=continuation,
-        hybrid_task=hybrid_task,
         max_embeds=max_embeds,
-        decompress_usage=decompress_usage,
     )
 
     batch_list_dict = {}
@@ -185,19 +162,14 @@ def build_data_loader(
         assert all(s >= 0 for s in sample.sizes)
 
         # Avoid empty samples
-        if any(
-            [
-                len(embed["tokens"]) <= 1
-                for embed in sample.to_embed
-            ]
-        ):
+        if any([len(embed["tokens"]) <= 1 for embed in sample.to_embed]):
             continue
 
         if sample.data_type not in batch_list_dict:
             batch_list_dict[sample.data_type] = Batchlist()
 
         batch_list = batch_list_dict[sample.data_type]
-     
+
         batch_list.add(
             sample.x,
             sample.y,
@@ -206,9 +178,8 @@ def build_data_loader(
             sample.mask,
             data_type=sample.data_type,
             n_prefixes=getattr(sample, "n_prefixes", None),
-            distract_list=getattr(sample, "distract_list", None),
         )
-        
+
         if len(batch_list) == batch_size:
             batch: Batch = batch_list.create_batch()
             yield batch
