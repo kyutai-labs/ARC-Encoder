@@ -15,7 +15,7 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataP
 # )
 
 # Mistral specifics
-from embed_llm.models.mistral.transformer_layers import TransformerBlock 
+from embed_llm.models.mistral.transformer_layers import TransformerBlock
 from embed_llm.training.distributed import (
     get_rank,
 )
@@ -44,7 +44,11 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     # Each transformer block becomes a FSDP group, each being sharded separately
     transformer_block_wrap_policy = functools.partial(
         torch_wrap.transformer_auto_wrap_policy,
-        transformer_layer_cls=set([TransformerBlock,]),
+        transformer_layer_cls=set(
+            [
+                TransformerBlock,
+            ]
+        ),
     )
 
     if not is_lora:
@@ -95,26 +99,15 @@ def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
         f"{num_train_params:,.0f} out of {num_params:,.0f} parameters are finetuned ({num_train_params / num_params * 100:.2f}%)."
     )
     lora_params = sum(p.numel() for n, p in model.named_parameters() if "lora" in n)
-    embedder_params =  sum(
-                        p.numel()
-                        for n, p in model.embedder.named_parameters()
-                    )
+    embedder_params = sum(p.numel() for n, p in model.embedder.named_parameters())
 
-
-    llm_params = (
-        sum(
-            p.numel()
-            for n, p in model.llm.named_parameters()
-        )
-    )
+    llm_params = sum(p.numel() for n, p in model.llm.named_parameters())
 
     main_logger_info(
         f"\n LLM params:  {llm_params:,.0f} ({llm_params / num_params * 100:.2f}%), \
         \n Embedder params: {embedder_params:,.0f} ({embedder_params / num_params * 100:.2f}%), \
             \n LoRA params: {lora_params:,.0f} ({lora_params / num_params * 100:.2f}%)"
     )
-
-
 
 
 def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype):
@@ -141,6 +134,7 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                         "Only LoRA layers should be randomly initialized if not cross-attention!!!"
                     )
 
+
 def group_embed_seqlens(values: list[int], sizes: list[int]):
     result = []
     for size in sizes:
@@ -152,4 +146,3 @@ def group_embed_seqlens(values: list[int], sizes: list[int]):
             result.append(values)
             break
     return result
-
