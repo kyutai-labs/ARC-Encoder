@@ -221,7 +221,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         tokenized_prompts: dict = {},
         embed_seqlens: list[int] | None = None,
         cat_embeddings: torch.Tensor | None = None,
-        insert_cat_embedds: list[int] | None = None,
+        insert_cat_embedds: list[list[int]] | None = None,
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
 
@@ -280,7 +280,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embed_seqlens: list[list[int]] | None,
         cache: BufferCache | None,
         cat_embeddings: torch.Tensor | None = None,
-        insert_cat_embedds: list[int] | None = None,
+        insert_cat_embedds: list[list[int]] | None = None,
     ) -> torch.Tensor:
         """Local forward pass.
 

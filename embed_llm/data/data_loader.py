@@ -16,17 +16,18 @@ class Batch:
     y_mask: np.ndarray | None = None
     is_pad_only: bool = False
     data_type: str = "reconstruction"
-    n_prefixes: list[int] | None = None
+    insert_embed_list: list[list[int]] | None = None
 
     def __post_init__(self):
         assert self.x.ndim == 1
         assert self.x.shape == self.y.shape
         assert self.x.dtype == np.int64
         assert self.y.dtype == np.int64
+        assert self.insert_embed_list is None or len(sum(self.insert_embed_list,[])) == len(self.sizes), f'{self.insert_embed_list}, {self.sizes}'
         assert isinstance(self.sizes, list)
         assert isinstance(self.to_embed, list)
-        assert sum(self.sizes) == self.x.size == self.y.size
-        assert len(self.to_embed) == len(self.sizes)
+        assert sum(self.sizes) == self.x.size == self.y.size, f'{self.sizes}, {self.x.shape}, {self.y.shape}'
+        assert len(self.to_embed) == len(self.sizes), (f'{len(self.to_embed)}, {len(self.sizes)}')
 
         if self.y_mask is not None:
             assert self.y_mask.size == self.y.size, (self.y_mask.shape, self.y.shape)
@@ -42,8 +43,7 @@ class Batch:
             # create all 0's mask for pad samples
             self.y_mask = np.zeros_like(self.x)
             self.to_embed = [{"text": "", "tokens": [0]} for _ in self.to_embed]
-        if self.n_prefixes is not None:
-            assert len(self.n_prefixes) == len(self.to_embed)
+
 
 
 @dataclasses.dataclass
@@ -53,15 +53,16 @@ class Batchlist:
     to_embed: list[list[dict[str, list[int] | str]]] = dataclasses.field(
         default_factory=list
     )
+    insert_embed_list: list[list[list[int]]] | None = None
     sizes: list[list[int]] = dataclasses.field(default_factory=list)
     y_mask: list[list[bool]] = dataclasses.field(default_factory=list)
     data_type: str = None
-    n_prefixes: list[list[int]] | None = None
 
     def __post_init__(self):
         assert self.x == [], "`Batchlist` has to be empty at init."
         assert self.y == [], "`Batchlist` has to be empty at init."
         assert self.to_embed == [], "`Batchlist` has to be empty at init."
+        assert self.insert_embed_list is None or self.insert_embed_list == [], "`Batchlist` has to be empty at init."
         assert self.sizes == [], "`Batchlist` has to be empty at init."
         assert self.y_mask == [], "`Batchlist` has to be empty at init."
 
@@ -76,20 +77,21 @@ class Batchlist:
         sizes: list[int],
         y_mask: list[bool],
         data_type: str,
-        n_prefixes: list[int] | None = None,
+        insert_embed_list: list[list[int]] | None = None,
     ):
         self.x.append(x)
         self.y.append(y)
         self.to_embed.append(to_embed)
         self.sizes.append(sizes)
         self.y_mask.append(y_mask)
+        
         if self.data_type is None:
             self.data_type = data_type
-
-        if n_prefixes is not None:
-            if self.n_prefixes is None:
-                self.n_prefixes = []
-            self.n_prefixes.append(n_prefixes)
+            
+        if insert_embed_list is not None:
+            if self.insert_embed_list is None:
+                self.insert_embed_list = []
+            self.insert_embed_list.append(insert_embed_list)
 
         assert self.data_type == data_type
 
@@ -97,10 +99,10 @@ class Batchlist:
         self.x = []
         self.y = []
         self.to_embed = []
+        self.insert_embed_list = None
         self.sizes = []
         self.y_mask = []
         self.data_type = None
-        self.n_prefixes = None
 
     @staticmethod
     def flatten_to_numpy(list_of_lists: list[list[object]], dtype) -> np.ndarray:
@@ -112,15 +114,15 @@ class Batchlist:
         x_np: np.ndarray = self.flatten_to_numpy(self.x, dtype=np.int64)
         y_np: np.ndarray = self.flatten_to_numpy(self.y, dtype=np.int64)
         sizes = sum(self.sizes, [])  # noqa
+        if self.insert_embed_list is not None:
+            insert_embed_list = sum(self.insert_embed_list, [])  # noqa
+        else:
+            insert_embed_list = None
         to_embed = sum(self.to_embed, [])  # noqa
 
         y_mask_flatten = self.flatten_to_numpy(self.y_mask, dtype=bool)
         y_mask_np: np.ndarray | None = None if y_mask_flatten.all() else y_mask_flatten
 
-        if self.n_prefixes is not None:
-            n_prefixes = sum(self.n_prefixes, [])
-        else:
-            n_prefixes = None
 
         return Batch(
             x_np,
@@ -129,12 +131,12 @@ class Batchlist:
             sizes,
             y_mask_np,
             data_type=self.data_type,
-            n_prefixes=n_prefixes,
+            insert_embed_list=insert_embed_list,
         )
 
 
 def build_data_loader(
-    tokenizer: Tokenizer,
+    tokenizer: Tokenizer, # type: ignore
     args: DataArgs,
     batch_size: int,
     seq_len: int,
@@ -163,6 +165,7 @@ def build_data_loader(
 
         # Avoid empty samples
         if any([len(embed["tokens"]) <= 1 for embed in sample.to_embed]):
+            print('Skipping empty sample')
             continue
 
         if sample.data_type not in batch_list_dict:
@@ -177,7 +180,7 @@ def build_data_loader(
             sample.sizes,
             sample.mask,
             data_type=sample.data_type,
-            n_prefixes=getattr(sample, "n_prefixes", None),
+            insert_embed_list=sample.insert_embed_list,
         )
 
         if len(batch_list) == batch_size:

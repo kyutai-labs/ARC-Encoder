@@ -12,6 +12,7 @@ from embed_llm.data.tokenize import Mask, TokenSample, encode, Tokenizer
 from embed_llm.data.sequence_iterators import (
     sequence_iterator_continuation,
     sequence_iterator_reconstruction,
+    sequence_iterator_inserted_embed_continuation,
     SequenceEmbedMaskAndSizes,
 )
 
@@ -40,7 +41,7 @@ def maybe_load_local_dataset(
     path: Path,
     rank: int,
     world_size: int,
-    tokenizer: Tokenizer | None = None,
+    tokenizer: Tokenizer | None = None, # type: ignore
     max_embeds: int = 1,
 ) -> list[TokenSample]:
     global _LOADED_DATASETS
@@ -152,12 +153,11 @@ def parse_data_sources(
 def sequence_iterator(
     ds_it: Iterator[TokenSample],
     seq_len: int,
-    tokenizer: Tokenizer,
+    tokenizer: Tokenizer, # type: ignore
     is_finite: bool,
     adapt_seq_len: bool = False,
     continuation: float = 0.0,
-    max_embeds: int = 1,
-    further_embeds: bool = False,
+    insert_embeddings: bool = False,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -172,6 +172,7 @@ def sequence_iterator(
 
     x_buffer_cont: list[int] = []
     y_buffer_cont: list[int] = []
+    insert_embed_cont_list: list[list[int]] = []
     to_embed_buffer_cont: list[dict[str, str | int]] = []
     mask_buffer_cont: Mask = []
     sizes_cont: list[int] = []
@@ -190,45 +191,82 @@ def sequence_iterator(
             do_continuation = rand_continue < continuation
 
         if do_continuation:
-            while True:
-                res = sequence_iterator_continuation(
-                    sample=sample,
-                    x_buffer=x_buffer_cont,
-                    y_buffer=y_buffer_cont,
-                    mask_buffer=mask_buffer_cont,
-                    to_embed_buffer=to_embed_buffer_cont,
-                    sizes=sizes_cont,
-                    seq_len=seq_len
-                    * 2,  # To ensure max seq len to generate and max seq len to embed
-                    tokenizer=tokenizer,
-                    adapt_seq_len=adapt_seq_len,
-                    n_missing=n_missing_cont,
-                    data_type="continuation",
-                    is_eval=is_finite,
-                    cur_pos=cur_pos,
-                    max_embeds=max_embeds,
-                )
+            if insert_embeddings:
+                while True:
+                    res = sequence_iterator_inserted_embed_continuation(
+                        sample=sample,
+                        x_buffer=x_buffer_cont,
+                        y_buffer=y_buffer_cont,
+                        mask_buffer=mask_buffer_cont,
+                        to_embed_buffer=to_embed_buffer_cont,
+                        insert_embed_list=insert_embed_cont_list,
+                        sizes=sizes_cont,
+                        seq_len=seq_len,  
+                        tokenizer=tokenizer,
+                        n_missing=n_missing_cont,
+                        data_type="continuation",
+                        cur_pos=cur_pos,
+                    )
 
-                if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
-                    yield res[0]
+                    if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
+                        yield res[0]
 
-                    x_buffer_cont, y_buffer_cont = [], []
-                    mask_buffer_cont = []
-                    to_embed_buffer_cont = []
-                    sizes_cont = []
-                    n_missing_cont = seq_len * 2
-                    cur_pos = res[1]
-                else:
-                    (
-                        x_buffer_cont,
-                        y_buffer_cont,
-                        to_embed_buffer_cont,
-                        mask_buffer_cont,
-                        n_missing_cont,
-                        sizes_cont,
-                    ) = res
-                    cur_pos = 0
-                    break
+                        x_buffer_cont, y_buffer_cont = [], []
+                        mask_buffer_cont = []
+                        to_embed_buffer_cont = []
+                        insert_embed_cont_list = []
+                        sizes_cont = []
+                        n_missing_cont = seq_len * 3
+                        cur_pos = res[1]
+                    else:
+                        (
+                            x_buffer_cont,
+                            y_buffer_cont,
+                            to_embed_buffer_cont,
+                            insert_embed_cont_list,
+                            mask_buffer_cont,
+                            n_missing_cont,
+                            sizes_cont,
+                        ) = res
+                        cur_pos = 0
+                        break
+            else:
+                while True:
+                    res = sequence_iterator_continuation(
+                        sample=sample,
+                        x_buffer=x_buffer_cont,
+                        y_buffer=y_buffer_cont,
+                        mask_buffer=mask_buffer_cont,
+                        to_embed_buffer=to_embed_buffer_cont,
+                        sizes=sizes_cont,
+                        seq_len=seq_len
+                        * 2,  # To ensure max seq len to generate and max seq len to embed
+                        tokenizer=tokenizer,
+                        n_missing=n_missing_cont,
+                        data_type="continuation",
+                        cur_pos=cur_pos,
+                    )
+
+                    if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
+                        yield res[0]
+
+                        x_buffer_cont, y_buffer_cont = [], []
+                        mask_buffer_cont = []
+                        to_embed_buffer_cont = []
+                        sizes_cont = []
+                        n_missing_cont = seq_len * 2
+                        cur_pos = res[1]
+                    else:
+                        (
+                            x_buffer_cont,
+                            y_buffer_cont,
+                            to_embed_buffer_cont,
+                            mask_buffer_cont,
+                            n_missing_cont,
+                            sizes_cont,
+                        ) = res
+                        cur_pos = 0
+                        break
         else:
             while True:
                 res = sequence_iterator_reconstruction(
@@ -242,10 +280,7 @@ def sequence_iterator(
                     tokenizer=tokenizer,
                     adapt_seq_len=adapt_seq_len,
                     n_missing=n_missing,
-                    is_eval=is_finite,
                     cur_pos=cur_pos,
-                    max_embeds=max_embeds,
-                    further_embeds=further_embeds,
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -277,13 +312,16 @@ def sequence_iterator(
             y_buffer.extend(n_missing * [0])
             sizes.append(n_missing)
             to_embed_buffer.append({"text": "", "tokens": []})
-
+            if len(insert_embed_cont_list) > 0:
+                insert_embed_cont_list.append([0])
+            
             yield SequenceEmbedMaskAndSizes(
                 x=x_buffer,
                 y=y_buffer,
                 to_embed=to_embed_buffer,
                 mask=mask_buffer,
                 sizes=sizes,
+                insert_embed_list=insert_embed_cont_list if int(continuation) == 1 or isinstance(continuation, float) else [],
                 data_type=(
                     "continuation"
                     if int(continuation) == 1 or isinstance(continuation, float)
@@ -294,7 +332,7 @@ def sequence_iterator(
 
 def build_dataset(
     args: DataArgs,
-    tokenizer: Tokenizer,
+    tokenizer: Tokenizer, # type: ignore
     seq_len: int,
     rank: int,
     world_size: int,
@@ -330,8 +368,7 @@ def build_dataset(
             tokenizer=tokenizer,
             adapt_seq_len=args.adapt_seq_len,
             continuation=continuation,
-            max_embeds=max_embeds,
-            further_embeds=args.further_embeds,
+            insert_embeddings=args.insert_embeddings,
         )
         for it in dataset_iterators
     ]
@@ -361,7 +398,7 @@ def get_dataset_iterator(
     world_size: int,
     is_finite: bool,
     shuffle_at_epoch: bool,
-    tokenizer: Tokenizer,
+    tokenizer: Tokenizer, # type: ignore
     seed: int | None = None,
     max_embeds: int = 1,
 ) -> Iterator[TokenSample]:
@@ -413,7 +450,7 @@ def preload_and_yield(
     rank: int,
     world_size: int,
     rng: np.random.RandomState,
-    tokenizer: Tokenizer | None = None,
+    tokenizer: Tokenizer | None = None, # type: ignore
     max_embeds: int = 1,
 ) -> Iterator[TokenSample] | Iterator[str]:
     # only instruct data has to be chunked
@@ -437,7 +474,7 @@ def lazy_load_and_yield(
     jsonl_file: Path,
     rank: int,
     world_size: int,
-    tokenizer: Tokenizer | None = None,
+    tokenizer: Tokenizer | None = None, # type: ignore
     max_embeds: int = 1,
 ):
     with jsonl_file.open() as file_handle:

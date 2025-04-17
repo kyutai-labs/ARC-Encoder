@@ -57,12 +57,17 @@ class EmbedAugModel(nn.Module):
         seqlens: list[int],
         embeddings: torch.Tensor | None = None,
         embed_seqlens: list[int] | None = None,
+        insert_cat_embedds: list[list[int]] | None = None,
     ) -> torch.Tensor:
         if embeddings is not None:
             embeddings, embed_seqlens = self.embedder.forward_embedder(
                 input_ids=embeddings,
                 seqlens=embed_seqlens,
             )
+            # Only one insertion of embedding per sample 
+            embed_seqlens = group_embed_seqlens(
+                    embed_seqlens, [1] * len(seqlens)
+                )
 
             if self.bridge_module is not None:
                 # Bridge module
@@ -75,6 +80,7 @@ class EmbedAugModel(nn.Module):
             embed_seqlens=embed_seqlens,
             cat_embeddings=embeddings,
             tokenized_prompts=self.tokenized_prompts,
+            insert_cat_embedds=insert_cat_embedds,
         )
 
 
@@ -128,8 +134,10 @@ class EmbedAugPipeline(nn.Module):
             else None
         )
         seqlens = batch.sizes
+        
+        insert_cat_embedds = batch.insert_embed_list
 
-        return x, y, y_mask, seqlens, embeddings, embed_seqlens
+        return x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds
 
     @staticmethod
     def load_inference_model(

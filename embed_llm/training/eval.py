@@ -53,7 +53,7 @@ def evaluate(
 
         for i, batch in enumerate(batches_cont):
             with torch.no_grad():
-                x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(
+                x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = prepare_batch_fn(
                     batch
                 )
 
@@ -62,6 +62,7 @@ def evaluate(
                     embeddings=embeddings,
                     seqlens=seqlens,
                     embed_seqlens=embed_seqlens,
+                    insert_cat_embedds=insert_cat_embedds,
                 )
 
                 eval_loss_embcont += compute_ce_loss_with_mask(output, y, y_mask)
@@ -127,13 +128,14 @@ def evaluate(
 
     for i, batch in enumerate(batches_rec):
         with torch.no_grad():
-            x, y, y_mask, seqlens, embeddings, embed_seqlens = prepare_batch_fn(batch)
+            x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = prepare_batch_fn(batch)
 
             output = model.forward(
                 x=x,
                 embeddings=embeddings,
                 seqlens=seqlens,
                 embed_seqlens=embed_seqlens,
+                insert_cat_embedds=insert_cat_embedds,
             )
             if not batch.is_pad_only:
                 eval_loss_rec += compute_ce_loss_with_mask(output, y, y_mask)
