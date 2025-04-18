@@ -15,6 +15,7 @@ from embed_llm.models.args import (
     EmbedderArgs,
     PoolingArgs,
     BridgeArgs,
+    DecoderArgs
 )
 
 # Mistral specifics
@@ -61,7 +62,9 @@ def load_args(
 
         pooling_args = PoolingArgs(**pipeline_args.embedder_params.pooling_module)
         pipeline_args.embedder_params.pooling_module = pooling_args
-
+        pipeline_args.decoder_module = DecoderArgs(
+            **pipeline_args.decoder_module
+        )
         pipeline_args.bridge_module = BridgeArgs(**pipeline_args.bridge_module)
     else:
         pipeline_args = pipe_args
@@ -147,6 +150,7 @@ def load_model(
             embedder_args=pipeline_args.embedder_params if for_embedding else None,
             pipeline_rank=pipeline_rank,
             num_pipeline_ranks=num_pipeline_rank,
+            decoder_args=pipeline_args.decoder_module,
         )
 
     if not parll or (get_rank() == 0 or num_pipeline_rank > 1):

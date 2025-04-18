@@ -11,7 +11,7 @@ import torch.distributed
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask
 
-from embed_llm.models.args import MistralModelArgs, EmbedderArgs
+from embed_llm.models.args import MistralModelArgs, EmbedderArgs, DecoderArgs
 from embed_llm.models.embedding_modules import PoolingModule
 from embed_llm.models.lora import LoRALoaderMixin, maybe_lora
 from embed_llm.models.mistral.model import ModelBase
@@ -54,6 +54,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self,
         args: MistralModelArgs,
         embedder_args: EmbedderArgs | None = None,
+        decoder_args: DecoderArgs | None = None,
         checkpoint: bool = False,
         pipeline_rank: int = 0,
         num_pipeline_ranks: int = 1,  # Don't use pipeline parallelism for now
@@ -84,6 +85,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.causal = embedder_args.causal_embedder
             self.pooling_module = PoolingModule(embedder_args.pooling_module)
             self.pooling_args = embedder_args.pooling_module
+            self.decoder_modules = None
+            self.decoder_args = None
         else:
             self.for_embedding = False
             self.compress_rates = []
@@ -93,6 +96,27 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.pooling_module = None
             self.start_compressing = None
             self.pooling_args = None
+            if decoder_args.do:
+                assert decoder_args.n_layers > 0, (
+                    "If decoder module is used, it must have at least one layer"
+                )
+            self.decoder_modules = (
+                None
+                if not decoder_args.do 
+                else nn.ModuleList([
+                    TransformerBlock(
+                        dim=args.dim,
+                        hidden_dim=args.hidden_dim,
+                        n_heads=args.n_heads,
+                        n_kv_heads=args.n_kv_heads,
+                        head_dim=args.head_dim,
+                        norm_eps=args.norm_eps,
+                        lora=None,
+                    )
+                    for _ in range(decoder_args.n_layers)
+                ])
+            )
+            self.decoder_args = decoder_args
 
         self.pos_to_keep = None
         self.residual_h = None
@@ -276,7 +300,37 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
+        if self.decoder_modules is not None and cat_embeddings is not None:
+            emb_h_seqlens = [sum(slen) for slen in embed_seqlens]
+            positions = positions_from_sizes(emb_h_seqlens, self.freqs_cis.device)
+            freqs_cis_decod = self.freqs_cis[positions].to(device=h.device)
+            if self.decoder_args.causal:
+                decod_mask = BlockDiagonalCausalMask.from_seqlens(
+                    q_seqlen=emb_h_seqlens, kv_seqlen=seqlens
+                )
+            else:
+                decod_mask = BlockDiagonalMask.from_seqlens(
+                    q_seqlen=emb_h_seqlens, kv_seqlen=seqlens
+                )
+                
+        decod_index = 0
         for i in range(self.n_layers):
+            if (
+                self.decoder_modules is not None
+                and cat_embeddings is not None
+                and self.decoder_args.insert_at == i
+            ):
+                embedds_h = self.decoder_modules[decod_index](
+                    x=h[~self.pos_to_keep],
+                    other_kv=h,
+                    freqs_cis=freqs_cis_decod,
+                    mask=decod_mask,
+                    freqs_cis_k=freqs_cis,
+                )
+                h = h.clone()
+                h[~self.pos_to_keep] = embedds_h
+                decod_index += 1
+
             h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
 
         normalized_h = self.norm(h)
@@ -372,8 +426,21 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         # freqs_cis is always the same for every layer
         freqs_cis = self.freqs_cis[input_metadata[0].positions]
-
-        for local_layer_id, (_, layer) in enumerate(self.layers.items()):
+        
+        decod_index = 0
+        if self.decoder_modules is not None and cat_embeddings is not None:
+            emb_h_seqlens = [sum(slen) for slen in embed_seqlens]
+            positions = positions_from_sizes(emb_h_seqlens, self.freqs_cis.device)
+            freqs_cis_decod = self.freqs_cis[positions].to(device=h.device)
+            if self.decoder_args.causal:
+                decod_mask = BlockDiagonalCausalMask.from_seqlens(
+                    q_seqlen=emb_h_seqlens, kv_seqlen=seqlens.tolist()
+                )
+            else:
+                decod_mask = BlockDiagonalMask.from_seqlens(
+                    q_seqlen=emb_h_seqlens, kv_seqlen=seqlens.tolist()
+                )
+        for local_layer_id, (id_layer, layer) in enumerate(self.layers.items()):
             if cache is not None:
                 assert input_metadata is not None
 
@@ -382,6 +449,21 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 cache_view = cache.get_view(local_layer_id, cache_metadata)
             else:
                 cache_view = None
+                
+            if (
+                self.decoder_modules is not None
+                and cat_embeddings is not None
+                and self.decoder_args.insert_at == int(id_layer)
+            ):
+                embedds_h = self.decoder_modules[decod_index](
+                    x=h[~self.pos_to_keep],
+                    other_kv=h,
+                    freqs_cis=freqs_cis_decod,
+                    mask=decod_mask,
+                    freqs_cis_k=freqs_cis,
+                )
+                h[~self.pos_to_keep] = embedds_h.clone()
+                decod_index += 1
 
             h = layer(x=h, freqs_cis=freqs_cis, cache=cache_view)
 
@@ -463,6 +545,16 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             k,
                             self.pipeline_rank,
                         )
+                        skipped.add(k) 
+                elif k.startswith('decoder_modules'):
+                    if self.decoder_modules is not None and self.decoder_args.do:
+                        state_to_load[k] = v
+                    else:
+                        logging.debug(
+                            "Skipping parameter %s at pipeline rank %d",
+                            k,
+                            self.pipeline_rank,
+                        )
                         skipped.add(k)
                 elif k.startswith("layers"):
                     layer_id = k.split(".")[1]
@@ -475,7 +567,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             self.pipeline_rank,
                         )
                         skipped.add(k)
-
+                
             assert set(state_dict.keys()) == skipped.union(set(state_to_load.keys()))
             super().load_state_dict(state_to_load, strict=strict, assign=assign)
         else:

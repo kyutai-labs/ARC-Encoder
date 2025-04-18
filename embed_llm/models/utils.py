@@ -135,6 +135,23 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                     )
 
 
+def initialize_layers_parameters(model: torch.nn.Module, param_dtype: torch.dtype):
+    for m_name, module in model.named_modules():
+        if all(p.is_meta for p in module.parameters()) and len(list(module.children())) == 0:
+            for p_name, param in module.named_parameters():
+                # Create a new param to the right device and dtype
+                module._parameters[p_name] = torch.nn.Parameter(
+                    torch.empty_like(param, device="cpu", dtype=param_dtype)
+                )
+                # Replace the old param with the new ones
+                param = module._parameters[p_name]
+                
+                if "norm" in m_name:
+                    torch.nn.init.ones_(param)
+                else:
+                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+
+
 def group_embed_seqlens(values: list[int], sizes: list[int]):
     result = []
     for size in sizes:

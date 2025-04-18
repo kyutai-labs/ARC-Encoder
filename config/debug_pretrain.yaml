@@ -6,7 +6,7 @@ continuation: 1.0
 textual_continuation: 0.0
 
 lora_llm:
-  enable: true
+  enable: false
   rank: 128
   scaling: 2.0
 
@@ -27,17 +27,23 @@ optim:
 
 pipeline:
   embedder_params: 
-    n_truncated_layers: 15
-    compress_rates: [-1, -2, -1]
+    n_truncated_layers: 16
+    compress_rates: []
     trained_layers: 1
     mean_hid4embed: null
     causal_embedder: true
     pooling_module:
-      pool_type: 'mean_sa'
-  trainable_llm: true
+      pool_type: 'mean'
+  trainable_llm: false
   w_prefix_prompt: false
   max_embeds: 1
   w_embeds: true
+  decoder_module:
+    do: false
+    n_layers: 0
+    insert_at: 16
+    causal: false
+
   bridge_module: 
     bridge_type: null
 
@@ -54,19 +60,14 @@ data:
 seq_len: 256
 batch_size: 16
 num_microbatches: 1
-max_steps: 50
-optim:
-  max_lr: 5.0e-05
-  weight_decay: 0.1
-  warm_up_steps: 2
-  initial_lr: 1.0e-20
-  final_lr: 1.0e-10
+max_steps: 5000
+
 
 seed: 0
 log_freq: 1
 eval_freq: 50
 no_eval: true
-ckpt_freq: 5
+ckpt_freq: 1
 
 
 # wandb:

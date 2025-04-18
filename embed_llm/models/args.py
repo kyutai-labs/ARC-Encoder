@@ -28,6 +28,14 @@ class BridgeArgs(Serializable):
 
 
 @dataclass
+class DecoderArgs(Serializable):
+    do: bool = False
+    n_layers: int = 0
+    insert_at: int = 16
+    causal: bool = False
+
+
+@dataclass
 class EmbedderArgs(Serializable):
     n_truncated_layers: int = 8
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
@@ -46,6 +54,7 @@ class EmbedAugArgs(Serializable):
     max_embeds: int = 1
     w_embeds: bool = False
     bridge_module: BridgeArgs = field(default_factory=BridgeArgs)
+    decoder_module: DecoderArgs = field(default_factory=DecoderArgs)
 
 
 @dataclass
