@@ -14,6 +14,7 @@ from embed_llm.models.loading import (
 from embed_llm.models.utils import (
     get_fsdp_policy,
     initialize_lora_parameters,
+    initialize_layers_parameters,
     log_train_params,
     main_logger_info,
 )
@@ -81,6 +82,12 @@ def load_training_model(
         augmented_model = augmented_pipeline.get_model(llm=model)
 
     if get_rank() == 0:
+        if pipeline_args.decoder_module.do:
+            main_logger_info("Initializing  layers for decoder ...")
+            initialize_layers_parameters(
+                augmented_model.llm.decoder_modules, param_dtype
+            )
+
         if lora_llm.enable and pipeline_args.trainable_llm:
             main_logger_info("Initializing lora layers  for LLM ...")
             # initialize LoRA layers
@@ -90,10 +97,9 @@ def load_training_model(
             main_logger_info("Initializing lora layers for embedder ...")
             initialize_lora_parameters(augmented_model.embedder, param_dtype)
 
-        assert not any(
-            p.is_meta
-            for n, p in augmented_model.named_parameters()
-        ), "All parameters should be initialized by now"
+        assert not any(p.is_meta for n, p in augmented_model.named_parameters()), (
+            "All parameters should be initialized by now"
+        )
 
         assert all(p.dtype == param_dtype for p in augmented_model.parameters()), (
             f"All parameters should be on {param_dtype}"
@@ -119,6 +125,8 @@ def load_training_model(
         if lora_llm.enable and "lora" in name:
             param.requires_grad = True
         elif pipeline_args.trainable_llm and not lora_llm.enable:
+            param.requires_grad = True
+        elif "decoder_modules" in name and pipeline_args.decoder_module.do:
             param.requires_grad = True
         else:
             param.requires_grad = False

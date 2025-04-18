@@ -140,6 +140,12 @@ class Checkpointer:
             k: m for k, m in self.llm.named_modules() if is_trainable_fsdp(m)
         }
 
+        decoder_modules = {
+            k: m for k, m in llm_modules.items() if "decoder_modules" in k
+        }
+
+        llm_modules = {k: v for k, v in llm_modules.items() if k not in decoder_modules}
+
         embedder_modules = {
             k: m for k, m in self.embedder.named_modules() if is_trainable_fsdp(m)
         }
@@ -190,6 +196,24 @@ class Checkpointer:
                     }
                 )
 
+        decoder_states = {}
+        for key, module in decoder_modules.items():
+            assert isinstance(module, FullyShardedDataParallel), (
+                "`module` should be an instance of `FullyShardedDataParallel`"
+            )
+            parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                "_checkpoint_wrapped_module.", ""
+            )
+            with module.summon_full_params(
+                module, writeback=True, offload_to_cpu=offload_to_cpu
+            ):
+                decoder_states.update(
+                    {
+                        f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                        for k, v in module.state_dict().items()
+                    }
+                )
+
         bridge_modules_states = {}
         if self.bridge_module is not None:
             for key, module in bridge_modules.items():
@@ -218,6 +242,7 @@ class Checkpointer:
         return (
             llm_states,
             embedder_states,
+            decoder_states,
             bridge_modules_states,
         )
 
@@ -238,8 +263,8 @@ class Checkpointer:
         ), "dst exists"
 
         tmp_llm_dst.mkdir(parents=True, exist_ok=True)
-        if self.pipeline.pipeline_args.trainable_llm:
-            Path(tmp_llm_dst).mkdir(parents=True, exist_ok=True)
+        if self.pipeline.pipeline_args.decoder_module.do:
+            Path(tmp_llm_dst / "decoder").mkdir(parents=True, exist_ok=True)
 
         tmp_trainable_embedder_dst = self._tmp(llm_dst.parent / "embedder")
         tmp_trainable_embedder_dst.mkdir(parents=True, exist_ok=True)
@@ -251,6 +276,7 @@ class Checkpointer:
         (
             llm_states,
             embedder_states,
+            decoder_states,
             bridge_module_states,
         ) = self.retrieve_save_states(dtype)
 
@@ -276,6 +302,16 @@ class Checkpointer:
                     save_only_lora=save_only_lora_4_embedder,
                 ),  # always use safetensors for checkpointing
             )
+
+            if self.pipeline.pipeline_args.decoder_module.do:
+                safetensors.torch.save_file(
+                    decoder_states,
+                    self.consolidated_path(
+                        tmp_llm_dst / "decoder",
+                        use_safetensors=True,
+                        save_only_lora=False,
+                    ),  # always use safetensors for checkpointing
+                )
 
             if self.bridge_module is not None:
                 safetensors.torch.save_file(
