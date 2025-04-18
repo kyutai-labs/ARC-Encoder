@@ -361,7 +361,6 @@ def build_dataset(
         for source in sources
     ]
 
-    # Possible to iterate on zip(...,args.data_types) to force data types from config
     sequence_iterators = [
         sequence_iterator(
             ds_it=it,

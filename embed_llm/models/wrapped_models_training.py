@@ -93,7 +93,6 @@ def load_training_model(
         assert not any(
             p.is_meta
             for n, p in augmented_model.named_parameters()
-            if "latents" not in n
         ), "All parameters should be initialized by now"
 
         assert all(p.dtype == param_dtype for p in augmented_model.parameters()), (

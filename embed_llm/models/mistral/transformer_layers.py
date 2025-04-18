@@ -22,7 +22,7 @@ def repeat_kv(
 def insert_embeds(
     h: torch.Tensor,
     embeds: torch.Tensor,
-    embed_seqlens: list[list[int]] | list[int],
+    embed_seqlens: list[list[int]],
     seqlens: list[int],
     tok_embeddings: nn.Module | None = None,
     insert_cat_embedds: list[list[int]] | None = None,
@@ -44,7 +44,6 @@ def insert_embeds(
     num_supp_toks = embeds.shape[0]
     if isinstance(embed_seqlens, list):
         if isinstance(embed_seqlens[0], list):
-            # For generation
             assert sum(sum(embed_seqlens, [])) == embeds.shape[0]
         else:
             assert sum(embed_seqlens) == embeds.shape[0]
@@ -281,7 +280,7 @@ class TransformerBlock(nn.Module):
             freqs_cis=freqs_cis,
             cache=cache,
             mask=mask,
-            other_kv=other_kv,
+            other_kv=None if other_kv is None else self.attention_norm(other_kv),
             freqs_cis_k=freqs_cis_k,
         )
         h = x + r

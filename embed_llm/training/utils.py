@@ -7,60 +7,6 @@ import torch
 from typing import Protocol
 import numpy as np
 import random
-import json
-from embed_llm.data.args import DataArgs
-
-
-def create_data_args(params_path: str):
-    train_data = ""
-    eval_data = ""
-    adapt_seq_len = False
-    n_datasets = 0
-    with open(params_path, "r") as f:
-        for i, line in enumerate(f):
-            try:
-                if line.strip():
-                    params = json.loads(line)
-                else:
-                    continue
-            except json.JSONDecodeError:
-                print(f"Error in line {i}: {line}")
-            if i == 0:
-                adapt_seq_len = params["adapt_seq_len"]
-                data_types = [params["data_types"]]
-                eval_data_cpp = params["eval_data_common_path_prefix"]
-                train_data_cpp = params["train_data_common_path_prefix"]
-                shuffle = params["shuffle"]
-                continue
-
-            if "train_data" in params.keys():
-                weight = (
-                    1
-                    if "weight" not in params["train_data"].keys()
-                    else params["train_data"]["weight"]
-                )
-                train_data += (
-                    train_data_cpp + params["train_data"]["path"] + ":" + weight + ","
-                )
-                n_datasets += 1
-
-            if "eval_data" in params.keys():
-                weight = (
-                    1
-                    if "weight" not in params["eval_data"].keys()
-                    else params["eval_data"]["weight"]
-                )
-                eval_data += (
-                    eval_data_cpp + params["eval_data"]["path"] + ":" + weight + ","
-                )
-
-    return DataArgs(
-        train_data=train_data[:-1],  # Remove last ','
-        eval_data=eval_data[:-1],
-        adapt_seq_len=adapt_seq_len,
-        data_types=data_types * n_datasets,  # Useful to add prompt prefix for training
-        shuffle=shuffle,
-    )
 
 
 PARAPHRASE_PROMPT = [

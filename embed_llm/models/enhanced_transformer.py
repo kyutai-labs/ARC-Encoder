@@ -243,7 +243,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         input_ids: torch.Tensor,
         seqlens: list[int],
         tokenized_prompts: dict = {},
-        embed_seqlens: list[int] | None = None,
+        embed_seqlens: list[list[int]] | None = None,
         cat_embeddings: torch.Tensor | None = None,
         insert_cat_embedds: list[list[int]] | None = None,
     ) -> torch.Tensor:
