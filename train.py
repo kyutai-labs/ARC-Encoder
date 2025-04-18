@@ -17,12 +17,7 @@ import subprocess as sp
 
 
 from embed_llm.models.wrapped_models_training import load_training_model
-from embed_llm.training.args import (
-    TrainArgs,
-    OptimArgs,
-    WandbArgs,
-)
-from embed_llm.models.args import LoraArgs
+from embed_llm.training.args import TrainArgs
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.data.data_loader import build_data_loader
 from embed_llm.training.distributed import (
@@ -45,7 +40,6 @@ from embed_llm.training.utils import (
     set_random_seed,
     PARAPHRASE_PROMPT,
     CONTINUATION_PROMPT,
-    create_data_args,
 )
 
 from embed_llm.monitoring.metrics_logger import (
@@ -80,27 +74,8 @@ def get_gpu_memory():
     return memory_free_info
 
 
-def train(train_config: str | dict, data_config: str = None):
-    if isinstance(train_config, str) and data_config is None:
-        args: TrainArgs = TrainArgs.load(train_config, drop_extra_fields=True)
-    elif isinstance(train_config, dict) and data_config is None:
-        args: TrainArgs = TrainArgs.from_dict(**train_config)
-    elif data_config is not None:
-        import yaml
-
-        assert isinstance(train_config, str) and isinstance(data_config, str)
-        with open(train_config, "r") as f:
-            train_params = yaml.safe_load(f)
-        data_args = create_data_args(data_config)
-        train_params["data"] = data_args
-        if train_params.get("wandb", None) is not None:
-            train_params["wandb"] = WandbArgs(**train_params["wandb"])
-        args: TrainArgs = TrainArgs(**train_params)
-        args.optim = OptimArgs(**args.optim)
-        args.lora = LoraArgs(**args.lora)
-
-    else:
-        raise ValueError("Config should be a string or a dictionary")
+def train(train_config: str):
+    args: TrainArgs = TrainArgs.load(train_config, drop_extra_fields=True)
 
     set_logger(logging.INFO)
 

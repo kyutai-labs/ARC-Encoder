@@ -322,7 +322,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 and cat_embeddings is not None
                 and self.decoder_args.insert_at == i
             ):
-                embedds_h = self.decoder_modules[decod_index](
+                embedds_h = self.decoder_modules[str(decod_index)](
                     x=h[~self.pos_to_keep],
                     other_kv=h,
                     freqs_cis=freqs_cis_decod,
@@ -457,7 +457,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 and cat_embeddings is not None
                 and self.decoder_args.insert_at == int(id_layer)
             ):
-                embedds_h = self.decoder_modules[decod_index](
+                embedds_h = self.decoder_modules[str(decod_index)](
                     x=h[~self.pos_to_keep],
                     other_kv=h,
                     freqs_cis=freqs_cis_decod,
