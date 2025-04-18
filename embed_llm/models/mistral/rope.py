@@ -16,23 +16,18 @@ def apply_rotary_emb(
     xq: torch.Tensor,
     xk: torch.Tensor,
     freqs_cis: torch.Tensor,
-    freqs_cis_ca: torch.Tensor | None = None,
+    freqs_cis_k: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    if freqs_cis_ca is None:
-        xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
-        xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
-        freqs_cis = freqs_cis[:, None, :]
-        xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(-2)
-        xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(-2)
-        return xq_out.type_as(xq), xk_out.type_as(xk)
-    else:
-        xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
-        xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
-        freqs_cis = freqs_cis[:, None, :]
-        freqs_cis_ca = freqs_cis_ca[:, None, :]
-        xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(-2)
-        xk_out = torch.view_as_real(xk_ * freqs_cis_ca).flatten(-2)
-        return xq_out.type_as(xq), xk_out.type_as(xk)
+    if freqs_cis_k is None:
+        freqs_cis_k = freqs_cis
+    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
+    xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
+    freqs_cis = freqs_cis[:, None, :]
+    freqs_cis_k = freqs_cis_k[:, None, :]
+
+    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(-2)
+    xk_out = torch.view_as_real(xk_ * freqs_cis_k).flatten(-2)
+    return xq_out.type_as(xq), xk_out.type_as(xk)
 
 
 def precompute_freqs_cis_2d(

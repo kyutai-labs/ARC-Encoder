@@ -83,6 +83,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             )
             self.causal = embedder_args.causal_embedder
             self.pooling_module = PoolingModule(embedder_args.pooling_module)
+            self.pooling_args = embedder_args.pooling_module
         else:
             self.for_embedding = False
             self.compress_rates = []
@@ -91,6 +92,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.trained_layers = []
             self.pooling_module = None
             self.start_compressing = None
+            self.pooling_args = None
 
         self.pos_to_keep = None
         self.residual_h = None
@@ -193,20 +195,42 @@ class Transformer(ModelBase, LoRALoaderMixin):
             if self.mean_hid4embed is not None and i in self.mean_hid4embed:
                 self.residual_h = h if self.residual_h is None else self.residual_h + h
             if i >= self.start_compressing:
-                h, seqlens = self.pooling_module(
+                pooled_h, new_seqlens = self.pooling_module(
                     h, comp_rate=self.compress_rates[compress_index], seqlens=seqlens
                 )
                 compress_index += 1
 
-                positions = positions_from_sizes(seqlens, self.freqs_cis.device)
-
                 if self.causal:
-                    self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
+                    self_att_mask = BlockDiagonalCausalMask.from_seqlens(
+                        q_seqlen=new_seqlens, kv_seqlen=seqlens
+                    )
                 else:
-                    self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
+                    self_att_mask = BlockDiagonalMask.from_seqlens(
+                        q_seqlen=new_seqlens, kv_seqlen=seqlens
+                    )
 
+                positions = positions_from_sizes(new_seqlens, self.freqs_cis.device)
                 freqs_cis = self.freqs_cis[positions].to(device=h.device)
-            h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
+
+                if "sa" in self.pooling_args.pool_type:
+                    # Pooled queries attend all tokens
+                    positions = positions_from_sizes(seqlens, self.freqs_cis.device)
+                    freqs_cis_k = self.freqs_cis[positions].to(device=h.device)
+                    h = self.layers[str(i)](
+                        x=pooled_h,
+                        other_kv=h,
+                        freqs_cis=freqs_cis,
+                        mask=self_att_mask,
+                        freqs_cis_k=freqs_cis_k,
+                    )
+                else:
+                    # Pooled queries attend only to the pooled tokens
+                    h = self.layers[str(i)](
+                        x=pooled_h, freqs_cis=freqs_cis, mask=self_att_mask
+                    )
+                seqlens = new_seqlens
+            else:
+                h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
 
         if self.residual_h is not None:
             h = (h + self.residual_h) / len(self.mean_hid4embed)
@@ -253,15 +277,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
         for i in range(self.n_layers):
-            if self.mean_hid4embed is not None and i in self.mean_hid4embed:
-                self.residual_h = h if self.residual_h is None else self.residual_h + h
             h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
-
-        if self.for_embedding:
-            if self.residual_h is not None:
-                h = (h + self.residual_h) / len(self.mean_hid4embed)
-                self.residual_h = None
-            return h
 
         normalized_h = self.norm(h)
 

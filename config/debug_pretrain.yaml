@@ -33,7 +33,7 @@ pipeline:
     mean_hid4embed: null
     causal_embedder: true
     pooling_module:
-      pool_type: 'mean'
+      pool_type: 'mean_sa'
   trainable_llm: true
   w_prefix_prompt: false
   max_embeds: 1

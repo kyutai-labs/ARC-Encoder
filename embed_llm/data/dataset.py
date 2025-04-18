@@ -191,7 +191,7 @@ def sequence_iterator(
             do_continuation = rand_continue < continuation
 
         if do_continuation:
-            if insert_embeddings:
+            if insert_embeddings and not is_finite:
                 while True:
                     res = sequence_iterator_inserted_embed_continuation(
                         sample=sample,

@@ -159,20 +159,26 @@ class Attention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
+        other_kv: torch.Tensor | None = None,
         freqs_cis: torch.Tensor | None = None,
+        freqs_cis_k: torch.Tensor | None = None,
         cache: CacheView | None = None,
         mask: BlockDiagonalMask | None = None,
-        show_attention: bool = False,
     ) -> torch.Tensor:
         assert mask is None or cache is None
         seqlen_sum, _ = x.shape
 
-        xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
+        if other_kv is None:
+            other_kv = x
+        kv_seqlen, _ = other_kv.shape
+        xq, xk, xv = self.wq(x), self.wk(other_kv), self.wv(other_kv)
         xq = xq.view(seqlen_sum, self.n_heads, self.head_dim)
-        xk = xk.view(seqlen_sum, self.n_kv_heads, self.head_dim)
-        xv = xv.view(seqlen_sum, self.n_kv_heads, self.head_dim)
+        xk = xk.view(kv_seqlen, self.n_kv_heads, self.head_dim)
+        xv = xv.view(kv_seqlen, self.n_kv_heads, self.head_dim)
         if freqs_cis is not None:
-            xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
+            xq, xk = apply_rotary_emb(
+                xq, xk, freqs_cis=freqs_cis, freqs_cis_k=freqs_cis_k
+            )
 
         if cache is None:
             key, val = xk, xv
@@ -183,10 +189,10 @@ class Attention(nn.Module):
             cache.update(xk, xv)
             key, val = cache.key, cache.value
             key = key.view(
-                seqlen_sum * cache.max_seq_len, self.n_kv_heads, self.head_dim
+                kv_seqlen * cache.max_seq_len, self.n_kv_heads, self.head_dim
             )
             val = val.view(
-                seqlen_sum * cache.max_seq_len, self.n_kv_heads, self.head_dim
+                kv_seqlen * cache.max_seq_len, self.n_kv_heads, self.head_dim
             )
 
         # Repeat keys and values to match number of query heads
@@ -195,35 +201,14 @@ class Attention(nn.Module):
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
 
-        if not show_attention:
-            output = memory_efficient_attention(
-                xq, key, val, mask if cache is None else cache.mask
-            )
-            output = output.view(seqlen_sum, self.n_heads * self.head_dim)
+        output = memory_efficient_attention(
+            xq, key, val, mask if cache is None else cache.mask
+        )
+        output = output.view(seqlen_sum, self.n_heads * self.head_dim)
 
-            assert isinstance(output, torch.Tensor)
+        assert isinstance(output, torch.Tensor)
 
-            return self.wo(output)  # type: ignore
-
-        else:
-            scale = 1 / xq.shape[-1] ** 0.5
-            xq = xq * scale
-            xq = xq.transpose(1, 2)
-            key = key.transpose(1, 2)
-            val = val.transpose(1, 2)
-            attn = xq @ key.transpose(-2, -1)
-            attn_bias = mask if cache is None else cache.mask
-            attn_shape = attn.shape
-            if attn_bias is not None:
-                attn = attn + attn_bias.materialize(attn_shape).to(attn.device)
-
-            attn = attn.softmax(-1)
-            output = (attn @ val).transpose(1, 2)
-            output = output.reshape(seqlen_sum, self.n_heads * self.head_dim)
-
-            assert isinstance(output, torch.Tensor)
-
-            return self.wo(output), attn  # type: ignore
+        return self.wo(output)  # type: ignore
 
 
 class FeedForward(nn.Module):
@@ -286,11 +271,18 @@ class TransformerBlock(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
+        other_kv: torch.Tensor | None = None,
+        freqs_cis_k: torch.Tensor | None = None,
         cache: CacheView | None = None,
         mask: BlockDiagonalMask | None = None,
     ) -> torch.Tensor:
         r = self.attention.forward(
-            self.attention_norm(x), freqs_cis, cache=cache, mask=mask
+            x=self.attention_norm(x),
+            freqs_cis=freqs_cis,
+            cache=cache,
+            mask=mask,
+            other_kv=other_kv,
+            freqs_cis_k=freqs_cis_k,
         )
         h = x + r
         r = self.feed_forward.forward(self.ffn_norm(h))
