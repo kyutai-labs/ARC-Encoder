@@ -102,19 +102,21 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 )
             self.decoder_modules = (
                 None
-                if not decoder_args.do 
-                else nn.ModuleList([
-                    TransformerBlock(
-                        dim=args.dim,
-                        hidden_dim=args.hidden_dim,
-                        n_heads=args.n_heads,
-                        n_kv_heads=args.n_kv_heads,
-                        head_dim=args.head_dim,
-                        norm_eps=args.norm_eps,
-                        lora=None,
-                    )
-                    for _ in range(decoder_args.n_layers)
-                ])
+                if not decoder_args.do
+                else nn.ModuleDict(
+                    {
+                        str(k): TransformerBlock(
+                            dim=args.dim,
+                            hidden_dim=args.hidden_dim,
+                            n_heads=args.n_heads,
+                            n_kv_heads=args.n_kv_heads,
+                            head_dim=args.head_dim,
+                            norm_eps=args.norm_eps,
+                            lora=None,
+                        )
+                        for k in range(decoder_args.n_layers)
+                    }
+                )
             )
             self.decoder_args = decoder_args
 
@@ -312,7 +314,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 decod_mask = BlockDiagonalMask.from_seqlens(
                     q_seqlen=emb_h_seqlens, kv_seqlen=seqlens
                 )
-                
+
         decod_index = 0
         for i in range(self.n_layers):
             if (
@@ -426,7 +428,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         # freqs_cis is always the same for every layer
         freqs_cis = self.freqs_cis[input_metadata[0].positions]
-        
+
         decod_index = 0
         if self.decoder_modules is not None and cat_embeddings is not None:
             emb_h_seqlens = [sum(slen) for slen in embed_seqlens]
@@ -449,7 +451,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 cache_view = cache.get_view(local_layer_id, cache_metadata)
             else:
                 cache_view = None
-                
+
             if (
                 self.decoder_modules is not None
                 and cat_embeddings is not None
@@ -545,8 +547,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             k,
                             self.pipeline_rank,
                         )
-                        skipped.add(k) 
-                elif k.startswith('decoder_modules'):
+                        skipped.add(k)
+                elif k.startswith("decoder_modules"):
                     if self.decoder_modules is not None and self.decoder_args.do:
                         state_to_load[k] = v
                     else:
@@ -567,7 +569,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             self.pipeline_rank,
                         )
                         skipped.add(k)
-                
+
             assert set(state_dict.keys()) == skipped.union(set(state_to_load.keys()))
             super().load_state_dict(state_to_load, strict=strict, assign=assign)
         else:
