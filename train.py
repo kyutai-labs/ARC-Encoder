@@ -423,7 +423,16 @@ def _train(
                         )
                     )
                     if y_mask is None
-                    else torch.sum(y_mask[ind : ind + size]).item()
+                    else len(
+                        pipeline.tokenizer.decode(
+                            [
+                                int(tok)
+                                for tok in batch.y[ind : ind + size][
+                                    y_mask[ind : ind + size]
+                                ]
+                            ]
+                        )
+                    )
                 )
                 ind += size
 
