@@ -19,7 +19,7 @@ def apply_rotary_emb(
     freqs_cis_k: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if freqs_cis_k is None:
-        freqs_cis_k = freqs_cis
+        freqs_cis_k = freqs_cis.clone()
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
     freqs_cis = freqs_cis[:, None, :]

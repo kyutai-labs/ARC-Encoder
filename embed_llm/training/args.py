@@ -17,6 +17,14 @@ class OptimArgs(Serializable):
 
 
 @dataclass
+class LossArgs(Serializable):
+    kl: bool = False
+    kl_weight: float = 2.0 
+    top_k: float = 0.9
+    temperature: float = 0.9
+
+
+@dataclass
 class WandbArgs(Serializable):
     project: str | None = None  # Fill this argument to use wandb.
     offline: bool = False
@@ -81,6 +89,7 @@ class TrainArgs(Serializable):
     lora_embedder: LoraArgs = field(default_factory=LoraArgs)
     # Pretrained embedder to use off the shelf
     pipeline: EmbedAugArgs = field(default_factory=EmbedAugArgs)
+    loss_args: LossArgs = field(default_factory=LossArgs)
     mixed_precision: bool = True
 
     # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)

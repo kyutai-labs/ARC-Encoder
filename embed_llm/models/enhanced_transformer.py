@@ -105,7 +105,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 if not decoder_args.do
                 else nn.ModuleDict(
                     {
-                        str(k): TransformerBlock(
+                        "layer_" + str(k): TransformerBlock(
                             dim=args.dim,
                             hidden_dim=args.hidden_dim,
                             n_heads=args.n_heads,
@@ -226,19 +226,18 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 )
                 compress_index += 1
 
-                if self.causal:
-                    self_att_mask = BlockDiagonalCausalMask.from_seqlens(
-                        q_seqlen=new_seqlens, kv_seqlen=seqlens
-                    )
-                else:
-                    self_att_mask = BlockDiagonalMask.from_seqlens(
-                        q_seqlen=new_seqlens, kv_seqlen=seqlens
-                    )
-
                 positions = positions_from_sizes(new_seqlens, self.freqs_cis.device)
                 freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
                 if "sa" in self.pooling_args.pool_type:
+                    if self.causal:
+                        self_att_mask = BlockDiagonalCausalMask.from_seqlens(
+                            q_seqlen=new_seqlens, kv_seqlen=seqlens
+                        )
+                    else:
+                        self_att_mask = BlockDiagonalMask.from_seqlens(
+                            q_seqlen=new_seqlens, kv_seqlen=seqlens
+                        )
                     # Pooled queries attend all tokens
                     positions = positions_from_sizes(seqlens, self.freqs_cis.device)
                     freqs_cis_k = self.freqs_cis[positions].to(device=h.device)
@@ -250,6 +249,14 @@ class Transformer(ModelBase, LoRALoaderMixin):
                         freqs_cis_k=freqs_cis_k,
                     )
                 else:
+                    if self.causal:
+                        self_att_mask = BlockDiagonalCausalMask.from_seqlens(
+                            q_seqlen=new_seqlens, kv_seqlen=new_seqlens
+                        )
+                    else:
+                        self_att_mask = BlockDiagonalMask.from_seqlens(
+                            q_seqlen=new_seqlens, kv_seqlen=new_seqlens
+                        )
                     # Pooled queries attend only to the pooled tokens
                     h = self.layers[str(i)](
                         x=pooled_h, freqs_cis=freqs_cis, mask=self_att_mask
@@ -278,7 +285,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         token_embeds = self.tok_embeddings(input_ids)
 
         if cat_embeddings is not None:
-            h, seqlens, pos_to_keep = insert_embeds(
+            h, seqlens, pos_to_keep, decod_kv_mask = insert_embeds(
                 token_embeds,
                 cat_embeddings,
                 embed_seqlens=embed_seqlens,
@@ -305,15 +312,16 @@ class Transformer(ModelBase, LoRALoaderMixin):
         if self.decoder_modules is not None and cat_embeddings is not None:
             emb_h_seqlens = [sum(slen) for slen in embed_seqlens]
             positions = positions_from_sizes(emb_h_seqlens, self.freqs_cis.device)
-            freqs_cis_decod = self.freqs_cis[positions].to(device=h.device)
-            if self.decoder_args.causal:
-                decod_mask = BlockDiagonalCausalMask.from_seqlens(
-                    q_seqlen=emb_h_seqlens, kv_seqlen=seqlens
+            freqs_cis_decod_q = self.freqs_cis[positions].to(device=h.device)
+            freqs_cis_decod_kv = self.freqs_cis[
+                positions_from_sizes(
+                    [sum(seq_mask) for seq_mask in decod_kv_mask], self.freqs_cis.device
                 )
-            else:
-                decod_mask = BlockDiagonalMask.from_seqlens(
-                    q_seqlen=emb_h_seqlens, kv_seqlen=seqlens
-                )
+            ].to(device=h.device)
+            decod_mask = BlockDiagonalMask.from_seqlens(
+                q_seqlen=emb_h_seqlens,
+                kv_seqlen=[sum(seq_mask) for seq_mask in decod_kv_mask],
+            )
 
         decod_index = 0
         for i in range(self.n_layers):
@@ -322,12 +330,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 and cat_embeddings is not None
                 and self.decoder_args.insert_at == i
             ):
-                embedds_h = self.decoder_modules[str(decod_index)](
+                embedds_h = self.decoder_modules["layer_" + str(decod_index)](
                     x=h[~self.pos_to_keep],
-                    other_kv=h,
-                    freqs_cis=freqs_cis_decod,
+                    other_kv=h[sum(decod_kv_mask, [])],
+                    freqs_cis=freqs_cis_decod_q,
                     mask=decod_mask,
-                    freqs_cis_k=freqs_cis,
+                    freqs_cis_k=freqs_cis_decod_kv,
                 )
                 h = h.clone()
                 h[~self.pos_to_keep] = embedds_h
@@ -381,7 +389,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     "Insert cat embeddings must be provided"
                 )
 
-                h, seqlens, pos_to_keep = insert_embeds(
+                h, seqlens, pos_to_keep, _ = insert_embeds(
                     token_embeds,
                     cat_embeddings,
                     embed_seqlens=embed_seqlens,
@@ -433,15 +441,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
         if self.decoder_modules is not None and cat_embeddings is not None:
             emb_h_seqlens = [sum(slen) for slen in embed_seqlens]
             positions = positions_from_sizes(emb_h_seqlens, self.freqs_cis.device)
-            freqs_cis_decod = self.freqs_cis[positions].to(device=h.device)
-            if self.decoder_args.causal:
-                decod_mask = BlockDiagonalCausalMask.from_seqlens(
-                    q_seqlen=emb_h_seqlens, kv_seqlen=seqlens.tolist()
-                )
-            else:
-                decod_mask = BlockDiagonalMask.from_seqlens(
-                    q_seqlen=emb_h_seqlens, kv_seqlen=seqlens.tolist()
-                )
+            freqs_cis_decod_q = self.freqs_cis[positions].to(device=h.device)
+            # No need for causality, as the token can't attend to future tokens
+            decod_mask = BlockDiagonalMask.from_seqlens(
+                q_seqlen=emb_h_seqlens, kv_seqlen=seqlens.tolist()
+            )
+
         for local_layer_id, (id_layer, layer) in enumerate(self.layers.items()):
             if cache is not None:
                 assert input_metadata is not None
@@ -457,10 +462,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 and cat_embeddings is not None
                 and self.decoder_args.insert_at == int(id_layer)
             ):
-                embedds_h = self.decoder_modules[str(decod_index)](
+                embedds_h = self.decoder_modules["layer_" + str(decod_index)](
                     x=h[~self.pos_to_keep],
                     other_kv=h,
-                    freqs_cis=freqs_cis_decod,
+                    freqs_cis=freqs_cis_decod_q,
                     mask=decod_mask,
                     freqs_cis_k=freqs_cis,
                 )

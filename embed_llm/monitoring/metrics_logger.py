@@ -24,6 +24,7 @@ def get_train_logs(
     allocated_mem: float,
     train_args: TrainArgs,
     bpc: float | None = None,
+    kl_loss: float | None = None,
     batch_type: str = "reconstruction",
 ) -> dict[str, float | int]:
     metrics = {
@@ -40,6 +41,7 @@ def get_train_logs(
         "eta_in_seconds": state.eta,
         "Bit per Character": bpc,
         "batch_type": batch_type,
+        "kl_loss": kl_loss,
     }
 
     return metrics
@@ -81,7 +83,6 @@ def get_eval_logs(
     if train_bpc is not None:
         eval_dict["train_bpc"] = train_bpc
 
-
     if eval_loss_nocontext is not None:
         eval_dict["eval_loss_nocontext"] = eval_loss_nocontext
 
@@ -117,6 +118,7 @@ def train_log_msg(
         ("eta", "%Y-%m-%d %H:%M:%S", "ETA"),
         ("Bit per Character", ".3f", None),
         ("batch_type", "s", "Batch Type"),
+        ("kl_loss", ".3f", "KL Loss"),
         ("seen_tokens", "d", "Seen Tokens"),
     ]:
         name = key if new_name is None else new_name

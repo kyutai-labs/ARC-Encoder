@@ -32,6 +32,7 @@ from embed_llm.training.eval import evaluate
 from embed_llm.training.loss import (
     compute_ce_loss_with_mask,
     compute_bpt_loss,
+    compute_kl_loss_with_mask,
 )
 
 from embed_llm.training.utils import (
@@ -42,6 +43,7 @@ from embed_llm.training.utils import (
     CONTINUATION_PROMPT,
 )
 
+from embed_llm.models.mistral.transformer_layers import insert_embeds
 from embed_llm.monitoring.metrics_logger import (
     MetricsLogger,
     eval_log_msg,
@@ -310,6 +312,7 @@ def _train(
         optimizer.zero_grad()
         loss = torch.tensor([0.0], device="cuda")
         bpc = torch.tensor([0.0], device="cuda")
+        kl_loss = torch.tensor([0.0], device="cuda")
         n_batch_tokens: int = 0
 
         # Number of steps to accumulate gradients before doing an optimizer step.
@@ -428,13 +431,45 @@ def _train(
                             [
                                 int(tok)
                                 for tok in batch.y[ind : ind + size][
-                                    y_mask[ind : ind + size]
+                                    batch.y_mask[ind : ind + size]
                                 ]
                             ]
                         )
                     )
                 )
                 ind += size
+
+                if args.loss_args.kl:
+                    full_context_x, new_seqlens, _, before_embed_mask = insert_embeds(
+                        h=x.unsqueeze(-1),
+                        embeds=embeddings.unsqueeze(-1),
+                        embed_seqlens=[[sl] for sl in embed_seqlens],
+                        seqlens=seqlens,
+                        insert_cat_embedds=insert_cat_embedds,
+                    )
+                    with torch.no_grad():
+                        full_context_output = model.forward(
+                            x=full_context_x.squeeze(-1),
+                            embeddings=None,
+                            seqlens=new_seqlens,
+                            embed_seqlens=None,
+                            insert_cat_embedds=None,
+                        )
+                    print("Len before embed lmask", len(sum(before_embed_mask, [])))
+                    print("len full_context_output", full_context_output.shape)
+                    print("len output", output.shape)
+                    kl_loss_distill = compute_kl_loss_with_mask(
+                        target_logits=full_context_output,
+                        pred_logits=output,
+                        target_mask=~torch.Tensor(sum(before_embed_mask, [])).to(
+                            device=full_context_output.device
+                        ),
+                        pred_mask=y_mask,
+                        temp=args.loss_args.temperature,
+                        topk=args.loss_args.top_k,
+                    )
+                    mb_loss = mb_loss + args.loss_args.kl_weight * kl_loss_distill
+                    kl_loss += kl_loss_distill.item()
 
             bpc += batch_bpc / len(batch.sizes)
 
@@ -497,6 +532,15 @@ def _train(
         )
         bpc_avg = avg_aggregate(bpc_item)
 
+        kl_loss_item = (
+            kl_loss.item()
+            if args.num_microbatches <= 1
+            else kl_loss / (args.num_microbatches).item()
+        )
+        kl_loss_avg = avg_aggregate(kl_loss_item)
+        if not args.loss_args.kl:
+            kl_loss_avg = None
+
         if not args.no_eval and (
             (args.eval_freq > 0 and state.step % args.eval_freq == 0)
             or is_last_step
@@ -544,6 +588,7 @@ def _train(
                 train_args=args,
                 bpc=bpc_avg,
                 batch_type=batch.data_type,
+                kl_loss=kl_loss_avg,
             )
             main_logger_info(
                 train_log_msg(

@@ -28,12 +28,12 @@ optim:
 pipeline:
   embedder_params: 
     n_truncated_layers: 16
-    compress_rates: []
+    compress_rates: [-16]
     trained_layers: 1
     mean_hid4embed: null
     causal_embedder: true
     pooling_module:
-      pool_type: 'mean'
+      pool_type: mean_sa_metric_mse
   trainable_llm: false
   w_prefix_prompt: false
   max_embeds: 1
@@ -42,7 +42,6 @@ pipeline:
     do: false
     n_layers: 0
     insert_at: 16
-    causal: false
 
   bridge_module: 
     bridge_type: null
@@ -54,7 +53,7 @@ data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
-  insert_embeddings: false
+  insert_embeddings: true
 
 
 seq_len: 256
@@ -63,11 +62,13 @@ num_microbatches: 1
 max_steps: 5000
 
 
+loss_args:
+  kl: true
 seed: 0
 log_freq: 1
 eval_freq: 50
 no_eval: true
-ckpt_freq: 1
+ckpt_freq: 10
 
 
 # wandb:

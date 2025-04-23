@@ -32,7 +32,6 @@ class DecoderArgs(Serializable):
     do: bool = False
     n_layers: int = 0
     insert_at: int = 16
-    causal: bool = False
 
 
 @dataclass

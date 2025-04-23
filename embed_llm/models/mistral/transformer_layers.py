@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import random
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
-from xformers.ops.fmha.attn_bias import BlockDiagonalMask
+from xformers.ops.fmha.attn_bias import BlockDiagonalMask, BlockDiagonalCausalMask
 
 from embed_llm.models.lora import maybe_lora
 from embed_llm.training.args import LoraArgs
@@ -74,6 +74,7 @@ def insert_embeds(
 
     new_seqlens = []
     pos_to_keep = []
+    decod_mask = []
 
     # For generation
     ind_h = 0
@@ -82,7 +83,7 @@ def insert_embeds(
 
     for i, size in enumerate(seqlens):
         assert size > 0
-
+        decod_sub_mask = []
         # Used during training only
         if len(prefixes) > 0:
             tok_before_embed = tok_embeddings(
@@ -90,31 +91,35 @@ def insert_embeds(
             )
             new_h_states[ind_h : len(prefixes[i]) + ind_h, :] = tok_before_embed
             ind_h += len(prefixes[i])
+            pos_to_keep.extend([False] * len(prefixes[i]))
+            decod_sub_mask.extend([True] * len(prefixes[i]))
 
         size_embed = sum(embed_seqlens[i])
         for sub_embed_size, insert_idx in zip(embed_seqlens[i], insert_cat_embedds[i]):
-            new_h_states[ind_h : insert_idx + ind_h, :] = h[
-                ind_toks : insert_idx + ind_toks, :
+            new_h_states[ind_h : insert_idx + ind_h] = h[
+                ind_toks : insert_idx + ind_toks
             ]
 
             pos_to_keep.extend([True] * insert_idx)
             ind_h += insert_idx
             ind_toks += insert_idx
-            new_h_states[ind_h : sub_embed_size + ind_h, :] = embeds[
-                ind_embeds : ind_embeds + sub_embed_size, :
+            new_h_states[ind_h : sub_embed_size + ind_h] = embeds[
+                ind_embeds : ind_embeds + sub_embed_size
             ]
             ind_h += sub_embed_size
             ind_embeds += sub_embed_size
             pos_to_keep.extend([False] * sub_embed_size)
 
+            decod_sub_mask.extend([True] * insert_idx)
+            decod_sub_mask.extend([True] * sub_embed_size)
+
         if ind_toks < sum(seqlens[: i + 1]):
             left_toks = sum(seqlens[: i + 1]) - ind_toks
             # Insert the remaining tokens
-            new_h_states[ind_h : ind_h + left_toks, :] = h[
-                ind_toks : ind_toks + left_toks, :
-            ]
-            pos_to_keep.extend([True] * (left_toks))
-
+            new_h_states[ind_h : ind_h + left_toks] = h[ind_toks : ind_toks + left_toks]
+            pos_to_keep.extend([True] * left_toks)
+            # Hide all the texts that are after compressed embeddings
+            decod_sub_mask.extend([False] * left_toks)
             ind_toks += left_toks
             ind_h += left_toks
 
@@ -122,12 +127,15 @@ def insert_embeds(
             tok_after_embed = tok_embeddings(torch.tensor(suffixes[i], device=h.device))
             new_h_states[ind_h : ind_h + len(suffixes[i]), :] = tok_after_embed
             ind_h += len(suffixes[i])
+            decod_sub_mask.extend([False] * len(suffixes[i]))
+            pos_to_keep.extend([False] * len(suffixes[i]))
 
+        decod_mask.append(decod_sub_mask)
         new_seqlens.append(size + size_embed)
     assert len(pos_to_keep) == len(new_h_states), (
         f"len(pos_to_keep): {len(pos_to_keep)} != len(new_h_states): {len(new_h_states)}"
     )
-    return new_h_states, new_seqlens, pos_to_keep
+    return new_h_states, new_seqlens, pos_to_keep, decod_mask
 
 
 class Attention(nn.Module):
@@ -168,7 +176,7 @@ class Attention(nn.Module):
         seqlen_sum, _ = x.shape
 
         if other_kv is None:
-            other_kv = x
+            other_kv = x.clone()
         kv_seqlen, _ = other_kv.shape
         xq, xk, xv = self.wq(x), self.wk(other_kv), self.wv(other_kv)
         xq = xq.view(seqlen_sum, self.n_heads, self.head_dim)
@@ -273,7 +281,7 @@ class TransformerBlock(nn.Module):
         other_kv: torch.Tensor | None = None,
         freqs_cis_k: torch.Tensor | None = None,
         cache: CacheView | None = None,
-        mask: BlockDiagonalMask | None = None,
+        mask: BlockDiagonalCausalMask | BlockDiagonalMask | None = None,
     ) -> torch.Tensor:
         r = self.attention.forward(
             x=self.attention_norm(x),

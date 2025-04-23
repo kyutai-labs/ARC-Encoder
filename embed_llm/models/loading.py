@@ -64,7 +64,10 @@ def load_args(
         pipeline_args.embedder_params.pooling_module = pooling_args
         
         if isinstance(pipeline_args.decoder_module, dict):
-            pipeline_args.decoder_module = DecoderArgs(**pipeline_args.decoder_module)
+            
+            pipeline_args.decoder_module = DecoderArgs(do=pipeline_args.decoder_module['do'], 
+                                                       n_layers=pipeline_args.decoder_module['n_layers'], 
+                                                       insert_at=pipeline_args.decoder_module['insert_at'])
 
         pipeline_args.bridge_module = BridgeArgs(**pipeline_args.bridge_module)
     else:

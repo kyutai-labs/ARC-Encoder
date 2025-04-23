@@ -7,7 +7,17 @@ from embed_llm.models.args import PoolingArgs, MLPProjectArgs
 from embed_llm.models.mistral.transformer_layers import RMSNorm
 
 
-def split_integer(x: int, n: int, attn: torch.Tensor | None = None) -> list[int]:
+METRIC_DICT = {
+    "scalar_product": lambda x, y: torch.sum(x * y, dim=-1),
+    "cosine": lambda x, y: torch.nn.functional.cosine_similarity(x, y, dim=-1),
+    "euclidean": lambda x, y: -torch.norm(x - y, dim=-1),
+    "mse": lambda x, y: -(torch.norm(x - y, dim=-1, p=2) ** 2),
+    "manhattan": lambda x, y: -torch.norm(x - y, dim=-1, p=1),
+    "chebyshev": lambda x, y: -torch.max(torch.abs(x - y), dim=-1).values,
+}
+
+
+def split_integer(x: int, n: int) -> list[int]:
     if n > 0:
         # Split in n groups of tokens
         base = x // n
@@ -31,6 +41,69 @@ def split_integer(x: int, n: int, attn: torch.Tensor | None = None) -> list[int]
             f"Sum of result {sum(result)} must be equal to x {x} with n {n}"
         )
     return result
+
+
+def smart_merge(
+    hidden_states: torch.Tensor,
+    seqlens: list[int],
+    comp_rate: int,
+    metric: str = "scalar_product",
+) -> tuple[torch.Tensor, list[int]]:
+    """
+    Args:
+        hidden_states: Tensor of shape (batch_size, max_seq_len, dim)
+        seqlens: List of a list of embeddings size per sample in the batch
+        comp_rate: Compression rate
+        metric: Metric to use for compression
+    Returns:
+        hidden_states: Tensor of shape (batch_size, new_seq_len, dim)
+        new_seqlens: List of a list of embeddings size per sample in the batch
+    """
+    ind_h = 0
+    new_seqlens = []
+    new_hidden_states = []
+    device = hidden_states.device
+    dtype = hidden_states.dtype
+    for embed_size in seqlens:
+        if embed_size // abs(comp_rate) == 0:
+            new_seqlens.append(embed_size)
+            new_hidden_states.append(hidden_states[ind_h : ind_h + embed_size])
+            ind_h += embed_size
+        else:
+            n_comp_tokens = embed_size // abs(comp_rate)
+            new_seqlens.append(n_comp_tokens)
+            x = hidden_states[ind_h : ind_h + embed_size]
+            ind_h += embed_size
+            while len(x) > n_comp_tokens:
+                dist_mat = METRIC_DICT[metric](x[:-1], x[1:])
+                merge_id = torch.argmax(dist_mat).item()  # Convert to Python int
+                if merge_id == len(x) - 1:
+                    # Merge last two tokens
+                    merge_token = (x[-1] + x[-2]).unsqueeze(0) / 2
+                    x = torch.cat(
+                        [
+                            x[:-1],
+                            merge_token,
+                        ],
+                        dim=0,
+                    ).to(device=device, dtype=dtype)
+                else:
+                    merge_token = (x[merge_id] + x[merge_id + 1]).unsqueeze(0) / 2
+                    x = torch.cat(
+                        [
+                            x[:merge_id],
+                            merge_token,
+                            x[merge_id + 2 :],
+                        ],
+                        dim=0,
+                    ).to(device=device, dtype=dtype)
+            assert x.shape[-1] == hidden_states.shape[-1], (
+                f"Shape of x {x.shape[-1]} must be equal to shape of hidden_states {hidden_states.shape[-1]}"
+            )
+            new_hidden_states.append(x)
+            
+    hidden_states = torch.cat(new_hidden_states, dim=0).to(device=device, dtype=dtype)
+    return hidden_states, new_seqlens
 
 
 class MLP_block(nn.Module):
@@ -138,50 +211,48 @@ class PoolingModule(nn.Module):
         """
         new_seqlens = []
         pool_size = []
-        if comp_rate != -1:
+        if comp_rate != -1 and "smart" not in self.pool_type:
             for embed_size in seqlens:
                 compressed_embed_size = []
                 # <-1 means compression rate, >0 means number of tokens to compress to
                 if comp_rate == 0:
                     compressed_embed_size = [embed_size]
-                elif (
-                    comp_rate > 0 and embed_size // comp_rate == 0
-                ):
+                elif comp_rate > 0 and embed_size // comp_rate == 0:
                     compressed_embed_size = [1] * embed_size
-                elif (
-                    comp_rate < -1
-                    and embed_size // abs(comp_rate) == 0
-                ):
+                elif comp_rate < -1 and embed_size // abs(comp_rate) == 0:
                     compressed_embed_size = [embed_size]
                 else:
-                    compressed_embed_size = split_integer(
-                        embed_size, comp_rate
-                    )
+                    compressed_embed_size = split_integer(embed_size, comp_rate)
                 pool_size.extend(compressed_embed_size)
                 new_seqlens.append(len(compressed_embed_size))
 
             if "last" in self.pool_type:
                 pool_mask = torch.block_diag(
-                    *[
-                        torch.tensor([0.0] * (max(t - 1, 0)) + [1.0])
-                        for t in pool_size
-                    ]
+                    *[torch.tensor([0.0] * (max(t - 1, 0)) + [1.0]) for t in pool_size]
                 ).to(device=x.device, dtype=x.dtype)
-            elif 'sum' in self.pool_type:
-                pool_mask = torch.block_diag(
-                    *[
-                        torch.ones(t) for t in pool_size
-                    ]
-                ).to(device=x.device, dtype=x.dtype)
+            elif "sum" in self.pool_type:
+                pool_mask = torch.block_diag(*[torch.ones(t) for t in pool_size]).to(
+                    device=x.device, dtype=x.dtype
+                )
             else:
                 # Mean pooling
                 pool_mask = torch.block_diag(
                     *[torch.ones(t) / t for t in pool_size]
                 ).to(device=x.device, dtype=x.dtype)
+        elif "metric_" in self.pool_type:
+            x, new_seqlens = smart_merge(
+                hidden_states=x,
+                seqlens=seqlens,
+                comp_rate=comp_rate,
+                metric=self.pool_type.split("metric_")[-1],
+            )
+            assert x.shape[0] == sum(new_seqlens), (
+                f"Shape of x {x.shape[0]} must be equal to sum of new_seqlens {sum(new_seqlens)}"
+            )
+            pool_mask = None
         else:
             new_seqlens = seqlens
             pool_mask = None
 
         queries = x if pool_mask is None else pool_mask @ x
-
         return queries, new_seqlens
