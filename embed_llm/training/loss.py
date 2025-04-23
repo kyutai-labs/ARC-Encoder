@@ -32,7 +32,7 @@ def compute_kl_loss_with_mask(
     target_mask: torch.Tensor | None,
     pred_mask: torch.Tensor | None,
     temp: float = 1.0,
-    topk: int | None = None,
+    topk: float | None = None,
 ):
     if target_mask is None:
         target_mask = torch.ones(
@@ -62,15 +62,15 @@ def compute_kl_loss_with_mask(
         pred_logits,
         torch.repeat_interleave(pred_mask, n_vocab, dim=0).reshape(-1, n_vocab),
     ).view(-1, n_vocab)
-
     if topk is not None:
-        _, topk_target_indices = torch.topk(target_l, k=topk, dim=-1)
-
+        n_logits = int(n_vocab * topk)
+        _, topk_target_indices = torch.topk(target_l, k=n_logits, dim=-1)
         target_l = torch.gather(target_l, -1, topk_target_indices)
         pred_l = torch.gather(pred_l, -1, topk_target_indices)
 
     loss_func = torch.nn.KLDivLoss(reduction="none")
-    mb_loss = loss_func(
+    kl_loss_value = loss_func(
         F.log_softmax(pred_l / temp, dim=-1), F.softmax(target_l / temp, dim=-1)
     ).sum() / torch.sum(target_mask)
-    return mb_loss
+    torch.cuda.empty_cache()
+    return kl_loss_value

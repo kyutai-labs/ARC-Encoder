@@ -439,38 +439,36 @@ def _train(
                 )
                 ind += size
 
-                if args.loss_args.kl:
-                    full_context_x, new_seqlens, _, before_embed_mask = insert_embeds(
-                        h=x.unsqueeze(-1),
-                        embeds=embeddings.unsqueeze(-1),
-                        embed_seqlens=[[sl] for sl in embed_seqlens],
-                        seqlens=seqlens,
-                        insert_cat_embedds=insert_cat_embedds,
+            if args.loss_args.kl:
+                full_context_x, new_seqlens, _, before_embed_mask = insert_embeds(
+                    h=x.unsqueeze(-1),
+                    embeds=embeddings.unsqueeze(-1),
+                    embed_seqlens=[[sl] for sl in embed_seqlens],
+                    seqlens=seqlens,
+                    insert_cat_embedds=insert_cat_embedds,
+                )
+                with torch.no_grad():
+                    model.eval()
+                    full_context_output = model.forward(
+                        x=full_context_x.squeeze(-1).detach(),
+                        embeddings=None,
+                        seqlens=new_seqlens,
+                        embed_seqlens=None,
+                        insert_cat_embedds=None,
                     )
-                    with torch.no_grad():
-                        full_context_output = model.forward(
-                            x=full_context_x.squeeze(-1),
-                            embeddings=None,
-                            seqlens=new_seqlens,
-                            embed_seqlens=None,
-                            insert_cat_embedds=None,
-                        )
-                    print("Len before embed lmask", len(sum(before_embed_mask, [])))
-                    print("len full_context_output", full_context_output.shape)
-                    print("len output", output.shape)
-                    kl_loss_distill = compute_kl_loss_with_mask(
-                        target_logits=full_context_output,
-                        pred_logits=output,
-                        target_mask=~torch.Tensor(sum(before_embed_mask, [])).to(
-                            device=full_context_output.device
-                        ),
-                        pred_mask=y_mask,
-                        temp=args.loss_args.temperature,
-                        topk=args.loss_args.top_k,
-                    )
-                    mb_loss = mb_loss + args.loss_args.kl_weight * kl_loss_distill
-                    kl_loss += kl_loss_distill.item()
-
+                    model.train()
+                kl_loss_distill = compute_kl_loss_with_mask(
+                    target_logits=full_context_output.detach(),
+                    pred_logits=output,
+                    target_mask=~torch.Tensor(sum(before_embed_mask, [])).to(
+                        dtype=torch.bool, device=full_context_output.device
+                    ),
+                    pred_mask=y_mask,
+                    temp=args.loss_args.temperature,
+                    topk=args.loss_args.top_k,
+                )
+                mb_loss = mb_loss + args.loss_args.kl_weight * kl_loss_distill
+                kl_loss += kl_loss_distill.item()
             bpc += batch_bpc / len(batch.sizes)
 
             loss += mb_loss.item()
