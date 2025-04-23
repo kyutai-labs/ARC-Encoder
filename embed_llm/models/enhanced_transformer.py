@@ -222,46 +222,63 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 self.residual_h = h if self.residual_h is None else self.residual_h + h
             if i >= self.start_compressing:
                 pooled_h, new_seqlens = self.pooling_module(
-                    h, comp_rate=self.compress_rates[compress_index], seqlens=seqlens
+                    h, 
+                    comp_rate=self.compress_rates[compress_index], 
+                    seqlens=seqlens, 
+                    seqlens_only=self.pooling_args.inside_queries
                 )
-                compress_index += 1
 
                 positions = positions_from_sizes(new_seqlens, self.freqs_cis.device)
                 freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
-                if "sa" in self.pooling_args.pool_type:
-                    if self.causal:
-                        self_att_mask = BlockDiagonalCausalMask.from_seqlens(
-                            q_seqlen=new_seqlens, kv_seqlen=seqlens
-                        )
-                    else:
-                        self_att_mask = BlockDiagonalMask.from_seqlens(
-                            q_seqlen=new_seqlens, kv_seqlen=seqlens
-                        )
+                if self.pooling_args.inside_queries:
                     # Pooled queries attend all tokens
+                    # Pooling inside module
                     positions = positions_from_sizes(seqlens, self.freqs_cis.device)
                     freqs_cis_k = self.freqs_cis[positions].to(device=h.device)
                     h = self.layers[str(i)](
-                        x=pooled_h,
-                        other_kv=h,
+                        x=h,
                         freqs_cis=freqs_cis,
                         mask=self_att_mask,
                         freqs_cis_k=freqs_cis_k,
+                        pool_type=self.pooling_args.pool_type,
+                        comp_rate=self.compress_rates[compress_index],
                     )
                 else:
-                    if self.causal:
-                        self_att_mask = BlockDiagonalCausalMask.from_seqlens(
-                            q_seqlen=new_seqlens, kv_seqlen=new_seqlens
+                    if "sa" in self.pooling_args.pool_type:
+                        if self.causal:
+                            self_att_mask = BlockDiagonalCausalMask.from_seqlens(
+                                q_seqlen=new_seqlens, kv_seqlen=seqlens
+                            )
+                        else:
+                            self_att_mask = BlockDiagonalMask.from_seqlens(
+                                q_seqlen=new_seqlens, kv_seqlen=seqlens
+                            )
+                        # Pooled queries attend all tokens
+                        positions = positions_from_sizes(seqlens, self.freqs_cis.device)
+                        freqs_cis_k = self.freqs_cis[positions].to(device=h.device)
+                        h = self.layers[str(i)](
+                            x=pooled_h,
+                            other_kv=h,
+                            freqs_cis=freqs_cis,
+                            mask=self_att_mask,
+                            freqs_cis_k=freqs_cis_k,
                         )
                     else:
-                        self_att_mask = BlockDiagonalMask.from_seqlens(
-                            q_seqlen=new_seqlens, kv_seqlen=new_seqlens
+                        if self.causal:
+                            self_att_mask = BlockDiagonalCausalMask.from_seqlens(
+                                q_seqlen=new_seqlens, kv_seqlen=new_seqlens
+                            )
+                        else:
+                            self_att_mask = BlockDiagonalMask.from_seqlens(
+                                q_seqlen=new_seqlens, kv_seqlen=new_seqlens
+                            )
+                        # Pooled queries attend only to the pooled tokens
+                        h = self.layers[str(i)](
+                            x=pooled_h, freqs_cis=freqs_cis, mask=self_att_mask
                         )
-                    # Pooled queries attend only to the pooled tokens
-                    h = self.layers[str(i)](
-                        x=pooled_h, freqs_cis=freqs_cis, mask=self_att_mask
-                    )
                 seqlens = new_seqlens
+                compress_index += 1
             else:
                 h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
 
@@ -328,7 +345,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             if (
                 self.decoder_modules is not None
                 and cat_embeddings is not None
-                and self.decoder_args.insert_at == i
+                and i in self.decoder_args.insert_at
             ):
                 embedds_h = self.decoder_modules["layer_" + str(decod_index)](
                     x=h[~self.pos_to_keep],
@@ -460,7 +477,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             if (
                 self.decoder_modules is not None
                 and cat_embeddings is not None
-                and self.decoder_args.insert_at == int(id_layer)
+                and int(id_layer) in self.decoder_args.insert_at
             ):
                 embedds_h = self.decoder_modules["layer_" + str(decod_index)](
                     x=h[~self.pos_to_keep],

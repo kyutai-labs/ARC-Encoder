@@ -1,10 +1,13 @@
 import torch
 from torch import nn
+import numpy as np
 import random
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 from xformers.ops.fmha.attn_bias import BlockDiagonalMask, BlockDiagonalCausalMask
 
 from embed_llm.models.lora import maybe_lora
+from embed_llm.models.args import PoolingArgs
+from embed_llm.models.embedding_modules import PoolingModule
 from embed_llm.training.args import LoraArgs
 
 from embed_llm.models.mistral.cache import CacheView
@@ -163,6 +166,8 @@ class Attention(nn.Module):
         self.wv = MaybeLora(dim, n_kv_heads * head_dim, bias=False)
         self.wo = MaybeLora(n_heads * head_dim, dim, bias=False)
 
+        self.pooling_module = None
+
     def forward(
         self,
         x: torch.Tensor,
@@ -170,16 +175,48 @@ class Attention(nn.Module):
         freqs_cis: torch.Tensor | None = None,
         freqs_cis_k: torch.Tensor | None = None,
         cache: CacheView | None = None,
-        mask: BlockDiagonalMask | None = None,
+        mask: BlockDiagonalMask | BlockDiagonalCausalMask | None = None,
+        comp_rate: int | None = None,
+        pool_type: str | None = None,
     ) -> torch.Tensor:
         assert mask is None or cache is None
         seqlen_sum, _ = x.shape
 
         if other_kv is None:
             other_kv = x.clone()
+
         kv_seqlen, _ = other_kv.shape
         xq, xk, xv = self.wq(x), self.wk(other_kv), self.wv(other_kv)
         xq = xq.view(seqlen_sum, self.n_heads, self.head_dim)
+
+        if self.pooling_module is None and comp_rate is not None:
+            self.pooling_module = PoolingModule(
+                PoolingArgs(pool_type=pool_type, inside_queries=True)
+            )
+
+        if self.pooling_module is not None and comp_rate is not None:
+            seqlens = np.array(mask.q_seqinfo.seqstart_py[1:]) - np.array(mask.q_seqinfo.seqstart_py[:-1])
+            seqlens = seqlens.tolist()
+            xq, new_seqlens = self.pooling_module(
+                x=xq,
+                comp_rate=comp_rate,
+                seqlens=seqlens,
+            )
+            seqlen_sum = sum(new_seqlens)
+            
+            # Freqs_cis is already at the good shape
+            if isinstance(mask, BlockDiagonalCausalMask):
+                new_mask = BlockDiagonalCausalMask.from_seqlens(
+                    q_seqlen=new_seqlens, kv_seqlen=seqlens
+                )
+            elif isinstance(mask, BlockDiagonalMask):
+                new_mask = BlockDiagonalMask.from_seqlens(
+                    q_seqlen=new_seqlens, kv_seqlen=seqlens
+                )
+            else:
+                raise ValueError(f"Unsupported mask type: {type(mask)}")
+            mask = new_mask
+
         xk = xk.view(kv_seqlen, self.n_kv_heads, self.head_dim)
         xv = xv.view(kv_seqlen, self.n_kv_heads, self.head_dim)
         if freqs_cis is not None:
@@ -282,6 +319,8 @@ class TransformerBlock(nn.Module):
         freqs_cis_k: torch.Tensor | None = None,
         cache: CacheView | None = None,
         mask: BlockDiagonalCausalMask | BlockDiagonalMask | None = None,
+        comp_rate: int | None = None,
+        pool_type: str | None = None,
     ) -> torch.Tensor:
         r = self.attention.forward(
             x=self.attention_norm(x),
@@ -290,8 +329,15 @@ class TransformerBlock(nn.Module):
             mask=mask,
             other_kv=None if other_kv is None else self.attention_norm(other_kv),
             freqs_cis_k=freqs_cis_k,
+            comp_rate=comp_rate,
+            pool_type=pool_type,
         )
-        h = x + r
+
+        if comp_rate is not None and abs(comp_rate) != 1:
+            h = r
+        else:
+            h = x + r
+
         r = self.feed_forward.forward(self.ffn_norm(h))
         out = h + r
         return out

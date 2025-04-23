@@ -20,6 +20,7 @@ class MLPProjectArgs(Serializable):
 @dataclass
 class PoolingArgs(Serializable):
     pool_type: str = "mean"
+    inside_queries: bool = False
 
 
 @dataclass
@@ -31,7 +32,14 @@ class BridgeArgs(Serializable):
 class DecoderArgs(Serializable):
     do: bool = False
     n_layers: int = 0
-    insert_at: int = 16
+    insert_at: int | list[int] = 16
+
+    def __post_init__(self) -> None:
+        if isinstance(self.insert_at, int):
+            self.insert_at = [self.insert_at] * self.n_layers
+        assert all(isinstance(i, int) for i in self.insert_at), self.insert_at
+        assert all(i >= 0 for i in self.insert_at), self.insert_at
+        assert len(self.insert_at) == self.n_layers
 
 
 @dataclass

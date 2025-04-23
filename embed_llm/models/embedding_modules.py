@@ -4,8 +4,6 @@ from torch import nn
 
 from embed_llm.models.args import PoolingArgs, MLPProjectArgs
 
-from embed_llm.models.mistral.transformer_layers import RMSNorm
-
 
 METRIC_DICT = {
     "scalar_product": lambda x, y: torch.sum(x * y, dim=-1),
@@ -48,6 +46,7 @@ def smart_merge(
     seqlens: list[int],
     comp_rate: int,
     metric: str = "scalar_product",
+    seqlens_only: bool = False,
 ) -> tuple[torch.Tensor, list[int]]:
     """
     Args:
@@ -59,51 +58,82 @@ def smart_merge(
         hidden_states: Tensor of shape (batch_size, new_seq_len, dim)
         new_seqlens: List of a list of embeddings size per sample in the batch
     """
+    if len(hidden_states.shape) == 2:
+        # If hidden_states is 2D, add a dimension
+        hidden_states = hidden_states.unsqueeze(1)
+    assert len(hidden_states.shape) == 3, (
+        f"Shape of hidden_states {hidden_states.shape} must be 3D tensor"
+        f" with shape (seqs_len, n_heads or 1, hidden_dim)"
+    )
+    n_heads = hidden_states.shape[1]
     ind_h = 0
     new_seqlens = []
     new_hidden_states = []
     device = hidden_states.device
     dtype = hidden_states.dtype
     for embed_size in seqlens:
+        
         if embed_size // abs(comp_rate) == 0:
             new_seqlens.append(embed_size)
-            new_hidden_states.append(hidden_states[ind_h : ind_h + embed_size])
-            ind_h += embed_size
+            if not seqlens_only:
+                new_hidden_states.append(
+                    hidden_states[ind_h : ind_h + embed_size].squeeze(1)
+                ) 
         else:
             n_comp_tokens = embed_size // abs(comp_rate)
             new_seqlens.append(n_comp_tokens)
-            x = hidden_states[ind_h : ind_h + embed_size]
-            ind_h += embed_size
-            while len(x) > n_comp_tokens:
-                dist_mat = METRIC_DICT[metric](x[:-1], x[1:])
-                merge_id = torch.argmax(dist_mat).item()  # Convert to Python int
-                if merge_id == len(x) - 1:
-                    # Merge last two tokens
-                    merge_token = (x[-1] + x[-2]).unsqueeze(0) / 2
-                    x = torch.cat(
-                        [
-                            x[:-1],
-                            merge_token,
-                        ],
-                        dim=0,
-                    ).to(device=device, dtype=dtype)
-                else:
-                    merge_token = (x[merge_id] + x[merge_id + 1]).unsqueeze(0) / 2
-                    x = torch.cat(
-                        [
-                            x[:merge_id],
-                            merge_token,
-                            x[merge_id + 2 :],
-                        ],
-                        dim=0,
-                    ).to(device=device, dtype=dtype)
-            assert x.shape[-1] == hidden_states.shape[-1], (
-                f"Shape of x {x.shape[-1]} must be equal to shape of hidden_states {hidden_states.shape[-1]}"
-            )
-            new_hidden_states.append(x)
-            
-    hidden_states = torch.cat(new_hidden_states, dim=0).to(device=device, dtype=dtype)
+            if not seqlens_only:
+                head_hid_state = []
+                for i_head in range(n_heads):
+                    x = hidden_states[ind_h : ind_h + embed_size, i_head]
+                    while len(x) > n_comp_tokens:
+                        dist_mat = METRIC_DICT[metric](x[:-1], x[1:])
+                        merge_id = torch.argmax(dist_mat).item()  # Convert to Python int
+                        if merge_id == len(x) - 1:
+                            # Merge last two tokens
+                            merge_token = (x[-1] + x[-2]).unsqueeze(0) / 2
+                            x = torch.cat(
+                                [
+                                    x[:-1],
+                                    merge_token,
+                                ],
+                                dim=0,
+                            ).to(device=device, dtype=dtype)
+                        else:
+                            merge_token = (x[merge_id] + x[merge_id + 1]).unsqueeze(0) / 2
+                            x = torch.cat(
+                                [
+                                    x[:merge_id],
+                                    merge_token,
+                                    x[merge_id + 2 :],
+                                ],
+                                dim=0,
+                            ).to(device=device, dtype=dtype)
+                    assert x.shape[-1] == hidden_states.shape[-1], (
+                        f"Shape of x {x.shape[-1]} must be equal to shape of hidden_states {hidden_states.shape[-1]}"
+                    )
+                    head_hid_state.append(x.unsqueeze(1))
+                new_hidden_states.append(torch.cat(head_hid_state, dim=1).to(device=device, dtype=dtype).squeeze(1))
+        ind_h += embed_size
+
+    if not seqlens_only:
+        hidden_states = torch.cat(new_hidden_states, dim=0).to(device=device, dtype=dtype)
+        
     return hidden_states, new_seqlens
+
+
+class RMSNorm(torch.nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def _norm(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        output = self._norm(x.float()).type_as(x)
+        return output * self.weight
 
 
 class MLP_block(nn.Module):
@@ -202,13 +232,25 @@ class PoolingModule(nn.Module):
     def __init__(self, args: PoolingArgs):
         super().__init__()
         self.pool_type = args.pool_type
+        self.inside_queries = args.inside_queries
 
     def forward(
-        self, x: torch.Tensor, comp_rate: int, seqlens: list[int] | None = None
+        self, x: torch.Tensor, comp_rate: int, seqlens: list[int] | None = None, seqlens_only: bool = False
     ) -> torch.Tensor:
         """
         embed_seqlens: List of a list of embeddings size per sample in the batch
         """
+
+        if len(x.shape) > 2:
+            assert self.inside_queries, (
+                f"PoolingModule only supports 2D tensors, but got {len(x.shape)}D tensor"
+                f" with shape {x.shape}. Set inside_queries to True to use 3D tensors."
+            )
+            assert "metric_" in self.pool_type, (
+                f"This PoolingModule only supports 2D tensors, use a pooling type that supports 3D tensors."
+                f" Got {self.pool_type}."
+            )
+
         new_seqlens = []
         pool_size = []
         if comp_rate != -1 and "smart" not in self.pool_type:
@@ -225,6 +267,9 @@ class PoolingModule(nn.Module):
                     compressed_embed_size = split_integer(embed_size, comp_rate)
                 pool_size.extend(compressed_embed_size)
                 new_seqlens.append(len(compressed_embed_size))
+            
+            if seqlens_only:
+                return None, new_seqlens
 
             if "last" in self.pool_type:
                 pool_mask = torch.block_diag(
@@ -245,10 +290,12 @@ class PoolingModule(nn.Module):
                 seqlens=seqlens,
                 comp_rate=comp_rate,
                 metric=self.pool_type.split("metric_")[-1],
+                seqlens_only=seqlens_only,
             )
-            assert x.shape[0] == sum(new_seqlens), (
-                f"Shape of x {x.shape[0]} must be equal to sum of new_seqlens {sum(new_seqlens)}"
-            )
+            if not seqlens_only:
+                assert x.shape[0] == sum(new_seqlens), (
+                    f"Shape of x {x.shape[0]} must be equal to sum of new_seqlens {sum(new_seqlens)}"
+                )
             pool_mask = None
         else:
             new_seqlens = seqlens
