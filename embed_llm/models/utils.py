@@ -3,7 +3,7 @@ import logging
 import math
 import os
 from typing import Callable
-
+from functools import reduce
 import torch
 import torch.distributed.fsdp.wrap as torch_wrap
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
@@ -15,6 +15,7 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataP
 # )
 
 # Mistral specifics
+from embed_llm.models.args import DecoderArgs
 from embed_llm.models.mistral.transformer_layers import TransformerBlock
 from embed_llm.training.distributed import (
     get_rank,
@@ -135,22 +136,28 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                     )
 
 
-def initialize_layers_parameters(model: torch.nn.Module, param_dtype: torch.dtype):
-    for m_name, module in model.named_modules():
-        if all(p.is_meta for p in module.parameters()) and len(list(module.children())) == 0:
-            for p_name, param in module.named_parameters():
-                # Create a new param to the right device and dtype
-                module._parameters[p_name] = torch.nn.Parameter(
-                    torch.empty_like(param, device="cpu", dtype=param_dtype)
-                )
-                # Replace the old param with the new ones
-                param = module._parameters[p_name]
-                
-                if "norm" in m_name:
-                    torch.nn.init.ones_(param)
-                else:
-                    torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+def get_attr(obj, attr_path):
+    """Access nested attributes using dot notation string."""
+    return reduce(getattr, attr_path.split('.'), obj)
 
+
+def initialize_decoder_layers_parameters(
+    model: torch.nn.Module, param_dtype: torch.dtype, decoder_args: DecoderArgs
+):
+    mapping_dict = {}
+    for i, llm_layer_id in enumerate(decoder_args.insert_at):
+        mapping_dict["layer_" + str(i)] = llm_layer_id
+
+    decoder_state_dict = model.decoder_modules.state_dict() 
+    llm_state_dict = model.state_dict()
+    
+    for key in decoder_state_dict.keys():
+        if key.split(".")[0] in mapping_dict.keys():
+            decoder_state_dict[key] = llm_state_dict[
+                "layers." + str(mapping_dict[key.split(".")[0]]) + "." + ".".join(key.split(".")[1:])
+            ].to(param_dtype)
+    model.decoder_modules.load_state_dict(decoder_state_dict, strict=True, assign=True)
+        
 
 def group_embed_seqlens(values: list[int], sizes: list[int]):
     result = []

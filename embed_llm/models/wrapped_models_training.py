@@ -14,7 +14,7 @@ from embed_llm.models.loading import (
 from embed_llm.models.utils import (
     get_fsdp_policy,
     initialize_lora_parameters,
-    initialize_layers_parameters,
+    initialize_decoder_layers_parameters,
     log_train_params,
     main_logger_info,
 )
@@ -84,8 +84,8 @@ def load_training_model(
     if get_rank() == 0:
         if pipeline_args.decoder_module.do:
             main_logger_info("Initializing  layers for decoder ...")
-            initialize_layers_parameters(
-                augmented_model.llm.decoder_modules, param_dtype
+            initialize_decoder_layers_parameters(
+                augmented_model.llm, param_dtype, augmented_model.llm.decoder_args
             )
 
         if lora_llm.enable and pipeline_args.trainable_llm:

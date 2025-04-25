@@ -209,6 +209,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
         for i in range(self.n_layers):
             if self.mean_hid4embed is not None and i in self.mean_hid4embed:
                 self.residual_h = h if self.residual_h is None else self.residual_h + h
+                
+            if not self.trained_causal and i in self.trained_layers and not isinstance(self_att_mask, BlockDiagonalMask):
+                self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
+                
             if i >= self.start_compressing:
                 pooled_h, new_seqlens = self.pooling_module(
                     h,
@@ -225,9 +229,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     # Pooling inside module
                     positions = positions_from_sizes(seqlens, self.freqs_cis.device)
                     freqs_cis_k = self.freqs_cis[positions].to(device=h.device)
-
-                    if not self.trained_causal and i in self.trained_layers:
-                        self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
 
                     h = self.layers[str(i)](
                         x=h,
@@ -477,7 +478,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         if decoder_cache is not None:
             decoder_input_metadata = decoder_cache.get_input_metadata(seqlens.tolist())
-        else:
+        elif self.decoder_modules is not None:
             decoder_input_metadata = [
                 SimpleInputMetadata.from_seqlens(seqlens.tolist(), self.device)
                 for _ in range(len(self.decoder_modules))
