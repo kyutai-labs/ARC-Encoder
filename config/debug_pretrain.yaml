@@ -36,18 +36,18 @@ pipeline:
     mean_hid4embed: null
     n_truncated_layers: 16
     pooling_module:
-      pool_type: smart_mean_sa_metric_scalar_product
-      inside_queries: true
+      pool_type: mean_sa
     trained_layers: 1
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
   decoder_module:
-    do: false
+    do: true
     n_layers: 1
     insert_at: 16
-    causal: true
+    take_all_toks: true
+
 
 
 
@@ -70,7 +70,7 @@ seed: 0
 log_freq: 1
 eval_freq: 50
 no_eval: true
-ckpt_freq: 10
+ckpt_freq: 2
 
 
 # wandb:

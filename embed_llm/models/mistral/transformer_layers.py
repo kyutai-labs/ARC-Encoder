@@ -175,7 +175,7 @@ class Attention(nn.Module):
         freqs_cis: torch.Tensor | None = None,
         freqs_cis_k: torch.Tensor | None = None,
         cache: CacheView | None = None,
-        mask: BlockDiagonalMask | BlockDiagonalCausalMask | None = None,
+        mask: BlockDiagonalMask | BlockDiagonalCausalMask | torch.Tensor | None = None,
         comp_rate: int | None = None,
         pool_type: str | None = None,
     ) -> torch.Tensor:
@@ -318,7 +318,7 @@ class TransformerBlock(nn.Module):
         other_kv: torch.Tensor | None = None,
         freqs_cis_k: torch.Tensor | None = None,
         cache: CacheView | None = None,
-        mask: BlockDiagonalCausalMask | BlockDiagonalMask | None = None,
+        mask: BlockDiagonalCausalMask | BlockDiagonalMask | torch.Tensor | None = None,
         comp_rate: int | None = None,
         pool_type: str | None = None,
     ) -> torch.Tensor:

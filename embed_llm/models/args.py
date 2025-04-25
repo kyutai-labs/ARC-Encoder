@@ -33,7 +33,8 @@ class DecoderArgs(Serializable):
     do: bool = False
     n_layers: int = 0
     insert_at: int | list[int] = 16
-
+    take_all_toks: bool = False
+    
     def __post_init__(self) -> None:
         if isinstance(self.insert_at, int):
             self.insert_at = [self.insert_at] * self.n_layers

@@ -149,7 +149,7 @@ class LoRALoaderMixin:
                             self.pipeline_rank,  # type: ignore[attr-defined]
                         )
 
-                    elif (
+                    if (
                         "output" in name
                         and self.pipeline_rank == self.num_pipeline_ranks - 1
                         and (name + ".lora_B.weight") in lora_state_dict

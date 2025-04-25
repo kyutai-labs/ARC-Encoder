@@ -4,10 +4,7 @@ from functools import partial, reduce
 from dataclasses import dataclass
 import torch
 from torch import nn
-import math
 import numpy as np
-import logging
-import torch.distributed
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask
 
@@ -56,8 +53,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embedder_args: EmbedderArgs | None = None,
         decoder_args: DecoderArgs | None = None,
         checkpoint: bool = False,
-        pipeline_rank: int = 0,
-        num_pipeline_ranks: int = 1,  # Don't use pipeline parallelism for now
     ):
         super().__init__()
 
@@ -66,12 +61,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self.n_layers = args.n_layers
         self._precomputed_freqs_cis: torch.Tensor | None = None
         assert self.vocab_size > 0
-        self.pipeline_rank = pipeline_rank
-        self.num_pipeline_ranks = num_pipeline_ranks
 
-        self.tok_embeddings = None
-        if pipeline_rank == 0:
-            self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
+        self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
 
         if embedder_args is not None:
             self.for_embedding = True
@@ -150,18 +141,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         self.norm: None | RMSNorm = None
 
-        if pipeline_rank == num_pipeline_ranks - 1 and not self.for_embedding:
+        if not self.for_embedding:
             self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-        num_layers_per_rank = math.ceil(self.n_layers / self.num_pipeline_ranks)
-        offset = self.pipeline_rank * num_layers_per_rank
-        end = min(self.n_layers, offset + num_layers_per_rank)
-        self.layers = nn.ModuleDict({str(i): layers[i] for i in range(offset, end)})
+        self.layers = nn.ModuleDict({str(i): layers[i] for i in range(self.n_layers)})
 
-        self.n_local_layers = len(self.layers) + 0 if self.decoder_modules is None else len(self.layers) + len(self.decoder_modules) 
+        self.n_local_layers = len(self.layers)
 
         self.output = None
-        if pipeline_rank == num_pipeline_ranks - 1 and not self.for_embedding:
+        if not self.for_embedding:
             MaybeLora = maybe_lora(args.lora)
             self.output = MaybeLora(
                 args.dim,
@@ -208,7 +196,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         h = token_embeds
 
         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
-        
+
         if not self.causal or (not self.trained_causal and 0 in self.trained_layers):
             self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
         else:
@@ -223,10 +211,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 self.residual_h = h if self.residual_h is None else self.residual_h + h
             if i >= self.start_compressing:
                 pooled_h, new_seqlens = self.pooling_module(
-                    h, 
-                    comp_rate=self.compress_rates[compress_index], 
-                    seqlens=seqlens, 
-                    seqlens_only=self.pooling_args.inside_queries
+                    h,
+                    comp_rate=self.compress_rates[compress_index],
+                    seqlens=seqlens,
+                    seqlens_only=self.pooling_args.inside_queries,
                 )
 
                 positions = positions_from_sizes(new_seqlens, self.freqs_cis.device)
@@ -237,10 +225,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     # Pooling inside module
                     positions = positions_from_sizes(seqlens, self.freqs_cis.device)
                     freqs_cis_k = self.freqs_cis[positions].to(device=h.device)
-                    
+
                     if not self.trained_causal and i in self.trained_layers:
                         self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
-                        
+
                     h = self.layers[str(i)](
                         x=h,
                         freqs_cis=freqs_cis,
@@ -251,8 +239,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     )
                 else:
                     if "sa" in self.pooling_args.pool_type:
-                        
-                        if not self.causal or (not self.trained_causal and i in self.trained_layers):
+                        if not self.causal or (
+                            not self.trained_causal and i in self.trained_layers
+                        ):
                             self_att_mask = BlockDiagonalMask.from_seqlens(
                                 q_seqlen=new_seqlens, kv_seqlen=seqlens
                             )
@@ -260,7 +249,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             self_att_mask = BlockDiagonalCausalMask.from_seqlens(
                                 q_seqlen=new_seqlens, kv_seqlen=seqlens
                             )
-                            
+
                         # Pooled queries attend all tokens
                         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
                         freqs_cis_k = self.freqs_cis[positions].to(device=h.device)
@@ -272,8 +261,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             freqs_cis_k=freqs_cis_k,
                         )
                     else:
-                        
-                        if not self.causal or (not self.trained_causal and i in self.trained_layers):
+                        if not self.causal or (
+                            not self.trained_causal and i in self.trained_layers
+                        ):
                             self_att_mask = BlockDiagonalMask.from_seqlens(
                                 q_seqlen=new_seqlens, kv_seqlen=new_seqlens
                             )
@@ -281,7 +271,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             self_att_mask = BlockDiagonalCausalMask.from_seqlens(
                                 q_seqlen=new_seqlens, kv_seqlen=new_seqlens
                             )
-          
+
                         # Pooled queries attend only to the pooled tokens
                         h = self.layers[str(i)](
                             x=pooled_h, freqs_cis=freqs_cis, mask=self_att_mask
@@ -336,18 +326,52 @@ class Transformer(ModelBase, LoRALoaderMixin):
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
         if self.decoder_modules is not None and cat_embeddings is not None:
-            emb_h_seqlens = [sum(slen) for slen in embed_seqlens]
-            positions = positions_from_sizes(emb_h_seqlens, self.freqs_cis.device)
-            freqs_cis_decod_q = self.freqs_cis[positions].to(device=h.device)
-            freqs_cis_decod_kv = self.freqs_cis[
-                positions_from_sizes(
-                    [sum(seq_mask) for seq_mask in decod_kv_mask], self.freqs_cis.device
+            if self.decoder_args.take_all_toks:
+                min_val = torch.finfo(self.dtype).min
+                decod_mask = (
+                    torch.ones(
+                        (
+                            sum(seqlens) + (8 - sum(seqlens) % 8),
+                            sum(seqlens) + (8 - sum(seqlens) % 8),
+                        )
+                    )
+                    * (min_val)
+                ).to(device=h.device)
+                ind_attn = 0
+                for full_size, early_tokens in zip(seqlens, decod_kv_mask):
+                    non_causal_size = sum(early_tokens)
+
+                    decod_mask[
+                        ind_attn : ind_attn + non_causal_size,
+                        ind_attn : ind_attn + non_causal_size,
+                    ] = torch.zeros((non_causal_size, non_causal_size))
+                    ind_attn += non_causal_size
+                    decod_mask[
+                        ind_attn : ind_attn + full_size - non_causal_size,
+                        ind_attn : ind_attn + full_size - non_causal_size,
+                    ] = torch.triu(
+                        torch.ones(
+                            (full_size - non_causal_size, full_size - non_causal_size),
+                        ),
+                        diagonal=1,
+                    ) * (min_val)
+                    ind_attn += full_size - non_causal_size
+                decod_mask = decod_mask.unsqueeze(0)[:, : sum(seqlens), : sum(seqlens)]
+                decod_mask = decod_mask.expand(self.args.n_heads, -1, -1).unsqueeze(0)
+            else:
+                emb_h_seqlens = [sum(slen) for slen in embed_seqlens]
+                positions = positions_from_sizes(emb_h_seqlens, self.freqs_cis.device)
+                freqs_cis_decod_q = self.freqs_cis[positions].to(device=h.device)
+                freqs_cis_decod_kv = self.freqs_cis[
+                    positions_from_sizes(
+                        [sum(seq_mask) for seq_mask in decod_kv_mask],
+                        self.freqs_cis.device,
+                    )
+                ].to(device=h.device)
+                decod_mask = BlockDiagonalMask.from_seqlens(
+                    q_seqlen=emb_h_seqlens,
+                    kv_seqlen=[sum(seq_mask) for seq_mask in decod_kv_mask],
                 )
-            ].to(device=h.device)
-            decod_mask = BlockDiagonalMask.from_seqlens(
-                q_seqlen=emb_h_seqlens,
-                kv_seqlen=[sum(seq_mask) for seq_mask in decod_kv_mask],
-            )
 
         decod_index = 0
         for i in range(self.n_layers):
@@ -357,15 +381,22 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 and i in self.decoder_args.insert_at
             ):
                 for _ in range(int((np.array(self.decoder_args.insert_at) == i).sum())):
-                    embedds_h = self.decoder_modules["layer_" + str(decod_index)](
-                        x=h[~self.pos_to_keep],
-                        other_kv=h[sum(decod_kv_mask, [])],
-                        freqs_cis=freqs_cis_decod_q,
-                        mask=decod_mask,
-                        freqs_cis_k=freqs_cis_decod_kv,
-                    )
-                    h = h.clone()
-                    h[~self.pos_to_keep] = embedds_h
+                    if self.decoder_args.take_all_toks:
+                        h = self.decoder_modules["layer_" + str(decod_index)](
+                            x=h,
+                            freqs_cis=freqs_cis,
+                            mask=decod_mask,
+                        )
+                    else:
+                        embedds_h = self.decoder_modules["layer_" + str(decod_index)](
+                            x=h[~self.pos_to_keep],
+                            other_kv=h[sum(decod_kv_mask, [])],
+                            freqs_cis=freqs_cis_decod_q,
+                            mask=decod_mask,
+                            freqs_cis_k=freqs_cis_decod_kv,
+                        )
+                        h = h.clone()
+                        h[~self.pos_to_keep] = embedds_h
                     decod_index += 1
 
             h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
@@ -388,6 +419,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         cache: BufferCache | None,
         cat_embeddings: torch.Tensor | None = None,
         insert_cat_embedds: list[list[int]] | None = None,
+        decoder_cache: BufferCache | None = None,
     ) -> torch.Tensor:
         """Local forward pass.
 
@@ -396,60 +428,28 @@ class Transformer(ModelBase, LoRALoaderMixin):
         """
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
 
-        (num_toks,) = input_ids.shape
-        num_supp_toks = (
-            0
-            if cat_embeddings is None
-            else (
-                sum(sum(embed_seqlens, []))
-                if embed_seqlens is not None
-                else cat_embeddings.shape[0]
+        assert self.tok_embeddings is not None
+        token_embeds = self.tok_embeddings(input_ids)
+
+        if cat_embeddings is not None:
+            assert insert_cat_embedds is not None, (
+                "Insert cat embeddings must be provided"
             )
-        )
 
-        if self.pipeline_rank == 0:
-            assert self.tok_embeddings is not None
-            token_embeds = self.tok_embeddings(input_ids)
-
-            if cat_embeddings is not None:
-                assert insert_cat_embedds is not None, (
-                    "Insert cat embeddings must be provided"
-                )
-
-                h, seqlens, pos_to_keep, _ = insert_embeds(
-                    token_embeds,
-                    cat_embeddings,
-                    embed_seqlens=embed_seqlens,
-                    seqlens=seqlens,
-                    insert_cat_embedds=insert_cat_embedds,
-                )
-                self.pos_to_keep = torch.tensor(
-                    pos_to_keep, device=self.device, dtype=torch.bool
-                )
-
-            else:
-                h = token_embeds
-            seqlens = torch.tensor(seqlens, device=self.device, dtype=torch.long)
+            h, seqlens, pos_to_keep, _ = insert_embeds(
+                token_embeds,
+                cat_embeddings,
+                embed_seqlens=embed_seqlens,
+                seqlens=seqlens,
+                insert_cat_embedds=insert_cat_embedds,
+            )
+            self.pos_to_keep = torch.tensor(
+                pos_to_keep, device=self.device, dtype=torch.bool
+            )
 
         else:
-            seqlens = torch.tensor(seqlens, device=self.device, dtype=torch.long)
-            h = torch.empty(
-                num_toks + num_supp_toks,
-                self.args.dim,
-                device=self.device,
-                dtype=self.dtype,
-            )
-            torch.distributed.recv(h, src=self.pipeline_rank - 1)
-
-        if self.num_pipeline_ranks > 1:
-            torch.distributed.broadcast(seqlens, 0)
-
-            if cat_embeddings is not None:
-                if self.pipeline_rank > 0:
-                    self.pos_to_keep = torch.empty(
-                        num_toks + num_supp_toks, device=self.device, dtype=torch.bool
-                    )
-                torch.distributed.broadcast(self.pos_to_keep, src=0)
+            h = token_embeds
+        seqlens = torch.tensor(seqlens, device=self.device, dtype=torch.long)
 
         input_metadata: list[CacheInputMetadata] | list[SimpleInputMetadata]
 
@@ -466,13 +466,22 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         decod_index = 0
         if self.decoder_modules is not None and cat_embeddings is not None:
-            emb_h_seqlens = [sum(slen) for slen in embed_seqlens]
-            positions = positions_from_sizes(emb_h_seqlens, self.freqs_cis.device)
-            freqs_cis_decod_q = self.freqs_cis[positions].to(device=h.device)
-            # No need for causality, as the token can't attend to future tokens
-            decod_mask = BlockDiagonalMask.from_seqlens(
-                q_seqlen=emb_h_seqlens, kv_seqlen=seqlens.tolist()
-            )
+            if not self.decoder_args.take_all_toks:
+                emb_h_seqlens = [sum(slen) for slen in embed_seqlens]
+                positions = positions_from_sizes(emb_h_seqlens, self.freqs_cis.device)
+                freqs_cis_decod_q = self.freqs_cis[positions].to(device=h.device)
+                # No need for causality, as the token can't attend to future tokens
+                decod_mask = BlockDiagonalMask.from_seqlens(
+                    q_seqlen=emb_h_seqlens, kv_seqlen=seqlens.tolist()
+                )
+
+        if decoder_cache is not None:
+            decoder_input_metadata = decoder_cache.get_input_metadata(seqlens.tolist())
+        else:
+            decoder_input_metadata = [
+                SimpleInputMetadata.from_seqlens(seqlens.tolist(), self.device)
+                for _ in range(len(self.decoder_modules))
+            ]
 
         for local_layer_id, (id_layer, layer) in enumerate(self.layers.items()):
             if cache is not None:
@@ -486,36 +495,55 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
             if (
                 self.decoder_modules is not None
-                and cat_embeddings is not None
                 and int(id_layer) in self.decoder_args.insert_at
             ):
-                for _ in range(int((np.array(self.decoder_args.insert_at) == int(id_layer)).sum())):
-                    embedds_h = self.decoder_modules["layer_" + str(decod_index)](
-                        x=h[~self.pos_to_keep],
-                        other_kv=h,
-                        freqs_cis=freqs_cis_decod_q,
-                        mask=decod_mask,
-                        freqs_cis_k=freqs_cis,
-                    )
-                    h[~self.pos_to_keep] = embedds_h.clone()
-                    decod_index += 1
-
+                for _ in range(
+                    int((np.array(self.decoder_args.insert_at) == int(id_layer)).sum())
+                ):
+                    if (
+                        not self.decoder_args.take_all_toks
+                        and cat_embeddings is not None
+                    ):
+                        embedds_h = self.decoder_modules["layer_" + str(decod_index)](
+                            x=h[~self.pos_to_keep],
+                            other_kv=h,
+                            freqs_cis=freqs_cis_decod_q,
+                            mask=decod_mask,
+                            freqs_cis_k=freqs_cis,
+                        )
+                        h[~self.pos_to_keep] = embedds_h.clone()
+                        decod_index += 1
+                    elif self.decoder_args.take_all_toks:
+                        if decoder_cache is not None:
+                            assert input_metadata is not None
+                            cache_metadata = decoder_input_metadata[decod_index]
+                            # assert isinstance(cache_metadata, CacheInputMetadata)
+                            decode_cache_view = decoder_cache.get_view(
+                                decod_index, cache_metadata
+                            )
+                        else:
+                            decode_cache_view = None
+                        h = self.decoder_modules["layer_" + str(decod_index)](
+                            x=h,
+                            freqs_cis=freqs_cis,
+                            cache=decode_cache_view,
+                        )
+                        decod_index += 1
             h = layer(x=h, freqs_cis=freqs_cis, cache=cache_view)
 
         if cache is not None:
             cache.update_seqlens(seqlens.tolist())
 
-        if self.pipeline_rank < self.num_pipeline_ranks - 1:
-            torch.distributed.send(h, dst=self.pipeline_rank + 1)
-            return h
-        else:
-            # Last rank has a final normalization step.
-            normalized_h = self.norm(h)
-            if cat_embeddings is not None:
-                normalized_h = normalized_h[self.pos_to_keep]
-            assert self.norm is not None
-            self.pos_to_keep = None
-            return normalized_h  # type: ignore
+        if decoder_cache is not None:
+            decoder_cache.update_seqlens(seqlens.tolist())
+
+        # Last rank has a final normalization step.
+        normalized_h = self.norm(h)
+        if cat_embeddings is not None:
+            normalized_h = normalized_h[self.pos_to_keep]
+        assert self.norm is not None
+        self.pos_to_keep = None
+        return normalized_h  # type: ignore
 
     def generate(
         self,
@@ -525,6 +553,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         cache: BufferCache | None,
         cat_embeddings: torch.Tensor | None = None,
         insert_cat_embedds: list[list[int]] | None = None,
+        decoder_cache: BufferCache | None = None,
     ) -> torch.Tensor:
         h = self.generate_partial(
             input_ids,
@@ -533,80 +562,13 @@ class Transformer(ModelBase, LoRALoaderMixin):
             embed_seqlens=embed_seqlens,
             cat_embeddings=cat_embeddings,
             insert_cat_embedds=insert_cat_embedds,
+            decoder_cache=decoder_cache,
         )
 
-        if self.pipeline_rank < self.num_pipeline_ranks - 1:
-            # ignore the intermediate activations as we'll get the final output from
-            # the last stage
-            out_shape = h.shape[0]
-            if cat_embeddings is not None:
-                out_shape = h[self.pos_to_keep].shape[0]
-                self.pos_to_keep = None
-            outs = torch.empty(
-                out_shape, self.vocab_size, device=h.device, dtype=h.dtype
-            )
-
-        else:
-            assert self.output is not None
-            outs = self.output(h)
-        if self.num_pipeline_ranks > 1:
-            torch.distributed.broadcast(outs, src=self.num_pipeline_ranks - 1)
+        assert self.output is not None
+        outs = self.output(h)
 
         return outs.float()
-
-    def load_state_dict(
-        self, state_dict: dict[str, any], strict: bool = True, assign: bool = False
-    ) -> None:
-        if self.num_pipeline_ranks > 1:
-            state_to_load = {}
-            skipped = set([])
-            for k, v in state_dict.items():
-                if k.startswith("tok_embeddings"):
-                    if self.pipeline_rank == 0:
-                        state_to_load[k] = v
-                    else:
-                        logging.debug(
-                            "Skipping parameter %s at pipeline rank %d",
-                            k,
-                            self.pipeline_rank,
-                        )
-                        skipped.add(k)
-                elif k.startswith("norm") or k.startswith("output"):
-                    if self.pipeline_rank == self.num_pipeline_ranks - 1:
-                        state_to_load[k] = v
-                    else:
-                        logging.debug(
-                            "Skipping parameter %s at pipeline rank %d",
-                            k,
-                            self.pipeline_rank,
-                        )
-                        skipped.add(k)
-                elif k.startswith("decoder_modules"):
-                    if self.decoder_modules is not None and self.decoder_args.do:
-                        state_to_load[k] = v
-                    else:
-                        logging.debug(
-                            "Skipping parameter %s at pipeline rank %d",
-                            k,
-                            self.pipeline_rank,
-                        )
-                        skipped.add(k)
-                elif k.startswith("layers"):
-                    layer_id = k.split(".")[1]
-                    if layer_id in self.layers:
-                        state_to_load[k] = v
-                    else:
-                        logging.debug(
-                            "Skipping parameter %s at pipeline rank %d",
-                            k,
-                            self.pipeline_rank,
-                        )
-                        skipped.add(k)
-
-            assert set(state_dict.keys()) == skipped.union(set(state_to_load.keys()))
-            super().load_state_dict(state_to_load, strict=strict, assign=assign)
-        else:
-            super().load_state_dict(state_dict, strict=strict, assign=assign)
 
 
 def positions_from_sizes(sizes: Iterable[int], device) -> torch.Tensor:

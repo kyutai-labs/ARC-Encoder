@@ -52,9 +52,24 @@ def generate(
         model.args.head_dim,
         model.args.sliding_window,
     )
-    cache.to(device=model.device, dtype=model.dtype)
 
+    cache.to(device=model.device, dtype=model.dtype)
     cache.reset()
+
+    if model.decoder_args.do and model.decoder_args.take_all_toks:
+        decoder_cache = BufferCache(
+            len(model.decoder_modules),
+            model.args.max_batch_size,
+            cache_window,
+            model.args.n_kv_heads,
+            model.args.head_dim,
+            model.args.sliding_window,
+            decoder_cache=True,
+        )
+        decoder_cache.to(device=model.device, dtype=model.dtype)
+        decoder_cache.reset()
+    else:
+        decoder_cache = None
 
     last_token_prelogits = None
 
@@ -67,6 +82,7 @@ def generate(
         cache=cache,
         cat_embeddings=cat_embeddings,
         insert_cat_embedds=None if len(insertion_lists) == 0 else insertion_lists,
+        decoder_cache=decoder_cache,
     )
 
     # Stop concatenating after first chunk
@@ -113,6 +129,7 @@ def generate(
             embed_seqlens=embed_seqlens,  # Used if cross-attention only
             cache=cache,
             cat_embeddings=None,
+            decoder_cache=decoder_cache,
         )
 
         assert last_token_prelogits.shape == (

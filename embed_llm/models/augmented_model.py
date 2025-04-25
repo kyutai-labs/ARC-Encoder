@@ -144,7 +144,6 @@ class EmbedAugPipeline(nn.Module):
         device: str,
         max_batch_size: int = 4,
         param_dtype: torch.dtype = torch.float32,
-        num_pipeline_ranks: int = 1,
     ):
         with open(os.path.join(ckpt_path, "../../args.yaml"), "r") as f:
             train_args = yaml.safe_load(f)
@@ -159,11 +158,6 @@ class EmbedAugPipeline(nn.Module):
             pipe_path=ckpt_path,
         )
 
-        if num_pipeline_ranks > 1 and is_torchrun():
-            pipeline_rank = torch.distributed.get_rank()
-        else:
-            pipeline_rank = 0
-
         if pipeline_args.trainable_llm:
             assert Path(ckpt_path + "/llm").exists()
 
@@ -176,8 +170,6 @@ class EmbedAugPipeline(nn.Module):
             checkpoint=False,
             param_dtype=param_dtype,
             parll=is_torchrun(),
-            num_pipeline_rank=num_pipeline_ranks,
-            pipeline_rank=pipeline_rank,
         )
 
         if pipeline_args.trainable_llm and lora_llm.enable:
@@ -195,20 +187,15 @@ class EmbedAugPipeline(nn.Module):
 
         llm_args.lora = lora_embedder
 
-        if is_torchrun() and pipeline_rank > 0:
-            llm_embedder = None
-        else:
-            llm_embedder = load_model(
-                llm_args=llm_args,
-                pipeline_args=pipeline_args,
-                folder=Path(llm_path),
-                checkpoint=False,
-                param_dtype=param_dtype,
-                for_embedding=True,
-                num_pipeline_rank=1,
-                pipeline_rank=0,
-                parll=is_torchrun(),
-            )
+        llm_embedder = load_model(
+            llm_args=llm_args,
+            pipeline_args=pipeline_args,
+            folder=Path(llm_path),
+            checkpoint=False,
+            param_dtype=param_dtype,
+            for_embedding=True,
+            parll=is_torchrun(),
+        )
 
         if lora_embedder.enable:
             assert Path(ckpt_path + "/embedder/lora.safetensors").exists()
@@ -244,15 +231,14 @@ class EmbedAugPipeline(nn.Module):
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
 
-        if pipeline_rank == 0:
-            if pipeline_args.bridge_module.bridge_type is not None:
-                state_dict = load_state_dict(
-                    Path(ckpt_path + "/bridge_module"), dtype=param_dtype
-                )
+        if pipeline_args.bridge_module.bridge_type is not None:
+            state_dict = load_state_dict(
+                Path(ckpt_path + "/bridge_module"), dtype=param_dtype
+            )
 
-                augmented_pipeline.model.bridge_module.load_state_dict(state_dict)
-        if not is_torchrun():
-            augmented_pipeline.model = augmented_pipeline.model.to(device)
+            augmented_pipeline.model.bridge_module.load_state_dict(state_dict)
+
+        augmented_pipeline.model = augmented_pipeline.model.to(device)
 
         augmented_pipeline.model.eval()
 
@@ -464,14 +450,6 @@ def load_pipeline(
     mistral: bool = False,
     ckpt: int | None = None,
 ) -> EmbedAugPipeline | Transformer:
-    if pipeline is None and is_torchrun():
-        torch.distributed.init_process_group()
-        torch.cuda.set_device(torch.distributed.get_rank())
-        device = "cuda"
-        num_pipeline_ranks = torch.distributed.get_world_size()
-    else:
-        num_pipeline_ranks = 1
-
     if not mistral:
         if pipeline is None:
             # Get last checkpoint
@@ -499,7 +477,6 @@ def load_pipeline(
                 ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
                 device=device,
                 max_batch_size=max_bs,
-                num_pipeline_ranks=num_pipeline_ranks,
             )
 
             ckpt = int(last_ckpt.split("_")[-1])
@@ -517,7 +494,6 @@ def load_pipeline(
                 device=device,
                 max_batch_size=max_bs,
                 dtype=torch.float32,
-                num_pipeline_ranks=num_pipeline_ranks,
             )
         else:
             mistral_model = pipeline

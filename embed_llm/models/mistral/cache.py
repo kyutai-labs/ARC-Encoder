@@ -167,12 +167,13 @@ class BufferCache:
         n_kv_heads: int,
         head_dim: int,
         sliding_window: int | list[int] | None = None,
+        decoder_cache: bool = False,
     ):
         self.max_seq_len = max_seq_len
         self.n_kv_heads = n_kv_heads
         self.head_dim = head_dim
         self.n_layers = n_layers
-
+        self.decoder_cache = decoder_cache
         self.cache_sizes: list[int] = get_cache_sizes(
             n_layers, max_seq_len, sliding_window
         )
@@ -275,9 +276,15 @@ class BufferCache:
         subsequent_prefill = any(seqlen > 1 for seqlen in seqlens)
         if first_prefill:
             assert all([pos == 0 for pos in seqpos]), seqpos
-            mask = BlockDiagonalCausalMask.from_seqlens(seqlens).make_local_attention(
-                cache_size
-            )
+            if not self.decoder_cache:
+                mask = BlockDiagonalCausalMask.from_seqlens(seqlens).make_local_attention(
+                    cache_size
+                )
+            else:
+                mask = BlockDiagonalMask.from_seqlens(seqlens).make_local_attention(
+                    cache_size
+                )
+                
         elif subsequent_prefill:
             assert self.kv_seqlens is not None
             mask = BlockDiagonalMask.from_seqlens(

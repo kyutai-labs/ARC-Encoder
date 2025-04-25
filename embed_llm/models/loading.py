@@ -67,7 +67,9 @@ def load_args(
             
             pipeline_args.decoder_module = DecoderArgs(do=pipeline_args.decoder_module['do'], 
                                                        n_layers=pipeline_args.decoder_module['n_layers'], 
-                                                       insert_at=pipeline_args.decoder_module['insert_at'])
+                                                       insert_at=pipeline_args.decoder_module['insert_at'],
+                                                       take_all_toks=pipeline_args.decoder_module.get('take_all_toks', False)
+                                                       )       
 
         pipeline_args.bridge_module = BridgeArgs(**pipeline_args.bridge_module)
     else:
@@ -144,20 +146,16 @@ def load_model(
     param_dtype: torch.dtype,
     for_embedding: bool = False,
     parll: bool = True,
-    pipeline_rank: int = 0,
-    num_pipeline_rank: int = 1,
 ) -> tuple[torch.nn.Module, int]:
     with torch.device("meta"):
         model = MistralTransformer(
             args=llm_args,
             checkpoint=checkpoint,
             embedder_args=pipeline_args.embedder_params if for_embedding else None,
-            pipeline_rank=pipeline_rank,
-            num_pipeline_ranks=num_pipeline_rank,
             decoder_args=pipeline_args.decoder_module,
         )
 
-    if not parll or (get_rank() == 0 or num_pipeline_rank > 1):
+    if not parll or get_rank() == 0:
         state_dict = load_state_dict(folder, dtype=param_dtype)
 
         if not for_embedding and (llm_args.lora is None or not llm_args.lora.enable):
