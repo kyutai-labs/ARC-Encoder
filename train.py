@@ -333,20 +333,20 @@ def _train(
             )
 
             # if get_rank() == 0:
-            #     to_gen = [
-            #         int(tok)
-            #         for tok in batch.x[:insert_cat_embedds[0][0]]
-            #     ]
-            #     # target = [int(tok) for tok in batch.y]
-            #     embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"]]
-            #     continuation = [
-            #         int(tok)
-            #         for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
-            #     ]
-            #     print('Beginning',pipeline.tokenizer.decode(to_gen))
-            #     print('Embed', pipeline.tokenizer.decode(embed))
-            #     print('Continuation', pipeline.tokenizer.decode(continuation))
-            #     print('X len', len(batch.x))
+            #     # to_gen = [
+            #     #     int(tok)
+            #     #     for tok in batch.x[:insert_cat_embedds[0][0]]
+            #     # ]
+            #     # # target = [int(tok) for tok in batch.y]
+            #     # embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"]]
+            #     # continuation = [
+            #     #     int(tok)
+            #     #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
+            #     # ]
+            #     # print('Beginning',pipeline.tokenizer.decode(to_gen))
+            #     # print('Embed', pipeline.tokenizer.decode(embed))
+            #     # print('Continuation', pipeline.tokenizer.decode(continuation))
+            #     # print('X len', len(batch.x))
             #     print("Sizes", batch.sizes)
             #     print("Embed seqlens", embed_seqlens)
             #     print('Insert cat embedds', insert_cat_embedds)

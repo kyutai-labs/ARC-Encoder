@@ -158,6 +158,7 @@ def sequence_iterator(
     adapt_seq_len: bool = False,
     continuation: float = 0.0,
     insert_embeddings: bool = False,
+    n_times_sl_insertion: int = 1,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -206,6 +207,7 @@ def sequence_iterator(
                         n_missing=n_missing_cont,
                         data_type="continuation",
                         cur_pos=cur_pos,
+                        n_times_sl_insertion=n_times_sl_insertion,
                     )
 
                     if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -216,7 +218,9 @@ def sequence_iterator(
                         to_embed_buffer_cont = []
                         insert_embed_cont_list = []
                         sizes_cont = []
-                        n_missing_cont = seq_len * 3
+                        n_missing_cont = (
+                            seq_len * 2 + n_times_sl_insertion * seq_len
+                        )  # 2*seq_len for compressed tokens and contionuation, + the ones for text before compressed tokens
                         cur_pos = res[1]
                     else:
                         (
@@ -370,6 +374,7 @@ def build_dataset(
             adapt_seq_len=args.adapt_seq_len,
             continuation=continuation,
             insert_embeddings=args.insert_embeddings,
+            n_times_sl_insertion=args.n_times_sl_insertion,
         )
         for it in dataset_iterators
     ]

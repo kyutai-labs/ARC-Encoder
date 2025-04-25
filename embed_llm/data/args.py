@@ -26,3 +26,4 @@ class DataArgs(Serializable):
     shuffle: bool = False
     adapt_seq_len: bool = False
     insert_embeddings: bool = False
+    n_times_sl_insertion: int = 1

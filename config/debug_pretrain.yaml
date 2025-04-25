@@ -2,6 +2,7 @@ model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
 exp_name: test_pretrain
 
+
 continuation: 1.0
 textual_continuation: 0.0
 
@@ -35,14 +36,18 @@ pipeline:
     mean_hid4embed: null
     n_truncated_layers: 16
     pooling_module:
-      pool_type: mean_sa_smart_metric_scalar_product
+      pool_type: smart_mean_sa_metric_scalar_product
       inside_queries: true
     trained_layers: 1
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
-
+  decoder_module:
+    do: false
+    n_layers: 1
+    insert_at: 16
+    causal: true
 
 
 

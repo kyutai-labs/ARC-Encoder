@@ -279,8 +279,9 @@ def sequence_iterator_inserted_embed_continuation(
     seq_len: int,
     tokenizer: Tokenizer,  # type: ignore
     data_type: str = "continuation",
+    n_times_sl_insertion: int = 1,
 ) -> SequenceEmbedMaskAndSizes:
-    assert 0 <= len(x_buffer) < 2 * seq_len, len(x_buffer)
+    assert 0 <= len(x_buffer) < (1 + n_times_sl_insertion) * seq_len, len(x_buffer)
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     size = 0
@@ -357,7 +358,7 @@ def sequence_iterator_inserted_embed_continuation(
         n_missing -= overall_size
         if n_missing == 0:
             assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
-            assert len(x_buffer) <= seq_len * 2, (
+            assert len(x_buffer) <= seq_len * (1 + n_times_sl_insertion), (
                 f"Buffer to long {len(x_buffer)} | {seq_len * 2}"
             )
 

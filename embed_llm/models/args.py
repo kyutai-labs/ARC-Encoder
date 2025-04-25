@@ -50,6 +50,7 @@ class EmbedderArgs(Serializable):
     trained_layers: int = 0
     mean_hid4embed: list[int] | None = None
     causal_embedder: bool = True
+    trained_causal: bool = True
 
 
 @dataclass
