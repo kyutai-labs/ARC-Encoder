@@ -15,7 +15,7 @@ from embed_llm.models.args import (
     EmbedderArgs,
     PoolingArgs,
     BridgeArgs,
-    DecoderArgs
+    DecoderArgs,
 )
 
 # Mistral specifics
@@ -58,18 +58,30 @@ def load_args(
             }
         )
 
-        pipeline_args.embedder_params = EmbedderArgs(**pipeline_args.embedder_params)
+        pipeline_args.embedder_params = EmbedderArgs(
+            **{
+                k: pipeline_args.embedder_params.get(k)
+                for k in EmbedderArgs.__dataclass_fields__.keys()
+                if k in pipeline_args.embedder_params
+            }
+        )
 
-        pooling_args = PoolingArgs(**pipeline_args.embedder_params.pooling_module)
+        pooling_args = PoolingArgs(
+            **{
+                k: pipeline_args.embedder_params.pooling_module.get(k)
+                for k in PoolingArgs.__dataclass_fields__.keys()
+                if k in pipeline_args.embedder_params.pooling_module
+            }
+        )
         pipeline_args.embedder_params.pooling_module = pooling_args
-        
+
         if isinstance(pipeline_args.decoder_module, dict):
-            
-            pipeline_args.decoder_module = DecoderArgs(do=pipeline_args.decoder_module['do'], 
-                                                       n_layers=pipeline_args.decoder_module['n_layers'], 
-                                                       insert_at=pipeline_args.decoder_module['insert_at'],
-                                                       take_all_toks=pipeline_args.decoder_module.get('take_all_toks', False)
-                                                       )       
+            pipeline_args.decoder_module = DecoderArgs(
+                do=pipeline_args.decoder_module["do"],
+                n_layers=pipeline_args.decoder_module["n_layers"],
+                insert_at=pipeline_args.decoder_module["insert_at"],
+                take_all_toks=pipeline_args.decoder_module.get("take_all_toks", False),
+            )
 
         pipeline_args.bridge_module = BridgeArgs(**pipeline_args.bridge_module)
     else:

@@ -47,7 +47,7 @@ def insert_embeds(
     num_supp_toks = embeds.shape[0]
     if isinstance(embed_seqlens, list):
         if isinstance(embed_seqlens[0], list):
-            assert sum(sum(embed_seqlens, [])) == embeds.shape[0]
+            assert sum(sum(embed_seqlens, [])) == embeds.shape[0], f'{sum(sum(embed_seqlens, [])) } != {embeds.shape[0]}'
         else:
             assert sum(embed_seqlens) == embeds.shape[0]
 
@@ -178,6 +178,7 @@ class Attention(nn.Module):
         mask: BlockDiagonalMask | BlockDiagonalCausalMask | torch.Tensor | None = None,
         comp_rate: int | None = None,
         pool_type: str | None = None,
+        between: bool = False,
     ) -> torch.Tensor:
         assert mask is None or cache is None
         seqlen_sum, _ = x.shape
@@ -189,13 +190,15 @@ class Attention(nn.Module):
         xq, xk, xv = self.wq(x), self.wk(other_kv), self.wv(other_kv)
         xq = xq.view(seqlen_sum, self.n_heads, self.head_dim)
 
-        if self.pooling_module is None and comp_rate is not None:
+        if self.pooling_module is None and comp_rate is not None and not between:
             self.pooling_module = PoolingModule(
                 PoolingArgs(pool_type=pool_type, inside_queries=True)
             )
 
         if self.pooling_module is not None and comp_rate is not None:
-            seqlens = np.array(mask.q_seqinfo.seqstart_py[1:]) - np.array(mask.q_seqinfo.seqstart_py[:-1])
+            seqlens = np.array(mask.q_seqinfo.seqstart_py[1:]) - np.array(
+                mask.q_seqinfo.seqstart_py[:-1]
+            )
             seqlens = seqlens.tolist()
             xq, new_seqlens = self.pooling_module(
                 x=xq,
@@ -203,7 +206,7 @@ class Attention(nn.Module):
                 seqlens=seqlens,
             )
             seqlen_sum = sum(new_seqlens)
-            
+
             # Freqs_cis is already at the good shape
             if isinstance(mask, BlockDiagonalCausalMask):
                 new_mask = BlockDiagonalCausalMask.from_seqlens(
@@ -310,6 +313,7 @@ class TransformerBlock(nn.Module):
         self.feed_forward: nn.Module
 
         self.feed_forward = FeedForward(dim=dim, hidden_dim=hidden_dim, lora=lora)
+        self.pooling_module = None
 
     def forward(
         self,
@@ -321,7 +325,9 @@ class TransformerBlock(nn.Module):
         mask: BlockDiagonalCausalMask | BlockDiagonalMask | torch.Tensor | None = None,
         comp_rate: int | None = None,
         pool_type: str | None = None,
+        between: bool = False,
     ) -> torch.Tensor:
+        # If comp_rate not None and freqs_cis_k is None, pooling between modules
         r = self.attention.forward(
             x=self.attention_norm(x),
             freqs_cis=freqs_cis,
@@ -331,12 +337,29 @@ class TransformerBlock(nn.Module):
             freqs_cis_k=freqs_cis_k,
             comp_rate=comp_rate,
             pool_type=pool_type,
+            between=between,
         )
 
-        if comp_rate is not None and abs(comp_rate) != 1:
+        if comp_rate is not None and abs(comp_rate) != 1 and not between:
             h = r
         else:
             h = x + r
+
+        if self.pooling_module is None and comp_rate is not None and between:
+            self.pooling_module = PoolingModule(
+                PoolingArgs(pool_type=pool_type, inside_queries=False)
+            )
+
+        if self.pooling_module is not None and comp_rate is not None:
+            seqlens = np.array(mask.q_seqinfo.seqstart_py[1:]) - np.array(
+                mask.q_seqinfo.seqstart_py[:-1]
+            )
+            seqlens = seqlens.tolist()
+            h, new_seqlens = self.pooling_module(
+                x=h,
+                comp_rate=comp_rate,
+                seqlens=seqlens,
+            )
 
         r = self.feed_forward.forward(self.ffn_norm(h))
         out = h + r

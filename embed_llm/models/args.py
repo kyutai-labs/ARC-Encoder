@@ -21,6 +21,7 @@ class MLPProjectArgs(Serializable):
 class PoolingArgs(Serializable):
     pool_type: str = "mean"
     inside_queries: bool = False
+    between: bool = False
 
 
 @dataclass
@@ -49,7 +50,6 @@ class EmbedderArgs(Serializable):
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
     compress_rates: list[int] = field(default_factory=list)
     trained_layers: int = 0
-    mean_hid4embed: list[int] | None = None
     causal_embedder: bool = True
     trained_causal: bool = True
 
