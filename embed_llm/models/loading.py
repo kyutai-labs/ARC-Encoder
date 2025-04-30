@@ -73,6 +73,11 @@ def load_args(
                 if k in pipeline_args.embedder_params.pooling_module
             }
         )
+        if pipeline_args.embedder_params.pooling_module.get('inside_queries', False):   
+            pooling_args.where = "inside_queries"
+        elif pipeline_args.embedder_params.pooling_module.get('between', False):
+            pooling_args.where = "between"
+            
         pipeline_args.embedder_params.pooling_module = pooling_args
 
         if isinstance(pipeline_args.decoder_module, dict):

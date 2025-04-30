@@ -20,8 +20,8 @@ class MLPProjectArgs(Serializable):
 @dataclass
 class PoolingArgs(Serializable):
     pool_type: str = "mean"
-    inside_queries: bool = False
-    between: bool = False
+    where: str = "before"  # "before", "inside_queries", "between", "attention"
+    based_on: str | None = None  # "q", "k", "v"
 
 
 @dataclass
@@ -35,7 +35,7 @@ class DecoderArgs(Serializable):
     n_layers: int = 0
     insert_at: int | list[int] = 16
     take_all_toks: bool = False
-    
+
     def __post_init__(self) -> None:
         if isinstance(self.insert_at, int):
             self.insert_at = [self.insert_at] * self.n_layers

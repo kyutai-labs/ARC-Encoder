@@ -2,6 +2,9 @@ import torch
 from torch import nn
 import numpy as np
 import random
+import operator
+from typing import Iterable
+from functools import reduce
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 from xformers.ops.fmha.attn_bias import BlockDiagonalMask, BlockDiagonalCausalMask
 
@@ -47,7 +50,9 @@ def insert_embeds(
     num_supp_toks = embeds.shape[0]
     if isinstance(embed_seqlens, list):
         if isinstance(embed_seqlens[0], list):
-            assert sum(sum(embed_seqlens, [])) == embeds.shape[0], f'{sum(sum(embed_seqlens, [])) } != {embeds.shape[0]}'
+            assert sum(sum(embed_seqlens, [])) == embeds.shape[0], (
+                f"{sum(sum(embed_seqlens, []))} != {embeds.shape[0]}"
+            )
         else:
             assert sum(embed_seqlens) == embeds.shape[0]
 
@@ -158,8 +163,6 @@ class Attention(nn.Module):
 
         self.repeats = self.n_heads // self.n_kv_heads
 
-        self.scale = self.head_dim**-0.5
-
         MaybeLora = maybe_lora(lora)
         self.wq = MaybeLora(dim, n_heads * head_dim, bias=False)
         self.wk = MaybeLora(dim, n_kv_heads * head_dim, bias=False)
@@ -178,7 +181,8 @@ class Attention(nn.Module):
         mask: BlockDiagonalMask | BlockDiagonalCausalMask | torch.Tensor | None = None,
         comp_rate: int | None = None,
         pool_type: str | None = None,
-        between: bool = False,
+        based_on: str | None = None,
+        where: str = "before",
     ) -> torch.Tensor:
         assert mask is None or cache is None
         seqlen_sum, _ = x.shape
@@ -189,13 +193,12 @@ class Attention(nn.Module):
         kv_seqlen, _ = other_kv.shape
         xq, xk, xv = self.wq(x), self.wk(other_kv), self.wv(other_kv)
         xq = xq.view(seqlen_sum, self.n_heads, self.head_dim)
+        seqlens = None
+        if self.pooling_module is None and where == "inside_queries":
+            assert comp_rate is not None
+            self.pooling_module = PoolingModule(PoolingArgs(pool_type=pool_type))
 
-        if self.pooling_module is None and comp_rate is not None and not between:
-            self.pooling_module = PoolingModule(
-                PoolingArgs(pool_type=pool_type, inside_queries=True)
-            )
-
-        if self.pooling_module is not None and comp_rate is not None:
+        if self.pooling_module is not None and where == "inside_queries":
             seqlens = np.array(mask.q_seqinfo.seqstart_py[1:]) - np.array(
                 mask.q_seqinfo.seqstart_py[:-1]
             )
@@ -218,6 +221,8 @@ class Attention(nn.Module):
                 )
             else:
                 raise ValueError(f"Unsupported mask type: {type(mask)}")
+            positions = positions_from_sizes(new_seqlens, device=x.device)
+            freqs_cis = freqs_cis[positions].to(x.device)
             mask = new_mask
 
         xk = xk.view(kv_seqlen, self.n_kv_heads, self.head_dim)
@@ -248,14 +253,59 @@ class Attention(nn.Module):
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
 
-        output = memory_efficient_attention(
-            xq, key, val, mask if cache is None else cache.mask
-        )
-        output = output.view(seqlen_sum, self.n_heads * self.head_dim)
+        if where == "attention":
+            scale = 1 / xq.shape[-1] ** 0.5
+            xq = xq * scale
+            xq = xq.transpose(1, 2)  # (B=1,S, H, D)
+            key = key.transpose(1, 2)  # (B=1, H, S, D)
+            val = val.transpose(1, 2)
+            attn = xq @ key.transpose(-2, -1)  # (B=1, H, S, S)
+            attn_bias = mask if cache is None else cache.mask
+            attn_shape = attn.shape
+            if attn_bias is not None:
+                attn = attn + attn_bias.materialize(attn_shape).to(attn.device)
+            attn = attn.softmax(-1)  # (B=1, H, S, S)
+            if self.pooling_module is None:
+                assert comp_rate is not None
+                self.pooling_module = PoolingModule(PoolingArgs(pool_type=pool_type))
+
+            if self.pooling_module is not None:
+                seqlens = np.array(mask.q_seqinfo.seqstart_py[1:]) - np.array(
+                    mask.q_seqinfo.seqstart_py[:-1]
+                )
+                seqlens = seqlens.tolist()
+                attn, new_seqlens = self.pooling_module(
+                    x=attn,
+                    comp_rate=comp_rate,
+                    seqlens=seqlens,
+                )
+                seqlen_sum = sum(new_seqlens)
+            output = (attn @ val).transpose(1, 2).squeeze()  # (B=1, S, H, D)
+            output = output.reshape(seqlen_sum, self.n_heads * self.head_dim)
+        else:
+            output = memory_efficient_attention(
+                xq, key, val, mask if cache is None else cache.mask
+            )
+            output = output.view(seqlen_sum, self.n_heads * self.head_dim)
 
         assert isinstance(output, torch.Tensor)
 
-        return self.wo(output)  # type: ignore
+        if based_on is None:
+            base = None
+        elif based_on == "q":
+            base = xq.view(seqlen_sum, 1, self.n_heads * self.head_dim)
+        elif based_on == "k":
+            base = xk.view(kv_seqlen, 1, self.n_kv_heads * self.head_dim)
+        elif based_on == "v":
+            base = xv.view(kv_seqlen, 1, self.n_kv_heads * self.head_dim)
+        else:
+            raise ValueError(f"Unsupported based_on value: {based_on}")
+
+        return (
+            self.wo(output),
+            base,
+            seqlens,
+        )  # type: ignore
 
 
 class FeedForward(nn.Module):
@@ -325,10 +375,11 @@ class TransformerBlock(nn.Module):
         mask: BlockDiagonalCausalMask | BlockDiagonalMask | torch.Tensor | None = None,
         comp_rate: int | None = None,
         pool_type: str | None = None,
-        between: bool = False,
+        based_on: str | None = None,
+        where: str = "before",
     ) -> torch.Tensor:
         # If comp_rate not None and freqs_cis_k is None, pooling between modules
-        r = self.attention.forward(
+        r, merge_based_on, seqlens = self.attention.forward(
             x=self.attention_norm(x),
             freqs_cis=freqs_cis,
             cache=cache,
@@ -337,18 +388,22 @@ class TransformerBlock(nn.Module):
             freqs_cis_k=freqs_cis_k,
             comp_rate=comp_rate,
             pool_type=pool_type,
-            between=between,
+            based_on=based_on,
+            where=where,
         )
 
-        if comp_rate is not None and abs(comp_rate) != 1 and not between:
+        if (
+            comp_rate is not None
+            and abs(comp_rate) != 1
+            and (where == "inside_queries" or where == "attention")
+        ):
             h = r
         else:
             h = x + r
 
-        if self.pooling_module is None and comp_rate is not None and between:
-            self.pooling_module = PoolingModule(
-                PoolingArgs(pool_type=pool_type, inside_queries=False)
-            )
+        if self.pooling_module is None and where == "between":
+            assert comp_rate is not None
+            self.pooling_module = PoolingModule(PoolingArgs(pool_type=pool_type))
 
         if self.pooling_module is not None and comp_rate is not None:
             seqlens = np.array(mask.q_seqinfo.seqstart_py[1:]) - np.array(
@@ -359,8 +414,18 @@ class TransformerBlock(nn.Module):
                 x=h,
                 comp_rate=comp_rate,
                 seqlens=seqlens,
+                merge_base=merge_based_on,
             )
+            seqlens = new_seqlens
 
         r = self.feed_forward.forward(self.ffn_norm(h))
         out = h + r
-        return out
+        return out, seqlens, merge_based_on
+
+
+def positions_from_sizes(sizes: Iterable[int], device) -> torch.Tensor:
+    return torch.tensor(
+        reduce(operator.iadd, [list(range(s)) for s in sizes], []),
+        dtype=torch.long,
+        device=device,
+    )

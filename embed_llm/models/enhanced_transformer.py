@@ -1,6 +1,4 @@
-import operator
-from typing import Iterable
-from functools import partial, reduce
+from functools import partial
 from dataclasses import dataclass
 import torch
 from torch import nn
@@ -16,6 +14,7 @@ from embed_llm.models.mistral.transformer_layers import (
     RMSNorm,
     TransformerBlock,
     insert_embeds,
+    positions_from_sizes,
 )
 from embed_llm.models.mistral.rope import precompute_freqs_cis
 
@@ -212,64 +211,29 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
 
             if i >= self.start_compressing:
-                pooled_h, new_seqlens = self.pooling_module(
-                    h,
-                    comp_rate=self.compress_rates[compress_index],
-                    seqlens=seqlens,
-                    seqlens_only=self.pooling_args.inside_queries or self.pooling_args.between,
-                )
-                positions = positions_from_sizes(new_seqlens, self.freqs_cis.device)
-                freqs_cis = self.freqs_cis[positions].to(device=h.device)
-
-                if self.pooling_args.inside_queries:
-                    # Pooled queries attend all tokens
-                    # Pooling inside module
-                    positions = positions_from_sizes(seqlens, self.freqs_cis.device)
-                    freqs_cis_k = self.freqs_cis[positions].to(device=h.device)
-
-                    h = self.layers[str(i)](
+                if self.pooling_args.where == "inside_queries":
+                    h, new_seqlens, merge_based_on = self.layers[str(i)](
                         x=h,
-                        freqs_cis=freqs_cis,
+                        freqs_cis=self.freqs_cis,
                         mask=self_att_mask,
-                        freqs_cis_k=freqs_cis_k,
+                        freqs_cis_k=freqs_cis,
                         pool_type=self.pooling_args.pool_type,
+                        based_on=self.pooling_args.based_on,
                         comp_rate=self.compress_rates[compress_index],
+                        where="inside_queries",
                     )
-                    if not self.causal or (
-                        not self.trained_causal and i in self.trained_layers
-                    ):
-                        self_att_mask = BlockDiagonalMask.from_seqlens(
-                            q_seqlen=new_seqlens, kv_seqlen=new_seqlens
-                        )
-                    else:
-                        self_att_mask = BlockDiagonalCausalMask.from_seqlens(
-                            q_seqlen=new_seqlens, kv_seqlen=new_seqlens
-                        )
-                elif self.pooling_args.between:
-                    # Pooled queries attend all tokens
-                    # Pooling inside module
-                    positions = positions_from_sizes(seqlens, self.freqs_cis.device)
-                    freqs_cis_k = self.freqs_cis[positions].to(device=h.device)
-                    h = self.layers[str(i)](
+                    positions = positions_from_sizes(new_seqlens, self.freqs_cis.device)
+                    new_freqs_cis = self.freqs_cis[positions].to(device=h.device)
+
+                elif self.pooling_args.where == "before":
+                    pooled_h, new_seqlens = self.pooling_module(
                         x=h,
-                        freqs_cis=freqs_cis_k,
-                        mask=self_att_mask,
-                        pool_type=self.pooling_args.pool_type,
                         comp_rate=self.compress_rates[compress_index],
-                        between=True,
+                        merge_base=merge_based_on,
+                        seqlens=seqlens,
                     )
-                    
-                    if not self.causal or (
-                        not self.trained_causal and i in self.trained_layers
-                    ):
-                        self_att_mask = BlockDiagonalMask.from_seqlens(
-                            q_seqlen=new_seqlens, kv_seqlen=new_seqlens
-                        )
-                    else:
-                        self_att_mask = BlockDiagonalCausalMask.from_seqlens(
-                            q_seqlen=new_seqlens, kv_seqlen=new_seqlens
-                        )
-                else:
+                    positions = positions_from_sizes(new_seqlens, self.freqs_cis.device)
+                    new_freqs_cis = self.freqs_cis[positions].to(device=h.device)
                     if "sa" in self.pooling_args.pool_type:
                         if not self.causal or (
                             not self.trained_causal and i in self.trained_layers
@@ -282,15 +246,13 @@ class Transformer(ModelBase, LoRALoaderMixin):
                                 q_seqlen=new_seqlens, kv_seqlen=seqlens
                             )
 
-                        # Pooled queries attend all tokens
-                        positions = positions_from_sizes(seqlens, self.freqs_cis.device)
-                        freqs_cis_k = self.freqs_cis[positions].to(device=h.device)
-                        h = self.layers[str(i)](
+                        h, _, merge_based_on = self.layers[str(i)](
                             x=pooled_h,
                             other_kv=h,
-                            freqs_cis=freqs_cis,
+                            freqs_cis=new_freqs_cis,
                             mask=self_att_mask,
-                            freqs_cis_k=freqs_cis_k,
+                            freqs_cis_k=freqs_cis,
+                            based_on=self.pooling_args.based_on,
                         )
                     else:
                         if not self.causal or (
@@ -305,14 +267,40 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             )
 
                         # Pooled queries attend only to the pooled tokens
-                        h = self.layers[str(i)](
-                            x=pooled_h, freqs_cis=freqs_cis, mask=self_att_mask
+                        h, _, merge_based_on = self.layers[str(i)](
+                            x=pooled_h, freqs_cis=new_freqs_cis, mask=self_att_mask
                         )
+                else:
+                    # Between SA and MLP ("between") or after softmax, before @V ("attention")
+                    h, new_seqlens, merge_based_on = self.layers[str(i)](
+                        x=h,
+                        freqs_cis=freqs_cis,
+                        mask=self_att_mask,
+                        pool_type=self.pooling_args.pool_type,
+                        based_on=self.pooling_args.based_on,
+                        comp_rate=self.compress_rates[compress_index],
+                        where=self.pooling_args.where,
+                    )
+                    positions = positions_from_sizes(new_seqlens, self.freqs_cis.device)
+                    new_freqs_cis = self.freqs_cis[positions].to(device=h.device)
+
+                if not self.causal or (
+                    not self.trained_causal and i in self.trained_layers
+                ):
+                    self_att_mask = BlockDiagonalMask.from_seqlens(
+                        q_seqlen=new_seqlens, kv_seqlen=new_seqlens
+                    )
+                else:
+                    self_att_mask = BlockDiagonalCausalMask.from_seqlens(
+                        q_seqlen=new_seqlens, kv_seqlen=new_seqlens
+                    )
+                freqs_cis = new_freqs_cis
                 seqlens = new_seqlens
                 compress_index += 1
             else:
-                h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
-
+                h, _, merge_based_on = self.layers[str(i)](
+                    x=h, freqs_cis=freqs_cis, mask=self_att_mask, based_on=self.pooling_args.based_on
+                )
         return h, seqlens
 
     def forward(
@@ -408,13 +396,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
             ):
                 for _ in range(int((np.array(self.decoder_args.insert_at) == i).sum())):
                     if self.decoder_args.take_all_toks:
-                        h = self.decoder_modules["layer_" + str(decod_index)](
+                        h, _ = self.decoder_modules["layer_" + str(decod_index)](
                             x=h,
                             freqs_cis=freqs_cis,
                             mask=decod_mask,
                         )
                     else:
-                        embedds_h = self.decoder_modules["layer_" + str(decod_index)](
+                        embedds_h, _, _ = self.decoder_modules[
+                            "layer_" + str(decod_index)
+                        ](
                             x=h[~self.pos_to_keep],
                             other_kv=h[sum(decod_kv_mask, [])],
                             freqs_cis=freqs_cis_decod_q,
@@ -425,7 +415,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                         h[~self.pos_to_keep] = embedds_h
                     decod_index += 1
 
-            h = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
+            h, _, _ = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
 
         normalized_h = self.norm(h)
 
@@ -530,7 +520,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
                         not self.decoder_args.take_all_toks
                         and cat_embeddings is not None
                     ):
-                        embedds_h = self.decoder_modules["layer_" + str(decod_index)](
+                        embedds_h, _, _ = self.decoder_modules[
+                            "layer_" + str(decod_index)
+                        ](
                             x=h[~self.pos_to_keep],
                             other_kv=h,
                             freqs_cis=freqs_cis_decod_q,
@@ -549,13 +541,13 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             )
                         else:
                             decode_cache_view = None
-                        h = self.decoder_modules["layer_" + str(decod_index)](
+                        h, _, _ = self.decoder_modules["layer_" + str(decod_index)](
                             x=h,
                             freqs_cis=freqs_cis,
                             cache=decode_cache_view,
                         )
                         decod_index += 1
-            h = layer(x=h, freqs_cis=freqs_cis, cache=cache_view)
+            h, _, _ = layer(x=h, freqs_cis=freqs_cis, cache=cache_view)
 
         if cache is not None:
             cache.update_seqlens(seqlens.tolist())
@@ -595,11 +587,3 @@ class Transformer(ModelBase, LoRALoaderMixin):
         outs = self.output(h)
 
         return outs.float()
-
-
-def positions_from_sizes(sizes: Iterable[int], device) -> torch.Tensor:
-    return torch.tensor(
-        reduce(operator.iadd, [list(range(s)) for s in sizes], []),
-        dtype=torch.long,
-        device=device,
-    )

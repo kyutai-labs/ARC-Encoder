@@ -257,7 +257,7 @@ def _train(
     assert args.max_steps > args.optim.warm_up_steps, (
         "Max steps should be greater than warm up steps"
     )
-
+    torch.autograd.set_detect_anomaly(True)
     scheduler = lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=args.optim.max_lr,

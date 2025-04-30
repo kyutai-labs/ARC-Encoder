@@ -19,32 +19,31 @@ lora_embedder:
 model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
 no_eval: false
 num_microbatches: 1
+
 optim:
   final_lr: 1.0e-10
   initial_lr: 1.0e-20
   max_lr: 5.0e-05
   warm_up_steps: 500
   weight_decay: 0.1
+
 pipeline:
   bridge_module:
     bridge_type: null
   embedder_params:
-    causal_embedder: true
     compress_rates:
     - -4
-    mean_hid4embed: null
     n_truncated_layers: 16
     pooling_module:
-      pool_type: mean_metric_mse
-      between: true
+      pool_type: _metric_kmeans_norm
+      where: before
     trained_layers: 4
-    trained_causal: false
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
   decoder_module:
-    do: true
+    do: false
     n_layers: 1
     insert_at: 16
 
@@ -69,7 +68,7 @@ seed: 0
 log_freq: 1
 eval_freq: 50
 no_eval: true
-ckpt_freq: 2
+ckpt_freq: 30
 
 
 # wandb:

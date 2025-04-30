@@ -142,29 +142,17 @@ class PoolingModule(nn.Module):
     def __init__(self, args: PoolingArgs):
         super().__init__()
         self.pool_type = args.pool_type
-        self.inside_queries = args.inside_queries
 
     def forward(
         self,
         x: torch.Tensor,
         comp_rate: int,
         seqlens: list[int] | None = None,
-        seqlens_only: bool = False,
+        merge_base: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         embed_seqlens: List of a list of embeddings size per sample in the batch
         """
-
-        if len(x.shape) > 2:
-            assert self.inside_queries, (
-                f"PoolingModule only supports 2D tensors, but got {len(x.shape)}D tensor"
-                f" with shape {x.shape}. Set inside_queries to True to use 3D tensors."
-            )
-            assert "metric_" in self.pool_type, (
-                f"This PoolingModule only supports 2D tensors, use a pooling type that supports 3D tensors."
-                f" Got {self.pool_type}."
-            )
-
         new_seqlens = []
         pool_size = []
         if comp_rate != -1 and "metric_" not in self.pool_type:
@@ -181,9 +169,6 @@ class PoolingModule(nn.Module):
                     compressed_embed_size = split_integer(embed_size, comp_rate)
                 pool_size.extend(compressed_embed_size)
                 new_seqlens.append(len(compressed_embed_size))
-
-            if seqlens_only:
-                return None, new_seqlens
 
             if "last" in self.pool_type:
                 pool_mask = torch.block_diag(
@@ -204,17 +189,45 @@ class PoolingModule(nn.Module):
                 seqlens=seqlens,
                 comp_rate=comp_rate,
                 metric=self.pool_type.split("metric_")[-1],
-                seqlens_only=seqlens_only,
+
                 pruning="pruning" in self.pool_type,
+                merge_base=merge_base,
             )
-            if not seqlens_only:
-                assert x.shape[0] == sum(new_seqlens), (
-                    f"Shape of x {x.shape[0]} must be equal to sum of new_seqlens {sum(new_seqlens)}"
-                )
+            assert x.shape[0] == sum(new_seqlens), (
+                f"Shape of x {x.shape[0]} must be equal to sum of new_seqlens {sum(new_seqlens)}"
+            )
             pool_mask = None
         else:
             new_seqlens = seqlens
             pool_mask = None
 
+        if pool_mask is not None and len(x.shape) == 4:
+            # pooling the attention weights
+            assert "fusion" not in self.pool_type, (
+                "Pooling attention weights with advanced pooling is not implemented yet. Please use 2D tensor."
+            )
+            x = torch.einsum("sl,bhll -> bhsl", pool_mask, x)
+            pool_mask = None
+        elif pool_mask is not None and len(x.shape) == 3:
+            x = torch.einsum("sl,lhd -> shd", pool_mask, x)
+            pool_mask = None
+
         queries = x if pool_mask is None else pool_mask @ x
+
+        if comp_rate != -1 and "fusion" in self.pool_type:
+            pooled_queries_norm = torch.norm(queries, dim=-1, keepdim=True)
+            max_norms = []
+            ind_pool = 0
+            for t in pool_size:
+                max_norms.append(
+                    torch.max(torch.norm(x[ind_pool : ind_pool + t, :], dim=-1))
+                    .detach()
+                    .item()
+                )
+                ind_pool += t
+            max_norms = torch.tensor(
+                max_norms, device=x.device, dtype=x.dtype
+            ).unsqueeze(1)
+            queries = queries * max_norms / pooled_queries_norm
+
         return queries, new_seqlens
