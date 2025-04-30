@@ -27,16 +27,19 @@ optim:
   warm_up_steps: 500
   weight_decay: 0.1
 
+
 pipeline:
   bridge_module:
     bridge_type: null
   embedder_params:
     compress_rates:
-    - -4
+    - -2
+    - -2
     n_truncated_layers: 16
     pooling_module:
-      pool_type: _metric_kmeans_norm
-      where: before
+      pool_type: mean_metric_kmeans
+      where: between
+      based_on: k
     trained_layers: 4
   max_embeds: 1
   trainable_llm: false
@@ -46,7 +49,6 @@ pipeline:
     do: false
     n_layers: 1
     insert_at: 16
-
 
 
 

@@ -268,7 +268,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
                         # Pooled queries attend only to the pooled tokens
                         h, _, merge_based_on = self.layers[str(i)](
-                            x=pooled_h, freqs_cis=new_freqs_cis, mask=self_att_mask
+                            x=pooled_h,
+                            freqs_cis=new_freqs_cis,
+                            mask=self_att_mask,
+                            based_on=self.pooling_args.based_on,
                         )
                 else:
                     # Between SA and MLP ("between") or after softmax, before @V ("attention")
@@ -299,7 +302,10 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 compress_index += 1
             else:
                 h, _, merge_based_on = self.layers[str(i)](
-                    x=h, freqs_cis=freqs_cis, mask=self_att_mask, based_on=self.pooling_args.based_on
+                    x=h,
+                    freqs_cis=freqs_cis,
+                    mask=self_att_mask,
+                    based_on=self.pooling_args.based_on,
                 )
         return h, seqlens
 
@@ -396,7 +402,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             ):
                 for _ in range(int((np.array(self.decoder_args.insert_at) == i).sum())):
                     if self.decoder_args.take_all_toks:
-                        h, _ = self.decoder_modules["layer_" + str(decod_index)](
+                        h, _, _ = self.decoder_modules["layer_" + str(decod_index)](
                             x=h,
                             freqs_cis=freqs_cis,
                             mask=decod_mask,

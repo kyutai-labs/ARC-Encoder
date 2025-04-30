@@ -144,7 +144,9 @@ def smart_merge(
                             src = torch.zeros(
                                 (len(merged_x)), device=device, dtype=dtype
                             )
+                            torch.autograd.set_detect_anomaly(True)
                             x_norm = torch.norm(x, dim=-1, p=2)
+                            x_norm = x_norm.clone().detach()
                             assert len(cluster_ids_x) == len(x_norm), (
                                 f"Shape of cluster_ids_x {cluster_ids_x.shape} must be equal to shape of x_norm {x_norm.shape}, because cluster_ids_x shape is {cluster_ids_x.shape} and x_norm shape is {x_norm.shape}"
                             )
@@ -154,10 +156,10 @@ def smart_merge(
                                 x_norm,
                                 reduce="mean",
                             )
-
+                            merged_x = merged_x.clone()
                             merged_x[mask] = (merged_x * avg_norm.unsqueeze(-1))[
                                 mask
-                            ] / merged_norms.unsqueeze(-1)[mask]
+                            ] / (merged_norms.unsqueeze(-1)[mask])
 
                         # Compute means
                         merged_x = merged_x[mask]
@@ -166,6 +168,7 @@ def smart_merge(
 
                         if "norm" in metric:
                             avg_norm = torch.mean(torch.norm(x, dim=-1, p=2))
+                            merged_x = merged_x.clone()
                             merged_x = (
                                 merged_x
                                 * avg_norm

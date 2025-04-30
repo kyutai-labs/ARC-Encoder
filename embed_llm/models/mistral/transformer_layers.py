@@ -224,9 +224,11 @@ class Attention(nn.Module):
             positions = positions_from_sizes(new_seqlens, device=x.device)
             freqs_cis = freqs_cis[positions].to(x.device)
             mask = new_mask
+            seqlens = new_seqlens
 
         xk = xk.view(kv_seqlen, self.n_kv_heads, self.head_dim)
         xv = xv.view(kv_seqlen, self.n_kv_heads, self.head_dim)
+
         if freqs_cis is not None:
             xq, xk = apply_rotary_emb(
                 xq, xk, freqs_cis=freqs_cis, freqs_cis_k=freqs_cis_k
@@ -280,6 +282,7 @@ class Attention(nn.Module):
                     seqlens=seqlens,
                 )
                 seqlen_sum = sum(new_seqlens)
+                seqlens = new_seqlens
             output = (attn @ val).transpose(1, 2).squeeze()  # (B=1, S, H, D)
             output = output.reshape(seqlen_sum, self.n_heads * self.head_dim)
         else:

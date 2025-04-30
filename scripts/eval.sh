@@ -81,5 +81,6 @@ case $RUN_NAME in
 #     ;;
 
 
+#   python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_embedpool.json --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name 4P_TruncL_16_TrainL_4_decL0_newinit
 esac
 
