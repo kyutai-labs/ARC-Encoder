@@ -303,7 +303,11 @@ def _train(
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
-
+    
+    for _ in range(327):
+        # Warm up the model
+        batch = next(train_data_loader)
+        
     while state.step < args.max_steps:
         state.start_step()
 
@@ -318,7 +322,6 @@ def _train(
         # Number of steps to accumulate gradients before doing an optimizer step.
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
-
             # Avoid OOM due to too many embeddings for the same batch
             while len(batch.sizes) > 100:
                 batch = next(train_data_loader)
@@ -332,24 +335,26 @@ def _train(
                 pipeline.prepare_forward(batch)
             )
 
-            # if get_rank() == 0:
+            # if get_rank() == 4:
             #     # to_gen = [
             #     #     int(tok)
-            #     #     for tok in batch.x[:insert_cat_embedds[0][0]]
+            #     #     for tok in batch.x[sum(batch.sizes[:13]):sum(batch.sizes[:14])]
             #     # ]
-            #     # # target = [int(tok) for tok in batch.y]
-            #     # embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"]]
+            #     # target = [int(tok) for tok in batch.y]
+            #     # embed = [int(tokens) for tokens in batch.to_embed[13]["tokens"]]
             #     # continuation = [
             #     #     int(tok)
             #     #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
             #     # ]
             #     # print('Beginning',pipeline.tokenizer.decode(to_gen))
             #     # print('Embed', pipeline.tokenizer.decode(embed))
+            #     print('embedding tokens', batch.to_embed[13]["tokens"])
+            #     print('embed', batch.to_embed[13]["text"])
             #     # print('Continuation', pipeline.tokenizer.decode(continuation))
             #     # print('X len', len(batch.x))
-            #     print("Sizes", batch.sizes)
-            #     print("Embed seqlens", embed_seqlens)
-            #     print('Insert cat embedds', insert_cat_embedds)
+            #     # print("Sizes", batch.sizes)
+            #     # print("Embed seqlens", embed_seqlens)
+            #     # print('Insert cat embedds', insert_cat_embedds)
 
             if args.textual_continuation * args.continuation > 0.0:
                 rand_noembed_continuation = (
@@ -526,14 +531,14 @@ def _train(
         bpc_item = (
             bpc.item()
             if args.num_microbatches <= 1
-            else bpc / (args.num_microbatches).item()
+            else bpc / (args.num_microbatches)
         )
         bpc_avg = avg_aggregate(bpc_item)
 
         kl_loss_item = (
             kl_loss.item()
             if args.num_microbatches <= 1
-            else kl_loss / (args.num_microbatches).item()
+            else kl_loss / (args.num_microbatches)
         )
         kl_loss_avg = avg_aggregate(kl_loss_item)
         if not args.loss_args.kl:

@@ -1,5 +1,5 @@
 import dataclasses
-
+import numpy as np
 from embed_llm.data.tokenize import Mask, TokenSample, Tokenizer
 
 
@@ -83,9 +83,7 @@ def sequence_iterator_reconstruction(
 
             to_embed_buffer.append(
                 {
-                    "text": " ".join(
-                        [tokenizer.decode(toks).strip() for toks in new_embed]
-                    ),
+                    "text": tokenizer.decode(new_embed),
                     "tokens": new_embed,
                 }
             )
@@ -228,9 +226,7 @@ def sequence_iterator_continuation(
         new_embed = embed_tokens[0][cur_pos : cur_pos + (upper_bound - cur_pos) // 2]
         to_embed_buffer.append(
             {
-                "text": " ".join(
-                    [tokenizer.decode(toks).strip() for toks in new_embed]
-                ),
+                "text": tokenizer.decode(new_embed),
                 "tokens": new_embed,
             }
         )
@@ -335,11 +331,10 @@ def sequence_iterator_inserted_embed_continuation(
             min(n_missing - upper_bound_non_embed_prefix, len(x) - cur_pos), 0
         )
         new_embed = x[cur_pos : cur_pos + left_tokens // 2]
+
         to_embed_buffer.append(
             {
-                "text": " ".join(
-                    [tokenizer.decode(toks).strip() for toks in new_embed]
-                ),
+                "text": tokenizer.decode(new_embed),
                 "tokens": new_embed,
             }
         )
@@ -349,7 +344,10 @@ def sequence_iterator_inserted_embed_continuation(
         x_buffer.extend(x[cur_pos : cur_pos + left_tokens // 2])
         y_buffer.extend(y[cur_pos : cur_pos + left_tokens // 2])
 
-        mask_buffer.extend([True] * len(mask[cur_pos : cur_pos + left_tokens // 2]))
+        if np.unique(new_embed).size == 1:
+            mask_buffer.extend([False] * len(mask[cur_pos : cur_pos + left_tokens // 2]))
+        else:
+            mask_buffer.extend([True] * len(mask[cur_pos : cur_pos + left_tokens // 2]))
 
         size += len(x[cur_pos : cur_pos + left_tokens // 2])
         cur_pos += len(x[cur_pos : cur_pos + left_tokens // 2])
@@ -377,6 +375,8 @@ def sequence_iterator_inserted_embed_continuation(
                     ),
                     cur_pos,
                 )
+            else:
+                return [], [], [], [], [], seq_len * 2 + n_times_sl_insertion * seq_len, []
     return (
         x_buffer,
         y_buffer,

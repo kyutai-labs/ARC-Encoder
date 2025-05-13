@@ -15,13 +15,26 @@ METRIC_DICT = {
 def get_merging_cluster(
     x: torch.Tensor, n_compressed_toks: int, mode: str
 ) -> torch.Tensor:
-    kmeans = KMeans(
-        n_clusters=n_compressed_toks,
-        mode=mode,
-        max_iter=1000,
-        init_method="kmeans++",
-    )
-    cluster_ids_x = kmeans.fit_predict(x)
+    if torch.std(torch.std(x, dim=0)).item() < 1e-7:
+        print("Warning: x is constant, using default cluster ids for kmeans")
+        cluster_ids_x = []
+        for i in range(n_compressed_toks):
+            cluster_ids_x.extend([i] * (x.shape[0] // n_compressed_toks))
+        cluster_ids_x.extend([i] * (x.shape[0] % n_compressed_toks))
+        return torch.Tensor(cluster_ids_x).to(device=x.device, dtype=torch.int64)
+    else:
+        kmeans = KMeans(
+            n_clusters=n_compressed_toks,
+            mode=mode,
+            max_iter=1000,
+            init_method="kmeans++",
+        )
+        assert len(x.shape) > 1, f"Shape of x {x.shape} must be 2D tensor"
+        assert x.shape[0] > n_compressed_toks, (
+            f"Shape of x {x.shape} must be greater than n_compressed_toks {n_compressed_toks}"
+        )
+        cluster_ids_x = kmeans.fit_predict(x)
+
     return cluster_ids_x
 
 
@@ -103,12 +116,17 @@ def smart_merge(
             head_hid_state = []
             for i_head in range(n_heads):
                 x = hidden_states[ind_h : ind_h + embed_size, i_head]
+
                 if "kmeans" in metric:
                     if n_comp_tokens > 1:
-                        y = None if merge_base is None else merge_base[ind_h : ind_h + embed_size, i_head]
+                        y = (
+                            None
+                            if merge_base is None
+                            else merge_base[ind_h : ind_h + embed_size, i_head]
+                        )
+
                         cluster_ids_x = get_merging_cluster(
-                            x
-                            if y is None else y,
+                            x if y is None else y,
                             n_comp_tokens,
                             mode="cosine" if "cosine" in metric else "euclidean",
                         )
@@ -119,13 +137,28 @@ def smart_merge(
                             (n_comp_tokens, 1), device=device, dtype=dtype
                         )
                         assert all(cluster_ids_x < n_comp_tokens)
+                        assert len(
+                            cluster_ids_x.unsqueeze(1).expand(-1, x.shape[-1])
+                        ) == len(x), (
+                            f"Problem because cluster_ids_x shape is {cluster_ids_x.unsqueeze(1).shape} and x shape is {x.shape}"
+                        )
                         merged_x.scatter_reduce_(
                             0,
                             cluster_ids_x.unsqueeze(1).expand(-1, x.shape[-1]),
                             x,
                             reduce="mean",
                         )
-
+                        assert len(
+                            cluster_ids_x.unsqueeze(1).expand(-1, x.shape[-1])
+                        ) == len(
+                            torch.ones_like(
+                                cluster_ids_x.unsqueeze(1).expand(-1, 1),
+                                device=device,
+                                dtype=dtype,
+                            )
+                        ), (
+                            f"Problem because cluster_ids_x shape is {cluster_ids_x.unsqueeze(1).shape} and ones like shape is {torch.ones_like(cluster_ids_x.unsqueeze(1).expand(-1, 1)).shape}"
+                        )
                         # Non used clusters
                         counts.scatter_add_(
                             0,
@@ -144,7 +177,6 @@ def smart_merge(
                             src = torch.zeros(
                                 (len(merged_x)), device=device, dtype=dtype
                             )
-                            torch.autograd.set_detect_anomaly(True)
                             x_norm = torch.norm(x, dim=-1, p=2)
                             x_norm = x_norm.clone().detach()
                             assert len(cluster_ids_x) == len(x_norm), (
@@ -170,9 +202,7 @@ def smart_merge(
                             avg_norm = torch.mean(torch.norm(x, dim=-1, p=2))
                             merged_x = merged_x.clone()
                             merged_x = (
-                                merged_x
-                                * avg_norm
-                                / torch.norm(merged_x, dim=-1, p=2)
+                                merged_x * avg_norm / torch.norm(merged_x, dim=-1, p=2)
                             )
 
                     x = merged_x.clone()
@@ -224,9 +254,9 @@ def smart_merge(
                             if pruning:
                                 new_token = x[merge_id + 1].unsqueeze(0)
                             else:
-                                new_token = (
-                                    x[merge_id] + x[merge_id + 1]
-                                ).unsqueeze(0) / 2
+                                new_token = (x[merge_id] + x[merge_id + 1]).unsqueeze(
+                                    0
+                                ) / 2
                             x = torch.cat(
                                 [
                                     x[:merge_id],
@@ -249,8 +279,6 @@ def smart_merge(
 
         ind_h += embed_size
 
-    hidden_states = torch.cat(new_hidden_states, dim=0).to(
-        device=device, dtype=dtype
-    )
+    hidden_states = torch.cat(new_hidden_states, dim=0).to(device=device, dtype=dtype)
 
     return hidden_states, new_seqlens
