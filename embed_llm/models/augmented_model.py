@@ -61,11 +61,36 @@ class EmbedAugModel(nn.Module):
                 input_ids=embeddings,
                 seqlens=embed_seqlens,
             )
+            if self.embedder.rec_tok is not None and batch_type == "reconstruction":
+                sp_rec_tok = self.embedder.rec_tok(
+                    torch.tensor([0]).to(embeddings.device)
+                )
+                new_embeddings = torch.zeros(
+                    (
+                        len(embed_seqlens) + sum(embed_seqlens),
+                        embeddings.shape[1],
+                    ),
+                    device=embeddings.device,
+                    dtype=embeddings.dtype,
+                )
+                ind = 0
+                ind_new = 0
+                for j, size in enumerate(embed_seqlens):
+                    new_embeddings[ind_new : ind_new + size] = embeddings[
+                        ind : ind + size
+                    ]
+                    ind_new += size
+                    ind += size
+
+                    new_embeddings[ind_new : ind_new + 1] = sp_rec_tok.clone()
+
+                    ind_new += 1
+
+                embed_seqlens = [size + 1 for size in embed_seqlens]
+                embeddings = new_embeddings.clone()
+
             # Only one insertion of embedding per sample
             embed_seqlens = group_embed_seqlens(embed_seqlens, [1] * len(seqlens))
-
-            if batch_type == "continuation" and self.embedder.rec_tok:
-                pass
 
         # Embed seqlens is a list of lists of the number of tokens in each subpassage
         return self.llm.forward(

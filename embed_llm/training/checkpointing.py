@@ -167,21 +167,32 @@ class Checkpointer:
 
         embedder_states = {}
         for key, module in embedder_modules.items():
-            assert isinstance(module, FullyShardedDataParallel), (
-                "`module` should be an instance of `FullyShardedDataParallel`"
-            )
-            parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
-                "_checkpoint_wrapped_module.", ""
-            )
-            with module.summon_full_params(
-                module, writeback=True, offload_to_cpu=offload_to_cpu
-            ):
+            if "rec_tok" in key:
+                parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                    "_checkpoint_wrapped_module.", ""
+                )
                 embedder_states.update(
                     {
                         f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
                         for k, v in module.state_dict().items()
                     }
                 )
+            else:
+                assert isinstance(module, FullyShardedDataParallel), (
+                    "`module` should be an instance of `FullyShardedDataParallel`"
+                )
+                parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
+                    "_checkpoint_wrapped_module.", ""
+                )
+                with module.summon_full_params(
+                    module, writeback=True, offload_to_cpu=offload_to_cpu
+                ):
+                    embedder_states.update(
+                        {
+                            f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
+                            for k, v in module.state_dict().items()
+                        }
+                    )
 
         decoder_states = {}
         for key, module in decoder_modules.items():

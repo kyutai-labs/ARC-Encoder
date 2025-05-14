@@ -16,7 +16,10 @@ import numpy as np
 import subprocess as sp
 
 
-from embed_llm.models.wrapped_models_training import load_training_model, load_training_model_from_ckpt
+from embed_llm.models.wrapped_models_training import (
+    load_training_model,
+    load_training_model_from_ckpt,
+)
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.data.data_loader import build_data_loader
@@ -160,7 +163,7 @@ def _train(
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
     args.pipeline.param_dtype = param_dtype
 
-    if args.from_ckpt.do:    
+    if args.from_ckpt.do:
         pipeline, model = load_training_model_from_ckpt(
             train_args=args,
             folder=model_folder,
@@ -410,7 +413,6 @@ def _train(
                 insert_cat_embedds=insert_cat_embedds,
                 batch_type=batch.data_type,
             )
-
             mb_loss = compute_ce_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
@@ -418,6 +420,7 @@ def _train(
 
             batch_bpc = 0
             ind = 0
+
             for i, size in enumerate(batch.sizes):
                 if (
                     len(
@@ -497,9 +500,10 @@ def _train(
                 mb_loss = mb_loss + args.loss_args.kl_weight * kl_loss_distill
                 kl_loss += kl_loss_distill.item()
             bpc += batch_bpc / len(batch.sizes)
-
             loss += mb_loss.item()
+
             mb_loss.backward()
+
             if y_mask is None:
                 n_batch_tokens += x.numel()
             else:
@@ -508,6 +512,14 @@ def _train(
                 # synchronize CUDA to re-run backward
                 assert args.num_microbatches > 1  # should not happen
                 torch.cuda.synchronize()
+
+        if model.embedder.rec_tok is not None and batch.data_type != "reconstruction":
+            model.embedder.rec_tok.weight.grad = torch.zeros_like(
+                model.embedder.rec_tok.weight
+            ).to(
+                dtype=model.embedder.rec_tok.weight.dtype,
+                device=model.embedder.rec_tok.weight.device,
+            )
 
         if args.num_microbatches > 1:
             loss /= args.num_microbatches

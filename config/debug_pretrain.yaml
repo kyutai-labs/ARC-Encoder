@@ -3,7 +3,7 @@ run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
 exp_name: test_pretrain
 
 
-continuation: 1.0
+continuation: 0.5
 textual_continuation: 0.0
 
 lora_llm:
@@ -40,6 +40,7 @@ pipeline:
       where: between
     trained_layers: 4
     memory_tokens: 64
+    rec_tok: true
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
@@ -64,7 +65,7 @@ seed: 0
 log_freq: 1
 eval_freq: 50
 no_eval: true
-ckpt_freq: 30
+ckpt_freq: 10
 
 # from_ckpt:
 #   do: True

@@ -117,11 +117,9 @@ def load_training_model(
                 )
             )
 
-            torch.nn.init.ones_(
-                augmented_model.embedder.mem_embeddings.weight
-            )
+            torch.nn.init.ones_(augmented_model.embedder.mem_embeddings.weight)
 
-        assert not any(p.is_meta for n, p in augmented_model.named_parameters()), (
+        assert not any(p.is_meta for n, p in augmented_model.named_parameters() if "rec_tok" not in n), (
             "All parameters should be initialized by now"
         )
 
@@ -141,6 +139,21 @@ def load_training_model(
         assert all(p.is_meta for p in augmented_model.parameters()), (
             "All parameters should be on meta"
         )
+
+    if (
+        pipeline_args.embedder_params.memory_tokens > 0
+        and pipeline_args.embedder_params.rec_tok
+    ):
+        augmented_model.embedder.rec_tok.weight = torch.nn.Parameter(
+            torch.ones_like(
+                augmented_model.embedder.rec_tok.weight,
+                device="cuda",
+                dtype=param_dtype,
+            )
+        )
+        ignored_states = [augmented_model.embedder.rec_tok.weight]
+    else:
+        ignored_states = []
 
     torch.distributed.barrier()
 
@@ -168,10 +181,16 @@ def load_training_model(
             and not lora_embedder.enable
         ):
             param.requires_grad = True
-        elif (
-            pipeline_args.embedder_params.memory_tokens > 0
-        ) and "mem_embeddings" in name:
-            param.requires_grad = True
+        elif pipeline_args.embedder_params.memory_tokens > 0:
+            if "mem_embeddings" in name:
+                param.requires_grad = True
+
+            elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
+                param.requires_grad = True
+
+            else:
+                param.requires_grad = False
+
         else:
             param.requires_grad = False
 
@@ -191,6 +210,7 @@ def load_training_model(
         device_id=torch.cuda.current_device(),
         sync_module_states=True,  # saves cpu memory by loading pretrained model on rank0 only, not working with False
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
+        ignored_states=ignored_states,
     )
 
     main_logger_info("Model sharded!")
@@ -295,7 +315,7 @@ def load_training_model_from_ckpt(
                 state_dict, assign=True, strict=False
             )
 
-        assert not any(p.is_meta for n, p in augmented_model.named_parameters()), (
+        assert not any(p.is_meta for n, p in augmented_model.named_parameters() if "rec_tok" not in n), (
             "All parameters should be initialized by now"
         )
 
@@ -315,6 +335,21 @@ def load_training_model_from_ckpt(
         assert all(p.is_meta for p in augmented_model.parameters()), (
             "All parameters should be on meta"
         )
+
+    if (
+        pipeline_args.embedder_params.memory_tokens > 0
+        and pipeline_args.embedder_params.rec_tok
+    ):
+        augmented_model.embedder.rec_tok.weight = torch.nn.Parameter(
+            torch.ones_like(
+                augmented_model.embedder.rec_tok.weight,
+                device="cuda",
+                dtype=param_dtype,
+            )
+        )
+        ignored_states = [augmented_model.embedder.rec_tok.weight]
+    else:
+        ignored_states = []
 
     torch.distributed.barrier()
 
@@ -342,10 +377,11 @@ def load_training_model_from_ckpt(
             and not lora_embedder.enable
         ):
             param.requires_grad = True
-        elif (
-            pipeline_args.embedder_params.memory_tokens > 0
-        ) and "mem_embeddings" in name:
-            param.requires_grad = True
+        elif pipeline_args.embedder_params.memory_tokens > 0:
+            if "mem_embeddings" in name:
+                param.requires_grad = True
+            if pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
+                param.requires_grad = True
         else:
             param.requires_grad = False
 
@@ -365,6 +401,7 @@ def load_training_model_from_ckpt(
         device_id=torch.cuda.current_device(),
         sync_module_states=True,  # saves cpu memory by loading pretrained model on rank0 only, not working with False
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
+        ignored_states=ignored_states,
     )
 
     main_logger_info("Model sharded!")
