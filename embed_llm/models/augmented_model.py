@@ -47,10 +47,6 @@ class EmbedAugModel(nn.Module):
         self.embedder = embedder
         self.tokenized_prompts = {}
 
-        self.bridge_module = None
-        # if pipeline_args.bridge_module.bridge_type is not None:
-        #     pass
-
     def forward(
         self,
         x: torch.Tensor,
@@ -58,6 +54,7 @@ class EmbedAugModel(nn.Module):
         embeddings: torch.Tensor | None = None,
         embed_seqlens: list[int] | None = None,
         insert_cat_embedds: list[list[int]] | None = None,
+        batch_type: str = "continuation",
     ) -> torch.Tensor:
         if embeddings is not None:
             embeddings, embed_seqlens = self.embedder.forward_embedder(
@@ -67,8 +64,7 @@ class EmbedAugModel(nn.Module):
             # Only one insertion of embedding per sample
             embed_seqlens = group_embed_seqlens(embed_seqlens, [1] * len(seqlens))
 
-            if self.bridge_module is not None:
-                # Bridge module
+            if batch_type == "continuation" and self.embedder.rec_tok:
                 pass
 
         # Embed seqlens is a list of lists of the number of tokens in each subpassage
@@ -203,7 +199,10 @@ class EmbedAugPipeline(nn.Module):
                 Path(ckpt_path + "/embedder/lora.safetensors"),
             )
 
-        elif pipeline_args.embedder_params.trained_layers > 0:
+        elif (
+            pipeline_args.embedder_params.trained_layers > 0
+            or pipeline_args.embedder_params.memory_tokens > 0
+        ):
             trained_layers_state_dict = load_state_dict(
                 Path(ckpt_path + "/embedder"), dtype=param_dtype
             )
@@ -215,7 +214,11 @@ class EmbedAugPipeline(nn.Module):
             ), (
                 f"Ckpt state dict keys do not match model keys. Missing keys: {set(trained_layers_state_dict.keys()) - set(llm_embedder.state_dict().keys())}"
             )
-            llm_embedder.load_state_dict(trained_layers_state_dict, strict=False)
+            llm_embedder.load_state_dict(
+                trained_layers_state_dict,
+                strict=False,
+                assign=(pipeline_args.embedder_params.memory_tokens > 0),
+            )
         else:
             print("No trained layers, not loading any new state dict for the embedder")
 
@@ -230,13 +233,6 @@ class EmbedAugPipeline(nn.Module):
         )
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
-
-        if pipeline_args.bridge_module.bridge_type is not None:
-            state_dict = load_state_dict(
-                Path(ckpt_path + "/bridge_module"), dtype=param_dtype
-            )
-
-            augmented_pipeline.model.bridge_module.load_state_dict(state_dict)
 
         augmented_pipeline.model = augmented_pipeline.model.to(device)
 
@@ -327,9 +323,6 @@ class EmbedAugPipeline(nn.Module):
                 embed_seqlens = group_embed_seqlens(
                     embed_seqlens, [len(l_text) for l_text in text_to_embed]
                 )
-                if self.model.bridge_module is not None:
-                    # Bridge module
-                    pass
 
             else:
                 embeddings = None

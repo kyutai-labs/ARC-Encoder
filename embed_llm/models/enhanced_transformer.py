@@ -83,6 +83,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 if self.n_mem_tokens == 0
                 else torch.nn.Embedding(self.n_mem_tokens, args.dim)
             )
+            self.rec_tok = (
+                torch.nn.Embedding(1, args.dim) if embedder_args.rec_tok else None
+            )
         else:
             self.for_embedding = False
             self.compress_rates = []
@@ -116,6 +119,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.decoder_args = decoder_args
             self.n_mem_tokens = 0
             self.mem_embeddings = None
+            self.rec_tok = None
 
         self.pos_to_keep = None
 
@@ -366,6 +370,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embed_seqlens: list[list[int]] | None = None,
         cat_embeddings: torch.Tensor | None = None,
         insert_cat_embedds: list[list[int]] | None = None,
+        batch_type: str | None = None,
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
 
@@ -379,6 +384,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 seqlens=seqlens,
                 insert_cat_embedds=insert_cat_embedds,
                 tokenized_prompts=tokenized_prompts,
+                batch_type=batch_type,
             )
 
             self.pos_to_keep = torch.tensor(

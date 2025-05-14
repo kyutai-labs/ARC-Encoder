@@ -408,6 +408,7 @@ def _train(
                 seqlens=seqlens,
                 embed_seqlens=embed_seqlens,
                 insert_cat_embedds=insert_cat_embedds,
+                batch_type=batch.data_type,
             )
 
             mb_loss = compute_ce_loss_with_mask(

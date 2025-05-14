@@ -14,7 +14,6 @@ from embed_llm.models.args import (
     MistralModelArgs,
     EmbedderArgs,
     PoolingArgs,
-    BridgeArgs,
     DecoderArgs,
 )
 
@@ -88,7 +87,6 @@ def load_args(
                 take_all_toks=pipeline_args.decoder_module.get("take_all_toks", False),
             )
 
-        pipeline_args.bridge_module = BridgeArgs(**pipeline_args.bridge_module)
     else:
         pipeline_args = pipe_args
 

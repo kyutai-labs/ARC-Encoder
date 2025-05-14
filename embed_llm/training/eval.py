@@ -63,6 +63,7 @@ def evaluate(
                     seqlens=seqlens,
                     embed_seqlens=embed_seqlens,
                     insert_cat_embedds=insert_cat_embedds,
+                    batch_type="continuation",
                 )
 
                 eval_loss_embcont += compute_ce_loss_with_mask(output, y, y_mask)
@@ -138,6 +139,7 @@ def evaluate(
                 seqlens=seqlens,
                 embed_seqlens=embed_seqlens,
                 insert_cat_embedds=insert_cat_embedds,
+                batch_type="reconstruction",
             )
             if not batch.is_pad_only:
                 eval_loss_rec += compute_ce_loss_with_mask(output, y, y_mask)

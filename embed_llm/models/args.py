@@ -22,12 +22,7 @@ class PoolingArgs(Serializable):
     pool_type: str = "mean"
     where: str = "before"  # "before", "inside_queries", "between", "attention"
     based_on: str | None = None  # "q", "k", "v"
-
-
-@dataclass
-class BridgeArgs(Serializable):
-    bridge_type: str | None = None
-
+    
 
 @dataclass
 class DecoderArgs(Serializable):
@@ -49,6 +44,7 @@ class EmbedderArgs(Serializable):
     n_truncated_layers: int = 8
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
     memory_tokens: int = 0
+    rec_tok: bool = False
     compress_rates: list[int] = field(default_factory=list)
     trained_layers: int = 0
     causal_embedder: bool = True
@@ -56,9 +52,12 @@ class EmbedderArgs(Serializable):
 
     def __post_init__(self) -> None:
         if self.memory_tokens > 0:
-            assert self.pooling_module.pool_type == "mean", self.pooling_module
-            assert self.pooling_module.based_on is None, self.pooling_module
+            if isinstance(self.pooling_module, PoolingArgs):
+                assert self.pooling_module.pool_type == "mean", self.pooling_module
+                assert self.pooling_module.based_on is None, self.pooling_module
             assert self.compress_rates == [], self.compress_rates
+        else:
+            assert self.rec_tok is False, 'rec_tok should be False'
 
 
 @dataclass
@@ -69,7 +68,6 @@ class EmbedAugArgs(Serializable):
     w_prefix_prompt: bool = False
     max_embeds: int = 1
     w_embeds: bool = False
-    bridge_module: BridgeArgs = field(default_factory=BridgeArgs)
     decoder_module: DecoderArgs = field(default_factory=DecoderArgs)
 
 
