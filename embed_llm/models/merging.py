@@ -86,10 +86,10 @@ def smart_merge(
         hidden_states = hidden_states.unsqueeze(1)
     elif len(hidden_states.shape) == 4:
         # Pooling attention weights
-        raise NotImplementedError(
-            "Pooling attention weights with advanced pooling is not implemented yet. Please use 3D tensor."
+        raise NotImplementedError(  
+            "Pooling attention weights with advanced pooling is not implemented yet. Please use 2D or 3D tensor."
         )
-
+        
     assert len(hidden_states.shape) == 3, (
         f"Shape of hidden_states {hidden_states.shape} must be 3D tensor"
         f" with shape (seqs_len, n_heads or 1, hidden_dim)"

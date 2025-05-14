@@ -77,6 +77,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.pooling_args = embedder_args.pooling_module
             self.decoder_modules = None
             self.decoder_args = None
+            self.n_mem_tokens = embedder_args.memory_tokens
+            self.mem_embeddings = (
+                None
+                if self.n_mem_tokens == 0
+                else torch.nn.Embedding(self.n_mem_tokens, args.dim)
+            )
         else:
             self.for_embedding = False
             self.compress_rates = []
@@ -108,6 +114,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 )
             )
             self.decoder_args = decoder_args
+            self.n_mem_tokens = 0
+            self.mem_embeddings = None
 
         self.pos_to_keep = None
 
@@ -190,6 +198,32 @@ class Transformer(ModelBase, LoRALoaderMixin):
         token_embeds = self.tok_embeddings(input_ids)
 
         h = token_embeds
+
+        if self.mem_embeddings is not None:
+            mem_embeddings = self.mem_embeddings(
+                torch.arange(
+                    self.n_mem_tokens, device=h.device, dtype=input_ids.dtype
+                ).view(-1)
+            )
+            new_h = torch.zeros(
+                (self.n_mem_tokens * len(seqlens) + sum(seqlens), h.shape[1]),
+                device=h.device,
+                dtype=h.dtype,
+            )
+            ind = 0
+            ind_new_h = 0
+            for j, size in enumerate(seqlens):
+                new_h[ind_new_h : ind_new_h + size] = h[ind : ind + size]
+                ind_new_h += size
+                ind += size
+
+                new_h[ind_new_h : ind_new_h + self.n_mem_tokens] = (
+                    mem_embeddings.clone()
+                )
+                ind_new_h += self.n_mem_tokens
+
+            seqlens = [size + self.n_mem_tokens for size in seqlens]
+            h = new_h.clone()
 
         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
 
@@ -307,6 +341,21 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     mask=self_att_mask,
                     based_on=self.pooling_args.based_on,
                 )
+
+        if self.n_mem_tokens > 0:
+            new_h = torch.zeros(
+                (self.n_mem_tokens * len(seqlens), h.shape[1]),
+                device=h.device,
+                dtype=h.dtype,
+            )
+            ind = 0
+            for j, size in enumerate(seqlens):
+                new_h[j * self.n_mem_tokens : (j + 1) * self.n_mem_tokens] = h[
+                    ind : ind + size
+                ][-self.n_mem_tokens :]
+                ind += size
+            seqlens = [self.n_mem_tokens] * len(seqlens)
+            h = new_h.clone()
         return h, seqlens
 
     def forward(

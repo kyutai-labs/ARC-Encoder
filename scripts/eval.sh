@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=1
+#SBATCH --array=0-8%2
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
@@ -9,7 +9,7 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=eval_models
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/eval_dissect_%A_%a.out
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx06
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx19
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if already used
@@ -17,8 +17,15 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
+4P_TruncL_16_TrainL_4_decL16_newinit
 4P_TruncL_16_TrainL_4_decL0_newinit
 4P_TruncL_16_TrainL_4_decL0_fulltoks
+4P_TruncL_16_TrainL_4_decL16_fulltoks_noncausal_v2
+4P_TruncL_16_TrainL_4_splitdecL16
+4P_TruncL_16_TrainL_4_decL31
+4P_TruncL_16_TrainL_4_decL24
+4P_TruncL_16_TrainL_4_decL8
+4P_TruncL_16_TrainL_4_decL4
 )
 
 
@@ -47,13 +54,20 @@ echo "Starting at: $(date)"
 case $RUN_NAME in
 
 *)
+    # srun --gpus=$N_GPU \
+    #      python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_embedpool.json \
+    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0 
+
+    # srun --gpus=$N_GPU \
+    #     python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_embedpool.json \
+    #     --n_passages 500 --max_seq_len 64   --multi_passages 1  --icl_w_document --n_icl_exs 5 
     srun --gpus=$N_GPU \
-         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_embedpool.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0
+         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_embedpool_revtemp.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0 --reversed_template
 
     srun --gpus=$N_GPU \
-        python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_embedpool.json \
-        --n_passages 500 --max_seq_len 64   --multi_passages 1  --icl_w_document --n_icl_exs 5
+        python embed_llm/generation/evaluation.py --run_name $RUN_NAME  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_embedpool_revtemp.json \
+        --n_passages 500 --max_seq_len 64   --multi_passages 1  --icl_w_document --n_icl_exs 5 --reversed_template 
     ;;
 
 # *)

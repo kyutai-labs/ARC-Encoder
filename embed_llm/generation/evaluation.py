@@ -54,6 +54,7 @@ def create_prompt_prefix(
     docs: list[str] | None = None,
     max_examples: int | None = None,
     compressed_doc_in_icl: bool = False,
+    reversed_template: bool = False,
 ) -> tuple[list[str], list[str] | None]:
     max_examples = max_examples if max_examples is not None else len(queries)
     prompt_str = []
@@ -63,19 +64,24 @@ def create_prompt_prefix(
 
     if docs is not None:
         if compressed_doc_in_icl:
-            for query, answer, doc, index in zip(
-                queries, answers, docs, range(max_examples)
-            ):
-                if index == 0:
-                    prompt_str.append("Document: ")
-                    to_embed_str.append(doc.strip())
-                elif index == max_examples - 1:
-                    prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\n")
-                else:
-                    prompt_str.append(
-                        f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
-                    )
-                    to_embed_str.append(doc.strip())
+            if not reversed_template:
+                for query, answer, doc, index in zip(
+                    queries, answers, docs, range(max_examples)
+                ):
+                    if index == 0:
+                        prompt_str.append("Document: ")
+                        to_embed_str.append(doc.strip())
+                    elif index == max_examples - 1:
+                        prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\n")
+                    else:
+                        prompt_str.append(
+                            f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
+                        )
+                        to_embed_str.append(doc.strip())
+            else:
+                prompt_str.append(f"\nQuestion: {query}\nDocument: ")
+                to_embed_str.append(doc.strip())
+                prompt_str.append(f"\nAnswer: {answer}\n\n")
 
             if max_examples == 0:
                 prompt_str.append("")
@@ -83,7 +89,15 @@ def create_prompt_prefix(
             for query, answer, doc, _ in zip(
                 queries, answers, docs, range(max_examples)
             ):
-                prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
+                if reversed_template:
+                    prompt += (
+                        f"Question: {query}\nDocument: {doc}\nAnswer: {answer}\n\n"
+                    )
+                else:
+                    prompt += (
+                        f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
+                    )
+
             to_embed_str = None
             prompt_str.append(prompt)
 
@@ -104,6 +118,7 @@ def create_prompt(
     query: str,
     wdoc: bool = True,
     w_embeds: bool = True,
+    reversed_template: bool = False,
 ) -> tuple[list[str], list[str] | None]:
     list_prompt = prefix_prompt.copy()
 
@@ -122,10 +137,18 @@ def create_prompt(
         ], list_embed
     else:
         if w_embeds:
-            last_prompt = list_prompt[-1]
-            list_prompt[-1] = "".join([last_prompt, "Document: "])
-            list_embed.append(doc.strip())
-            list_prompt.append(f"\nQuestion: {query}\nAnswer:")
+            if not reversed_template:
+                last_prompt = list_prompt[-1]
+                list_prompt[-1] = "".join([last_prompt, "Document: "])
+                list_embed.append(doc.strip())
+                list_prompt.append(f"\nQuestion: {query}\nAnswer:")
+            else:
+                last_prompt = list_prompt[-1]
+                list_prompt[-1] = "".join(
+                    [last_prompt, f"\nQuestion: {query}\nDocument: "]
+                )
+                list_embed.append(doc.strip())
+                list_prompt.append("\nAnswer:")
         else:
             list_embed = None
             list_prompt.append(f"\nQuestion: {query}\nAnswer:")
@@ -152,6 +175,7 @@ def evaluate_QA(
     max_multi_passage: int = 1,
     seed: float = 0.42,
     compressed_doc_in_icl: bool = False,
+    reversed_template: bool = False,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
@@ -249,6 +273,7 @@ def evaluate_QA(
             docs=None if not icl_w_document else context,
             max_examples=icl_examples,
             compressed_doc_in_icl=compressed_doc_in_icl,
+            reversed_template=reversed_template,
         )
 
         new_context, new_questions, new_answers = (
@@ -280,6 +305,7 @@ def evaluate_QA(
                         w_embeds=w_embeds,
                         query=query,
                         wdoc=query_w_context,
+                        reversed_template=reversed_template,
                     )
                     batch_list_prompts.append(batch_list_prompt)
                     texts_to_embed.append(text_to_embed)
@@ -522,7 +548,12 @@ def arg_parser():
     parser.add_argument("--n_icl_exs", type=int, default=None)
     parser.add_argument("--icl_w_document", action="store_true")
     parser.add_argument("--compressed_doc_in_icl", action="store_true")
-    parser.add_argument("--tmp_path", type=str, default="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/")
+    parser.add_argument(
+        "--tmp_path",
+        type=str,
+        default="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/",
+    )
+    parser.add_argument("--reversed_template", action="store_true")
 
     return parser.parse_args()
 
@@ -578,6 +609,7 @@ if __name__ == "__main__":
                 icl_w_document=True,
                 query_w_context=False,
                 w_embeds=False,
+                reversed_template=args.reversed_template,
             )
             torch.cuda.empty_cache()
         eval_logger_info(logger, "EVALUATING WITH CONTEXT")
@@ -597,6 +629,7 @@ if __name__ == "__main__":
             w_embeds=False,
             max_multi_passage=args.multi_passages,
             seed=args.seed,
+            reversed_template=args.reversed_template,
         )
         torch.cuda.empty_cache()
 
@@ -618,6 +651,7 @@ if __name__ == "__main__":
                     query_w_context=False,
                     w_embeds=False,
                     pipeline=mistral_model,
+                    reversed_template=args.reversed_template,
                 )
                 torch.cuda.empty_cache()
             eval_logger_info(logger, "EVALUATING WITH CONTEXT")
@@ -638,6 +672,7 @@ if __name__ == "__main__":
                 pipeline=mistral_model,
                 max_multi_passage=args.multi_passages,
                 seed=args.seed,
+                reversed_template=args.reversed_template,
             )
             torch.cuda.empty_cache()
 
@@ -658,6 +693,7 @@ if __name__ == "__main__":
             max_multi_passage=args.multi_passages,
             seed=args.seed,
             compressed_doc_in_icl=args.compressed_doc_in_icl,
+            reversed_template=args.reversed_template,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -678,4 +714,5 @@ if __name__ == "__main__":
                 max_multi_passage=args.multi_passages,
                 seed=args.seed,
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
+                reversed_template=args.reversed_template,
             )

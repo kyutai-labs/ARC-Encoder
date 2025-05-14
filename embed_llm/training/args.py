@@ -45,6 +45,14 @@ class WandbArgs(Serializable):
 
 
 @dataclass
+class CkptArgs(Serializable):
+    do: bool = False
+    decoder_path: str | None = None
+    embedder_path: str | None = None
+    llm_path: str | None = None
+     
+        
+@dataclass
 class TrainArgs(Serializable):
     # if specified, instruct_tokenizer and model will be loaded
     # Path to the directory containing the initial model or model id: "mistral-small"
@@ -91,6 +99,7 @@ class TrainArgs(Serializable):
     pipeline: EmbedAugArgs = field(default_factory=EmbedAugArgs)
     loss_args: LossArgs = field(default_factory=LossArgs)
     mixed_precision: bool = True
+    from_ckpt: CkptArgs = field(default_factory=CkptArgs)
 
     # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
     continuation: float = 0.0

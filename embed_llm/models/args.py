@@ -48,10 +48,17 @@ class DecoderArgs(Serializable):
 class EmbedderArgs(Serializable):
     n_truncated_layers: int = 8
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
+    memory_tokens: int = 0
     compress_rates: list[int] = field(default_factory=list)
     trained_layers: int = 0
     causal_embedder: bool = True
     trained_causal: bool = True
+
+    def __post_init__(self) -> None:
+        if self.memory_tokens > 0:
+            assert self.pooling_module.pool_type == "mean", self.pooling_module
+            assert self.pooling_module.based_on is None, self.pooling_module
+            assert self.compress_rates == [], self.compress_rates
 
 
 @dataclass

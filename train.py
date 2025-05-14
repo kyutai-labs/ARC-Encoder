@@ -16,7 +16,7 @@ import numpy as np
 import subprocess as sp
 
 
-from embed_llm.models.wrapped_models_training import load_training_model
+from embed_llm.models.wrapped_models_training import load_training_model, load_training_model_from_ckpt
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.checkpointing import Checkpointer
 from embed_llm.data.data_loader import build_data_loader
@@ -160,15 +160,29 @@ def _train(
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
     args.pipeline.param_dtype = param_dtype
 
-    pipeline, model = load_training_model(
-        train_args=args,
-        folder=model_folder,
-        lora_llm=args.lora_llm,
-        lora_embedder=args.lora_embedder,
-        checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
-        param_dtype=param_dtype,
-        max_batch_size=args.batch_size,
-    )
+    if args.from_ckpt.do:    
+        pipeline, model = load_training_model_from_ckpt(
+            train_args=args,
+            folder=model_folder,
+            lora_llm=args.lora_llm,
+            lora_embedder=args.lora_embedder,
+            checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
+            param_dtype=param_dtype,
+            max_batch_size=args.batch_size,
+            decoder_path=args.from_ckpt.decoder_path,
+            embedder_path=args.from_ckpt.embedder_path,
+            llm_path=args.from_ckpt.llm_path,
+        )
+    else:
+        pipeline, model = load_training_model(
+            train_args=args,
+            folder=model_folder,
+            lora_llm=args.lora_llm,
+            lora_embedder=args.lora_embedder,
+            checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
+            param_dtype=param_dtype,
+            max_batch_size=args.batch_size,
+        )
 
     main_logger_info("Model loading done")
     main_logger_info(
@@ -303,11 +317,7 @@ def _train(
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
-    
-    for _ in range(327):
-        # Warm up the model
-        batch = next(train_data_loader)
-        
+
     while state.step < args.max_steps:
         state.start_step()
 
@@ -412,6 +422,17 @@ def _train(
                     len(
                         pipeline.tokenizer.decode(
                             [int(tok) for tok in batch.y[ind : ind + size]]
+                        )
+                    )
+                    if y_mask is None
+                    else len(
+                        pipeline.tokenizer.decode(
+                            [
+                                int(tok)
+                                for tok in batch.y[ind : ind + size][
+                                    batch.y_mask[ind : ind + size]
+                                ]
+                            ]
                         )
                     )
                     == 0
@@ -529,9 +550,7 @@ def _train(
         train_ppl = avg_aggregate(train_ppl)
 
         bpc_item = (
-            bpc.item()
-            if args.num_microbatches <= 1
-            else bpc / (args.num_microbatches)
+            bpc.item() if args.num_microbatches <= 1 else bpc / (args.num_microbatches)
         )
         bpc_avg = avg_aggregate(bpc_item)
 

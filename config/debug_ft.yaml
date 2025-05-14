@@ -1,9 +1,9 @@
 model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
-exp_name: test_pretrain
+exp_name: test_ft
 
 
-continuation: 1.0
+continuation: 0.0
 textual_continuation: 0.0
 
 lora_llm:
@@ -23,7 +23,7 @@ num_microbatches: 1
 optim:
   final_lr: 1.0e-10
   initial_lr: 1.0e-20
-  max_lr: 5.0e-05
+  max_lr: 1.0e-05
   warm_up_steps: 500
   weight_decay: 0.1
 
@@ -32,44 +32,47 @@ pipeline:
     bridge_type: null
   embedder_params:
     causal_embedder: true
-    compress_rates: []
+    compress_rates:
+    - -4
     mean_hid4embed: null
     n_truncated_layers: 16
     pooling_module:
-      pool_type: mean
-      where: between
+      pool_type: mean_sa
     trained_layers: 4
-    memory_tokens: 64
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
+  decoder_module:
+    do: true
+    n_layers: 1
+    insert_at: 16
 
 
 data:
-  adapt_seq_len: false
-  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
+  adapt_seq_len: true
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
   shuffle: false
-  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2.jsonl
   insert_embeddings: true
 
 
-seq_len: 256
+seq_len: 512
 batch_size: 16
 num_microbatches: 1
-max_steps: 10000
+max_steps: 1000
 
 
 seed: 0
 log_freq: 1
 eval_freq: 50
-no_eval: true
+no_eval: false
 ckpt_freq: 30
 
-# from_ckpt:
-#   do: True
-#   decoder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/4P_TruncL_16_TrainL_4_decL16_newinit/checkpoints/checkpoint_010000/llm/decoder/consolidated
-#   embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/4P_TruncL_16_TrainL_4_decL16_newinit/checkpoints/checkpoint_010000/
+from_ckpt:
+  do: True
+  decoder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/4P_TruncL_16_TrainL_4_decL16_newinit/checkpoints/checkpoint_010000/llm/decoder/
+  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/4P_TruncL_16_TrainL_4_decL16_newinit/checkpoints/checkpoint_010000/embedder/
 
 
 # wandb:
