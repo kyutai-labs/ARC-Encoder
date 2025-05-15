@@ -326,42 +326,38 @@ class EmbedAugPipeline(nn.Module):
         else:
             w_embeds = self.pipeline_args.w_embeds
 
-        if not is_torchrun() or torch.distributed.get_rank() == 0:
-            if w_embeds:
-                x = [
-                    self.tokenizer.encode(text, bos=False, eos=False)
-                    for l_text in text_to_embed
-                    for text in l_text
-                ]
+        if w_embeds:
+            x = [
+                self.tokenizer.encode(text, bos=False, eos=False)
+                for l_text in text_to_embed
+                for text in l_text
+            ]
 
-                seqlens = [len(tokens) for tokens in x]
+            seqlens = [len(tokens) for tokens in x]
 
-                n_context_tokens = sum(seqlens)
-                x = torch.from_numpy(
-                    np.array([el for sublist in x for el in sublist])
-                ).to(device)
+            n_context_tokens = sum(seqlens)
+            x = torch.from_numpy(
+                np.array([el for sublist in x for el in sublist])
+            ).to(device)
 
-                embeddings, embed_seqlens = self.model.embedder.forward_embedder(
-                    input_ids=x, seqlens=seqlens
-                )
-
-                embed_seqlens = group_embed_seqlens(
-                    embed_seqlens, [len(l_text) for l_text in text_to_embed]
-                )
-
-            else:
-                embeddings = None
-                embed_seqlens = None
-                n_context_tokens = 0
-
-            embeddings = (
-                embeddings
-                if device_generation is None
-                else embeddings.to(device_generation)
+            embeddings, embed_seqlens = self.model.embedder.forward_embedder(
+                input_ids=x, seqlens=seqlens
             )
 
-        if not w_embeds:
+            embed_seqlens = group_embed_seqlens(
+                embed_seqlens, [len(l_text) for l_text in text_to_embed]
+            )
+
+        else:
             embeddings = None
+            embed_seqlens = None
+            n_context_tokens = 0
+
+        embeddings = (
+            embeddings
+            if device_generation is None or embeddings is None
+            else embeddings.to(device_generation)
+        )
 
         encoded_prompt = []
         insertion_lists = []

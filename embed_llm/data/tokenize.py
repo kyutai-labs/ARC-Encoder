@@ -96,7 +96,7 @@ def get_sample(
 
         passages = EmbedPassage(
             [
-                tokenizer.encode(passage_sample, bos=True, eos=True)
+                tokenizer.encode(passage_sample, bos=False, eos=False)
                 for passage_sample in embed_passage
             ],
             embed_passage,
@@ -130,7 +130,7 @@ def get_sample(
 
         passages = EmbedPassage(
             [
-                tokenizer.encode(passage_sample, bos=True, eos=True)
+                tokenizer.encode(passage_sample, bos=False, eos=False)
                 for passage_sample in embed_passage
             ],
             embed_passage,
