@@ -360,19 +360,7 @@ class EmbedAugPipeline(nn.Module):
                 else embeddings.to(device_generation)
             )
 
-        if is_torchrun() and w_embeds:
-            if torch.distributed.get_rank() > 0:
-                # Does not work with compress_rate != 0 for now
-                embeddings = torch.empty(
-                    (
-                        sum([len(l_text) for l_text in text_to_embed]),
-                        self.model.llm.args.dim,
-                    ),
-                    device=self.model.llm.device,
-                    dtype=self.model.llm.dtype,
-                )
-            torch.distributed.broadcast(embeddings, src=0)
-        elif not w_embeds:
+        if not w_embeds:
             embeddings = None
 
         encoded_prompt = []

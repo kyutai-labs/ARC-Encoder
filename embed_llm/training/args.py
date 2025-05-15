@@ -119,3 +119,6 @@ class TrainArgs(Serializable):
 
         if self.model_id_or_path is not None:
             Path(self.model_id_or_path).exists()
+        
+        if self.continuation < 1 and self.data.n_times_sl_insertion > 0:
+            print('For reconstruction training, no text inserted before embeddings')

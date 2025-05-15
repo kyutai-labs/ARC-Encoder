@@ -10,7 +10,6 @@ from embed_llm.training.distributed import get_rank
 from embed_llm.data.args import DataArgs
 from embed_llm.data.tokenize import Mask, TokenSample, encode, Tokenizer
 from embed_llm.data.sequence_iterators import (
-    sequence_iterator_continuation,
     sequence_iterator_reconstruction,
     sequence_iterator_inserted_embed_continuation,
     SequenceEmbedMaskAndSizes,
@@ -157,7 +156,6 @@ def sequence_iterator(
     is_finite: bool,
     adapt_seq_len: bool = False,
     continuation: float = 0.0,
-    insert_embeddings: bool = False,
     n_times_sl_insertion: int = 1,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
@@ -167,6 +165,7 @@ def sequence_iterator(
     x_buffer: list[int] = []
     y_buffer: list[int] = []
     to_embed_buffer: list[dict[str, str | int]] = []
+    insert_embed_list: list[list[int]] = []
     mask_buffer: Mask = []
     sizes: list[int] = []
     n_missing_cont = seq_len * 2
@@ -192,85 +191,49 @@ def sequence_iterator(
             do_continuation = rand_continue < continuation
 
         if do_continuation:
-            if insert_embeddings and not is_finite:
-                while True:
-                    res = sequence_iterator_inserted_embed_continuation(
-                        sample=sample,
-                        x_buffer=x_buffer_cont,
-                        y_buffer=y_buffer_cont,
-                        mask_buffer=mask_buffer_cont,
-                        to_embed_buffer=to_embed_buffer_cont,
-                        insert_embed_list=insert_embed_cont_list,
-                        sizes=sizes_cont,
-                        seq_len=seq_len,
-                        tokenizer=tokenizer,
-                        n_missing=n_missing_cont,
-                        data_type="continuation",
-                        cur_pos=cur_pos,
-                        n_times_sl_insertion=n_times_sl_insertion,
-                    )
+            while True:
+                n_times_sl_insertion = n_times_sl_insertion if not is_finite else 0
+                res = sequence_iterator_inserted_embed_continuation(
+                    sample=sample,
+                    x_buffer=x_buffer_cont,
+                    y_buffer=y_buffer_cont,
+                    mask_buffer=mask_buffer_cont,
+                    to_embed_buffer=to_embed_buffer_cont,
+                    insert_embed_list=insert_embed_cont_list,
+                    sizes=sizes_cont,
+                    seq_len=seq_len,
+                    tokenizer=tokenizer,
+                    n_missing=n_missing_cont,
+                    data_type="continuation",
+                    cur_pos=cur_pos,
+                    n_times_sl_insertion=n_times_sl_insertion,
+                )
 
-                    if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
-                        yield res[0]
+                if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
+                    yield res[0]
 
-                        x_buffer_cont, y_buffer_cont = [], []
-                        mask_buffer_cont = []
-                        to_embed_buffer_cont = []
-                        insert_embed_cont_list = []
-                        sizes_cont = []
-                        n_missing_cont = (
-                            seq_len * 2 + n_times_sl_insertion * seq_len
-                        )  # 2*seq_len for compressed tokens and contionuation, + the ones for text before compressed tokens
-                        cur_pos = res[1]
-                    else:
-                        (
-                            x_buffer_cont,
-                            y_buffer_cont,
-                            to_embed_buffer_cont,
-                            insert_embed_cont_list,
-                            mask_buffer_cont,
-                            n_missing_cont,
-                            sizes_cont,
-                        ) = res
-                        cur_pos = 0
-                        break
-            else:
-                while True:
-                    res = sequence_iterator_continuation(
-                        sample=sample,
-                        x_buffer=x_buffer_cont,
-                        y_buffer=y_buffer_cont,
-                        mask_buffer=mask_buffer_cont,
-                        to_embed_buffer=to_embed_buffer_cont,
-                        sizes=sizes_cont,
-                        seq_len=seq_len
-                        * 2,  # To ensure max seq len to generate and max seq len to embed
-                        tokenizer=tokenizer,
-                        n_missing=n_missing_cont,
-                        data_type="continuation",
-                        cur_pos=cur_pos,
-                    )
+                    x_buffer_cont, y_buffer_cont = [], []
+                    mask_buffer_cont = []
+                    to_embed_buffer_cont = []
+                    insert_embed_cont_list = []
+                    sizes_cont = []
+                    n_missing_cont = (
+                        seq_len * 2 + n_times_sl_insertion * seq_len
+                    )  # 2*seq_len for compressed tokens and contionuation, + the ones for text before compressed tokens
+                    cur_pos = res[1]
+                else:
+                    (
+                        x_buffer_cont,
+                        y_buffer_cont,
+                        to_embed_buffer_cont,
+                        insert_embed_cont_list,
+                        mask_buffer_cont,
+                        n_missing_cont,
+                        sizes_cont,
+                    ) = res
+                    cur_pos = 0
+                    break
 
-                    if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
-                        yield res[0]
-
-                        x_buffer_cont, y_buffer_cont = [], []
-                        mask_buffer_cont = []
-                        to_embed_buffer_cont = []
-                        sizes_cont = []
-                        n_missing_cont = seq_len * 2
-                        cur_pos = res[1]
-                    else:
-                        (
-                            x_buffer_cont,
-                            y_buffer_cont,
-                            to_embed_buffer_cont,
-                            mask_buffer_cont,
-                            n_missing_cont,
-                            sizes_cont,
-                        ) = res
-                        cur_pos = 0
-                        break
         else:
             while True:
                 res = sequence_iterator_reconstruction(
@@ -285,6 +248,7 @@ def sequence_iterator(
                     adapt_seq_len=adapt_seq_len,
                     n_missing=n_missing,
                     cur_pos=cur_pos,
+                    insert_embed_list=insert_embed_list,
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -293,6 +257,7 @@ def sequence_iterator(
                     x_buffer, y_buffer = [], []
                     mask_buffer = []
                     to_embed_buffer = []
+                    insert_embed_list = []
                     sizes = []
                     n_missing = seq_len
                     cur_pos = res[1]
@@ -301,6 +266,7 @@ def sequence_iterator(
                         x_buffer,
                         y_buffer,
                         to_embed_buffer,
+                        insert_embed_list,
                         mask_buffer,
                         n_missing,
                         sizes,
@@ -373,7 +339,6 @@ def build_dataset(
             tokenizer=tokenizer,
             adapt_seq_len=args.adapt_seq_len,
             continuation=continuation,
-            insert_embeddings=args.insert_embeddings,
             n_times_sl_insertion=args.n_times_sl_insertion,
         )
         for it in dataset_iterators
