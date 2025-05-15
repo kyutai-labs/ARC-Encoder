@@ -22,7 +22,7 @@ class PoolingArgs(Serializable):
     pool_type: str = "mean"
     where: str = "before"  # "before", "inside_queries", "between", "attention"
     based_on: str | None = None  # "q", "k", "v"
-    
+
 
 @dataclass
 class DecoderArgs(Serializable):
@@ -57,7 +57,7 @@ class EmbedderArgs(Serializable):
                 assert self.pooling_module.based_on is None, self.pooling_module
             assert self.compress_rates == [], self.compress_rates
         else:
-            assert self.rec_tok is False, 'rec_tok should be False'
+            assert self.rec_tok is False, "rec_tok should be False"
 
 
 @dataclass
@@ -69,6 +69,14 @@ class EmbedAugArgs(Serializable):
     max_embeds: int = 1
     w_embeds: bool = False
     decoder_module: DecoderArgs = field(default_factory=DecoderArgs)
+    comp_rate_curriculum: dict | None = None
+
+    def __post_init__(self) -> None:
+        if self.comp_rate_curriculum is not None:
+            if isinstance(self.embedder_params, EmbedderArgs):
+                assert len(self.embedder_params.compress_rates) == 1, (
+                    "Adapt compression while training if pooling once at last layer only"
+                )
 
 
 @dataclass

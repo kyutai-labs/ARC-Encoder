@@ -57,6 +57,7 @@ def insert_embeds(
             assert sum(embed_seqlens) == embeds.shape[0]
 
     if insert_cat_embedds is None:
+        # Should not happen anymore
         insert_cat_embedds = [[0] for _ in embed_seqlens]
 
     prefixes = []

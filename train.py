@@ -9,7 +9,7 @@ import torch.cuda
 import torch.distributed as dist
 from torch.optim import AdamW, lr_scheduler
 import numpy as np
-
+import random
 
 # Debugging
 
@@ -321,10 +321,44 @@ def _train(
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
 
+    if pipeline.pipeline_args.comp_rate_curriculum is not None:
+        switch_steps = dict([
+            (int((float(prop) / 100) * (args.max_steps)), new_rate)
+            for prop, new_rate in pipeline.pipeline_args.comp_rate_curriculum.items()]
+        )
+        main_logger_info(
+            "Warning: the first steps of the curriculum use the compress rate set in embedder params"
+        )
+        main_logger_info(
+            f"Compression rate curriculum: {pipeline.pipeline_args.comp_rate_curriculum}, WARNING: keys should be sorted in ascending order"
+        )
+        main_logger_info(
+            f"Switch steps: {switch_steps}"
+        )
+    else:
+        switch_steps = {}
+    random_switch = []
+
     while state.step < args.max_steps:
         state.start_step()
 
         is_last_step = state.step == args.max_steps
+        
+        if state.step in switch_steps.keys():
+            if len(switch_steps[state.step]) == 1:
+                main_logger_info(f'New compression rate {switch_steps[state.step]} at step {state.step}')
+                model.embedder.compress_rates = switch_steps[state.step]
+                random_switch = []
+            elif len(switch_steps[state.step]) > 1 or random_switch:
+                main_logger_info(f'New compression rate among {switch_steps[state.step]} at step {state.step}')
+                model.embedder.compress_rates = [random.choice(switch_steps[state.step])]
+                random_switch = switch_steps[state.step]
+            else:
+                main_logger_info(f'Not changing compression rate at step {state.step}')
+                random_switch = []
+                
+        elif len(random_switch) > 0:
+            model.embedder.compress_rates = [random.choice(random_switch)]
 
         optimizer.zero_grad()
         loss = torch.tensor([0.0], device="cuda")
@@ -348,7 +382,7 @@ def _train(
                 pipeline.prepare_forward(batch)
             )
 
-            # if get_rank() == 4:
+            # if get_rank() == 0:
             #     # to_gen = [
             #     #     int(tok)
             #     #     for tok in batch.x[sum(batch.sizes[:13]):sum(batch.sizes[:14])]
@@ -361,8 +395,8 @@ def _train(
             #     # ]
             #     # print('Beginning',pipeline.tokenizer.decode(to_gen))
             #     # print('Embed', pipeline.tokenizer.decode(embed))
-            #     print('embedding tokens', batch.to_embed[13]["tokens"])
-            #     print('embed', batch.to_embed[13]["text"])
+            #     # print('embedding tokens', batch.to_embed[13]["tokens"])
+            #     # print('embed', batch.to_embed[13]["text"])
             #     # print('Continuation', pipeline.tokenizer.decode(continuation))
             #     # print('X len', len(batch.x))
             #     # print("Sizes", batch.sizes)
@@ -404,7 +438,6 @@ def _train(
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
-
             output = model.forward(
                 x=x,
                 embeddings=embeddings,

@@ -455,6 +455,7 @@ def load_pipeline(
     pipeline: EmbedAugPipeline | Transformer | None = None,
     mistral: bool = False,
     ckpt: int | None = None,
+    comp_rate: int | None = None,
 ) -> EmbedAugPipeline | Transformer:
     if not mistral:
         if pipeline is None:
@@ -492,6 +493,11 @@ def load_pipeline(
             pipeline: EmbedAugPipeline = pipeline
             ckpt = ckpt
 
+        if comp_rate is not None:
+            assert len(pipeline.model.embedder.compress_rates) == 1, (
+                f"Only one compression rate is supported, but got {pipeline.model.embedder.compress_rates}"
+            )
+            pipeline.model.embedder.compress_rates = [comp_rate]
         return pipeline, ckpt
     else:
         if pipeline is None:

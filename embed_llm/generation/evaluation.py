@@ -176,6 +176,7 @@ def evaluate_QA(
     seed: float = 0.42,
     compressed_doc_in_icl: bool = False,
     reversed_template: bool = False,
+    comp_rate: int | None = None,
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
@@ -199,6 +200,7 @@ def evaluate_QA(
         pipeline=pipeline,
         mistral=mistral,
         ckpt=ckpt,
+        comp_rate=comp_rate,
     )
 
     if mistral:
@@ -548,6 +550,7 @@ def arg_parser():
     parser.add_argument("--n_icl_exs", type=int, default=None)
     parser.add_argument("--icl_w_document", action="store_true")
     parser.add_argument("--compressed_doc_in_icl", action="store_true")
+    parser.add_argument('--comp_rate', type=int, default=None)
     parser.add_argument(
         "--tmp_path",
         type=str,
@@ -694,6 +697,7 @@ if __name__ == "__main__":
             seed=args.seed,
             compressed_doc_in_icl=args.compressed_doc_in_icl,
             reversed_template=args.reversed_template,
+            comp_rate=args.comp_rate,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -715,4 +719,5 @@ if __name__ == "__main__":
                 seed=args.seed,
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
                 reversed_template=args.reversed_template,
+                comp_rate=args.comp_rate,
             )

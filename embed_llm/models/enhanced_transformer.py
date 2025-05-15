@@ -249,6 +249,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
 
             if i >= self.start_compressing:
+                # print('before compressing', seqlens)
                 if self.pooling_args.where == "inside_queries":
                     h, new_seqlens, merge_based_on = self.layers[str(i)](
                         x=h,
@@ -338,6 +339,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 freqs_cis = new_freqs_cis
                 seqlens = new_seqlens
                 compress_index += 1
+                # print('after compressing', seqlens)
             else:
                 h, _, merge_based_on = self.layers[str(i)](
                     x=h,
