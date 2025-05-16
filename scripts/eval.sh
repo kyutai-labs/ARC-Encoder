@@ -16,8 +16,8 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-squad_lr_e6_newtemp
-4P_TruncL_16_TrainL_4_decL16_newinit
+kmeans_pooling_squad
+squad_lr_e6_newcomp
 )
 
 
@@ -44,6 +44,17 @@ echo "Starting at: $(date)"
 
 
 case $RUN_NAME in
+
+*squ*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_fine_tuning.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_fine_tuning.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5
+
+    ;;
 
 *)
     srun --gpus=$N_GPU \
