@@ -30,3 +30,4 @@ scripts/needle*
 results/haystack
 scripts/dissect*
 scripts/test*
+results/*
