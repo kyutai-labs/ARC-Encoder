@@ -20,6 +20,7 @@ from embed_llm.generation.metrics import (
     metric_max_over_ground_truths,
     get_approx_em,
     get_substring_match_score,
+    get_bleu_score,
 )
 
 
@@ -37,6 +38,13 @@ METRIC_EVALUATION = {
     "SQUAD": get_em,
 }
 
+
+TRAD_DATA_PATH = {
+    "English": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/eng_Latn.jsonl",
+    "Spanish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/spa_Latn.jsonl",
+    "French": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/fra_Latn.jsonl",
+    "German": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/deu_Latn.jsonl",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +132,8 @@ def create_prompt(
 
     if prefix_embed is None and w_embeds:
         list_embed = []
+    elif not w_embeds:
+        list_embed = None
     else:
         list_embed = prefix_embed.copy()
 
@@ -223,6 +233,9 @@ def evaluate_QA(
 
         if compressed_doc_in_icl and icl_examples == 0:
             continue
+        
+        if benchmark == "HotpotQA":
+            max_multi_passage = 2
 
         metrics[benchmark] = {}
         eval_data = EVAL_DATA_PATH[benchmark]
@@ -530,6 +543,330 @@ def evaluate_QA(
     return pipeline, ckpt
 
 
+def evaluate_trad(
+    run_name: str,
+    ckpt: int | None = None,
+    max_seq_len: int = 512,
+    temps: list[float] = [0, 0.5, 0.7, 1],
+    benchmarks: list[str] = ["Spanish", "French", "German"],
+    max_bs: int = 4,
+    output_file: str = None,
+    n_samples: int | None = 1000,
+    tmp_path: str = None,
+    pipeline: EmbedAugPipeline | Transformer | None = None,
+    w_embeds: bool = True,  # To test baseline LLM
+    mistral: bool = False,
+    seed: float = 0.42,
+    comp_rate: int | None = None,
+    fine_tuned: bool = False,
+):
+    llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
+
+    # Loading model
+    if not is_torchrun():
+        device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
+        device_count = torch.cuda.device_count()
+        other_device = torch.device("cuda:1") if device_count > 1 else device
+    else:
+        device = "cuda"
+        other_device = None
+
+    pipeline, ckpt = load_pipeline(
+        run_name=run_name,
+        tmp_path=tmp_path,
+        llm_path=llm_path,
+        device=device,
+        max_bs=max_bs,
+        pipeline=pipeline,
+        mistral=mistral,
+        ckpt=ckpt,
+        comp_rate=comp_rate,
+    )
+
+    if mistral:
+        mistral_tokenizer = MistralTokenizer.from_file(
+            "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3"
+        ).instruct_tokenizer.tokenizer
+        mistral_model = pipeline
+
+    results = {benchmark: {} for benchmark in benchmarks}
+
+    # Creating dataset
+    metrics = {}
+
+    for benchmark in tqdm(
+        benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
+    ):
+        metrics[benchmark] = {}
+        eval_data = TRAD_DATA_PATH[benchmark]
+
+        text = []
+        traduction = []
+
+        with open(TRAD_DATA_PATH["English"], "r") as f:
+            for line in f:
+                data = json.loads(line)
+                text.append(data["text"].strip())
+                # Take the first ranked retrieved passage
+        with open(eval_data, "r") as f:
+            for line in f:
+                data = json.loads(line)
+                traduction.append(data["text"].strip())
+                # Take the first ranked retrieved passage
+        c = list(zip(text, traduction))
+
+        # fixed_random = random.Random()
+        # fixed_random.seed(42)
+        # fixed_random.shuffle(c)
+        random.shuffle(c, random=lambda: seed)
+        text, traduction = zip(*c)
+
+        prompt_prefix = "\n\n".join(
+            [
+                f"Document: {doc}\nTranslation: {answ}"
+                for doc, answ, _ in zip(text, traduction, range(5))
+            ]
+        )
+        new_text, new_trad = (
+            list(text[5:]),
+            list(traduction[5:]),
+        )
+
+        text, traduction = new_text, new_trad
+
+        eval_logger_info(logger, f"Evaluation dataset loaded for {benchmark}")
+        metrics[benchmark]["BLEU"] = {}
+        for temp in temps:
+            compress_ratio = 0
+            generated_sequences = []
+            n_samples = len(text) if n_samples is None else n_samples
+            for i in trange(0, n_samples, max_bs):
+                texts_to_embed = []
+                batch_list_prompts = []
+                bs = min(max_bs, n_samples - i)
+                if fine_tuned:
+                    if benchmark == "Spanish":
+                        batch_list_prompts = [
+                            [
+                                "Document: ",
+                                "\nTranslate the previous document into Spanish.",
+                            ]
+                            for _ in range(bs)
+                        ]
+                    elif benchmark == "French":
+                        batch_list_prompts = [
+                            [
+                                "Document: ",
+                                "\nProvide a French translation of the text below.",
+                            ]
+                            for _ in range(bs)
+                        ]
+                    elif benchmark == "German":
+                        batch_list_prompts = [
+                            [
+                                "Document: ",
+                                "\nRender the document into fluent German while preserving its meaning.",
+                            ]
+                            for _ in range(bs)
+                        ]
+                    else:
+                        raise ValueError("Invalid benchmark")
+                else:
+                    if benchmark == "Spanish":
+                        batch_list_prompts = [
+                            [
+                                prompt_prefix + "\n\nDocument: ",
+                                "\nTranslation:",
+                            ]
+                            for _ in range(bs)
+                        ]
+                    elif benchmark == "French":
+                        batch_list_prompts = [
+                            [
+                                prompt_prefix + "\n\nDocument: ",
+                                "\nTranslation:",
+                            ]
+                            for _ in range(bs)
+                        ]
+                    elif benchmark == "German":
+                        batch_list_prompts = [
+                            [
+                                prompt_prefix + "\n\nDocument: ",
+                                "\nTranslation:",
+                            ]
+                            for _ in range(bs)
+                        ]
+                    else:
+                        raise ValueError("Invalid benchmark")
+                texts_to_embed = [[seq] for seq in text[i : i + bs]]
+
+                if not mistral:
+                    generated_sequence, embed_tokens, embeds = pipeline.generate(
+                        text_to_embed=texts_to_embed,
+                        batch_list_prompts=batch_list_prompts,
+                        temperature=temp,
+                        max_tokens=max_seq_len,
+                        truncate_line=False,
+                        device=device,
+                        device_generation=other_device,
+                        give_n_tokens=True,
+                    )
+                    if w_embeds:
+                        compress_ratio += (
+                            embed_tokens / embeds
+                        )  # N tokens to be compressed / final number of tokens after compression
+                    else:
+                        compress_ratio += 1
+
+                    final_seq = []
+                    for seq in generated_sequence:
+                        if len(seq.split("\n\n")[0]) > 1:
+                            final_seq.append(seq.split("\n\n")[0].strip())
+                        elif "\nTranslation:" in seq.split("\n\n")[1]:
+                            final_seq.append(seq.split("\nTranslation:")[1].strip())
+                    generated_sequences.extend(final_seq)
+                else:
+                    if fine_tuned:
+                        if benchmark == "Spanish":
+                            prompts = [
+                                "Document: "
+                                + seq
+                                + "\nTranslate the previous document into Spanish."
+                                for seq in text[i : i + bs]
+                            ]
+                        elif benchmark == "French":
+                            prompts = [
+                                "Document: "
+                                + seq
+                                + "\nProvide a French translation of the text below."
+                                for seq in text[i : i + bs]
+                            ]
+
+                        elif benchmark == "German":
+                            prompts = [
+                                "Document: "
+                                + seq
+                                + "\nRender the document into fluent German while preserving its meaning."
+                                for seq in text[i : i + bs]
+                            ]
+                        else:
+                            raise ValueError("Invalid benchmark")
+                    else:
+                        if benchmark == "Spanish":
+                            prompts = [
+                                prompt_prefix
+                                + "\n\nDocument: "
+                                + seq
+                                + "\nTranslation:"
+                                for seq in text[i : i + bs]
+                            ]
+                        elif benchmark == "French":
+                            prompts = [
+                                prompt_prefix
+                                + "\n\nDocument: "
+                                + seq
+                                + "\nTranslation:"
+                                for seq in text[i : i + bs]
+                            ]
+                        elif benchmark == "German":
+                            prompts = [
+                                prompt_prefix
+                                + "\n\nDocument: "
+                                + seq
+                                + "\nTranslation:"
+                                for seq in text[i : i + bs]
+                            ]
+                        else:
+                            raise ValueError("Invalid benchmark")
+
+                    prompt_tokens = [
+                        mistral_tokenizer.encode(prompt, bos=True, eos=False)
+                        for prompt in prompts
+                    ]
+
+                    compress_ratio += 1
+                    generated_sequence, logprobs = generate(
+                        model=mistral_model,
+                        encoded_prompts=prompt_tokens,
+                        max_tokens=max_seq_len,
+                        temperature=temp,
+                        eos_id=mistral_tokenizer.eos_id,
+                    )
+
+                    final_seq = []
+                    for gen in generated_sequence:
+                        seq = mistral_tokenizer.decode(gen).strip()
+                        if len(seq.split("\n\n")[0]) > 1:
+                            final_seq.append(seq.split("\n\n")[0].strip())
+                        elif "\nTranslation:" in seq.split("\n\n")[1]:
+                            final_seq.append(seq.split("\nTranslation:")[1].strip())
+                    generated_sequences.extend(final_seq)
+
+            bleu_score = sum(
+                [
+                    get_bleu_score(trad, gen, avg=True)
+                    for trad, gen in zip(
+                        traduction[: len(generated_sequences)], generated_sequences
+                    )
+                ]
+            ) / len(generated_sequences)
+            print("bleu score:", bleu_score)
+
+            metrics[benchmark]["BLEU"][str(temp)] = {
+                "n_samples": n_samples,
+                "Metric": bleu_score,
+                "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
+                "language": benchmark,
+            }
+
+    if not is_torchrun() or torch.distributed.get_rank() == 0:
+        if run_name is not None:
+            with open(
+                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/"
+                + run_name
+                + "/results_generation.json",
+                "a",
+            ) as f:
+                json.dump(results, f)
+
+        with open(
+            output_file,
+            "r",
+        ) as f:
+            overall_results = json.load(f)
+
+        if mistral:
+            run_name = "Mistral_RAG"
+            ckpt = 0
+
+        if run_name not in overall_results.keys():
+            overall_results[run_name] = {}
+        if str(ckpt) not in overall_results[run_name].keys():
+            overall_results[run_name][str(ckpt)] = {}
+
+        for benchmark in metrics.keys():
+            for metric in metrics[benchmark].keys():
+                if metric not in overall_results[run_name][str(ckpt)].keys():
+                    overall_results[run_name][str(ckpt)][metric] = {}
+                for temp in metrics[benchmark][metric].keys():
+                    if temp not in overall_results[run_name][str(ckpt)][metric].keys():
+                        overall_results[run_name][str(ckpt)][metric][temp] = []
+                    overall_results[run_name][str(ckpt)][metric][temp].append(
+                        metrics[benchmark][metric][temp]
+                    )
+
+        with open(
+            output_file,
+            "w",
+        ) as f:
+            json.dump(overall_results, f)
+
+    if mistral:
+        return mistral_model
+
+    return pipeline, ckpt
+
+
 def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -550,13 +887,15 @@ def arg_parser():
     parser.add_argument("--n_icl_exs", type=int, default=None)
     parser.add_argument("--icl_w_document", action="store_true")
     parser.add_argument("--compressed_doc_in_icl", action="store_true")
-    parser.add_argument('--comp_rate', type=int, default=None)
+    parser.add_argument("--comp_rate", type=int, default=None)
+    parser.add_argument("--eval_trad", action="store_true")
     parser.add_argument(
         "--tmp_path",
         type=str,
         default="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/",
     )
     parser.add_argument("--reversed_template", action="store_true")
+    parser.add_argument("--fine_tuned", action="store_true")
 
     return parser.parse_args()
 
@@ -569,14 +908,14 @@ if __name__ == "__main__":
     args = arg_parser()
 
     if args.benchmarks == "all":
-        benchmarks = ["NQ", "TRIVIAQA", "HotpotQA", "SQUAD"]
+        benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "HotpotQA"]
     else:
         benchmarks = [args.benchmarks]
     icl_tests = [0, 2, 5] if args.n_icl_exs is None else [args.n_icl_exs]
     ensure_reproducibility(29)
 
     output_file = (
-        "/home/hippolytepilchen/code/embed_llm/results/NVEmbed/mistral/eval_mistral_RAG_QA_final.json"
+        "/home/hippolytepilchen/code/hp_v2/results/NVEmbed/mistral/eval_mistral_translate.json"
         if args.out_file is None
         else args.out_file
     )
@@ -593,9 +932,24 @@ if __name__ == "__main__":
         print("Evuating run:", args.run_name)
     # Evaluate Mistral using their code
     if args.mistral:
-        assert not args.eval_reconstruction, (
-            "Cannot evaluate reconstruction with Mistral"
-        )
+        if args.eval_trad:
+            print("EVALUATING TRANSLATION")
+            mistral_model = evaluate_trad(
+                args.run_name,
+                max_seq_len=max_seq_len,
+                temps=temp_tests,
+                max_bs=args.bs,
+                output_file=output_file,
+                n_samples=n_passages,
+                tmp_path=tmp_path,
+                pipeline=None,
+                mistral=True,
+                seed=args.seed,
+                comp_rate=args.comp_rate,
+                fine_tuned=args.fine_tuned,
+            )
+            torch.cuda.empty_cache()
+
         if args.multi_passages == 1:
             print("EVALUATING WITHOUT CONTEXT")
             mistral_model = evaluate_QA(
@@ -680,44 +1034,62 @@ if __name__ == "__main__":
             torch.cuda.empty_cache()
 
     else:
-        pipeline, ckpt = evaluate_QA(
-            args.run_name,
-            benchmarks,
-            ckpt=args.ckpt,
-            temps=temp_tests,
-            max_bs=args.bs,
-            output_file=output_file,
-            n_samples=n_passages,
-            max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
-            icl_examples=icl_tests[0],
-            w_embeds=args.wo_embeds,
-            icl_w_document=args.icl_w_document,
-            max_multi_passage=args.multi_passages,
-            seed=args.seed,
-            compressed_doc_in_icl=args.compressed_doc_in_icl,
-            reversed_template=args.reversed_template,
-            comp_rate=args.comp_rate,
-        )
-
-        for icl_ex in icl_tests[1:]:
+        if args.eval_trad:
+            print("EVALUATING TRANSLATION")
+            pipeline, ckpt = evaluate_trad(
+                args.run_name,
+                max_seq_len=max_seq_len,
+                temps=temp_tests,
+                max_bs=args.bs,
+                output_file=output_file,
+                n_samples=n_passages,
+                tmp_path=tmp_path,
+                pipeline=None,
+                mistral=False,
+                seed=args.seed,
+                comp_rate=args.comp_rate,
+                fine_tuned=args.fine_tuned,
+            )
+            torch.cuda.empty_cache()
+        else:
             pipeline, ckpt = evaluate_QA(
                 args.run_name,
                 benchmarks,
+                ckpt=args.ckpt,
                 temps=temp_tests,
                 max_bs=args.bs,
                 output_file=output_file,
                 n_samples=n_passages,
                 max_seq_len=max_seq_len,
                 tmp_path=tmp_path,
-                icl_examples=icl_ex,
+                icl_examples=icl_tests[0],
                 w_embeds=args.wo_embeds,
                 icl_w_document=args.icl_w_document,
-                pipeline=pipeline,
-                ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
                 seed=args.seed,
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
                 reversed_template=args.reversed_template,
                 comp_rate=args.comp_rate,
             )
+
+            for icl_ex in icl_tests[1:]:
+                pipeline, ckpt = evaluate_QA(
+                    args.run_name,
+                    benchmarks,
+                    temps=temp_tests,
+                    max_bs=args.bs,
+                    output_file=output_file,
+                    n_samples=n_passages,
+                    max_seq_len=max_seq_len,
+                    tmp_path=tmp_path,
+                    icl_examples=icl_ex,
+                    w_embeds=args.wo_embeds,
+                    icl_w_document=args.icl_w_document,
+                    pipeline=pipeline,
+                    ckpt=ckpt,
+                    max_multi_passage=args.multi_passages,
+                    seed=args.seed,
+                    compressed_doc_in_icl=args.compressed_doc_in_icl,
+                    reversed_template=args.reversed_template,
+                    comp_rate=args.comp_rate,
+                )

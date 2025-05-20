@@ -76,6 +76,16 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "Prop_a_in_cont",
             "n_passages",
         ]
+    elif benchmark.lower() == "traduction":
+        key_list = [
+            "run_name",
+            "ckpt",
+            "temp",
+            "n_samples",
+            "language",
+            "Bleu",
+            "compress_ratio",
+        ]
     else:
         raise ValueError("Invalid benchmark")
 
@@ -83,7 +93,39 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
 
     for run_name in results.keys():
         for ckpt in results[run_name].keys():
-            if (
+            if benchmark.lower() == "traduction":
+                for metric in [
+                    "BLEU",
+                ]:  
+                    if metric not in results[run_name][ckpt].keys():
+                        continue
+                    for temp in results[run_name][ckpt][metric].keys():
+                        for result in results[run_name][ckpt][metric][temp]:
+                            formated_results = pd.concat(
+                                [
+                                    formated_results,
+                                    pd.DataFrame(
+                                        {
+                                            "run_name": run_name,
+                                            "ckpt": int(ckpt),
+                                            "temp": float(temp),
+                                            "Metric": result["Metric"],
+                                            "n_samples": result["n_samples"],
+                                            "language": result["language"],
+                                        },
+                                        index=[0],
+                                    ),
+                                ]
+                            )
+                formated_results = (
+                    formated_results.groupby(
+                        ["run_name", "ckpt", "temp", "n_samples", "language"]
+                    )
+                    .first()
+                    .reset_index()
+                )
+
+            elif (
                 benchmark.lower() == "nq"
                 or benchmark.lower() == "triviaqa"
                 or benchmark.lower() == "hotpotqa"
@@ -165,67 +207,41 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                 )
 
                                 formated_results = pd.concat([formated_results, df_res])
-            else:
-                if benchmark not in results[run_name][ckpt].keys():
-                    continue
-                for temp in results[run_name][ckpt][benchmark].keys():
-                    for k in range(
-                        len(results[run_name][ckpt][benchmark][temp]["n_samples"])
-                    ):
-                        res = results[run_name][ckpt][benchmark][temp]
-                        df_res = pd.DataFrame(
-                            {
-                                "run_name": run_name,
-                                "ckpt": int(ckpt),
-                                "temp": float(temp),
-                                "n_samples": res["n_samples"][k],
-                                "icl_examples": res["icl_examples"][k],
-                                "context_in_examples": res["w_context_in_examples"][k],
-                                "Metric": res["Metric"][k],
-                                "Prop_a_in_cont": res.get(
-                                    "Prop context containing the answer",
-                                    [None] * 100,
-                                )[k],
-                                "n_passages": res.get("n_passages", 1)[k],
-                            },
-                            index=[0],
+                                
+                if icae:
+                    formated_results = (
+                        formated_results.groupby(
+                            [
+                                "run_name",
+                                "ckpt",
+                                "temp",
+                                "n_samples",
+                                "icl_examples",
+                                "context_in_examples",
+                                "n_passages",
+                                "compress_ratio",
+                            ]
                         )
-
-                        formated_results = pd.concat([formated_results, df_res])
-
-            if icae:
-                formated_results = (
-                    formated_results.groupby(
-                        [
-                            "run_name",
-                            "ckpt",
-                            "temp",
-                            "n_samples",
-                            "icl_examples",
-                            "context_in_examples",
-                            "n_passages",
-                            "compress_ratio",
-                        ]
+                        .first()
+                        .reset_index(allow_duplicates=True)
                     )
-                    .first()
-                    .reset_index(allow_duplicates=True)
-                )
-            else:
-                formated_results = (
-                    formated_results.groupby(
-                        [
-                            "run_name",
-                            "ckpt",
-                            "temp",
-                            "n_samples",
-                            "icl_examples",
-                            "context_in_examples",
-                            "n_passages",
-                            "compressed_icl",
-                            "compress_ratio",
-                        ]
+                else:
+                    formated_results = (
+                        formated_results.groupby(
+                            [
+                                "run_name",
+                                "ckpt",
+                                "temp",
+                                "n_samples",
+                                "icl_examples",
+                                "context_in_examples",
+                                "n_passages",
+                                "compressed_icl",
+                                "compress_ratio",
+                            ]
+                        )
+                        .first()
+                        .reset_index(allow_duplicates=True)
                     )
-                    .first()
-                    .reset_index(allow_duplicates=True)
-                )
+
     return formated_results
