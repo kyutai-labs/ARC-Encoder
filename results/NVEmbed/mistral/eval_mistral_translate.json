@@ -1,1 +1,1 @@
-{"Mistral_RAG": {"0": {"BLEU": {"0": [{"n_samples": 500, "Metric": 0.29980997876273824, "compress_ratio": 1.0, "language": "Spanish"}, {"n_samples": 500, "Metric": 0.4445307556731325, "compress_ratio": 1.0, "language": "French"}, {"n_samples": 500, "Metric": 0.338888135952587, "compress_ratio": 1.0, "language": "German"}]}}}}
+{}

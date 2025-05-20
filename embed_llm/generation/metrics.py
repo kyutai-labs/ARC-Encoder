@@ -5,6 +5,7 @@ from collections import Counter
 import numpy as np
 
 import regex
+from sacrebleu.metrics import BLEU as SacreBLEU
 from torcheval.metrics import BLEUScore
 from nltk.translate import meteor_score
 # nltk.download("wordnet")
@@ -174,69 +175,77 @@ def get_bleu_score(
     predicted: list[str] | str,
     avg: bool = False,
     trunc: bool = False,
+    sacrebleu: bool = True,
 ) -> float:
-    if not avg:
-        metric = BLEUScore(n_gram=4)
-        if isinstance(ground_truth, str) and isinstance(predicted, str):
-            assert len(ground_truth) > 0, "Ground truth set is empty"
-            predicted = predicted if not trunc else predicted[: len(ground_truth)]
-            metric.update(predicted, [ground_truth])
-            return metric.compute().item()
-        elif isinstance(ground_truth, list) and isinstance(predicted, list):
-            for gt_text, pred_text in zip(ground_truth, predicted):
-                assert len(gt_text) > 0, "Ground truth set is empty"
-                try:
-                    pred_text = pred_text if not trunc else pred_text[: len(gt_text)]
-                    metric.update(pred_text, [gt_text])
-                except Exception as e:
-                    print(
-                        "Error with update:",
-                        "\nGround-Truth: ",
-                        gt_text,
-                        "\nPred: ",
-                        pred_text,
-                        e,
-                    )
-            return metric.compute().item()
+    if sacrebleu:
+        _, _, bleu_fn = [], [], SacreBLEU(tokenize='13a', lowercase=True)
+        return bleu_fn.corpus_score(
+            [predicted] if isinstance(predicted, str) else predicted,
+            [[ground_truth]] if isinstance(ground_truth, str) else [ground_truth],
+        ).score
     else:
-        metrics = [BLEUScore(n_gram=i) for i in range(1, 5)]
-        if isinstance(ground_truth, str) and isinstance(predicted, str):
-            assert len(ground_truth) > 0, "Ground truth set is empty"
-            for metric in metrics:
-                try:
-                    predicted = predicted if not trunc else predicted[: len(ground_truth)]
-                    metric.update(predicted, [ground_truth])
-                except Exception as e:
-                    print(
-                        "Error with update:",
-                        "\nGround-Truth: ",
-                        ground_truth,
-                        "\nPred: ",
-                        predicted,
-                        e,
-                    )
-            result = np.array([metric.compute().item() for metric in metrics])
-            return result.mean()
-        elif isinstance(ground_truth, list) and isinstance(predicted, list):
-            for gt_text, pred_text in zip(ground_truth, predicted):
-                assert len(gt_text) > 0, "Ground truth set is empty"
-                try:
-                    for metric in metrics:
-                        pred_text = (
-                            pred_text if not trunc else pred_text[: len(gt_text)]
-                        )
+        if not avg:
+            metric = BLEUScore(n_gram=4)
+            if isinstance(ground_truth, str) and isinstance(predicted, str):
+                assert len(ground_truth) > 0, "Ground truth set is empty"
+                predicted = predicted if not trunc else predicted[: len(ground_truth)]
+                metric.update(predicted, [ground_truth])
+                return metric.compute().item()
+            elif isinstance(ground_truth, list) and isinstance(predicted, list):
+                for gt_text, pred_text in zip(ground_truth, predicted):
+                    assert len(gt_text) > 0, "Ground truth set is empty"
+                    try:
+                        pred_text = pred_text if not trunc else pred_text[: len(gt_text)]
                         metric.update(pred_text, [gt_text])
-                except Exception as e:
-                    print(
-                        "Error with update:",
-                        "\nGround-Truth: ",
-                        gt_text,
-                        "\nPred: ",
-                        pred_text,
-                        e,
-                    )
-            result = np.array([metric.compute().item() for metric in metrics])
-            return result.mean()
+                    except Exception as e:
+                        print(
+                            "Error with update:",
+                            "\nGround-Truth: ",
+                            gt_text,
+                            "\nPred: ",
+                            pred_text,
+                            e,
+                        )
+                return metric.compute().item()
+        else:
+            metrics = [BLEUScore(n_gram=i) for i in range(1, 5)]
+            if isinstance(ground_truth, str) and isinstance(predicted, str):
+                assert len(ground_truth) > 0, "Ground truth set is empty"
+                for metric in metrics:
+                    try:
+                        predicted = predicted if not trunc else predicted[: len(ground_truth)]
+                        metric.update(predicted, [ground_truth])
+                    except Exception as e:
+                        print(
+                            "Error with update:",
+                            "\nGround-Truth: ",
+                            ground_truth,
+                            "\nPred: ",
+                            predicted,
+                            e,
+                        )
+                result = np.array([metric.compute().item() for metric in metrics])
+                return result.mean()
+            elif isinstance(ground_truth, list) and isinstance(predicted, list):
+                for gt_text, pred_text in zip(ground_truth, predicted):
+                    assert len(gt_text) > 0, "Ground truth set is empty"
+                    try:
+                        for metric in metrics:
+                            pred_text = (
+                                pred_text if not trunc else pred_text[: len(gt_text)]
+                            )
+                            metric.update(pred_text, [gt_text])
+                    except Exception as e:
+                        print(
+                            "Error with update:",
+                            "\nGround-Truth: ",
+                            gt_text,
+                            "\nPred: ",
+                            pred_text,
+                            e,
+                        )
+                result = np.array([metric.compute().item() for metric in metrics])
+                return result.mean()
 
 
 def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> float:

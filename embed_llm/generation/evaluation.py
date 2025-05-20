@@ -802,16 +802,8 @@ def evaluate_trad(
                             final_seq.append(seq.split("\nTranslation:")[1].strip())
                     generated_sequences.extend(final_seq)
 
-            bleu_score = sum(
-                [
-                    get_bleu_score(trad, gen, avg=True)
-                    for trad, gen in zip(
-                        traduction[: len(generated_sequences)], generated_sequences
-                    )
-                ]
-            ) / len(generated_sequences)
-            print("bleu score:", bleu_score)
-
+            bleu_score = get_bleu_score(traduction[:len(generated_sequences)], generated_sequences)
+            print('BLEU score:', bleu_score)
             metrics[benchmark]["BLEU"][str(temp)] = {
                 "n_samples": n_samples,
                 "Metric": bleu_score,
