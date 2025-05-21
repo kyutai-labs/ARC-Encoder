@@ -233,7 +233,7 @@ def evaluate_QA(
 
         if compressed_doc_in_icl and icl_examples == 0:
             continue
-        
+
         if benchmark == "HotpotQA":
             max_multi_passage = 2
 
@@ -548,7 +548,7 @@ def evaluate_trad(
     ckpt: int | None = None,
     max_seq_len: int = 512,
     temps: list[float] = [0, 0.5, 0.7, 1],
-    benchmarks: list[str] = ["Spanish", "French", "German"],
+    benchmarks: list[str] = ["French", "Spanish", "German"],
     max_bs: int = 4,
     output_file: str = None,
     n_samples: int | None = 1000,
@@ -722,8 +722,10 @@ def evaluate_trad(
                     for seq in generated_sequence:
                         if len(seq.split("\n\n")[0]) > 1:
                             final_seq.append(seq.split("\n\n")[0].strip())
-                        elif "\nTranslation:" in seq.split("\n\n")[1]:
+                        elif "\nTranslation:" in seq.split("\n\n")[-1]:
                             final_seq.append(seq.split("\nTranslation:")[1].strip())
+                        else:
+                            final_seq.append(seq.strip())
                     generated_sequences.extend(final_seq)
                 else:
                     if fine_tuned:
@@ -798,17 +800,22 @@ def evaluate_trad(
                         seq = mistral_tokenizer.decode(gen).strip()
                         if len(seq.split("\n\n")[0]) > 1:
                             final_seq.append(seq.split("\n\n")[0].strip())
-                        elif "\nTranslation:" in seq.split("\n\n")[1]:
+                        elif "\nTranslation:" in seq.split("\n\n")[-1]:
                             final_seq.append(seq.split("\nTranslation:")[1].strip())
+                        else:
+                            final_seq.append(seq.strip())
                     generated_sequences.extend(final_seq)
 
-            bleu_score = get_bleu_score(traduction[:len(generated_sequences)], generated_sequences)
-            print('BLEU score:', bleu_score)
+            bleu_score = get_bleu_score(
+                traduction[: len(generated_sequences)], generated_sequences
+            )
+            print("BLEU score:", bleu_score)
             metrics[benchmark]["BLEU"][str(temp)] = {
                 "n_samples": n_samples,
                 "Metric": bleu_score,
                 "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                 "language": benchmark,
+                "fine_tuned": fine_tuned,
             }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:

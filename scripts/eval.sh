@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-6%4
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
@@ -17,13 +17,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-Allstar_comp4_ft
-Allstar_ft4
-mistral
-Allstar_comp2
-Allstar_comp8
-Allstar_comp16
-Allstar_comp32
+64memtoks_nodec_rec
 )
 
 

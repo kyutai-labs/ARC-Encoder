@@ -113,13 +113,13 @@ def dataset_from_file(file_path):
     while True:
         with open(file_path, "r") as f:
             for idx, line in enumerate(f):
-                if idx < 512 * 45:
+                if idx < 2000:
                     continue
                 data = json.loads(line)
                 # yield data["text"].strip()
                 sample.append(data["text"].strip())
                 if len(sample) == 45:
-                    yield ("\n".join(sample))[:16384]
+                    yield ("\n".join(sample))[:16000]
                     sample = []
 
 

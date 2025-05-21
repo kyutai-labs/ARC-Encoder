@@ -85,6 +85,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "language",
             "Bleu",
             "compress_ratio",
+            "fine_tuned",
         ]
     else:
         raise ValueError("Invalid benchmark")
@@ -112,14 +113,18 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                             "Metric": result["Metric"],
                                             "n_samples": result["n_samples"],
                                             "language": result["language"],
+                                            "fine_tuned": result.get(
+                                                "fine_tuned", True
+                                            ),
                                         },
+                                        
                                         index=[0],
                                     ),
                                 ]
                             )
                 formated_results = (
                     formated_results.groupby(
-                        ["run_name", "ckpt", "temp", "n_samples", "language"]
+                        ["run_name", "ckpt", "temp", "n_samples", "language", 'fine_tuned']
                     )
                     .first()
                     .reset_index()

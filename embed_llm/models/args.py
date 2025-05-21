@@ -19,7 +19,7 @@ class MLPProjectArgs(Serializable):
 
 @dataclass
 class PoolingArgs(Serializable):
-    pool_type: str = "mean"
+    pool_type: str = "mean_sa"
     where: str = "before"  # "before", "inside_queries", "between", "attention"
     based_on: str | None = None  # "q", "k", "v"
 
@@ -41,7 +41,7 @@ class DecoderArgs(Serializable):
 
 @dataclass
 class EmbedderArgs(Serializable):
-    n_truncated_layers: int = 8
+    n_truncated_layers: int = 16
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
     memory_tokens: int = 0
     rec_tok: bool = False
@@ -56,8 +56,6 @@ class EmbedderArgs(Serializable):
                 assert self.pooling_module.pool_type == "mean", self.pooling_module
                 assert self.pooling_module.based_on is None, self.pooling_module
             assert self.compress_rates == [], self.compress_rates
-        else:
-            assert self.rec_tok is False, "rec_tok should be False"
 
 
 @dataclass
@@ -67,7 +65,7 @@ class EmbedAugArgs(Serializable):
     trainable_llm: bool = False
     w_prefix_prompt: bool = False
     max_embeds: int = 1
-    w_embeds: bool = False
+    w_embeds: bool = True
     decoder_module: DecoderArgs = field(default_factory=DecoderArgs)
     comp_rate_curriculum: dict | None = None
 
