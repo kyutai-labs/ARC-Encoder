@@ -39,7 +39,6 @@ pipeline:
       where: between
     trained_layers: 4
   max_embeds: 1
-  trainable_llm: true
 
 
 
@@ -49,6 +48,7 @@ data:
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
   insert_embeddings: true
+  rec_seq_len_factor: 1.00001
 
 
 seq_len: 256

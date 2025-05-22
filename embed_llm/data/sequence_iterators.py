@@ -93,7 +93,7 @@ def sequence_iterator_reconstruction(
             assert adapt_seq_len
             # If we can use more embeddings and that one passage reaches the limit \
             # we split it in two embeddings and so on
-            
+
             new_embed = []
             for i in range(len(embed_tokens)):
                 new_embed.append(embed_tokens[i])
@@ -104,16 +104,16 @@ def sequence_iterator_reconstruction(
             )
 
             to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
-            
-            if data_type == 'instruct':
-                doc_tokens = tokenizer.encode('Document: ', bos=True, eos=False)
+
+            if data_type == "instruct":
+                doc_tokens = tokenizer.encode("Document: ", bos=True, eos=False)
                 insert_embed_list.append([len(doc_tokens)])
                 x_buffer.extend(doc_tokens)
                 y_buffer.extend(doc_tokens)
                 curr_mask = [False] * len(doc_tokens) + curr_mask
                 size = len(doc_tokens) + size
                 seq_len += len(doc_tokens)
-            
+
         x_buffer.extend(x[cur_pos : cur_pos + n_missing])
         y_buffer.extend(y[cur_pos : cur_pos + n_missing])
         mask_buffer.extend(curr_mask)
@@ -124,7 +124,7 @@ def sequence_iterator_reconstruction(
 
         cur_pos += size
         if n_missing == 0 or (
-            (adapt_seq_len and cur_pos >= len(x)) or len(x_buffer) == seq_len 
+            (adapt_seq_len and cur_pos >= len(x)) or len(x_buffer) == seq_len
         ):
             # With adapt seq len just do not cut a sequence in the middle to fill the empty space
             # But still upper bounded by max_seq_len
@@ -193,7 +193,6 @@ def sequence_iterator_inserted_embed_continuation(
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     size = 0
-
     while cur_pos < len(x):
         overall_size = len(x[cur_pos : cur_pos + n_missing])
         curr_mask = mask[cur_pos : cur_pos + n_missing]
@@ -234,7 +233,6 @@ def sequence_iterator_inserted_embed_continuation(
         mask_buffer.extend(
             [False] * len(mask[cur_pos : cur_pos + upper_bound_non_embed_prefix])
         )
-
         size += len(x[cur_pos : cur_pos + upper_bound_non_embed_prefix])
         cur_pos += len(x[cur_pos : cur_pos + upper_bound_non_embed_prefix])
 
@@ -253,20 +251,29 @@ def sequence_iterator_inserted_embed_continuation(
 
         cur_pos += len(x[cur_pos : cur_pos + left_tokens // 2])
 
-        to_continue_tokens = left_tokens // 2 if not shorten_continuation else min(32, left_tokens // 2)
+        to_continue_tokens = (
+            left_tokens // 2 if not shorten_continuation else min(32, left_tokens // 2)
+        )
+        if shorten_continuation:
+            overall_size -= max((left_tokens // 2) - 32, 0)
         x_buffer.extend(x[cur_pos : cur_pos + to_continue_tokens])
         y_buffer.extend(y[cur_pos : cur_pos + to_continue_tokens])
 
         if np.unique(new_embed).size == 1:
-            mask_buffer.extend([False] * len(mask[cur_pos : cur_pos + to_continue_tokens]))
+            mask_buffer.extend(
+                [False] * len(mask[cur_pos : cur_pos + to_continue_tokens])
+            )
         else:
-            mask_buffer.extend([True] * len(mask[cur_pos : cur_pos + to_continue_tokens]))
-
+            mask_buffer.extend(
+                [True] * len(mask[cur_pos : cur_pos + to_continue_tokens])
+            )
         size += len(x[cur_pos : cur_pos + to_continue_tokens])
         cur_pos += len(x[cur_pos : cur_pos + to_continue_tokens])
 
         sizes.append(size)
+
         n_missing -= overall_size
+        size = 0
         if n_missing == 0:
             assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
             assert len(x_buffer) <= seq_len * (1 + n_times_sl_insertion), (
@@ -289,7 +296,15 @@ def sequence_iterator_inserted_embed_continuation(
                     cur_pos,
                 )
             else:
-                return [], [], [], [], [], seq_len * 2 + n_times_sl_insertion * seq_len, []
+                return (
+                    [],
+                    [],
+                    [],
+                    [],
+                    [],
+                    seq_len * 2 + n_times_sl_insertion * seq_len,
+                    [],
+                )
     return (
         x_buffer,
         y_buffer,

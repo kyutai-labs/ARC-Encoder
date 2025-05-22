@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=4-7
+#SBATCH --array=8
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -9,7 +9,7 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=pretrain_rec_tk
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx15,par2dc5-ai-prd-cl02s04dgx12,par2dc5-ai-prd-cl02s02dgx14,par2dc5-ai-prd-cl02s01dgx03,par2dc5-ai-prd-cl02s01dgx04,par2dc5-ai-prd-cl02s03dgx28
+
 
 
 # Set up environment
@@ -25,7 +25,7 @@ config/experiments/compress_sweeps/meanSA_full_llm_comp4_v2.yaml
 config/experiments/mem_toks/8memtoks_dec_rec.yaml
 config/experiments/mem_toks/32memtoks_nodec_rec.yaml 
 config/experiments/mem_toks/32memtoks_dec_rec.yaml 
-# config/experiments/compress_sweeps/Allstar_comp4_lessinsertion_lowcont.yaml
+config/experiments/compress_sweeps/Allstar_comp4_lessinsertion_lowcont.yaml
 )
 
 # Get the specific config file for this array task

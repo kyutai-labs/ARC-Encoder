@@ -41,6 +41,7 @@ def get_sample(
     if (
         "instruct_data" in data_path.lower()
         or "synthesized" in data_path.lower()
+        or 'translation' in data_path.lower()
     ):
         question = data["question"]
 

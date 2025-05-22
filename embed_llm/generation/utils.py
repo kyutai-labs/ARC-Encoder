@@ -142,6 +142,8 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                 for metric in ["EM", "F1"]:
                     if benchmark not in results[run_name][ckpt].keys():
                         continue
+                    if metric not in results[run_name][ckpt][benchmark].keys():
+                        continue
                     for temp in results[run_name][ckpt][benchmark][metric].keys():
                         for res in results[run_name][ckpt][benchmark][metric][temp]:
                             if metric == "EM":
