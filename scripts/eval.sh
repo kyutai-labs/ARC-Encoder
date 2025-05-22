@@ -17,7 +17,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-mistral
+meanSA_full_llm_comp4
 )
 
 
@@ -52,57 +52,21 @@ case $RUN_NAME in
 
     ;;
 *)
-#    srun --gpus=$N_GPU  \
-#             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_fine_tuning.json \
-#         --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0 --benchmarks SQUAD
-
-#     srun --gpus=$N_GPU  \
-#             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_fine_tuning.json \
-#         --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5 --benchmarks SQUAD
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_cr.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0 --comp_rate -2
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_cr.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5 --comp_rate -2
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_cr.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0 --comp_rate -4
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_cr.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5 --comp_rate -4
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_cr.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0 --comp_rate -8
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_cr.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5 --comp_rate -8
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_cr.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0 --comp_rate -16
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_cr.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5 --comp_rate -16
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_cr.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0 --comp_rate -32
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_cr.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5 --comp_rate -32
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME 
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_trad.json \
-        --n_passages 500  --run_name $RUN_NAME --eval_trad
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --ckpt 9000
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json  \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad 
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json  \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad --ckpt 9000
 
     ;;
 

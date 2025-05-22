@@ -25,8 +25,8 @@ config/experiments/compress_sweeps/meanSA_full_llm_comp4_v2.yaml
 config/experiments/mem_toks/8memtoks_dec_rec.yaml
 config/experiments/mem_toks/32memtoks_nodec_rec.yaml 
 config/experiments/mem_toks/32memtoks_dec_rec.yaml 
+# config/experiments/compress_sweeps/Allstar_comp4_lessinsertion_lowcont.yaml
 )
-
 
 # Get the specific config file for this array task
 CONFIG=${CONFIG_FILES[$SLURM_ARRAY_TASK_ID]}

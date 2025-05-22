@@ -183,5 +183,5 @@ def load_model(
     if for_embedding:
         return model
     else:
-        tokenizer = load_mistral_tokenizer(folder).instruct_tokenizer.tokenizer
+        tokenizer = load_mistral_tokenizer(Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")).instruct_tokenizer.tokenizer
         return model, tokenizer

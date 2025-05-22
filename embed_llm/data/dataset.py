@@ -208,6 +208,7 @@ def sequence_iterator(
                     data_type="continuation",
                     cur_pos=cur_pos,
                     n_times_sl_insertion=n_times_sl_insertion,
+                    shorten_continuation=(rec_seq_len_factor > 1.0),
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):

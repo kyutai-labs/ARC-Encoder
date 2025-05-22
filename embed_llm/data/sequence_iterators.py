@@ -187,6 +187,7 @@ def sequence_iterator_inserted_embed_continuation(
     tokenizer: Tokenizer,  # type: ignore
     data_type: str = "continuation",
     n_times_sl_insertion: int = 1,
+    shorten_continuation: bool = False,
 ) -> SequenceEmbedMaskAndSizes:
     assert 0 <= len(x_buffer) < (1 + n_times_sl_insertion) * seq_len, len(x_buffer)
     tokens, mask = sample.tokens, sample.masks[1:]
@@ -252,16 +253,17 @@ def sequence_iterator_inserted_embed_continuation(
 
         cur_pos += len(x[cur_pos : cur_pos + left_tokens // 2])
 
-        x_buffer.extend(x[cur_pos : cur_pos + left_tokens // 2])
-        y_buffer.extend(y[cur_pos : cur_pos + left_tokens // 2])
+        to_continue_tokens = left_tokens // 2 if not shorten_continuation else min(32, left_tokens // 2)
+        x_buffer.extend(x[cur_pos : cur_pos + to_continue_tokens])
+        y_buffer.extend(y[cur_pos : cur_pos + to_continue_tokens])
 
         if np.unique(new_embed).size == 1:
-            mask_buffer.extend([False] * len(mask[cur_pos : cur_pos + left_tokens // 2]))
+            mask_buffer.extend([False] * len(mask[cur_pos : cur_pos + to_continue_tokens]))
         else:
-            mask_buffer.extend([True] * len(mask[cur_pos : cur_pos + left_tokens // 2]))
+            mask_buffer.extend([True] * len(mask[cur_pos : cur_pos + to_continue_tokens]))
 
-        size += len(x[cur_pos : cur_pos + left_tokens // 2])
-        cur_pos += len(x[cur_pos : cur_pos + left_tokens // 2])
+        size += len(x[cur_pos : cur_pos + to_continue_tokens])
+        cur_pos += len(x[cur_pos : cur_pos + to_continue_tokens])
 
         sizes.append(size)
         n_missing -= overall_size
