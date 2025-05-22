@@ -195,7 +195,15 @@ class EmbedAugPipeline(nn.Module):
 
         if pipeline_args.trainable_llm and lora_llm.enable:
             llm.load_lora(Path(ckpt_path + "/llm/lora.safetensors"))
-
+        elif pipeline_args.trainable_llm:
+            llm_state_dict = load_state_dict(
+                Path(ckpt_path + "/llm"), dtype=param_dtype
+            )
+            llm.load_state_dict(
+                llm_state_dict,
+                strict=False,
+                assign=True
+            )
         if pipeline_args.decoder_module.do:
             assert Path(ckpt_path + "/llm/decoder").exists()
             decoder_state_dict = load_state_dict(

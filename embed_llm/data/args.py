@@ -26,3 +26,4 @@ class DataArgs(Serializable):
     shuffle: bool = False
     adapt_seq_len: bool = False
     n_times_sl_insertion: int = 1
+    rec_seq_len_factor: float = 1.0

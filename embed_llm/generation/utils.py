@@ -116,6 +116,9 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                             "fine_tuned": result.get(
                                                 "fine_tuned", True
                                             ),
+                                            "compress_ratio": result.get(
+                                                "compress_ratio", None
+                                            ),
                                         },
                                         
                                         index=[0],
@@ -124,7 +127,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                             )
                 formated_results = (
                     formated_results.groupby(
-                        ["run_name", "ckpt", "temp", "n_samples", "language", 'fine_tuned']
+                        ["run_name", "ckpt", "temp", "n_samples", "language", 'fine_tuned', "compress_ratio"]
                     )
                     .first()
                     .reset_index()

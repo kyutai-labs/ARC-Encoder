@@ -17,7 +17,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-64memtoks_nodec_rec
+mistral
 )
 
 
@@ -48,7 +48,7 @@ case $RUN_NAME in
 *istral*)
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/mistral/eval_mistral_translate.json \
-        --n_passages 500  --mistral --eval_trad
+        --n_passages 500  --mistral --eval_trad --benchmarks Danish
 
     ;;
 *)

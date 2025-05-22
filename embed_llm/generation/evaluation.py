@@ -44,6 +44,7 @@ TRAD_DATA_PATH = {
     "Spanish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/spa_Latn.jsonl",
     "French": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/fra_Latn.jsonl",
     "German": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/deu_Latn.jsonl",
+    "Danish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/dan_Latn.jsonl",
 }
 
 logger = logging.getLogger(__name__)
@@ -535,7 +536,7 @@ def evaluate_QA(
             output_file,
             "w",
         ) as f:
-            json.dump(overall_results, f)
+            json.dump(overall_results, f, indent=4)
 
     if mistral:
         return mistral_model
@@ -548,7 +549,7 @@ def evaluate_trad(
     ckpt: int | None = None,
     max_seq_len: int = 512,
     temps: list[float] = [0, 0.5, 0.7, 1],
-    benchmarks: list[str] = ["French", "Spanish", "German"],
+    benchmarks: list[str] = ["Danish", "French", "Spanish", "German"],
     max_bs: int = 4,
     output_file: str = None,
     n_samples: int | None = 1000,
@@ -669,35 +670,26 @@ def evaluate_trad(
                             ]
                             for _ in range(bs)
                         ]
+                    elif benchmark == "Danish":
+                        batch_list_prompts = [
+                            [
+                                "Document: ",
+                                "\nTranslate the previous document into Danish.",
+                            ]
+                            for _ in range(bs)
+                        ]
                     else:
                         raise ValueError("Invalid benchmark")
                 else:
-                    if benchmark == "Spanish":
-                        batch_list_prompts = [
-                            [
-                                prompt_prefix + "\n\nDocument: ",
-                                "\nTranslation:",
-                            ]
-                            for _ in range(bs)
+
+                    batch_list_prompts = [
+                        [
+                            prompt_prefix + "\n\nDocument: ",
+                            "\nTranslation:",
                         ]
-                    elif benchmark == "French":
-                        batch_list_prompts = [
-                            [
-                                prompt_prefix + "\n\nDocument: ",
-                                "\nTranslation:",
-                            ]
-                            for _ in range(bs)
-                        ]
-                    elif benchmark == "German":
-                        batch_list_prompts = [
-                            [
-                                prompt_prefix + "\n\nDocument: ",
-                                "\nTranslation:",
-                            ]
-                            for _ in range(bs)
-                        ]
-                    else:
-                        raise ValueError("Invalid benchmark")
+                        for _ in range(bs)
+                    ]
+  
                 texts_to_embed = [[seq] for seq in text[i : i + bs]]
 
                 if not mistral:
@@ -754,32 +746,13 @@ def evaluate_trad(
                         else:
                             raise ValueError("Invalid benchmark")
                     else:
-                        if benchmark == "Spanish":
-                            prompts = [
-                                prompt_prefix
-                                + "\n\nDocument: "
-                                + seq
-                                + "\nTranslation:"
-                                for seq in text[i : i + bs]
-                            ]
-                        elif benchmark == "French":
-                            prompts = [
-                                prompt_prefix
-                                + "\n\nDocument: "
-                                + seq
-                                + "\nTranslation:"
-                                for seq in text[i : i + bs]
-                            ]
-                        elif benchmark == "German":
-                            prompts = [
-                                prompt_prefix
-                                + "\n\nDocument: "
-                                + seq
-                                + "\nTranslation:"
-                                for seq in text[i : i + bs]
-                            ]
-                        else:
-                            raise ValueError("Invalid benchmark")
+                        prompts = [
+                            prompt_prefix
+                            + "\n\nDocument: "
+                            + seq
+                            + "\nTranslation:"
+                            for seq in text[i : i + bs]
+                        ]
 
                     prompt_tokens = [
                         mistral_tokenizer.encode(prompt, bos=True, eos=False)
@@ -858,7 +831,7 @@ def evaluate_trad(
             output_file,
             "w",
         ) as f:
-            json.dump(overall_results, f)
+            json.dump(overall_results, f, indent=4)
 
     if mistral:
         return mistral_model
@@ -946,6 +919,9 @@ if __name__ == "__main__":
                 seed=args.seed,
                 comp_rate=args.comp_rate,
                 fine_tuned=args.fine_tuned,
+                benchmarks=benchmarks
+                if args.benchmarks != "all"
+                else ["Danish", "French", "Spanish", "German"],
             )
             torch.cuda.empty_cache()
 
@@ -1048,6 +1024,9 @@ if __name__ == "__main__":
                 seed=args.seed,
                 comp_rate=args.comp_rate,
                 fine_tuned=args.fine_tuned,
+                benchmarks=benchmarks
+                if args.benchmarks != "all"
+                else ["Danish", "French", "Spanish", "German"],
             )
             torch.cuda.empty_cache()
         else:

@@ -141,8 +141,7 @@ def load_training_model(
         )
 
     if (
-        pipeline_args.embedder_params.memory_tokens > 0
-        and pipeline_args.embedder_params.rec_tok
+        pipeline_args.embedder_params.rec_tok
     ):
         augmented_model.embedder.rec_tok.weight = torch.nn.Parameter(
             torch.ones_like(
@@ -181,16 +180,10 @@ def load_training_model(
             and not lora_embedder.enable
         ):
             param.requires_grad = True
-        elif pipeline_args.embedder_params.memory_tokens > 0:
-            if "mem_embeddings" in name:
-                param.requires_grad = True
-
-            elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
-                param.requires_grad = True
-
-            else:
-                param.requires_grad = False
-
+        elif pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name:
+            param.requires_grad = True
+        elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
+            param.requires_grad = True
         else:
             param.requires_grad = False
 
@@ -336,10 +329,7 @@ def load_training_model_from_ckpt(
             "All parameters should be on meta"
         )
 
-    if (
-        pipeline_args.embedder_params.memory_tokens > 0
-        and pipeline_args.embedder_params.rec_tok
-    ):
+    if pipeline_args.embedder_params.rec_tok:
         augmented_model.embedder.rec_tok.weight = torch.nn.Parameter(
             torch.ones_like(
                 augmented_model.embedder.rec_tok.weight,
@@ -380,11 +370,11 @@ def load_training_model_from_ckpt(
         elif pipeline_args.embedder_params.memory_tokens > 0:
             if "mem_embeddings" in name:
                 param.requires_grad = True
-            if pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
-                param.requires_grad = True
+        elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
+            param.requires_grad = True
         else:
             param.requires_grad = False
-
+        
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)

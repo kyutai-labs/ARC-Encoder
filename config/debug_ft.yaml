@@ -75,12 +75,8 @@ from_ckpt:
   embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/4P_TruncL_16_TrainL_4_decL16_newinit/checkpoints/checkpoint_010000/embedder/
 
 
-# wandb:
-#   project: embed_llm
-#   run_name: pretrain_both_trained_07_singpassage_0f6f2a1a
-#   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
-#   offline: false
-
+# SQUAD: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl
+# NQ, TRIVIAQA: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/  nq_open_data.jsonl, triviaqa_data.jsonl
 
 
 

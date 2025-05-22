@@ -157,6 +157,7 @@ def sequence_iterator(
     adapt_seq_len: bool = False,
     continuation: float = 0.0,
     n_times_sl_insertion: int = 1,
+    rec_seq_len_factor: int = 1,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -178,7 +179,7 @@ def sequence_iterator(
     sizes_cont: list[int] = []
 
     cur_pos = 0
-    n_missing = seq_len
+    n_missing = int(seq_len * rec_seq_len_factor)
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
 
@@ -243,7 +244,7 @@ def sequence_iterator(
                     mask_buffer=mask_buffer,
                     to_embed_buffer=to_embed_buffer,
                     sizes=sizes,
-                    seq_len=seq_len,
+                    seq_len=int(seq_len * rec_seq_len_factor),
                     tokenizer=tokenizer,
                     adapt_seq_len=adapt_seq_len,
                     n_missing=n_missing,
@@ -259,7 +260,7 @@ def sequence_iterator(
                     to_embed_buffer = []
                     insert_embed_list = []
                     sizes = []
-                    n_missing = seq_len
+                    n_missing = int(seq_len * rec_seq_len_factor)
                     cur_pos = res[1]
                 else:
                     (
@@ -340,6 +341,7 @@ def build_dataset(
             adapt_seq_len=args.adapt_seq_len,
             continuation=continuation,
             n_times_sl_insertion=args.n_times_sl_insertion,
+            rec_seq_len_factor=args.rec_seq_len_factor,
         )
         for it in dataset_iterators
     ]

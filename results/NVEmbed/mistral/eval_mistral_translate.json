@@ -1,1 +1,56 @@
-{"Mistral_RAG": {"0": {"BLEU": {"0": [{"n_samples": 500, "Metric": 24.818859761489907, "compress_ratio": 1.0, "language": "Spanish"}, {"n_samples": 500, "Metric": 39.558045539696856, "compress_ratio": 1.0, "language": "French"}, {"n_samples": 500, "Metric": 29.77966210974178, "compress_ratio": 1.0, "language": "German"}]}}}}
+{
+    "Mistral_RAG": {
+        "0": {
+            "BLEU": {
+                "0": [
+                    {
+                        "n_samples": 500,
+                        "Metric": 24.818859761489907,
+                        "compress_ratio": 1.0,
+                        "language": "Spanish"
+                    },
+                    {
+                        "n_samples": 500,
+                        "Metric": 39.558045539696856,
+                        "compress_ratio": 1.0,
+                        "language": "French"
+                    },
+                    {
+                        "n_samples": 500,
+                        "Metric": 29.77966210974178,
+                        "compress_ratio": 1.0,
+                        "language": "German"
+                    },
+                    {
+                        "n_samples": 500,
+                        "Metric": 39.558045539696856,
+                        "compress_ratio": 1.0,
+                        "language": "French",
+                        "fine_tuned": false
+                    },
+                    {
+                        "n_samples": 500,
+                        "Metric": 24.818859761489907,
+                        "compress_ratio": 1.0,
+                        "language": "Spanish",
+                        "fine_tuned": false
+                    },
+                    {
+                        "n_samples": 500,
+                        "Metric": 29.77966210974178,
+                        "compress_ratio": 1.0,
+                        "language": "German",
+                        "fine_tuned": false
+                    },
+                    {
+                        "n_samples": 500,
+                        "Metric": 35.048111922408076,
+                        "compress_ratio": 1.0,
+                        "language": "Danish",
+                        "fine_tuned": false
+                    }
+                ]
+            }
+        }
+    }
+}

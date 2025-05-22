@@ -3,7 +3,7 @@ run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
 exp_name: test_pretrain
 
 
-continuation: 1.0
+continuation: 0.8
 textual_continuation: 0.0
 
 lora_llm:
@@ -28,23 +28,19 @@ optim:
   weight_decay: 0.1
 
 pipeline:
-  bridge_module:
-    bridge_type: null
   embedder_params:
     causal_embedder: true
-    compress_rates: 
-    - -1
+    compress_rates:
+    - -4
     mean_hid4embed: null
     n_truncated_layers: 16
     pooling_module:
-      pool_type: mean
+      pool_type: fusion
       where: between
     trained_layers: 4
   max_embeds: 1
-  trainable_llm: false
-  w_embeds: true
-  w_prefix_prompt: false
-  comp_rate_curriculum: {'0.02': [-2], '0.04': [-4], '0.1': [-2, -4, -8, -16, -32]}
+  trainable_llm: true
+
 
 
 data:

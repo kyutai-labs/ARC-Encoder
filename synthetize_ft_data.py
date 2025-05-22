@@ -16,6 +16,8 @@ from vllm import LLM, SamplingParams  # type: ignore
 from dataclasses import dataclass
 import numpy as np
 import random
+import re  # noqa: F401
+
 
 ATLAS_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl"
 
@@ -38,23 +40,33 @@ ATLAS_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwik
 # ]
 
 instruction_prompts = {
-    # "QA1": "Generate a question and its answer based solely on the content of the document above.",
-    # "QA2": "Using the information in the document, create a factual QA pair.",
-    # "QA3": "Write one question that can be answered from the previous passage, and provide the correct answer.",
-    # "QA4": "Ask questions concerning the preceding passage and provide a short answer.",
+    "QA1": "Generate a question and its answer based solely on the content of the document above.",
+    "QA2": "Using the information in the document, create a factual QA pair.",
+    "QA3": "Write one question that can be answered from the previous passage, and provide the correct answer.",
+    "QA4": "Ask questions concerning the preceding passage and provide a short answer.",
     "QA5": "Formulate a factual question. The question should require a short answer. Then, provide the answer.",
-    # "S1": "Summarize the key points of the document in 2 to 3 sentences.",
-    # "S2": "Provide a concise summary that captures the essence of the text above.",
-    # "S3": "Write a short summary of the previous document, focusing on its main message.",
-    # "T1": "Translate the previous document into Spanish.",
-    # "T2": "Render the document into fluent German while preserving its meaning.",
-    # "T3": "Provide a French translation of the text above.",
-    # "P1": "Paraphrase the document using clearer and simpler wording.",
-    # "P2": "Rewrite the passage based on its content without directly copying any phrasing.",
-    # "P3": "Rephrase the document in a style suitable for a younger audience.",
-    # "P4": "Convert the passage into a short dialogue between two characters.\n",
-    # "R1": "Reconstruct perfectly the passage.",
+    "S1": "Summarize the key points of the document in 2 to 3 sentences.",
+    "S2": "Provide a concise summary that captures the essence of the text above.",
+    "S3": "Write a short summary of the previous document, focusing on its main message.",
+    "T1": "Translate the previous document into Spanish.",
+    "T2": "Render the document into fluent German while preserving its meaning.",
+    "T3": "Provide a French translation of the text above.",
+    "P1": "Paraphrase the document using clearer and simpler wording.",
+    "P2": "Rewrite the passage based on its content without directly copying any phrasing.",
+    "P3": "Rephrase the document in a style suitable for a younger audience.",
+    "P4": "Convert the passage into a short dialogue between two characters.\n",
+    "R1": "Reconstruct perfectly the passage.",
 }
+
+translate_prompts = [
+    "Translate the previous document into {language}.",
+    "Render the document into fluent {language} while preserving its meaning.",
+    "Provide a {language} translation of the text above.",
+    "As a translator, convert the document into {language} while maintaining its original meaning.",
+    "Translate the document into {language} while ensuring clarity and accuracy.",
+]
+
+LANGUAGES = ["Spanish", "French", "German", "Danish"]
 
 
 def mixture_dataset(
@@ -86,19 +98,14 @@ def mixture_dataset(
     return dataset_list
 
 
-def reformat_example(text: str, prompt_key: str) -> tuple[str, str]:
-    if "T" in prompt_key:
-        if len(text.split("\n\n**")) > 1:
-            text = text.split("\n\n**")[1].strip()
-        else:
-            text = text.split("\n\n")[-1].strip()
-        return instruction_prompts[prompt_key], text
-    elif "P" in prompt_key:
-        if len(text.split("\n\n")) > 1 and prompt_key != "P4":
-            text = text.split("\n\n")[1].strip()
-        return instruction_prompts[prompt_key], text
-    else:
-        return instruction_prompts[prompt_key], text
+def passage_filter(passage: str, min_alpha_ratio: float = 0.75) -> bool:
+    """
+    Filter the passage to remove unwanted characters and format it.
+    """
+    if len(passage) < 10 or len(passage) > 16000:
+        return False
+    alpha_count = sum(c.isalpha() for c in passage)
+    return alpha_count / len(passage) >= min_alpha_ratio
 
 
 @dataclass
@@ -108,26 +115,28 @@ class Batch:
     prompt_key: str
 
 
-def dataset_from_file(file_path):
+def dataset_from_file(file_path, n_passages: int = 1):
     sample = []
+    n_sample = random.randint(1, n_passages)
     while True:
         with open(file_path, "r") as f:
-            for idx, line in enumerate(f):
-                if idx < 2000:
-                    continue
+            for _, line in enumerate(f):
                 data = json.loads(line)
-                # yield data["text"].strip()
-                sample.append(data["text"].strip())
-                if len(sample) == 45:
+                if passage_filter(data["text"]):
+                    sample.append(data["text"].strip())
+                if len(sample) == n_sample:
                     yield ("\n".join(sample))[:16000]
+                    n_sample = random.randint(1, n_passages)
                     sample = []
 
 
 def dataloader_from_file(
     file_path,
     batch_size,
+    n_passages: int = 1,
+    translate: bool = False,
 ):
-    dataset = dataset_from_file(file_path)
+    dataset = dataset_from_file(file_path, n_passages)
 
     probs = []
     for key in list(instruction_prompts.keys()):
@@ -138,8 +147,16 @@ def dataloader_from_file(
     probs = probs / np.sum(probs)
     batch_list = []
     while True:
-        prompt_key = np.random.choice(list(instruction_prompts.keys()), p=probs)
-        prompt = instruction_prompts[prompt_key]
+        if translate:
+            language = random.choice(LANGUAGES)
+            prompt = random.choice(translate_prompts).format(
+                language=language
+            )
+            prompt_key = language
+        else:
+            prompt_key = np.random.choice(list(instruction_prompts.keys()), p=probs)
+            prompt = instruction_prompts[prompt_key]
+
         passage = next(dataset)
         batch_list.append(
             Batch(
@@ -160,15 +177,13 @@ def synthesize_data(
     output_path: str,
     max_steps: int,
     download_freq: int,
+    ds_name: str,
+    translate: bool = False,
+    n_passages: int = 1,
 ):
     if not Path(output_path).exists():
         Path(output_path).mkdir(parents=True, exist_ok=True)
-    out_file_path = (
-        output_path
-        + "long_QA_synthesized_"
-        + model_folder_path.split("/")[-1]
-        + ".jsonl"
-    )
+    out_file_path = output_path + ds_name + model_folder_path.split("/")[-1] + ".jsonl"
 
     llm = LLM(model=model_folder_path, dtype="bfloat16", max_model_len=16384)
     sampling_params = SamplingParams(
@@ -176,7 +191,7 @@ def synthesize_data(
         top_p=top_p,
         max_tokens=1024,
     )
-    dataloader = dataloader_from_file(data_path, batch_size)
+    dataloader = dataloader_from_file(data_path, batch_size, n_passages, translate)
     output_buffer = []
     n_samples = 0
     for step in range(max_steps):
@@ -212,7 +227,7 @@ def synthesize_data(
         for i, output in enumerate(outputs):
             if output.finished:
                 question, answer = (
-                    instruction_prompts[batch[i].prompt_key],
+                    batch[i].instruction_prompts,
                     output.outputs[0].text.strip(),
                 )
                 # question, answer = reformat_example(
@@ -291,6 +306,19 @@ def arg_parser():
         default=100,
     )
 
+    parser.add_argument(
+        "--translate",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--n_passages",
+        default=1,
+        type=int,
+    )
+
+    parser.add_argument("--ds_name", type=str, default="synth")
+
     return parser.parse_args()
 
 
@@ -305,4 +333,7 @@ if __name__ == "__main__":
         output_path=args.output_path,
         max_steps=args.max_steps,
         download_freq=args.download_freq,
+        ds_name=args.ds_name,
+        translate=args.translate,
+        n_passages=args.n_passages,
     )
