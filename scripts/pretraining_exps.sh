@@ -28,6 +28,10 @@ config/experiments/mem_toks/32memtoks_dec_rec.yaml
 config/experiments/compress_sweeps/Allstar_comp4_lessinsertion_lowcont.yaml
 )
 
+# config/experiments/mem_toks/Matryoshkamemtoks_nodec.yaml 
+# config/experiments/mem_toks/Matryoshkamemtoks_nodec_rec.yaml 
+# config/experiments/mem_toks/Matryoshkamemtoks_dec_rec.yaml
+
 # Get the specific config file for this array task
 CONFIG=${CONFIG_FILES[$SLURM_ARRAY_TASK_ID]}
 

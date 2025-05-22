@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0
+#SBATCH --array=0-8
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
@@ -9,6 +9,7 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=eval_models_trad
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/eval_dissect_%A_%a.out
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx22
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if already used
@@ -17,7 +18,15 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-meanSA_full_llm_comp4
+128memtoks_nodec 
+128memtoks_nodec_rec 
+128memtoks_dec 
+128memtoks_dec_rec 
+64memtoks_nodec_rec 
+128memtoks_nodec_squad 
+128memtoks_nodec_rec_squad 
+128memtoks_dec_squad 
+128memtoks_dec_rec_squad
 )
 
 
@@ -49,6 +58,25 @@ case $RUN_NAME in
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/mistral/eval_mistral_translate.json \
         --n_passages 500  --mistral --eval_trad --benchmarks Danish
+
+    ;;
+
+*mem*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_memtoks.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --comp_rate 64
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_memtoks.json  \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad --comp_rate 64
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_memtoks.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --comp_rate 32
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_memtoks.json  \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad --comp_rate 32
 
     ;;
 *)

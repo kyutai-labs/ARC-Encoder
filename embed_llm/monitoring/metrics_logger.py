@@ -42,6 +42,7 @@ def get_train_logs(
         "Bit per Character": bpc,
         "batch_type": batch_type,
         "kl_loss": kl_loss,
+        "comp_rate": state.comp_rate,
     }
 
     return metrics
@@ -120,6 +121,7 @@ def train_log_msg(
         ("batch_type", "s", "Batch Type"),
         ("kl_loss", ".3f", "KL Loss"),
         ("seen_tokens", "d", "Seen Tokens"),
+        ("comp_rate", ".2f", "CR/Mem. Toks"),
     ]:
         name = key if new_name is None else new_name
         if metrics[key] is None:

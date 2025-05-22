@@ -129,6 +129,7 @@ class TrainState:
     this_eval_kl_loss: float | None = None
     this_eval_loss_nocontext: float | None = None
     this_eval_perplexity_nocontext: float | None = None
+    comp_rate: float = 0.0
 
     def start_step(self):
         self.step += 1

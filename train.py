@@ -322,9 +322,11 @@ def _train(
     train_ppl = torch.tensor([0.0], device="cuda")
 
     if pipeline.pipeline_args.comp_rate_curriculum is not None:
-        switch_steps = dict([
-            (int((float(prop) / 100) * (args.max_steps)), new_rate)
-            for prop, new_rate in pipeline.pipeline_args.comp_rate_curriculum.items()]
+        switch_steps = dict(
+            [
+                (int((float(prop) / 100) * (args.max_steps)), new_rate)
+                for prop, new_rate in pipeline.pipeline_args.comp_rate_curriculum.items()
+            ]
         )
         main_logger_info(
             "Warning: the first steps of the curriculum use the compress rate set in embedder params"
@@ -332,33 +334,59 @@ def _train(
         main_logger_info(
             f"Compression rate curriculum: {pipeline.pipeline_args.comp_rate_curriculum}, WARNING: keys should be sorted in ascending order"
         )
-        main_logger_info(
-            f"Switch steps: {switch_steps}"
-        )
+        main_logger_info(f"Switch steps: {switch_steps}")
     else:
         switch_steps = {}
     random_switch = []
+
+    n_mem_toks = pipeline.pipeline_args.embedder_params.memory_tokens
+    if n_mem_toks > 0:
+        state.comp_rate = n_mem_toks
+    else:
+        state.comp_rate = pipeline.pipeline_args.embedder_params.compress_rates[-1]
 
     while state.step < args.max_steps:
         state.start_step()
 
         is_last_step = state.step == args.max_steps
-        
+
         if state.step in switch_steps.keys():
             if len(switch_steps[state.step]) == 1:
-                main_logger_info(f'New compression rate {switch_steps[state.step]} at step {state.step}')
+                main_logger_info(
+                    f"New compression rate {switch_steps[state.step]} at step {state.step}"
+                )
                 model.embedder.compress_rates = switch_steps[state.step]
+                state.comp_rate = switch_steps[state.step]
                 random_switch = []
             elif len(switch_steps[state.step]) > 1 or random_switch:
-                main_logger_info(f'New compression rate among {switch_steps[state.step]} at step {state.step}')
-                model.embedder.compress_rates = [random.choice(switch_steps[state.step])]
+                main_logger_info(
+                    f"New compression rate among {switch_steps[state.step]} at step {state.step}"
+                )
+                model.embedder.compress_rates = [
+                    random.choice(switch_steps[state.step])
+                ]
                 random_switch = switch_steps[state.step]
+                state.comp_rate = model.embedder.compress_rates[0]
             else:
-                main_logger_info(f'Not changing compression rate at step {state.step}')
+                main_logger_info(f"Not changing compression rate at step {state.step}")
                 random_switch = []
-                
+
         elif len(random_switch) > 0:
             model.embedder.compress_rates = [random.choice(random_switch)]
+            state.comp_rate = model.embedder.compress_rates[0]
+
+        if pipeline.pipeline_args.embedder_params.matryoshka_training is not None:
+            n_mem_toks = np.random.choice(
+                list(pipeline.pipeline_args.embedder_params.matryoshka_training.keys()),
+                p=list(
+                    pipeline.pipeline_args.embedder_params.matryoshka_training.values()
+                ),
+            )
+            n_mem_toks = torch.tensor([n_mem_toks], device="cuda")
+            dist.broadcast(n_mem_toks, 0)
+            n_mem_toks = n_mem_toks.item()
+            model.embedder.n_mem_tokens = n_mem_toks
+            state.comp_rate = n_mem_toks
 
         optimizer.zero_grad()
         loss = torch.tensor([0.0], device="cuda")
@@ -565,7 +593,11 @@ def _train(
         grad_norm = torch.tensor([0.0], device="cuda")
         for name, p in model.named_parameters():
             if p.requires_grad:
-                if args.textual_continuation * args.continuation == 0.0:
+                if (
+                    args.textual_continuation * args.continuation == 0.0
+                    and pipeline.pipeline_args.embedder_params.matryoshka_training
+                    is not None
+                ):
                     assert p.grad is not None, f"None grad for this param {name}"
                     if torch.any(torch.isnan(p.grad)).item():
                         print(f"Grad contains NaN for this param {name}")

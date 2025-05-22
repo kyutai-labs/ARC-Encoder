@@ -500,7 +500,7 @@ def load_pipeline(
                 )
                 pipeline.model.embedder.compress_rates = [comp_rate]
             else:
-                assert pipeline.model.embedder.n_mem_tokens > 0, (
+                assert pipeline.model.embedder.n_mem_tokens >= comp_rate, (
                     f"Positive compression rate is only supported for models with memory tokens, but got {pipeline.model.embedder.n_mem_tokens}"
                 )
                 pipeline.model.embedder.n_mem_tokens = comp_rate

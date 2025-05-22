@@ -49,6 +49,7 @@ class EmbedderArgs(Serializable):
     trained_layers: int = 0
     causal_embedder: bool = True
     trained_causal: bool = True
+    matryoshka_training: dict[int, float] | None = None
 
     def __post_init__(self) -> None:
         if self.memory_tokens > 0:
@@ -56,6 +57,12 @@ class EmbedderArgs(Serializable):
                 assert self.pooling_module.pool_type == "mean", self.pooling_module
                 assert self.pooling_module.based_on is None, self.pooling_module
             assert self.compress_rates == [], self.compress_rates
+        if self.matryoshka_training is not None:
+            assert self.memory_tokens > 0, self.matryoshka_training
+            assert len(self.matryoshka_training.keys()) > 1, self.matryoshka_training
+            assert max(list(self.matryoshka_training.keys())) <= self.memory_tokens, (
+                self.matryoshka_training, self.memory_tokens
+            )
 
 
 @dataclass
