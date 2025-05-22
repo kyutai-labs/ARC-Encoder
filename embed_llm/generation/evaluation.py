@@ -681,7 +681,6 @@ def evaluate_trad(
                     else:
                         raise ValueError("Invalid benchmark")
                 else:
-
                     batch_list_prompts = [
                         [
                             prompt_prefix + "\n\nDocument: ",
@@ -689,7 +688,7 @@ def evaluate_trad(
                         ]
                         for _ in range(bs)
                     ]
-  
+
                 texts_to_embed = [[seq] for seq in text[i : i + bs]]
 
                 if not mistral:
@@ -747,10 +746,7 @@ def evaluate_trad(
                             raise ValueError("Invalid benchmark")
                     else:
                         prompts = [
-                            prompt_prefix
-                            + "\n\nDocument: "
-                            + seq
-                            + "\nTranslation:"
+                            prompt_prefix + "\n\nDocument: " + seq + "\nTranslation:"
                             for seq in text[i : i + bs]
                         ]
 
@@ -859,7 +855,9 @@ def arg_parser():
     parser.add_argument("--n_icl_exs", type=int, default=None)
     parser.add_argument("--icl_w_document", action="store_true")
     parser.add_argument("--compressed_doc_in_icl", action="store_true")
-    parser.add_argument("--comp_rate", type=int, default=None)
+    parser.add_argument(
+        "--comp_rate", type=int, default=None
+    )  # can enable to fix number of memory tokens if > 0
     parser.add_argument("--eval_trad", action="store_true")
     parser.add_argument(
         "--tmp_path",

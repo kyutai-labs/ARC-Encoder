@@ -199,11 +199,7 @@ class EmbedAugPipeline(nn.Module):
             llm_state_dict = load_state_dict(
                 Path(ckpt_path + "/llm"), dtype=param_dtype
             )
-            llm.load_state_dict(
-                llm_state_dict,
-                strict=False,
-                assign=True
-            )
+            llm.load_state_dict(llm_state_dict, strict=False, assign=True)
         if pipeline_args.decoder_module.do:
             assert Path(ckpt_path + "/llm/decoder").exists()
             decoder_state_dict = load_state_dict(
@@ -344,9 +340,9 @@ class EmbedAugPipeline(nn.Module):
             seqlens = [len(tokens) for tokens in x]
 
             n_context_tokens = sum(seqlens)
-            x = torch.from_numpy(
-                np.array([el for sublist in x for el in sublist])
-            ).to(device)
+            x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
+                device
+            )
 
             embeddings, embed_seqlens = self.model.embedder.forward_embedder(
                 input_ids=x, seqlens=seqlens
@@ -498,10 +494,16 @@ def load_pipeline(
             ckpt = ckpt
 
         if comp_rate is not None:
-            assert len(pipeline.model.embedder.compress_rates) == 1, (
-                f"Only one compression rate is supported, but got {pipeline.model.embedder.compress_rates}"
-            )
-            pipeline.model.embedder.compress_rates = [comp_rate]
+            if comp_rate <= 0:
+                assert len(pipeline.model.embedder.compress_rates) == 1, (
+                    f"Only one compression rate is supported, but got {pipeline.model.embedder.compress_rates}"
+                )
+                pipeline.model.embedder.compress_rates = [comp_rate]
+            else:
+                assert pipeline.model.embedder.n_mem_tokens > 0, (
+                    f"Positive compression rate is only supported for models with memory tokens, but got {pipeline.model.embedder.n_mem_tokens}"
+                )
+                pipeline.model.embedder.n_mem_tokens = comp_rate
         return pipeline, ckpt
     else:
         if pipeline is None:

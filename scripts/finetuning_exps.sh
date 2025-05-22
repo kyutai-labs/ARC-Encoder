@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=1
+#SBATCH --array=0-15%3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -15,23 +15,25 @@
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 
+
 CONFIG_FILES=(
-config/experiments/mem_toks/ft/16memtoks_nodec_rec_TS.yaml 
-config/experiments/mem_toks/ft/16memtoks_nodec_rec_squad.yaml
-config/experiments/no_dec/ft/Nodec_rec_tok_4_squad.yaml
-config/experiments/fine-tuning/meanSA_full_llm_comp4_squad.yaml
-config/experiments/mem_toks/ft/64memtoks_dec_rec_TS.yaml 
-config/experiments/mem_toks/ft/64memtoks_dec_rec_squad.yaml 
-config/experiments/mem_toks/ft/32memtoks_nodec_rec_TS.yaml 
-config/experiments/mem_toks/ft/32memtoks_nodec_rec_squad.yaml 
-config/experiments/mem_toks/ft/32memtoks_dec_rec_TS.yaml 
-config/experiments/mem_toks/ft/32memtoks_dec_rec_squad.yaml 
-config/experiments/mem_toks/ft/16memtoks_dec_rec_TS.yaml 
-config/experiments/mem_toks/ft/8memtoks_nodec_rec_TS.yaml 
-config/experiments/mem_toks/ft/16memtoks_dec_rec_squad.yaml 
-config/experiments/mem_toks/ft/8memtoks_nodec_rec_squad.yaml 
-config/experiments/mem_toks/ft/8memtoks_dec_rec_TS.yaml 
-config/experiments/mem_toks/ft/8memtoks_dec_rec_squad.yaml
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_NQ.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_TRIVIAQA.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_mix_QA.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_mix_QA_lang.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_mix_lang.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fr_de.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_en_fr.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_en_de.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_TRIVIAQA.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_NQ .yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_mix_QA.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_mix_QA_lang.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_mix_lang.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_fr_de.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_en_fr.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_en_de.yaml
+# config/experiments/fine-tuning/meanSA_full_llm_comp4_squad.yaml
 )
 
 

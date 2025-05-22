@@ -42,6 +42,8 @@ def get_sample(
         "instruct_data" in data_path.lower()
         or "synthesized" in data_path.lower()
         or 'translation' in data_path.lower()
+        or 'eval_qa' in data_path.lower()
+        or 'eval_read' in data_path.lower()
     ):
         question = data["question"]
 
