@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-8
+#SBATCH --array=9
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
@@ -9,11 +9,10 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=eval_models_trad
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/eval_dissect_%A_%a.out
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx22
+
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if already used
-
 
 
 # Get the configuration file for this job
@@ -27,6 +26,8 @@ RUN_NAMES=(
 128memtoks_nodec_rec_squad 
 128memtoks_dec_squad 
 128memtoks_dec_rec_squad
+Nodec_rec_tok_4
+SA_merge_L4_CR4_decL16_ft_NQ
 )
 
 
@@ -77,6 +78,25 @@ case $RUN_NAME in
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_memtoks.json  \
         --n_passages 500 --run_name $RUN_NAME --eval_trad --comp_rate 32
+
+    ;;
+    
+*ft*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad  --fine_tuned
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad 
 
     ;;
 *)

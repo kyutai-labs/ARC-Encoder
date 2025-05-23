@@ -376,11 +376,11 @@ def _train(
             state.comp_rate = model.embedder.compress_rates[0]
 
         if pipeline.pipeline_args.embedder_params.matryoshka_training is not None:
+            probs = [float(x) for x in pipeline.pipeline_args.embedder_params.matryoshka_training.values()]
+            probs = [x / sum(probs) for x in probs]
             n_mem_toks = np.random.choice(
                 list(pipeline.pipeline_args.embedder_params.matryoshka_training.keys()),
-                p=list(
-                    pipeline.pipeline_args.embedder_params.matryoshka_training.values()
-                ),
+                p=probs,
             )
             n_mem_toks = torch.tensor([n_mem_toks], device="cuda")
             dist.broadcast(n_mem_toks, 0)

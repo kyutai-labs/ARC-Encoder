@@ -165,6 +165,27 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 bias=False,
             )
 
+        self._register_load_state_dict_pre_hook(
+            partial(Transformer._load_hook, n_mem_tokens=self.n_mem_tokens)
+        )
+
+    @staticmethod
+    def _load_hook(
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+        n_mem_tokens,
+    ):
+        # If fine-tuning less mem_tokens than the original model, we need to slice the weights
+        if "mem_embeddings.weight" in state_dict:
+            mem_embeds_weight = state_dict["mem_embeddings.weight"]
+            new_weight = mem_embeds_weight[:n_mem_tokens, :].clone()
+            state_dict["mem_embeddings.weight"] = new_weight
+
     @property
     def dtype(self) -> torch.dtype:
         return next(self.parameters()).dtype

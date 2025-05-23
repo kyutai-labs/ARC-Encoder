@@ -246,7 +246,7 @@ class EmbedAugPipeline(nn.Module):
             llm_embedder.load_state_dict(
                 trained_layers_state_dict,
                 strict=False,
-                assign=(pipeline_args.embedder_params.memory_tokens > 0),
+                assign=(pipeline_args.embedder_params.memory_tokens > 0 or pipeline_args.embedder_params.rec_tok),
             )
         else:
             print("No trained layers, not loading any new state dict for the embedder")

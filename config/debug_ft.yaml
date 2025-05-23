@@ -27,34 +27,32 @@ optim:
   warm_up_steps: 500
   weight_decay: 0.1
 
+
 pipeline:
-  bridge_module:
-    bridge_type: null
   embedder_params:
     causal_embedder: true
-    compress_rates:
-    - -4
+    compress_rates: []
     mean_hid4embed: null
     n_truncated_layers: 16
     pooling_module:
-      pool_type: mean_sa
+      pool_type: mean
+      where: between
     trained_layers: 4
+    memory_tokens: 64
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
-  decoder_module:
-    do: true
-    n_layers: 1
-    insert_at: 16
-
-
 data:
   adapt_seq_len: true
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
   shuffle: false
-  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2.jsonl
-  insert_embeddings: true
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl
+  insert_embeddings: false
+
+from_ckpt:
+  do: true
+  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/128memtoks_nodec_rec/checkpoints/checkpoint_010000/embedder/
 
 
 seq_len: 512
@@ -68,12 +66,6 @@ log_freq: 1
 eval_freq: 50
 no_eval: false
 ckpt_freq: 30
-
-from_ckpt:
-  do: True
-  decoder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/4P_TruncL_16_TrainL_4_decL16_newinit/checkpoints/checkpoint_010000/llm/decoder/
-  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/4P_TruncL_16_TrainL_4_decL16_newinit/checkpoints/checkpoint_010000/embedder/
-
 
 # SQUAD: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl
 # NQ, TRIVIAQA: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/  nq_open_data.jsonl, triviaqa_data.jsonl
