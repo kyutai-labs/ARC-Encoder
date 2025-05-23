@@ -658,7 +658,7 @@ def evaluate_trad(
                         batch_list_prompts = [
                             [
                                 "Document: ",
-                                "\nProvide a French translation of the text below.",
+                                "\nTranslate the previous document into French.",
                             ]
                             for _ in range(bs)
                         ]
@@ -666,7 +666,7 @@ def evaluate_trad(
                         batch_list_prompts = [
                             [
                                 "Document: ",
-                                "\nRender the document into fluent German while preserving its meaning.",
+                                "\nTranslate the previous document into German.",
                             ]
                             for _ in range(bs)
                         ]
@@ -720,7 +720,7 @@ def evaluate_trad(
                     generated_sequences.extend(final_seq)
                 else:
                     if fine_tuned:
-                        if benchmark == "Spanish":
+                        if benchmark == "Danish":
                             prompts = [
                                 "Document: "
                                 + seq
@@ -731,7 +731,7 @@ def evaluate_trad(
                             prompts = [
                                 "Document: "
                                 + seq
-                                + "\nProvide a French translation of the text below."
+                                + "\nTranslate the previous document into French."
                                 for seq in text[i : i + bs]
                             ]
 
@@ -739,9 +739,17 @@ def evaluate_trad(
                             prompts = [
                                 "Document: "
                                 + seq
-                                + "\nRender the document into fluent German while preserving its meaning."
+                                + "\nTranslate the previous document into German."
                                 for seq in text[i : i + bs]
                             ]
+                        elif benchmark == "Danish":
+                            prompts = [
+                                "Document: "
+                                + seq
+                                + "\nTranslate the previous document into Danish."
+                                for seq in text[i : i + bs]
+                            ]
+
                         else:
                             raise ValueError("Invalid benchmark")
                     else:
