@@ -86,6 +86,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.rec_tok = (
                 torch.nn.Embedding(1, args.dim) if embedder_args.rec_tok else None
             )
+            self.cont_tok = ( 
+                torch.nn.Embedding(1, args.dim) if embedder_args.cont_tok else None
+            )
         else:
             self.for_embedding = False
             self.compress_rates = []
@@ -120,6 +123,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.n_mem_tokens = 0
             self.mem_embeddings = None
             self.rec_tok = None
+            self.cont_tok = None
 
         self.pos_to_keep = None
 

@@ -44,7 +44,20 @@ config/experiments/mem_toks/ft/32memtoks_dec_rec_squad.yaml
 config/experiments/mem_toks/ft/64memtoks_dec_rec_TS.yaml 
 config/experiments/mem_toks/ft/64memtoks_dec_rec_squad.yaml 
 )
-
+# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_pt_ft_20R1.yaml 
+# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_pt_ft_10R1.yaml 
+# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_pt_ft_5R1.yaml 
+# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_ft_20R1.yaml 
+# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_ft_10R1.yaml 
+# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_ft_5R1.yaml
+# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_30rec_squad.yaml 
+# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_20rec_conttok_squad.yaml 
+# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_10rec.yaml 
+# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_10rec_squad.yaml 
+# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_5rec_squad.yaml 
+# config/experiments/rec_sweeps/ft/64memtoks_dec_30rec_squad.yaml 
+# config/experiments/rec_sweeps/ft/64memtoks_dec_10rec_squad.yaml 
+# config/experiments/rec_sweeps/ft/64memtoks_dec_5rec_squad.yaml
 
 # Get the specific config file for this array task
 CONFIG=${CONFIG_FILES[$SLURM_ARRAY_TASK_ID]}

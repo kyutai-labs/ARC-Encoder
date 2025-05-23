@@ -104,17 +104,17 @@ case $RUN_NAME in
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
         --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME 
 
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --ckpt 9000
+    # srun --gpus=$N_GPU  \
+    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --ckpt 9000
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json  \
         --n_passages 500 --run_name $RUN_NAME --eval_trad 
 
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json  \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad --ckpt 9000
+    # srun --gpus=$N_GPU  \
+    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json  \
+    #     --n_passages 500 --run_name $RUN_NAME --eval_trad --ckpt 9000
 
     ;;
 

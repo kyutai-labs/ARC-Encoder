@@ -581,7 +581,14 @@ def _train(
                 dtype=model.embedder.rec_tok.weight.dtype,
                 device=model.embedder.rec_tok.weight.device,
             )
-
+            
+        if model.embedder.cont_tok is not None and batch.data_type != "continuaton":
+            model.embedder.cont_tok.weight.grad = torch.zeros_like(
+                model.embedder.cont_tok.weight
+            ).to(
+                dtype=model.embedder.cont_tok.weight.dtype,
+                device=model.embedder.cont_tok.weight.device,
+            )
         if args.num_microbatches > 1:
             loss /= args.num_microbatches
             train_ppl /= args.num_microbatches

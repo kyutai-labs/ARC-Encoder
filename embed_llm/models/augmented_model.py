@@ -88,6 +88,34 @@ class EmbedAugModel(nn.Module):
 
                 embed_seqlens = [size + 1 for size in embed_seqlens]
                 embeddings = new_embeddings.clone()
+                
+            elif self.embedder.cont_tok is not None and (batch_type == "continuation" or batch_type == "instruct"):
+                sp_cont_tok = self.embedder.cont_tok(
+                    torch.tensor([0]).to(embeddings.device)
+                )
+                new_embeddings = torch.zeros(
+                    (
+                        len(embed_seqlens) + sum(embed_seqlens),
+                        embeddings.shape[1],
+                    ),
+                    device=embeddings.device,
+                    dtype=embeddings.dtype,
+                )
+                ind = 0
+                ind_new = 0
+                for j, size in enumerate(embed_seqlens):
+                    new_embeddings[ind_new : ind_new + size] = embeddings[
+                        ind : ind + size
+                    ]
+                    ind_new += size
+                    ind += size
+
+                    new_embeddings[ind_new : ind_new + 1] = sp_cont_tok.clone()
+
+                    ind_new += 1
+
+                embed_seqlens = [size + 1 for size in embed_seqlens]
+                embeddings = new_embeddings.clone()
 
             # Only one insertion of embedding per sample
             embed_seqlens = group_embed_seqlens(embed_seqlens, [1] * len(seqlens))
@@ -246,7 +274,7 @@ class EmbedAugPipeline(nn.Module):
             llm_embedder.load_state_dict(
                 trained_layers_state_dict,
                 strict=False,
-                assign=(pipeline_args.embedder_params.memory_tokens > 0 or pipeline_args.embedder_params.rec_tok),
+                assign=(pipeline_args.embedder_params.memory_tokens > 0 or pipeline_args.embedder_params.rec_tok or pipeline_args.embedder_params.cont_tok),
             )
         else:
             print("No trained layers, not loading any new state dict for the embedder")
@@ -347,6 +375,33 @@ class EmbedAugPipeline(nn.Module):
             embeddings, embed_seqlens = self.model.embedder.forward_embedder(
                 input_ids=x, seqlens=seqlens
             )
+            if self.model.embedder.cont_tok is not None:
+                sp_cont_tok = self.model.embedder.cont_tok(
+                    torch.tensor([0]).to(embeddings.device)
+                )
+                new_embeddings = torch.zeros(
+                    (
+                        len(embed_seqlens) + sum(embed_seqlens),
+                        embeddings.shape[1],
+                    ),
+                    device=embeddings.device,
+                    dtype=embeddings.dtype,
+                )
+                ind = 0
+                ind_new = 0
+                for j, size in enumerate(embed_seqlens):
+                    new_embeddings[ind_new : ind_new + size] = embeddings[
+                        ind : ind + size
+                    ]
+                    ind_new += size
+                    ind += size
+
+                    new_embeddings[ind_new : ind_new + 1] = sp_cont_tok.clone()
+
+                    ind_new += 1
+
+                embed_seqlens = [size + 1 for size in embed_seqlens]
+                embeddings = new_embeddings.clone()
 
             embed_seqlens = group_embed_seqlens(
                 embed_seqlens, [len(l_text) for l_text in text_to_embed]

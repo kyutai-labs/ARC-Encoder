@@ -167,7 +167,7 @@ class Checkpointer:
 
         embedder_states = {}
         for key, module in embedder_modules.items():
-            if "rec_tok" in key:
+            if "rec_tok" in key or "cont_tok" in key:
                 parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
                     "_checkpoint_wrapped_module.", ""
                 )

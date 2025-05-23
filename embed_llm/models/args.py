@@ -45,6 +45,7 @@ class EmbedderArgs(Serializable):
     pooling_module: PoolingArgs = field(default_factory=PoolingArgs)
     memory_tokens: int = 0
     rec_tok: bool = False
+    cont_tok: bool = False
     compress_rates: list[int] = field(default_factory=list)
     trained_layers: int = 0
     causal_embedder: bool = True
