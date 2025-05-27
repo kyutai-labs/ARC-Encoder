@@ -30,15 +30,23 @@ optim:
 pipeline:
   embedder_params:
     causal_embedder: true
+    compress_rates:
+    - -4
     n_truncated_layers: 16
     pooling_module:
-      pool_type: mean
-      where: between
+      pool_type: mean_sa
+      where: before
     trained_layers: 4
-    memory_tokens: 128
-    matryoshka_training: {64: 0.5, 32: 0.3, 16: 0.1, 128: 0.1}
+    rec_tok: true
+    cont_tok: true
   max_embeds: 1
-
+  trainable_llm: false
+  w_embeds: true
+  w_prefix_prompt: false
+  decoder_module:
+    do: true
+    n_layers: 1
+    insert_at: 16
 
 
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-5
+#SBATCH --array=5-6
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -9,22 +9,22 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=pretrain_rec_tk
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx15,par2dc5-ai-prd-cl02s04dgx12,par2dc5-ai-prd-cl02s01dgx03,par2dc5-ai-prd-cl02s01dgx04,par2dc5-ai-prd-cl02s03dgx28,par2dc5-ai-prd-cl02s02dgx31,par2dc5-ai-prd-cl02s03dgx04,par2dc5-ai-prd-cl02s01dgx32,par2dc5-ai-prd-cl02s02dgx30,par2dc5-ai-prd-cl02s01dgx24
-#SBATCH --dependency=afterany:728454_17
+
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 
 CONFIG_FILES=(
-config/experiments/rec_sweeps/SA_merge_L4_CR4_decL16_pt_30rec.yaml 
-config/experiments/rec_sweeps/SA_merge_L4_CR4_decL16_pt_10rec.yaml 
-config/experiments/rec_sweeps/SA_merge_L4_CR4_decL16_pt_5rec.yaml 
-config/experiments/rec_sweeps/64memtoks_dec_30rec.yaml 
-config/experiments/rec_sweeps/64memtoks_dec_10rec.yaml 
-config/experiments/rec_sweeps/64memtoks_dec_5rec.yaml
+config/experiments/rec_sweeps/SA_merge_L4_CR4_decL16_pt_5rec_conttok.yaml
+config/experiments/rec_sweeps/SA_merge_L4_CR4_pt_5rec.yaml 
+config/experiments/rec_sweeps/SA_merge_L4_CR4_pt_5rec_conttok.yaml
+config/experiments/mem_toks/64memtoks_dec.yaml
+config/experiments/mem_toks/4memtoks_nodec_rec.yaml
+config/experiments/mem_toks/64memtoks_nodec_conttok.yaml 
+config/experiments/mem_toks/64memtoks_dec_conttok.yaml
 )
-# config/experiments/rec_sweeps/SA_merge_L4_CR4_decL16_pt_20rec_conttok.yaml
+
 
 # Get the specific config file for this array task
 CONFIG=${CONFIG_FILES[$SLURM_ARRAY_TASK_ID]}

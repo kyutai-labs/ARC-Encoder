@@ -6,6 +6,9 @@ import random
 import numpy as np
 import torch
 from embed_llm.models.utils import is_torchrun
+from embed_llm.models.loading import (
+    load_state_dict,
+)
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 logger = logging.getLogger(__name__)
@@ -97,7 +100,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             if benchmark.lower() == "traduction":
                 for metric in [
                     "BLEU",
-                ]:  
+                ]:
                     if metric not in results[run_name][ckpt].keys():
                         continue
                     for temp in results[run_name][ckpt][metric].keys():
@@ -120,14 +123,21 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                 "compress_ratio", None
                                             ),
                                         },
-                                        
                                         index=[0],
                                     ),
                                 ]
                             )
                 formated_results = (
                     formated_results.groupby(
-                        ["run_name", "ckpt", "temp", "n_samples", "language", 'fine_tuned', "compress_ratio"]
+                        [
+                            "run_name",
+                            "ckpt",
+                            "temp",
+                            "n_samples",
+                            "language",
+                            "fine_tuned",
+                            "compress_ratio",
+                        ]
                     )
                     .first()
                     .reset_index()
@@ -217,7 +227,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                 )
 
                                 formated_results = pd.concat([formated_results, df_res])
-                                
+
                 if icae:
                     formated_results = (
                         formated_results.groupby(
@@ -255,3 +265,41 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                     )
 
     return formated_results
+
+
+def DARE_merging(
+    pretrain_path: str,
+    fine_tune_paths: list,
+    output_path: str,
+    lamba: float,
+    drop_rate: float = 0.3,
+    seed: int = 42,
+) -> None:
+    """
+    Merges the pre-trained model with fine-tuned models for DARE.
+
+    Args:
+        pretrain_path (str): Path to the pre-trained model.
+        fine_tune_paths (list): List of paths to fine-tuned models.
+        output_path (str): Path to save the merged model.
+    """
+    pretrain_state_dict = load_state_dict(pretrain_path)
+    fine_tune_state_dicts = [load_state_dict(path) for path in fine_tune_paths]
+    generator = torch.Generator().manual_seed(seed)
+    new_state_dict = {}
+    for k, v in pretrain_state_dict.items():
+        delta = torch.zeros_like(v)
+        for ft_state_dict in fine_tune_state_dicts:
+            m = torch.bernoulli(torch.ones_like(v) * drop_rate, generator=generator).to(
+                v.device
+            )
+            delta_param = (1 - m) * (ft_state_dict[k] - v) / (1 - drop_rate)
+            delta = delta + delta_param
+            if k in ft_state_dict.keys():
+                delta = delta + ft_state_dict[k] - v
+            else:
+                raise ValueError(
+                    f"Key {k} not found in fine-tuned state dicts. Ensure all fine-tuned models have the same architecture."
+                )
+        new_state_dict[k] = pretrain_state_dict[k] + lamba * delta
+    torch.save(new_state_dict, output_path)

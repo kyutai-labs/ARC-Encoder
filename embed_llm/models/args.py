@@ -61,7 +61,7 @@ class EmbedderArgs(Serializable):
         if self.matryoshka_training is not None:
             assert self.memory_tokens > 0, self.matryoshka_training
             assert len(self.matryoshka_training.keys()) > 1, self.matryoshka_training
-            assert max(list(self.matryoshka_training.keys())) <= self.memory_tokens, (
+            assert max([int(k) for k in self.matryoshka_training.keys()]) <= self.memory_tokens, (
                 self.matryoshka_training, self.memory_tokens
             )
 

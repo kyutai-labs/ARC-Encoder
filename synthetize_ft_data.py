@@ -40,11 +40,11 @@ ATLAS_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwik
 # ]
 
 instruction_prompts = {
-    "QA1": "Generate a question and its answer based solely on the content of the document above.",
-    "QA2": "Using the information in the document, create a factual QA pair.",
-    "QA3": "Write one question that can be answered from the previous passage, and provide the correct answer.",
-    "QA4": "Ask questions concerning the preceding passage and provide a short answer.",
-    "QA5": "Formulate a factual question. The question should require a short answer. Then, provide the answer.",
+    # "QA1": "Generate a question and its answer based solely on the content of the document above.",
+    # "QA2": "Using the information in the document, create a factual QA pair.",
+    # "QA3": "Write one question that can be answered from the previous passage, and provide the correct answer.",
+    # "QA4": "Ask questions concerning the preceding passage and provide a short answer.",
+    # "QA5": "Formulate a factual question. The question should require a short answer. Then, provide the answer.",
     "S1": "Summarize the key points of the document in 2 to 3 sentences.",
     "S2": "Provide a concise summary that captures the essence of the text above.",
     "S3": "Write a short summary of the previous document, focusing on its main message.",
@@ -54,8 +54,8 @@ instruction_prompts = {
     "P1": "Paraphrase the document using clearer and simpler wording.",
     "P2": "Rewrite the passage based on its content without directly copying any phrasing.",
     "P3": "Rephrase the document in a style suitable for a younger audience.",
-    "P4": "Convert the passage into a short dialogue between two characters.\n",
-    "R1": "Reconstruct perfectly the passage.",
+    "P4": "Reword the passage to make it more accessible while keeping the original meaning.",
+    # "R1": "Reconstruct perfectly the passage.",
 }
 
 translate_prompts = [
@@ -85,8 +85,9 @@ def mixture_dataset(
     for i, ds_path in enumerate(dataset_paths):
         ds_data = []
         with open(ds_path, "r") as f:
-            dataset_list = []
-            for idx, line in enumerate(f):
+            lines = f.readlines()
+            for idx, line in enumerate(reversed(lines)):
+                dataset_list = []
                 if idx == n_sample_per_datasets[i]:
                     break
                 sample = json.loads(line)
@@ -120,7 +121,8 @@ def dataset_from_file(file_path, n_passages: int = 1):
     n_sample = random.randint(1, n_passages)
     while True:
         with open(file_path, "r") as f:
-            for _, line in enumerate(f):
+            lines = f.readlines()
+            for idx, line in enumerate(reversed(lines)):
                 data = json.loads(line)
                 if passage_filter(data["text"]):
                     sample.append(data["text"].strip())

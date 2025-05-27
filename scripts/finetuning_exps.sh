@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=2-17%4
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -10,54 +10,28 @@
 #SBATCH --job-name=fine_tuning_comp
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
 
+
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 
 
-
 CONFIG_FILES=(
-config/experiments/mem_toks/various/128memtoks_nodec_rec_squad_to64.yaml 
-config/experiments/mem_toks/various/64memtoks_nodec_rec_squad_to32.yaml
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_new_mixlang.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_new_mixlang.yaml
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_syntfr.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_syntes.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_syntde.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_syntda.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_syntfr.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_syntes.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_syntde.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_syntda.yaml
-config/experiments/mem_toks/ft/16memtoks_nodec_rec_TS.yaml 
-config/experiments/mem_toks/ft/16memtoks_nodec_rec_squad.yaml 
-config/experiments/mem_toks/ft/16memtoks_dec_rec_TS.yaml 
-config/experiments/mem_toks/ft/16memtoks_dec_rec_squad.yaml 
-config/experiments/mem_toks/ft/8memtoks_nodec_rec_TS.yaml 
-config/experiments/mem_toks/ft/8memtoks_nodec_rec_squad.yaml 
-config/experiments/mem_toks/ft/8memtoks_dec_rec_TS.yaml 
-config/experiments/mem_toks/ft/8memtoks_dec_rec_squad.yaml
-config/experiments/mem_toks/ft/32memtoks_nodec_rec_TS.yaml 
-config/experiments/mem_toks/ft/32memtoks_nodec_rec_squad.yaml 
-config/experiments/mem_toks/ft/32memtoks_dec_rec_TS.yaml 
-config/experiments/mem_toks/ft/32memtoks_dec_rec_squad.yaml 
-config/experiments/mem_toks/ft/64memtoks_dec_rec_TS.yaml 
-config/experiments/mem_toks/ft/64memtoks_dec_rec_squad.yaml 
+config/experiments/mem_toks/various/Matryoshkamemtoks_nodec_rec_squad_to32.yaml
 )
-# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_pt_ft_20R1.yaml 
-# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_pt_ft_10R1.yaml 
-# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_pt_ft_5R1.yaml 
-# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_ft_20R1.yaml 
-# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_ft_10R1.yaml 
-# config/experiments/datasets/prop_rec/SA_merge_L4_CR4_decL16_ft_5R1.yaml
-# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_30rec_squad.yaml 
-# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_20rec_conttok_squad.yaml 
-# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_10rec.yaml 
-# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_10rec_squad.yaml 
-# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_5rec_squad.yaml 
-# config/experiments/rec_sweeps/ft/64memtoks_dec_30rec_squad.yaml 
-# config/experiments/rec_sweeps/ft/64memtoks_dec_10rec_squad.yaml 
-# config/experiments/rec_sweeps/ft/64memtoks_dec_5rec_squad.yaml
+# config/experiments/mem_toks/ft/64memtoks_nodec_conttok_TS.yaml 
+# config/experiments/mem_toks/ft/64memtoks_nodec_conttok_squad.yaml 
+# config/experiments/mem_toks/ft/4memtoks_nodec_squad.yaml 
+# config/experiments/mem_toks/ft/4memtoks_nodec_rec_TS.yaml
+# config/experiments/mem_toks/ft/64memtoks_dec_conttok_TS.yaml 
+# config/experiments/mem_toks/ft/64memtoks_dec_conttok_squad.yaml
+# config/experiments/mem_toks/ft/64memtoks_dec_TS.yaml 
+# config/experiments/mem_toks/ft/64memtoks_dec_squad.yaml
+# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_5rec_conttok_TS.yaml
+# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_5rec_conttok_squad.yaml
+# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_pt_5rec_squad.yaml 
+# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_pt_5rec_conttok_squad.yaml
+
 
 # Get the specific config file for this array task
 CONFIG=${CONFIG_FILES[$SLURM_ARRAY_TASK_ID]}
