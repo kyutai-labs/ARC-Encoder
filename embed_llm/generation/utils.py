@@ -9,6 +9,8 @@ from embed_llm.models.utils import is_torchrun
 from embed_llm.models.loading import (
     load_state_dict,
 )
+import safetensors.torch
+from pathlib import Path
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 logger = logging.getLogger(__name__)
@@ -271,11 +273,12 @@ def DARE_merging(
     pretrain_path: str,
     fine_tune_paths: list,
     output_path: str,
-    lamba: float,
+    coeff: float,
     drop_rate: float = 0.3,
     seed: int = 42,
 ) -> None:
     """
+    Language Models are Super Mario
     Merges the pre-trained model with fine-tuned models for DARE.
 
     Args:
@@ -283,8 +286,15 @@ def DARE_merging(
         fine_tune_paths (list): List of paths to fine-tuned models.
         output_path (str): Path to save the merged model.
     """
-    pretrain_state_dict = load_state_dict(pretrain_path)
-    fine_tune_state_dicts = [load_state_dict(path) for path in fine_tune_paths]
+
+    pretrain_state_dict = load_state_dict(
+        Path(pretrain_path) / "embedder", dtype=torch.float32
+    )
+
+    fine_tune_state_dicts = [
+        load_state_dict(Path(path) / "embedder", dtype=torch.float32)
+        for path in fine_tune_paths
+    ]
     generator = torch.Generator().manual_seed(seed)
     new_state_dict = {}
     for k, v in pretrain_state_dict.items():
@@ -301,5 +311,62 @@ def DARE_merging(
                 raise ValueError(
                     f"Key {k} not found in fine-tuned state dicts. Ensure all fine-tuned models have the same architecture."
                 )
-        new_state_dict[k] = pretrain_state_dict[k] + lamba * delta
-    torch.save(new_state_dict, output_path)
+        new_state_dict[k] = pretrain_state_dict[k] + coeff * delta
+
+    if not Path(output_path + "checkpoints/checkpoint_000000/embedder/").exists():
+        Path(output_path + "checkpoints/checkpoint_000000/embedder/").mkdir(
+            parents=True, exist_ok=True
+        )
+
+    safetensors.torch.save_file(
+        new_state_dict,
+        Path(output_path + "checkpoints/checkpoint_000000/embedder")
+        / "consolidated.safetensors",
+    )
+    with open(Path(pretrain_path) / "params.json", 'r') as f:
+        params = f.read()
+    with open(Path(output_path + "checkpoints/checkpoint_000000/") / "params.json", 'w') as f:
+        f.write(params)
+
+    if Path(pretrain_path + "/llm/decoder").exists():
+        pretrain_state_dict = load_state_dict(
+            Path(pretrain_path) / "llm/decoder", dtype=torch.float32
+        )
+
+        for i, path in enumerate(fine_tune_paths):
+            fine_tune_state_dicts[i] = load_state_dict(
+                Path(path) / "llm/decoder", dtype=torch.float32
+            )
+
+        if not Path(
+            output_path + "checkpoints/checkpoint_000000/llm/decoder/"
+        ).exists():
+            Path(
+                output_path + "checkpoints/checkpoint_000000/llm/decoder/"
+            ).mkdir(parents=True, exist_ok=True)
+
+        safetensors.torch.save_file(
+            new_state_dict,
+            Path(output_path + "checkpoints/checkpoint_000000/llm/decoder/")
+            / "consolidated.safetensors",
+        )
+    elif Path(pretrain_path + "/llm/consolidated.safetensors").exists():
+        pretrain_state_dict = load_state_dict(
+            Path(pretrain_path) / "llm/", dtype=torch.float32
+        )
+
+        for i, path in enumerate(fine_tune_paths):
+            fine_tune_state_dicts[i] = load_state_dict(
+                Path(path) / "llm/", dtype=torch.float32
+            )
+
+        if not Path(output_path + "checkpoints/checkpoint_000000/llm/").exists():
+            Path(output_path + "checkpoints/checkpoint_000000/llm/").mkdir(
+                parents=True, exist_ok=True
+            )
+
+        safetensors.torch.save_file(
+            new_state_dict,
+            Path(output_path + "checkpoints/checkpoint_000000/llm/")
+            / "consolidated.safetensors",
+        )
