@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-2
+#SBATCH --array=0-1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
@@ -17,9 +17,8 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-merging_models/SA_merge_L4_CR4_decL16_pt_10rec/lambda_05_p_00  
-merging_models/SA_merge_L4_CR4_decL16_pt_10rec/lambda_05_p_03  
-merging_models/SA_merge_L4_CR4_decL16_pt_10rec/lambda_08_p_03
+merging_models/16memtoks_dec_rec/lambda_05_p_05
+merging_models/16memtoks_dec_rec/lambda_05_p_00
 )
 
 
@@ -89,24 +88,6 @@ Matryoshka*)
 
     ;;
 
-*mem*)
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_memtoks.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --comp_rate 64
-
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_memtoks.json  \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad --comp_rate 64
-
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_memtoks.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --comp_rate 32
-
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_other_memtoks.json  \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad --comp_rate 32
-
-    ;;
     
 *)
     srun --gpus=$N_GPU  \

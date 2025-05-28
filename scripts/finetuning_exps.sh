@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-18%4
+#SBATCH --array=27-28
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -10,9 +10,9 @@
 #SBATCH --job-name=fine_tuning_comp
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
 
-
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
+
 
 
 
@@ -36,6 +36,16 @@ config/experiments/rec_sweeps/ft/64memtoks_dec_10rec_squad.yaml
 config/experiments/rec_sweeps/ft/64memtoks_dec_5rec_squad.yaml
 /home/hippolytepilchen/code/hp_v2/config/experiments/mem_toks/corrected/32memtoks_dec_rec_TS
 /home/hippolytepilchen/code/hp_v2/config/experiments/mem_toks/corrected/32memtoks_nodec_rec_TS
+config/experiments/mem_toks/corrected/32memtoks_nodec_rec_squad_to16.yaml 
+config/experiments/mem_toks/corrected/32memtoks_nodec_rec_squad_to8.yaml 
+config/experiments/mem_toks/corrected/32memtoks_nodec_rec_squad_to4.yaml
+config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_5rec_conttok_TS.yaml
+config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_5rec_conttok_squad.yaml
+config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_pt_5rec_squad.yaml 
+config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_pt_5rec_conttok_squad.yaml
+config/experiments/datasets/Allstar_comp4_ft_TS.yaml
+config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_pt_5rec_TS.yaml 
+config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_pt_5rec_conttok_TS.yaml
 )
 
 
@@ -47,10 +57,7 @@ config/experiments/rec_sweeps/ft/64memtoks_dec_5rec_squad.yaml
 # config/experiments/mem_toks/ft/64memtoks_dec_conttok_squad.yaml
 # config/experiments/mem_toks/ft/64memtoks_dec_TS.yaml 
 # config/experiments/mem_toks/ft/64memtoks_dec_squad.yaml
-# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_5rec_conttok_TS.yaml
-# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_5rec_conttok_squad.yaml
-# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_pt_5rec_squad.yaml 
-# config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_pt_5rec_conttok_squad.yaml
+
 
 
 # Get the specific config file for this array task
@@ -80,24 +87,7 @@ echo "Starting evaluation of run $RUN_NAME"
 
 
 case $RUN_NAME in
-*squad*)
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_corrected_memtoks.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0
 
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_corrected_memtoks.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5
-
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_corrected_memtoks.json \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad  --fine_tuned
-
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_corrected_memtoks.json \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad 
-
-    ;;
 
 
 *)

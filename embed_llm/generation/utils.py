@@ -286,6 +286,21 @@ def DARE_merging(
         fine_tune_paths (list): List of paths to fine-tuned models.
         output_path (str): Path to save the merged model.
     """
+    with open(Path(pretrain_path) / "params.json", "r") as f:
+        params = f.read()
+    Path(output_path + "checkpoints/checkpoint_000000/").mkdir(
+        parents=True, exist_ok=True
+    )
+    with open(
+        Path(output_path + "checkpoints/checkpoint_000000/") / "params.json", "w"
+    ) as f:
+        f.write(params)
+
+    with open(Path(pretrain_path + "../../") / "args.yaml", "r") as f:
+        params = f.read()
+    Path(output_path).mkdir(parents=True, exist_ok=True)
+    with open(Path(output_path) / "args.yaml", "w") as f:
+        f.write(params)
 
     pretrain_state_dict = load_state_dict(
         Path(pretrain_path) / "embedder", dtype=torch.float32
@@ -323,27 +338,39 @@ def DARE_merging(
         Path(output_path + "checkpoints/checkpoint_000000/embedder")
         / "consolidated.safetensors",
     )
-    with open(Path(pretrain_path) / "params.json", 'r') as f:
-        params = f.read()
-    with open(Path(output_path + "checkpoints/checkpoint_000000/") / "params.json", 'w') as f:
-        f.write(params)
 
     if Path(pretrain_path + "/llm/decoder").exists():
         pretrain_state_dict = load_state_dict(
             Path(pretrain_path) / "llm/decoder", dtype=torch.float32
         )
 
-        for i, path in enumerate(fine_tune_paths):
-            fine_tune_state_dicts[i] = load_state_dict(
-                Path(path) / "llm/decoder", dtype=torch.float32
-            )
+        fine_tune_state_dicts = [
+            load_state_dict(Path(path) / "llm/decoder", dtype=torch.float32)
+            for path in fine_tune_paths
+        ]
 
         if not Path(
             output_path + "checkpoints/checkpoint_000000/llm/decoder/"
         ).exists():
-            Path(
-                output_path + "checkpoints/checkpoint_000000/llm/decoder/"
-            ).mkdir(parents=True, exist_ok=True)
+            Path(output_path + "checkpoints/checkpoint_000000/llm/decoder/").mkdir(
+                parents=True, exist_ok=True
+            )
+        new_state_dict = {}
+        for k, v in pretrain_state_dict.items():
+            delta = torch.zeros_like(v)
+            for ft_state_dict in fine_tune_state_dicts:
+                m = torch.bernoulli(
+                    torch.ones_like(v) * drop_rate, generator=generator
+                ).to(v.device)
+                delta_param = (1 - m) * (ft_state_dict[k] - v) / (1 - drop_rate)
+                delta = delta + delta_param
+                if k in ft_state_dict.keys():
+                    delta = delta + ft_state_dict[k] - v
+                else:
+                    raise ValueError(
+                        f"Key {k} not found in fine-tuned state dicts. Ensure all fine-tuned models have the same architecture."
+                    )
+            new_state_dict[k] = pretrain_state_dict[k] + coeff * delta
 
         safetensors.torch.save_file(
             new_state_dict,
@@ -355,16 +382,31 @@ def DARE_merging(
             Path(pretrain_path) / "llm/", dtype=torch.float32
         )
 
-        for i, path in enumerate(fine_tune_paths):
-            fine_tune_state_dicts[i] = load_state_dict(
-                Path(path) / "llm/", dtype=torch.float32
-            )
+        fine_tune_state_dicts = [
+            load_state_dict(Path(path) / "llm/", dtype=torch.float32)
+            for path in fine_tune_paths
+        ]
 
         if not Path(output_path + "checkpoints/checkpoint_000000/llm/").exists():
             Path(output_path + "checkpoints/checkpoint_000000/llm/").mkdir(
                 parents=True, exist_ok=True
             )
-
+        new_state_dict = {}
+        for k, v in pretrain_state_dict.items():
+            delta = torch.zeros_like(v)
+            for ft_state_dict in fine_tune_state_dicts:
+                m = torch.bernoulli(
+                    torch.ones_like(v) * drop_rate, generator=generator
+                ).to(v.device)
+                delta_param = (1 - m) * (ft_state_dict[k] - v) / (1 - drop_rate)
+                delta = delta + delta_param
+                if k in ft_state_dict.keys():
+                    delta = delta + ft_state_dict[k] - v
+                else:
+                    raise ValueError(
+                        f"Key {k} not found in fine-tuned state dicts. Ensure all fine-tuned models have the same architecture."
+                    )
+            new_state_dict[k] = pretrain_state_dict[k] + coeff * delta
         safetensors.torch.save_file(
             new_state_dict,
             Path(output_path + "checkpoints/checkpoint_000000/llm/")

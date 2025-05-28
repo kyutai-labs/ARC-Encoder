@@ -220,7 +220,7 @@ class EmbedAugPipeline(nn.Module):
             param_dtype=param_dtype,
             parll=is_torchrun(),
         )
-
+        print('Pipeline args:', pipeline_args)
         if pipeline_args.trainable_llm and lora_llm.enable:
             llm.load_lora(Path(ckpt_path + "/llm/lora.safetensors"))
         elif pipeline_args.trainable_llm:
@@ -512,7 +512,7 @@ def load_pipeline(
     ckpt: int | None = None,
     comp_rate: int | None = None,
 ) -> EmbedAugPipeline | Transformer:
-    print(f' tmp path: {tmp_path}, run name: {run_name},  list dir {os.listdir( tmp_path + run_name + "/checkpoints/")}')
+
     if not mistral:
         if pipeline is None:
             # Get last checkpoint
