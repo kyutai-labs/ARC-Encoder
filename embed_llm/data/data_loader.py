@@ -13,10 +13,12 @@ class Batch:
     y: np.ndarray
     to_embed: list[dict[str, list[int] | str]]
     sizes: list[int]
+    batch_size: int
     y_mask: np.ndarray | None = None
     is_pad_only: bool = False
     data_type: str = "reconstruction"
     insert_embed_list: list[list[int]] | None = None
+
 
     def __post_init__(self):
         assert self.x.ndim == 1
@@ -117,7 +119,7 @@ class Batchlist:
             [el for sublist in list_of_lists for el in sublist], dtype=dtype
         )
 
-    def create_batch(self) -> Batch:
+    def create_batch(self, batch_size: int) -> Batch:
         x_np: np.ndarray = self.flatten_to_numpy(self.x, dtype=np.int64)
         y_np: np.ndarray = self.flatten_to_numpy(self.y, dtype=np.int64)
         sizes = sum(self.sizes, [])  # noqa
@@ -138,6 +140,7 @@ class Batchlist:
             y_mask_np,
             data_type=self.data_type,
             insert_embed_list=insert_embed_list,
+            batch_size=batch_size,
         )
 
 
@@ -190,7 +193,7 @@ def build_data_loader(
         )
 
         if len(batch_list) == batch_size:
-            batch: Batch = batch_list.create_batch()
+            batch: Batch = batch_list.create_batch(batch_size)
             yield batch
 
             batch_list.empty()

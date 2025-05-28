@@ -6,7 +6,31 @@ import numpy as np
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask
 
-from embed_llm.models.args import MistralModelArgs, EmbedderArgs, DecoderArgs
+from pathlib import Path
+import torch
+from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+
+from embed_llm.models.args import (
+    EmbedAugArgs,
+    MistralModelArgs,
+    EmbedderArgs,
+    DecoderArgs,
+)
+
+# Mistral specifics
+from embed_llm.models.mistral.enhanced_transformer import (
+    Transformer as MistralTransformer,
+)
+
+from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_tokenizer
+from embed_llm.training.distributed import (
+    get_rank,
+)
+
+Models = MistralTransformer
+ModelsArgs = MistralModelArgs
+Tokenizer = MistralTokenizer
+
 from embed_llm.models.embedding_modules import PoolingModule
 from embed_llm.models.lora import LoRALoaderMixin, maybe_lora
 from embed_llm.models.mistral.model import ModelBase
@@ -18,7 +42,7 @@ from embed_llm.models.mistral.transformer_layers import (
 )
 from embed_llm.models.mistral.rope import precompute_freqs_cis
 
-
+from embed_llm.models.loading import load_state_dict
 from embed_llm.models.mistral.cache import (
     BufferCache,
     CacheInputMetadata,
@@ -704,3 +728,38 @@ class Transformer(ModelBase, LoRALoaderMixin):
         outs = self.output(h)
 
         return outs.float()
+
+
+def load_mistral_model(
+    llm_args: ModelsArgs,
+    pipeline_args: EmbedAugArgs,
+    folder: Path,
+    checkpoint: bool,
+    param_dtype: torch.dtype,
+    for_embedding: bool = False,
+    parll: bool = True,
+) -> tuple[torch.nn.Module, int]:
+    with torch.device("meta"):
+        model = MistralTransformer(
+            args=llm_args,
+            checkpoint=checkpoint,
+            embedder_args=pipeline_args.embedder_params if for_embedding else None,
+            decoder_args=pipeline_args.decoder_module,
+        )
+
+    if not parll or get_rank() == 0:
+        state_dict = load_state_dict(folder, dtype=param_dtype)
+
+        if not for_embedding and (llm_args.lora is None or not llm_args.lora.enable):
+            assert all([k in model.state_dict() for k in state_dict.keys()]), (
+                f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
+            )
+
+        model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
+
+    if for_embedding:
+        tokenizer = load_mistral_tokenizer(Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")).instruct_tokenizer.tokenizer
+        return model, tokenizer
+    else:
+        tokenizer = load_mistral_tokenizer(Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")).instruct_tokenizer.tokenizer
+        return model, tokenizer

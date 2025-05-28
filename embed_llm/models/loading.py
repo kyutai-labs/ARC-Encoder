@@ -15,10 +15,11 @@ from embed_llm.models.args import (
     EmbedderArgs,
     PoolingArgs,
     DecoderArgs,
+    LlamaModelArgs,
 )
 
 # Mistral specifics
-from embed_llm.models.enhanced_transformer import (
+from embed_llm.models.mistral.enhanced_transformer import (
     Transformer as MistralTransformer,
 )
 
@@ -42,6 +43,7 @@ def load_args(
     max_batch_size: int | None = None,
     pipe_path: str | None = None,
     pipe_args: EmbedAugArgs | None = None,
+    llm_name: str = "mistral",
 ) -> tuple[ModelsArgs, EmbedAugArgs]:
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
 
@@ -93,30 +95,39 @@ def load_args(
     with open(folder / "params.json", "r") as f:
         args = json.loads(f.read())
 
-    llm_args = MistralModelArgs(
-        lora=lora,
-        dim=args["dim"],
-        n_layers=args["n_layers"],
-        head_dim=args["head_dim"],
-        hidden_dim=args["hidden_dim"],
-        n_heads=args["n_heads"],
-        n_kv_heads=args["n_kv_heads"],
-        norm_eps=args["norm_eps"],
-        vocab_size=args["vocab_size"],
-        max_batch_size=max_batch_size,
-    )
-
-    if args.get("rope_theta") is not None:
-        llm_args.rope_theta = args["rope_theta"]
-
-    if llm_args.vocab_size == 32000:
-        raise ValueError(
-            f"Fine-tuning is not supported for older model versions with vocab_size 32000. Make sure to extend your model to vocab_size=32768 using `python -m utils.extend_model_vocab --original_model_ckpt {folder} --extended_model_ckpt {folder}_extended`."
+    if llm_name == 'mistral':
+        llm_args = MistralModelArgs(
+            lora=lora,
+            dim=args["dim"],
+            n_layers=args["n_layers"],
+            head_dim=args["head_dim"],
+            hidden_dim=args["hidden_dim"],
+            n_heads=args["n_heads"],
+            n_kv_heads=args["n_kv_heads"],
+            norm_eps=args["norm_eps"],
+            vocab_size=args["vocab_size"],
+            max_batch_size=max_batch_size,
         )
 
-    assert llm_args.vocab_size >= 32768, (
-        "Make sure to use a model with a vocab size of at least 32768"
-    )
+        if args.get("rope_theta") is not None:
+            llm_args.rope_theta = args["rope_theta"]
+
+        if llm_args.vocab_size == 32000:
+            raise ValueError(
+                f"Fine-tuning is not supported for older model versions with vocab_size 32000. Make sure to extend your model to vocab_size=32768 using `python -m utils.extend_model_vocab --original_model_ckpt {folder} --extended_model_ckpt {folder}_extended`."
+            )
+
+        assert llm_args.vocab_size >= 32768, (
+            "Make sure to use a model with a vocab size of at least 32768"
+        )
+    elif llm_name == 'llama':
+
+        llm_args =  LlamaModelArgs(
+        max_batch_size=max_batch_size,
+        max_seq_len=args.get("max_seq_len", 2048),
+        lora=lora,
+        **args,
+        )
 
     if isinstance(pipeline_args.param_dtype, str):
         pipeline_args.param_dtype = getattr(torch, pipeline_args.param_dtype)
@@ -153,35 +164,3 @@ def load_state_dict(path: Path, dtype: torch.dtype) -> dict[str, torch.Tensor]:
     return model_state_dict
 
 
-def load_model(
-    llm_args: ModelsArgs,
-    pipeline_args: EmbedAugArgs,
-    folder: Path,
-    checkpoint: bool,
-    param_dtype: torch.dtype,
-    for_embedding: bool = False,
-    parll: bool = True,
-) -> tuple[torch.nn.Module, int]:
-    with torch.device("meta"):
-        model = MistralTransformer(
-            args=llm_args,
-            checkpoint=checkpoint,
-            embedder_args=pipeline_args.embedder_params if for_embedding else None,
-            decoder_args=pipeline_args.decoder_module,
-        )
-
-    if not parll or get_rank() == 0:
-        state_dict = load_state_dict(folder, dtype=param_dtype)
-
-        if not for_embedding and (llm_args.lora is None or not llm_args.lora.enable):
-            assert all([k in model.state_dict() for k in state_dict.keys()]), (
-                f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
-            )
-
-        model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
-
-    if for_embedding:
-        return model
-    else:
-        tokenizer = load_mistral_tokenizer(Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")).instruct_tokenizer.tokenizer
-        return model, tokenizer

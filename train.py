@@ -434,41 +434,12 @@ def _train(
             #     # print("Embed seqlens", embed_seqlens)
             #     # print('Insert cat embedds', insert_cat_embedds)
 
-            if args.textual_continuation * args.continuation > 0.0:
-                rand_noembed_continuation = (
-                    torch.rand(1).cuda()
-                    if get_rank() == 0
-                    else torch.tensor([0.0], device="cuda")
-                )
-                dist.broadcast(rand_noembed_continuation, 0)
-
-                if (
-                    batch.data_type == "continuation"
-                    and rand_noembed_continuation < args.textual_continuation
-                ):
-                    x = []
-                    y = []
-                    seqlens = []
-                    y_mask = []
-                    ind = 0
-                    for to_embed, size in zip(batch.to_embed, batch.sizes):
-                        x.extend(to_embed["tokens"])
-                        x.extend(batch.x[ind : ind + size])
-                        y.extend(to_embed["tokens"])
-                        y.extend(batch.y[ind : ind + size])
-                        seqlens.append(len(to_embed["tokens"]) + size)
-                        ind += size
-                        y_mask.extend([False] * len(to_embed["tokens"]))
-                        y_mask.extend([True] * size)
-
-                    x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
-                    y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
-                    y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
-                    batch.data_type = "textual_continuation"
-                    embeddings = None
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
+            
+
+
             output = model.forward(
                 x=x,
                 embeddings=embeddings,
@@ -477,6 +448,15 @@ def _train(
                 insert_cat_embedds=insert_cat_embedds,
                 batch_type=batch.data_type,
             )
+            
+            if len(output.size()) > 2:
+                output = output.view(-1, output.size(-1)).float()
+                y = y.view(-1).long()
+                y_mask = None if y_mask is None else y_mask.view(-1)
+                assert output.size(0) == y.size(
+                    0
+                ), f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}"
+                
             mb_loss = compute_ce_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
@@ -602,11 +582,7 @@ def _train(
         grad_norm = torch.tensor([0.0], device="cuda")
         for name, p in model.named_parameters():
             if p.requires_grad:
-                if (
-                    args.textual_continuation * args.continuation == 0.0
-                    and pipeline.pipeline_args.embedder_params.matryoshka_training
-                    is not None
-                ):
+                if pipeline.pipeline_args.embedder_params.matryoshka_training is not None:
                     assert p.grad is not None, f"None grad for this param {name}"
                     if torch.any(torch.isnan(p.grad)).item():
                         print(f"Grad contains NaN for this param {name}")

@@ -56,7 +56,8 @@ class CkptArgs(Serializable):
 class TrainArgs(Serializable):
     # if specified, instruct_tokenizer and model will be loaded
     # Path to the directory containing the initial model or model id: "mistral-small"
-    model_id_or_path: str
+    embedder_path: str
+    
     # Path to the directory where everything will be saved. It needs to be empty.
     run_dir: str
     # Name of the wandb run, if None it will be set to the name of the run_dir.
@@ -103,7 +104,8 @@ class TrainArgs(Serializable):
 
     # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
     continuation: float = 0.0
-    textual_continuation: float = 0.0
+    llm_path: str | None = None  # Path to the directory containing the LLM model or model id: "mistral-small"
+    llm_name: str = "mistral"  # Name of the model to use or llama
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None
@@ -122,3 +124,12 @@ class TrainArgs(Serializable):
         
         if self.continuation < 1 and self.data.n_times_sl_insertion > 0:
             print('For reconstruction training, no text inserted before embeddings')
+
+        if self.llm_name != 'mistral':
+            assert not self.lora_llm.enable , "LoRA is not supported for Llama models"
+            assert not self.pipeline.trainable_llm, "Pipeline training is not supported for Llama models"
+            assert not self.pipeline.decoder_module.enable, "Decoder module is not supported for Llama models"
+        
+        if self.llm_path is None:
+            assert self.llm_name == 'mistral'
+            self.llm_path = self.embedder_path

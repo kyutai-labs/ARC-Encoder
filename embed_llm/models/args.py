@@ -122,3 +122,22 @@ class MistralModelArgs(Serializable):
             if self.sliding_window is not None
             else self._sliding_window
         )
+
+
+@dataclass
+class LlamaModelArgs(Serializable):
+    dim: int = 4096
+    n_layers: int = 32
+    n_heads: int = 32
+    n_kv_heads: int | None = None
+    vocab_size: int = -1
+    multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
+    ffn_dim_multiplier: float | None = None
+    norm_eps: float = 1e-5
+    rope_theta: float = 500000
+
+    max_batch_size: int = 32
+    max_seq_len: int = 2048
+    lora: LoraArgs | None = None
+    use_scaled_rope: bool = True  # Not implemented in the model
+    """ If adding new args take care giving it to load args """

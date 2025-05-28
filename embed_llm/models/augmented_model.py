@@ -7,31 +7,82 @@ import torch
 import torch.distributed
 import torch.nn as nn
 import yaml
-from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-from mistral_inference.transformer import Transformer
+
 
 from embed_llm.data.data_loader import Batch
 from embed_llm.generation.utils import eval_logger_info
 from embed_llm.models.args import EmbedAugArgs, LoraArgs, MistralModelArgs
-
+from embed_llm.models.utils import group_embed_seqlens, is_torchrun
 from embed_llm.models.loading import (
     load_args,
-    load_model,
     load_state_dict,
 )
 
 # Mistral specifics
-from embed_llm.models.enhanced_transformer import (
+from embed_llm.models.mistral.enhanced_transformer import (
     Transformer as MistralTransformer,
 )
-from embed_llm.models.mistral.generate import generate as mistral_generate
-from embed_llm.models.utils import group_embed_seqlens, is_torchrun
+from mistral_inference.transformer import Transformer
+from embed_llm.models.mistral.enhanced_transformer import load_mistral_model
 
-Models = MistralTransformer
+from embed_llm.models.mistral.generate import generate as mistral_generate
+
+#Llama specifics
+from embed_llm.models.llama.model import Transformer as LlamaTransformer
+from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
+
+
+Models = MistralTransformer | LlamaTransformer
 ModelsArgs = MistralModelArgs
-Tokenizer = MistralTokenizer
 
 logger = logging.getLogger(__name__)
+
+
+
+def pad_and_convert_to_tensor(
+    x: list[int],
+    y: list[int],
+    sizes: list[int],
+    seq_len: int,
+    pad_id: int,
+    batch_size: int,
+    y_mask: list[bool] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+
+    final_x = (
+        torch.ones((batch_size, seq_len), dtype=torch.long).cuda(non_blocking=True)
+        * pad_id
+    )
+    final_y = (
+        torch.ones((batch_size, seq_len), dtype=torch.long).cuda(non_blocking=True)
+        * pad_id
+    )
+    final_mask = (
+        torch.zeros((batch_size, seq_len), dtype=torch.bool).cuda(non_blocking=True)
+    )
+    # Pad the input and output sequences
+    ind = 0
+    for i, size in enumerate(sizes):
+        final_x[i, :size] = torch.tensor(x[ind : ind + size]).cuda(non_blocking=True)
+        final_y[i, :size] = torch.tensor(y[ind : ind + size]).cuda(non_blocking=True)
+        if y_mask is not None:
+            final_mask[i, :size] = torch.tensor(y_mask[ind : ind + size]).cuda(
+                non_blocking=True
+            )
+        else:
+            final_mask[i, :size] = torch.tensor([True]*size).cuda(
+                non_blocking=True
+            )
+        ind += size
+        if i == batch_size - 1:
+            break
+
+    return (
+        final_x,
+        final_y,
+        final_mask,
+    )
+
 
 
 class EmbedAugModel(nn.Module):
@@ -40,12 +91,16 @@ class EmbedAugModel(nn.Module):
         pipeline_args: EmbedAugArgs,
         llm: Models,
         embedder: Models | None = None,
+        llm_name: str = "mistral",
+        pad_token_id: int = -1,
     ):
         super().__init__()
         self.llm = llm
         self.w_embeds = pipeline_args.w_embeds
         self.embedder = embedder
         self.tokenized_prompts = {}
+        self.llm_name = llm_name.lower()
+        self.pad_token_id = pad_token_id
 
     def forward(
         self,
@@ -120,15 +175,27 @@ class EmbedAugModel(nn.Module):
             # Only one insertion of embedding per sample
             embed_seqlens = group_embed_seqlens(embed_seqlens, [1] * len(seqlens))
 
-        # Embed seqlens is a list of lists of the number of tokens in each subpassage
-        return self.llm.forward(
-            input_ids=x,
-            seqlens=seqlens,
-            embed_seqlens=embed_seqlens,
-            cat_embeddings=embeddings,
-            tokenized_prompts=self.tokenized_prompts,
-            insert_cat_embedds=insert_cat_embedds,
-        )
+        if self.llm_name == 'mistral':
+            # Embed seqlens is a list of lists of the number of tokens in each subpassage
+            return self.llm.forward(
+                input_ids=x,
+                seqlens=seqlens,
+                embed_seqlens=embed_seqlens,
+                cat_embeddings=embeddings,
+                tokenized_prompts=self.tokenized_prompts,
+                insert_cat_embedds=insert_cat_embedds,
+            )
+        elif self.llm_name == 'llama':
+            return self.llm.forward(
+                input_ids=x,
+                embed_seqlens=embed_seqlens,
+                cat_embeddings=embeddings,
+                insert_cat_embedds=insert_cat_embedds,
+                pad_token_id=self.pad_token_id,
+            )
+        else:
+            raise ValueError(f"Unknown LLM name: {self.llm_name}. Supported: mistral, llama.")
+            
 
 
 class EmbedAugPipeline(nn.Module):
@@ -136,21 +203,31 @@ class EmbedAugPipeline(nn.Module):
         self,
         pipeline_args: EmbedAugArgs,
         embedding_model: object,
-        tokenizer: object = None,
+        llm_tokenizer: object = None,
+        embed_tokenizer: object = None,
+        pad_token_id: int = -1,
+        max_seq_len: int = 2048,
+        llm_name: str = "mistral",
     ):
         super().__init__()
 
         self.embedding_model = embedding_model
-        self.tokenizer = tokenizer
+        self.llm_tokenizer = llm_tokenizer
+        self.embed_tokenizer = embed_tokenizer
         self.pipeline_args = pipeline_args
         self.model = None
         self.generate = None
+        self.pad_token_id = pad_token_id
+        self.max_seq_len = max_seq_len
+        self.llm_name = llm_name.lower()
 
     def get_model(self, llm: object) -> nn.Module:
         return EmbedAugModel(
             pipeline_args=self.pipeline_args,
             llm=llm,
             embedder=self.embedding_model,
+            llm_name=self.llm_name,
+            pad_token_id=self.pad_token_id,
         )
 
     def store_model(self, model: nn.Module):
@@ -172,23 +249,38 @@ class EmbedAugPipeline(nn.Module):
         for to_embed in batch.to_embed:
             assert not len(to_embed["tokens"]) <= 1
             embed_seqlens.append(len(to_embed["tokens"]))
-
-        x = torch.from_numpy(batch.x).cuda(non_blocking=True)
-        y = torch.from_numpy(batch.y).cuda(non_blocking=True)
-        y_mask = (
-            torch.from_numpy(batch.y_mask).cuda(non_blocking=True)
-            if batch.y_mask is not None
-            else None
-        )
         seqlens = batch.sizes
 
         insert_cat_embedds = batch.insert_embed_list
+        
+        if self.llm_name == "mistral":
+            x = torch.from_numpy(batch.x).cuda(non_blocking=True)
+            y = torch.from_numpy(batch.y).cuda(non_blocking=True)
+            y_mask = (
+                torch.from_numpy(batch.y_mask).cuda(non_blocking=True)
+                if batch.y_mask is not None
+                else None
+            )
+        elif self.llm_name == "llama":
+            x, y, embeddings, y_mask = pad_and_convert_to_tensor(
+                x=batch.x,
+                y=batch.y,
+                sizes=batch.sizes,
+                embeddings=embeddings,
+                y_mask=batch.y_mask,
+                seq_len=self.max_seq_len,
+                pad_id=self.pad_token_id,
+                batch_size=batch.batch_size,
+            )
+        else:
+            raise ValueError(f"Unknown LLM name: {self.llm_name}. Supported: mistral, llama.")
 
         return x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds
 
     @staticmethod
     def load_inference_model(
         llm_path: str,
+        embedder_path: str,
         ckpt_path: str | None,
         device: str,
         max_batch_size: int = 4,
@@ -205,23 +297,41 @@ class EmbedAugPipeline(nn.Module):
             lora=lora_llm,
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
+            llm_name=train_args["llm_name"],
         )
 
         if pipeline_args.trainable_llm:
+            assert train_args["llm_name"] == "mistral", (
+                "Trainable LLM is only supported for Mistral models"
+            )
             assert Path(ckpt_path + "/llm").exists()
 
-        llm, tokenizer = load_model(
-            llm_args=llm_args,
-            pipeline_args=pipeline_args,
-            folder=Path(llm_path)
-            if not pipeline_args.trainable_llm or lora_llm.enable
-            else Path(ckpt_path + "/llm"),
-            checkpoint=False,
-            param_dtype=param_dtype,
-            parll=is_torchrun(),
-        )
-        print('Pipeline args:', pipeline_args)
+  
+        if  train_args["llm_name"] == "mistral":
+            llm, llm_tokenizer = load_mistral_model(
+                llm_args=llm_args,
+                pipeline_args=pipeline_args,
+                folder=Path(llm_path)
+                if not pipeline_args.trainable_llm or lora_llm.enable
+                else Path(ckpt_path + "/llm"),
+                checkpoint=False,
+                param_dtype=param_dtype,
+                parll=is_torchrun(),
+            )
+
+        elif  train_args["llm_name"] == "llama":
+            llm_tokenizer = LlamaTokenizer(model_path=llm_path + "/tokenizer.model")
+            with torch.device("meta"):
+                llm = LlamaTransformer(args=llm_args, checkpoint=False)
+
+            state_dict = load_state_dict(Path(llm_path), dtype=param_dtype)
+            llm.load_state_dict(state_dict, assign=True)  # type: ignore
+            
+
         if pipeline_args.trainable_llm and lora_llm.enable:
+            assert train_args["llm_name"] == "mistral", (
+                "Trainable LLM is only supported for Mistral models"
+            )
             llm.load_lora(Path(ckpt_path + "/llm/lora.safetensors"))
         elif pipeline_args.trainable_llm:
             llm_state_dict = load_state_dict(
@@ -229,6 +339,9 @@ class EmbedAugPipeline(nn.Module):
             )
             llm.load_state_dict(llm_state_dict, strict=False, assign=True)
         if pipeline_args.decoder_module.do:
+            assert train_args["llm_name"] == "mistral", (
+                "Trainable LLM is only supported for Mistral models"
+            )
             assert Path(ckpt_path + "/llm/decoder").exists()
             decoder_state_dict = load_state_dict(
                 Path(ckpt_path + "/llm/decoder"), dtype=param_dtype
@@ -239,11 +352,18 @@ class EmbedAugPipeline(nn.Module):
         llm.eval()
 
         llm_args.lora = lora_embedder
-
-        llm_embedder = load_model(
-            llm_args=llm_args,
+        
+        embed_args, pipeline_args = load_args(
+            Path(embedder_path),
+            lora=lora_embedder,
+            max_batch_size=max_batch_size,
+            pipe_path=ckpt_path,
+            llm_name=train_args["llm_name"],
+        )
+        llm_embedder, embed_tokenizer = load_mistral_model(
+            llm_args=embed_args,
             pipeline_args=pipeline_args,
-            folder=Path(llm_path),
+            folder=Path(embedder_path),
             checkpoint=False,
             param_dtype=param_dtype,
             for_embedding=True,
@@ -286,7 +406,10 @@ class EmbedAugPipeline(nn.Module):
         augmented_pipeline = EmbedAugPipeline(
             pipeline_args=pipeline_args,
             embedding_model=llm_embedder,
-            tokenizer=tokenizer,
+            llm_tokenizer=llm_tokenizer,
+            embed_tokenizer=embed_tokenizer,
+            max_seq_len = llm_args.get('max_seq_len', 2048),  # type: ignore
+            pad_token_id = 0 if not hasattr(llm_tokenizer, 'pad_token_id') else llm_tokenizer.pad_token_id,
         )
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
@@ -297,8 +420,14 @@ class EmbedAugPipeline(nn.Module):
 
         for name, parm in augmented_pipeline.model.named_parameters():
             parm.requires_grad = False
-        augmented_pipeline.generate = augmented_pipeline.generate_mistral
-
+            
+        if augmented_pipeline.llm_name == "llama":
+             augmented_pipeline.generate = augmented_pipeline.generate_llama
+        elif augmented_pipeline.llm_name == "mistral":
+            augmented_pipeline.generate = augmented_pipeline.generate_mistral
+        else:
+            raise ValueError(f"Unknown LLM name: {augmented_pipeline.llm_name}. Supported: mistral, llama.")
+        
         return augmented_pipeline
 
     @torch.inference_mode()
@@ -360,7 +489,7 @@ class EmbedAugPipeline(nn.Module):
 
         if w_embeds:
             x = [
-                self.tokenizer.encode(text, bos=False, eos=False)
+                self.embed_tokenizer.encode(text, bos=False, eos=False)
                 for l_text in text_to_embed
                 for text in l_text
             ]
@@ -431,11 +560,11 @@ class EmbedAugPipeline(nn.Module):
                     # if embed_seqlens is not None and len(embed_seqlens) > 0:
 
                     if index == 0:
-                        toks = self.tokenizer.encode(prompt, bos=True, eos=False)
+                        toks = self.llm_tokenizer.encode(prompt, bos=True, eos=False)
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
                     else:
-                        toks = self.tokenizer.encode(prompt, bos=False, eos=False)
+                        toks = self.llm_tokenizer.encode(prompt, bos=False, eos=False)
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
 
@@ -453,14 +582,28 @@ class EmbedAugPipeline(nn.Module):
             else:
                 prompt = "".join(l_prompts)
                 encoded_prompt.append(
-                    [self.tokenizer.encode(prompt, bos=True, eos=False)]
+                    [self.llm_tokenizer.encode(prompt, bos=True, eos=False)]
                 )
 
-        eos_id = self.tokenizer.eos_id
+        eos_id = self.llm_tokenizer.eos_id
 
         if is_torchrun():
             torch.distributed.barrier()
 
+    #     prompt_tokens = self.llm_tokenizer.encode_batch(s=prompts, bos=True, eos=False)
+    #     out_tokens, logprobs = llama_generate(
+    #         model=self.model.llm,
+    #         tokenizer=self.llm_tokenizer,
+    #         prompt_tokens=prompt_tokens,
+    #         embeddings=embeddings,
+    #         max_gen_len=max_tokens,
+    #         temperature=temperature,
+    #         logprobs=True,
+    #         norm_wo_embeds=self.pipeline_args.norm_wo_embeds,
+    #         **kwargs,
+    #     produced_text = self.tokenizer.decode_batch(out_tokens)
+
+    
         generated_tokens = mistral_generate(
             prompt_tokens=encoded_prompt,
             insertion_lists=insertion_lists,
@@ -475,7 +618,7 @@ class EmbedAugPipeline(nn.Module):
             **kwargs,
         )
         produced_text = [
-            self.tokenizer.decode(generated_tokens[i])
+            self.llm_tokenizer.decode(generated_tokens[i])
             for i in range(len(generated_tokens))
         ]
 
@@ -499,8 +642,23 @@ class EmbedAugPipeline(nn.Module):
                 n_context_tokens,
                 None if embed_seqlens is None else sum(sum(embed_seqlens, [])),
             )
-
-
+    @torch.inference_mode()
+    def generate_llama(
+        self,
+        text_to_embed: str | list[str] | list[list[str]] | None,
+        device: str,
+        batch_list_prompts: list[str] | list[list[str]] = [""],
+        max_tokens: int = 100,
+        temperature: float = 0.6,
+        truncate_line: bool = False,
+        device_generation: str | None = None,
+        embed_seqlens: list[int] | None = None,
+        give_n_tokens: bool = False,
+        **kwargs,
+    ):
+        pass
+    
+    
 def load_pipeline(
     run_name: str | None,
     llm_path: str,
