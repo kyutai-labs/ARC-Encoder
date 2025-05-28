@@ -376,7 +376,10 @@ def _train(
             state.comp_rate = model.embedder.compress_rates[0]
 
         if pipeline.pipeline_args.embedder_params.matryoshka_training is not None:
-            probs = [float(x) for x in pipeline.pipeline_args.embedder_params.matryoshka_training.values()]
+            probs = [
+                float(x)
+                for x in pipeline.pipeline_args.embedder_params.matryoshka_training.values()
+            ]
             probs = [x / sum(probs) for x in probs]
             n_mem_toks = np.random.choice(
                 list(pipeline.pipeline_args.embedder_params.matryoshka_training.keys()),
@@ -411,17 +414,17 @@ def _train(
             )
 
             # if get_rank() == 0:
-            #     # to_gen = [
-            #     #     int(tok)
-            #     #     for tok in batch.x[sum(batch.sizes[:13]):sum(batch.sizes[:14])]
-            #     # ]
+            #     to_gen = [
+            #         int(tok)
+            #         for tok in batch.x
+            #     ]
             #     # target = [int(tok) for tok in batch.y]
             #     # embed = [int(tokens) for tokens in batch.to_embed[13]["tokens"]]
             #     # continuation = [
             #     #     int(tok)
             #     #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
             #     # ]
-            #     # print('Beginning',pipeline.tokenizer.decode(to_gen))
+            #     print("Beginning", pipeline.tokenizer.decode(to_gen))
             #     # print('Embed', pipeline.tokenizer.decode(embed))
             #     # print('embedding tokens', batch.to_embed[13]["tokens"])
             #     # print('embed', batch.to_embed[13]["text"])
@@ -564,7 +567,6 @@ def _train(
             loss += mb_loss.item()
 
             mb_loss.backward()
-
             if y_mask is None:
                 n_batch_tokens += x.numel()
             else:
@@ -581,7 +583,7 @@ def _train(
                 dtype=model.embedder.rec_tok.weight.dtype,
                 device=model.embedder.rec_tok.weight.device,
             )
-            
+
         if model.embedder.cont_tok is not None and batch.data_type != "continuaton":
             model.embedder.cont_tok.weight.grad = torch.zeros_like(
                 model.embedder.cont_tok.weight

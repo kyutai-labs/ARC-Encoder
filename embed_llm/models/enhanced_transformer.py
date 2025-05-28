@@ -86,9 +86,17 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.rec_tok = (
                 torch.nn.Embedding(1, args.dim) if embedder_args.rec_tok else None
             )
-            self.cont_tok = ( 
+            self.cont_tok = (
                 torch.nn.Embedding(1, args.dim) if embedder_args.cont_tok else None
             )
+            self.mixed_method = embedder_args.mixed_method
+            if self.mixed_method:
+                assert self.n_mem_tokens > 0, (
+                    "Mixed method requires memory tokens to be > 0"
+                )
+                assert len(self.compress_rates) == 1, (
+                    "Mixed method requires only one compression rate"
+                )
         else:
             self.for_embedding = False
             self.compress_rates = []
@@ -124,7 +132,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.mem_embeddings = None
             self.rec_tok = None
             self.cont_tok = None
-
+            self.mixed_method = False
         self.pos_to_keep = None
 
         layers = []
@@ -223,7 +231,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         seqlens: list[int],
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
-
         token_embeds = self.tok_embeddings(input_ids)
 
         h = token_embeds
@@ -274,7 +281,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
 
             if i >= self.start_compressing:
-                # print('before compressing', seqlens)
                 if self.pooling_args.where == "inside_queries":
                     h, new_seqlens, merge_based_on = self.layers[str(i)](
                         x=h,
@@ -290,11 +296,33 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     new_freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
                 elif self.pooling_args.where == "before":
+                    if self.mixed_method:
+                        new_h = torch.zeros(
+                            (
+                                sum(seqlens) - self.n_mem_tokens * len(seqlens),
+                                h.shape[1],
+                            ),
+                            device=h.device,
+                            dtype=h.dtype,
+                        )
+                        ind = 0
+                        ind_new_h = 0
+                        for j, size in enumerate(seqlens):
+                            new_h[ind_new_h : ind_new_h + size - self.n_mem_tokens] = h[
+                                ind : ind + size - self.n_mem_tokens
+                            ]
+                            ind_new_h += size - self.n_mem_tokens
+                            ind += size
+                        new_seqlens = [size - self.n_mem_tokens for size in seqlens]
+                    else:
+                        new_h = h
+                        new_seqlens = seqlens
+
                     pooled_h, new_seqlens = self.pooling_module(
-                        x=h,
+                        x=new_h,
                         comp_rate=self.compress_rates[compress_index],
                         merge_base=merge_based_on,
-                        seqlens=seqlens,
+                        seqlens=new_seqlens,
                     )
                     positions = positions_from_sizes(new_seqlens, self.freqs_cis.device)
                     new_freqs_cis = self.freqs_cis[positions].to(device=h.device)
@@ -309,7 +337,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             self_att_mask = BlockDiagonalCausalMask.from_seqlens(
                                 q_seqlen=new_seqlens, kv_seqlen=seqlens
                             )
-
+            
                         h, _, merge_based_on = self.layers[str(i)](
                             x=pooled_h,
                             other_kv=h,
@@ -317,6 +345,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             mask=self_att_mask,
                             freqs_cis_k=freqs_cis,
                             based_on=self.pooling_args.based_on,
+                            mixed_method_comp_seqlen=seqlens,
+                            mixed_method_n_mem_tokens=self.n_mem_tokens,
                         )
                     else:
                         if not self.causal or (
@@ -364,7 +394,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 freqs_cis = new_freqs_cis
                 seqlens = new_seqlens
                 compress_index += 1
-                # print('after compressing', seqlens)
             else:
                 h, _, merge_based_on = self.layers[str(i)](
                     x=h,
@@ -373,7 +402,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     based_on=self.pooling_args.based_on,
                 )
 
-        if self.n_mem_tokens > 0:
+        if self.n_mem_tokens > 0 and not self.mixed_method:
             new_h = torch.zeros(
                 (self.n_mem_tokens * len(seqlens), h.shape[1]),
                 device=h.device,

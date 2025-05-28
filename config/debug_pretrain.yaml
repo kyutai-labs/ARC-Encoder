@@ -31,14 +31,15 @@ pipeline:
   embedder_params:
     causal_embedder: true
     compress_rates:
-    - -4
+    - -16
     n_truncated_layers: 16
     pooling_module:
       pool_type: mean_sa
       where: before
     trained_layers: 4
     rec_tok: true
-    cont_tok: true
+    mixed_method: true
+    memory_tokens: 128
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
@@ -55,8 +56,6 @@ data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
-  insert_embeddings: true
-  rec_seq_len_factor: 1.000
 
 
 seq_len: 256

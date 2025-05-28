@@ -381,6 +381,8 @@ class TransformerBlock(nn.Module):
         pool_type: str | None = None,
         based_on: str | None = None,
         where: str = "before",
+        mixed_method_comp_seqlen: list[int] | None = None,
+        mixed_method_n_mem_tokens: int | None = None,
     ) -> torch.Tensor:
         # If comp_rate not None and freqs_cis_k is None, pooling between modules
         r, merge_based_on, seqlens = self.attention.forward(
@@ -404,6 +406,31 @@ class TransformerBlock(nn.Module):
             h = r
         else:
             h = x + r
+
+        if (
+            mixed_method_comp_seqlen is not None
+            and mixed_method_n_mem_tokens is not None
+        ):
+            new_h = torch.zeros(
+                (len(h), h.shape[-1]),
+                device=h.device,
+                dtype=h.dtype,
+            )
+            ind = 0
+            ind_new_h = 0
+            seqlens = np.array(mask.q_seqinfo.seqstart_py[1:]) - np.array(
+                mask.q_seqinfo.seqstart_py[:-1]
+            )
+            for j, size in enumerate(seqlens):
+                ind += mixed_method_comp_seqlen[j] - mixed_method_n_mem_tokens
+                new_h[ind_new_h : ind_new_h + size] = (
+                    h[ind_new_h : ind_new_h + size]
+                    + other_kv[ind : ind + mixed_method_n_mem_tokens][:size]
+                ) / 2
+                ind_new_h += size
+                ind += mixed_method_n_mem_tokens
+
+            h = new_h
 
         if self.pooling_module is None and where == "between":
             assert comp_rate is not None

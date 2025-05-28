@@ -51,13 +51,17 @@ class EmbedderArgs(Serializable):
     causal_embedder: bool = True
     trained_causal: bool = True
     matryoshka_training: dict[int, float] | None = None
+    mixed_method: bool = False
 
     def __post_init__(self) -> None:
-        if self.memory_tokens > 0:
+        if self.memory_tokens > 0 and not self.mixed_method:
             if isinstance(self.pooling_module, PoolingArgs):
                 assert self.pooling_module.pool_type == "mean", self.pooling_module
                 assert self.pooling_module.based_on is None, self.pooling_module
             assert self.compress_rates == [], self.compress_rates
+        elif self.mixed_method:
+            if isinstance(self.pooling_module, PoolingArgs):
+                assert self.pooling_module.where == "before" and "sa" in self.pooling_module.pool_type, self.pooling_module
         if self.matryoshka_training is not None:
             assert self.memory_tokens > 0, self.matryoshka_training
             assert len(self.matryoshka_training.keys()) > 1, self.matryoshka_training

@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=5-6
+#SBATCH --array=0-3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -16,13 +16,17 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/rec_sweeps/SA_merge_L4_CR4_decL16_pt_5rec_conttok.yaml
-config/experiments/rec_sweeps/SA_merge_L4_CR4_pt_5rec.yaml 
-config/experiments/rec_sweeps/SA_merge_L4_CR4_pt_5rec_conttok.yaml
-config/experiments/mem_toks/64memtoks_dec.yaml
-config/experiments/mem_toks/4memtoks_nodec_rec.yaml
-config/experiments/mem_toks/64memtoks_nodec_conttok.yaml 
-config/experiments/mem_toks/64memtoks_dec_conttok.yaml
+# config/experiments/rec_sweeps/SA_merge_L4_CR4_decL16_pt_5rec_conttok.yaml
+# config/experiments/rec_sweeps/SA_merge_L4_CR4_pt_5rec.yaml 
+# config/experiments/rec_sweeps/SA_merge_L4_CR4_pt_5rec_conttok.yaml
+# config/experiments/mem_toks/64memtoks_dec.yaml
+# config/experiments/mem_toks/4memtoks_nodec_rec.yaml
+# config/experiments/mem_toks/64memtoks_nodec_conttok.yaml 
+# config/experiments/mem_toks/64memtoks_dec_conttok.yaml
+config/experiments/new_method/SA_merge_L4_CR16_pt_5rec.yaml 
+config/experiments/new_method/SA_merge_L4_CR16_pt_5rec_mixed.yaml 
+config/experiments/new_method/SA_merge_L4_CR16_decL16_pt_5rec.yaml 
+config/experiments/new_method/SA_merge_L4_CR16_decL16_pt_5rec_mixed.yaml
 )
 
 
