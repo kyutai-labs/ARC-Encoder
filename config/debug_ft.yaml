@@ -26,37 +26,42 @@ optim:
   max_lr: 1.0e-05
   warm_up_steps: 500
   weight_decay: 0.1
-
-
 pipeline:
+  bridge_module:
+    bridge_type: null
   embedder_params:
     causal_embedder: true
-    compress_rates: []
+    compress_rates:
+    - -4
     mean_hid4embed: null
     n_truncated_layers: 16
     pooling_module:
-      pool_type: mean
+      pool_type: fusion
       where: between
     trained_layers: 4
-    memory_tokens: 64
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
+  decoder_module:
+    do: true
+    n_layers: 1
+    insert_at: 16
+from_ckpt:
+  do: true
+  decoder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/Allstar_comp4/checkpoints/checkpoint_010000/llm/decoder/
+  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/Allstar_comp4/checkpoints/checkpoint_010000/embedder/
+
 data:
   adapt_seq_len: true
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
   shuffle: false
-  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl
-  insert_embeddings: false
-
-from_ckpt:
-  do: true
-  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/128memtoks_nodec_rec/checkpoints/checkpoint_010000/embedder/
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl:0.5,/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/synthesized/filtered/translation/dan_fr_esp_de_synth_filtered.jsonl:0.5
+  few_shot: 5
 
 
-seq_len: 512
-batch_size: 16
+seq_len: 1024
+batch_size: 4
 num_microbatches: 1
 max_steps: 1000
 

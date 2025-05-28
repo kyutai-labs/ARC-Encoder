@@ -27,3 +27,4 @@ class DataArgs(Serializable):
     adapt_seq_len: bool = False
     n_times_sl_insertion: int = 1
     rec_seq_len_factor: float = 1.0  # If > 1.0, the seqlen will be increased for reconstruction and it will shorten continuation (fixed seqlen for embedding but shorter text to continue)
+    few_shot: int = 0

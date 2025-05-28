@@ -51,6 +51,8 @@ def sequence_iterator_reconstruction(
     seq_len: int,
     tokenizer: Tokenizer,  # type: ignore
     adapt_seq_len: bool = False,
+    few_shot_instruct: list[str] | None = None,
+    few_shot: int = 0,
 ) -> SequenceEmbedMaskAndSizes:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -106,10 +108,45 @@ def sequence_iterator_reconstruction(
             to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
 
             if data_type == "instruct":
-                doc_tokens = tokenizer.encode("Document: ", bos=True, eos=False)
+                if few_shot_instruct is None:
+                    prefix = "Document: "
+                else:
+                    prefix = "\n\n".join(few_shot_instruct) + "\n\nDocument: "
+                doc_tokens = tokenizer.encode(prefix, bos=True, eos=False)
                 insert_embed_list.append([len(doc_tokens)])
                 x_buffer.extend(doc_tokens)
                 y_buffer.extend(doc_tokens)
+
+                if few_shot_instruct is not None:
+                    question = tokenizer.decode(
+                        [
+                            int(tok)
+                            for i, tok in enumerate(
+                                tokens[cur_pos : cur_pos + len(curr_mask)]
+                            )
+                            if not curr_mask[i]
+                        ]
+                    )
+                    answer = tokenizer.decode(
+                        [
+                            int(tok)
+                            for i, tok in enumerate(
+                                tokens[cur_pos : cur_pos + len(curr_mask)]
+                            )
+                            if curr_mask[i]
+                        ]
+                    )
+                    new_ex = (
+                        "Document: " + to_embed_buffer[-1]["text"] + question + answer
+                    )
+                    if len(few_shot_instruct) < few_shot:
+                        few_shot_instruct.append(new_ex)
+                    else:
+                        few_shot_instruct = [new_ex] + few_shot_instruct[:-1]
+                        assert len(few_shot_instruct) == few_shot, (
+                            f"size of the examples {len(few_shot_instruct)}"
+                        )
+
                 curr_mask = [False] * len(doc_tokens) + curr_mask
                 size = len(doc_tokens) + size
                 seq_len += len(doc_tokens)
@@ -138,7 +175,7 @@ def sequence_iterator_reconstruction(
                 assert len(x_buffer) <= seq_len, f"Buffer to long {len(x_buffer)}"
             except AssertionError as e:
                 print(e)
-                return [], [], [], [], [], seq_len, []
+                return [], [], [], [], [], seq_len, [], few_shot_instruct
 
             if not adapt_seq_len:
                 assert sum(sizes) == seq_len
@@ -170,6 +207,7 @@ def sequence_iterator_reconstruction(
         mask_buffer,
         n_missing,
         sizes,
+        few_shot_instruct,
     )
 
 

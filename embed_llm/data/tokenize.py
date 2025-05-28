@@ -85,9 +85,7 @@ def get_sample(
 
         assert isinstance(question, str), question
 
-        # Add question prompt
-        if "qa" in data.get('type', '').lower():
-            question = random.choice(templates_for_qa).format(question=question)
+        question = random.choice(templates_for_qa).format(question=question)
 
         q_tokens = tokenizer.encode(question, bos=False, eos=False)
         a_tokens = tokenizer.encode(answer, bos=False, eos=True)
