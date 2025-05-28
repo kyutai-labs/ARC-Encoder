@@ -345,8 +345,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             mask=self_att_mask,
                             freqs_cis_k=freqs_cis,
                             based_on=self.pooling_args.based_on,
-                            mixed_method_comp_seqlen=seqlens,
-                            mixed_method_n_mem_tokens=self.n_mem_tokens,
+                            mixed_method_comp_seqlen=seqlens if self.mixed_method else None,
+                            mixed_method_n_mem_tokens=self.n_mem_tokens if self.mixed_method else None,
                         )
                     else:
                         if not self.causal or (
