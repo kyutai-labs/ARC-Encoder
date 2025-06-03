@@ -501,6 +501,7 @@ def _train(
                         output[ind : ind + size, ...],
                         y[ind : ind + size],
                         None if y_mask is None else y_mask[ind : ind + size],
+                        pad_id=pipeline.pad_id if pipeline.llm_type == 'llama' else None
                     )
                 ).item()
                 batch_bpc += loss_in_bits / (
@@ -612,7 +613,7 @@ def _train(
                     dist.destroy_process_group()
                 except Exception:
                     pass
-                sys.exit(1)
+            sys.exit(1)
             raise ValueError(
                 f"Grad contains NaN before clipping or Inf values at step {state.step}"
             )
@@ -657,6 +658,7 @@ def _train(
                 batches_rec=eval_batches,
                 state=state,
                 batches_cont=eval_batches_4cont,
+                pad_id=pipeline.pad_id if pipeline.llm_type == 'llama' else None
             )
 
             eval_logs = get_eval_logs(

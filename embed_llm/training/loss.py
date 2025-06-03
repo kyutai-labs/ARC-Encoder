@@ -3,24 +3,23 @@ from torch.nn import functional as F
 
 
 def compute_ce_loss_with_mask(
-    logits: torch.Tensor, target: torch.Tensor, target_mask: torch.Tensor | None, pad_id: int | None = None
+    logits: torch.Tensor,
+    target: torch.Tensor,
+    target_mask: torch.Tensor | None,
+    pad_id: int | None = None,
 ):
-    if pad_id is not None:
-        pad_mask = target != pad_id 
-        target_mask = target_mask & pad_mask if target_mask is not None else pad_mask
-        
     if target_mask is None:
-        return F.cross_entropy(logits, target, reduction="mean")
+        return F.cross_entropy(logits, target, reduction="mean", ignore_index=pad_id)
 
-    mb_loss = F.cross_entropy(logits, target, reduction="none")
+    mb_loss = F.cross_entropy(logits, target, reduction="none", ignore_index=pad_id)
     mb_loss = torch.sum(mb_loss * target_mask) / torch.sum(target_mask)
 
     return mb_loss
 
 
-def compute_bpt_loss(logits, targets, target_mask: torch.Tensor | None):
+def compute_bpt_loss(logits, targets, target_mask: torch.Tensor | None, pad_id: int | None = None,):
     # Compute the cross-entropy loss
-    loss = F.cross_entropy(logits, targets, reduction="none")
+    loss = F.cross_entropy(logits, targets, reduction="none", ignore_index=pad_id)
 
     # Convert the loss from nats to bits
     loss_in_bits = loss / torch.log(torch.tensor(2.0))

@@ -1,7 +1,7 @@
 embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
+llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.2-3B
 # Llama3.1-8B  Llama3.2-3B
-llm_type: mistral
+llm_type: llama
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
 exp_name: test_pretrain2
 
@@ -42,7 +42,7 @@ pipeline:
     bridge_type: rms
     in_dim: 4096
     hidden_dim: 2048
-    out_dim: 4096
+    out_dim: 3072
 
 
 data:

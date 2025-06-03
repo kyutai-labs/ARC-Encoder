@@ -106,9 +106,7 @@ def load_training_model(
         embed_tokenizer=embed_tokenizer,
         embedding_model=llm_embedder,
         max_seq_len=train_args.max_seq_len,
-        pad_id=0
-        if not hasattr(llm_tokenizer, "pad_id")
-        else llm_tokenizer.pad_id,
+        pad_id=0 if not hasattr(llm_tokenizer, "pad_id") else llm_tokenizer.pad_id,
         llm_type=train_args.llm_type,
     )
 
@@ -168,11 +166,11 @@ def load_training_model(
                         )
                         # Replace the old param with the new ones
                         param = module._parameters[p_name]
-                        if "layer" in p_name:
+                        if "layer" in name:
                             torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
-                        elif 'norm' in p_name:
-                            torch.nn.init.ones_(param)
-                       
+                        elif "norm" in name:
+                            torch.nn.init.constant_(param, val=1.0)
+
         assert not any(
             p.is_meta
             for n, p in augmented_model.named_parameters()
@@ -358,9 +356,7 @@ def load_training_model_from_ckpt(
         embed_tokenizer=embed_tokenizer,
         embedding_model=llm_embedder,
         max_seq_len=train_args.max_seq_len,
-        pad_id=0
-        if not hasattr(llm_tokenizer, "pad_id")
-        else llm_tokenizer.pad_id,
+        pad_id=0 if not hasattr(llm_tokenizer, "pad_id") else llm_tokenizer.pad_id,
         llm_type=train_args.llm_type,
     )
 

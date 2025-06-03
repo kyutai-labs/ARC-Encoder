@@ -14,13 +14,13 @@ from embed_llm.models.mistral.transformer_layers import insert_embeds
 
 
 class RMSNorm(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, dim: int, eps: float = 1e-5):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
 
     def _norm(self, x):
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        return x * torch.rsqrt((x.pow(2).mean(-1, keepdim=True) + self.eps).clamp(self.eps))
 
     def forward(self, x):
         output = self._norm(x.float()).type_as(x)
@@ -128,7 +128,6 @@ class Attention(nn.Module):
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
         if not training:
-            
             if self.cache_k is None:
                 self.cache_k = torch.zeros(
                     self.max_batch_size,
@@ -268,6 +267,7 @@ class Transformer(nn.Module, LoRALoaderMixin):
         MaybeLora = maybe_lora(args.lora)
         self.output = MaybeLora(args.dim, args.vocab_size, bias=False)
         self._precomputed_freqs_cis: torch.Tensor | None = None
+        self.last_reserved_token = args.vocab_size - 1
 
     @property
     def dtype(self) -> torch.dtype:
@@ -304,8 +304,9 @@ class Transformer(nn.Module, LoRALoaderMixin):
         pad_id: int = -1,
         training: bool = False,
     ):
-
         _bsz, seqlen = input_ids.shape
+        if training:
+            input_ids[input_ids == -1] = self.last_reserved_token
         h = self.tok_embeddings(input_ids)
         if cat_embeddings is not None:
             h, pos_to_keep = insert_embeds(

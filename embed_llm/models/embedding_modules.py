@@ -32,7 +32,7 @@ def split_integer(x: int, n: int) -> list[int]:
 
 
 class RMSNorm(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, dim: int, eps: float = 1e-5):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
@@ -75,9 +75,14 @@ class EmbProjector(nn.Module):
 
     def forward(self, x):
         if self.proj_type == "mlp":
-            return self.layer2(self.layer1(x))
+            x = self.layer1(x)
+            x = self.layer2(x)
+            return x
         elif self.proj_type == "rms":
-            return self.layer2(self.layer1(self.norm(x)))
+            x = self.norm(x)
+            x = self.layer1(x)
+            x = self.layer2(x)
+            return x
 
 
 class PoolingModule(nn.Module):

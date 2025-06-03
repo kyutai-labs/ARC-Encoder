@@ -9,10 +9,10 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/versatile_compressor
 #SBATCH --job-name=pretrain_llama
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
-
-
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx16,par2dc5-ai-prd-cl02s03dgx20,par2dc5-ai-prd-cl02s02dgx23,par2dc5-ai-prd-cl02s04dgx18,par2dc5-ai-prd-cl02s03dgx21,par2dc5-ai-prd-cl02s03dgx18,par2dc5-ai-prd-cl02s03dgx16
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
+
 
 
 
