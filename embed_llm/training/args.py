@@ -19,7 +19,7 @@ class OptimArgs(Serializable):
 @dataclass
 class LossArgs(Serializable):
     kl: bool = False
-    kl_weight: float = 2.0 
+    kl_weight: float = 2.0
     top_k: float = 0.9
     temperature: float = 0.9
 
@@ -49,15 +49,16 @@ class CkptArgs(Serializable):
     do: bool = False
     decoder_path: str | None = None
     embedder_path: str | None = None
+    bridge_path: str | None = None
     llm_path: str | None = None
-     
-        
+
+
 @dataclass
 class TrainArgs(Serializable):
     # if specified, instruct_tokenizer and model will be loaded
     # Path to the directory containing the initial model or model id: "mistral-small"
     embedder_path: str
-    
+
     # Path to the directory where everything will be saved. It needs to be empty.
     run_dir: str
     # Name of the wandb run, if None it will be set to the name of the run_dir.
@@ -70,6 +71,7 @@ class TrainArgs(Serializable):
     num_microbatches: int = 1
 
     seq_len: int = 2048  # Number of tokens per batch per device.
+    max_seq_len: int = 2048  # Maximum sequence length for the model.
     batch_size: int = 1
     max_norm: float = 1.0  # Gradient clipping.
     max_steps: int = 100  # Number of training steps.
@@ -104,8 +106,10 @@ class TrainArgs(Serializable):
 
     # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
     continuation: float = 0.0
-    llm_path: str | None = None  # Path to the directory containing the LLM model or model id: "mistral-small"
-    llm_name: str = "mistral"  # Name of the model to use or llama
+    llm_path: str | None = (
+        None  # Path to the directory containing the LLM model or model id: "mistral-small"
+    )
+    llm_type: str = "mistral"  # Name of the model to use or llama
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None
@@ -119,17 +123,24 @@ class TrainArgs(Serializable):
 
         assert self.num_ckpt_keep is None or self.num_ckpt_keep >= 1
 
-        if self.model_id_or_path is not None:
-            Path(self.model_id_or_path).exists()
-        
-        if self.continuation < 1 and self.data.n_times_sl_insertion > 0:
-            print('For reconstruction training, no text inserted before embeddings')
+        if self.llm_path is not None:
+            Path(self.llm_path).exists()
 
-        if self.llm_name != 'mistral':
-            assert not self.lora_llm.enable , "LoRA is not supported for Llama models"
-            assert not self.pipeline.trainable_llm, "Pipeline training is not supported for Llama models"
-            assert not self.pipeline.decoder_module.enable, "Decoder module is not supported for Llama models"
-        
+        if self.embedder_path is not None:
+            Path(self.embedder_path).exists()
+
+        if self.continuation < 1 and self.data.n_times_sl_insertion > 0:
+            print("For reconstruction training, no text inserted before embeddings")
+
+        if self.llm_type != "mistral":
+            assert not self.lora_llm.enable, "LoRA is not supported for Llama models"
+            assert not self.pipeline.trainable_llm, (
+                "Pipeline training is not supported for Llama models"
+            )
+            assert not self.pipeline.decoder_module.do, (
+                "Decoder module is not supported for Llama models"
+            )
+
         if self.llm_path is None:
-            assert self.llm_name == 'mistral'
+            assert self.llm_type == "mistral"
             self.llm_path = self.embedder_path

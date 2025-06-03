@@ -3,8 +3,12 @@ from torch.nn import functional as F
 
 
 def compute_ce_loss_with_mask(
-    logits: torch.Tensor, target: torch.Tensor, target_mask: torch.Tensor | None
+    logits: torch.Tensor, target: torch.Tensor, target_mask: torch.Tensor | None, pad_id: int | None = None
 ):
+    if pad_id is not None:
+        pad_mask = target != pad_id 
+        target_mask = target_mask & pad_mask if target_mask is not None else pad_mask
+        
     if target_mask is None:
         return F.cross_entropy(logits, target, reduction="mean")
 

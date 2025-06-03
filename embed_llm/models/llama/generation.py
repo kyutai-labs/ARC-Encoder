@@ -1,249 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed in accordance with the terms of the Llama 3 Community License Agreement.
 
-
-from typing import TypedDict
 import torch
-import torch.nn.functional as F
 from embed_llm.models.llama.model import Transformer
-from embed_llm.models.llama.tokenizer import Tokenizer
-
-
-class CompletionPrediction(TypedDict, total=False):
-    generation: str
-    tokens: list[str]  # not required
-    logprobs: list[float]  # not required
-
-
-# class Llama:
-#     @staticmethod
-#     def build(
-#         ckpt_dir: str,
-#         tokenizer_path: str,
-#         max_seq_len: int,
-#         max_batch_size: int,
-#         model_parallel_size: Optional[int] = None,
-#         norm_wo_embeds: bool = False,
-#         seed: int = 1,
-#         device: str = "cuda",
-#     ) -> "Llama":
-#         """
-#         Build a Llama instance by initializing and loading a model checkpoint.
-
-#         Args:
-#             ckpt_dir (str): Path to the directory containing checkpoint files.
-#             tokenizer_path (str): Path to the tokenizer file.
-#             max_seq_len (int): Maximum sequence length for input text.
-#             max_batch_size (int): Maximum batch size for inference.
-#             model_parallel_size (Optional[int], optional): Number of model parallel processes.
-#                 If not provided, it's determined from the environment. Defaults to None.
-
-#         Returns:
-#             Llama: An instance of the Llama class with the loaded model and tokenizer.
-
-#         Raises:
-#             AssertionError: If there are no checkpoint files in the specified directory,
-#                 or if the model parallel size does not match the number of checkpoint files.
-
-#         Note:
-#             This method initializes the distributed process group, sets the device to CUDA,
-#             and loads the pre-trained model and tokenizer.
-#         """
-#         assert (
-#             1 <= max_seq_len <= 8192
-#         ), f"max_seq_len must be between 1 and 8192, got {max_seq_len}."
-#         assert os.path.isdir(
-#             ckpt_dir
-#         ), f"Checkpoint directory '{ckpt_dir}' does not exist."
-#         assert os.path.isfile(
-#             tokenizer_path
-#         ), f"Tokenizer file '{tokenizer_path}' does not exist."
-
-#         # Init NCCL
-#         if "LOCAL_RANK" in os.environ:
-#             set_device()
-#             torch.distributed.init_process_group(backend="nccl")
-#         else:
-#             print(
-#                 "Warning: LOCAL_RANK not found in os.environ. \
-#                   Initializing process group with rank 0 and world size 1 and set master port etc"
-#             )
-#             os.environ["RANK"] = "0"
-#             os.environ["WORLD_SIZE"] = "1"
-#             os.environ["LOCAL_RANK"] = "0"
-#             # Adress used to ssh the notebook on the gpu
-#             os.environ["MASTER_PORT"] = "8888"
-#             os.environ["MASTER_ADDR"] = "0.0.0.0"
-#             torch.distributed.init_process_group(backend="nccl", rank=0, world_size=1)
-
-#         if not model_parallel_is_initialized():
-#             if model_parallel_size is None:
-#                 model_parallel_size = int(os.environ.get("WORLD_SIZE", 1))
-#             initialize_model_parallel(model_parallel_size)
-
-#         local_rank = int(os.environ.get("LOCAL_RANK", 0))
-#         torch.cuda.set_device(local_rank)
-
-#         # seed must be the same in all processes
-#         torch.manual_seed(seed)
-
-#         if local_rank > 0:
-#             sys.stdout = open(os.devnull, "w")
-
-#         start_time = time.time()
-#         checkpoints = sorted(Path(ckpt_dir).glob("*.pth"))
-#         assert len(checkpoints) > 0, f"no checkpoint files found in {ckpt_dir}"
-#         assert model_parallel_size == len(
-#             checkpoints
-#         ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {model_parallel_size}"
-#         ckpt_path = checkpoints[get_model_parallel_rank()]
-#         checkpoint = torch.load(ckpt_path, map_location="cpu")
-#         with open(Path(ckpt_dir) / "params.json", "r") as f:
-#             params = json.loads(f.read())
-
-#         model_args: ModelArgs = ModelArgs(
-#             max_seq_len=max_seq_len,
-#             max_batch_size=max_batch_size,
-#             norm_wo_embeds=norm_wo_embeds,
-#             **params,
-#         )
-#         tokenizer = Tokenizer(model_path=tokenizer_path)
-#         assert model_args.vocab_size == tokenizer.n_words
-#         model = Transformer(model_args, training=False)
-#         model.load_state_dict(checkpoint, strict=False, assign=True)
-#         model = model.to(device)
-#         print(f"Loaded in {time.time() - start_time:.2f} seconds")
-
-#         return Llama(model, tokenizer)
-
-#     def __init__(self, model: Transformer, tokenizer: Tokenizer):
-#         self.model = model
-#         self.tokenizer = tokenizer
-
-
-@torch.inference_mode()
-def generate(
-    model: Transformer,
-    tokenizer: Tokenizer,
-    prompt_tokens: list[list[int]],
-    max_gen_len: int,
-    embeddings: torch.Tensor | None = None,
-    temperature: float = 0.6,
-    top_p: float = 0.9,
-    logprobs: bool = False,
-    echo: bool = False,
-    norm_wo_embeds: bool = False,
-) -> tuple[list[list[int]], list[list[float]] | None]:
-    """
-    Generate text sequences based on provided prompts using the language generation model.
-
-    Args:
-        prompt_tokens (list[list[int]]): list of tokenized prompts, where each prompt is represented as a list of integers.
-        max_gen_len (int): Maximum length of the generated text sequence.
-        temperature (float, optional): Temperature value for controlling randomness in sampling. Defaults to 0.6.
-        top_p (float, optional): Top-p probability threshold for nucleus sampling. Defaults to 0.9.
-        logprobs (bool, optional): Flag indicating whether to compute token log probabilities. Defaults to False.
-        echo (bool, optional): Flag indicating whether to include prompt tokens in the generated output. Defaults to False.
-
-    Returns:
-        tuple[list[list[int]], Optional[list[list[float]]]]: A tuple containing generated token sequences and, if logprobs is True, corresponding token log probabilities.
-
-    Note:
-        This method uses the provided prompts as a basis for generating text. It employs nucleus sampling to produce text with controlled randomness.
-        If logprobs is True, token log probabilities are computed for each generated token.
-
-    """
-    params = model.args
-    bsz = len(prompt_tokens)
-    assert bsz <= params.max_batch_size, (bsz, params.max_batch_size)
-
-    min_prompt_len = min(len(t) for t in prompt_tokens)
-    max_prompt_len = max(len(t) for t in prompt_tokens)
-    assert max_prompt_len <= params.max_seq_len
-    total_len = min(params.max_seq_len, max_gen_len + max_prompt_len)
-
-    pad_id = tokenizer.pad_id
-    tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device=model.device)
-    for k, t in enumerate(prompt_tokens):
-        tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device=model.device)
-    if logprobs:
-        token_logprobs = torch.zeros_like(tokens, dtype=torch.float)
-
-    prev_pos = 0
-    eos_reached = torch.tensor([False] * bsz, device=model.device)
-    input_text_mask = tokens != pad_id
-    if min_prompt_len == total_len:
-        logits = model.forward(
-            tokens,
-            embeddings,
-            prev_pos,
-            training=False,
-            norm_wo_embeds=norm_wo_embeds,
-        )
-        token_logprobs = -F.cross_entropy(
-            input=logits.transpose(1, 2),
-            target=tokens,
-            reduction="none",
-            ignore_index=pad_id,
-        )
-
-    stop_tokens = torch.tensor(list(tokenizer.stop_tokens)).to(model.device)
-    for cur_pos in range(min_prompt_len, total_len):
-        logits = model.forward(
-            tokens[:, prev_pos:cur_pos],
-            embeddings,
-            prev_pos,
-            training=False,
-            norm_wo_embeds=norm_wo_embeds,
-        )
-
-        if temperature > 0:
-            probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
-            next_token = sample_top_p(probs, top_p)
-        else:
-            next_token = torch.argmax(logits[:, -1], dim=-1)
-
-        next_token = next_token.reshape(-1)
-        # only replace token if prompt has already been generated
-        next_token = torch.where(
-            input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
-        )
-        tokens[:, cur_pos] = next_token
-        if logprobs:
-            token_logprobs[:, prev_pos + 1 : cur_pos + 1] = -F.cross_entropy(
-                input=logits.transpose(1, 2),
-                target=tokens[:, prev_pos + 1 : cur_pos + 1],
-                reduction="none",
-                ignore_index=pad_id,
-            )
-        eos_reached |= (~input_text_mask[:, cur_pos]) & (
-            torch.isin(next_token, stop_tokens)
-        )
-        prev_pos = cur_pos
-        if all(eos_reached):
-            break
-
-    if logprobs:
-        token_logprobs = token_logprobs.tolist()
-    out_tokens, out_logprobs = [], []
-    for i, toks in enumerate(tokens.tolist()):
-        # cut to max gen len
-        start = 0 if echo else len(prompt_tokens[i])
-        toks = toks[start : len(prompt_tokens[i]) + max_gen_len]
-        probs = None
-        if logprobs:
-            probs = token_logprobs[i][start : len(prompt_tokens[i]) + max_gen_len]
-        # cut to after eos tok if any
-        for stop_token in tokenizer.stop_tokens:
-            try:
-                eos_idx = toks.index(stop_token)
-                toks = toks[:eos_idx]
-                probs = probs[:eos_idx] if logprobs else None
-            except ValueError:
-                pass
-        out_tokens.append(toks)
-        out_logprobs.append(probs)
-    return (out_tokens, out_logprobs if logprobs else None)
 
 
 def sample_top_p(probs, p):
@@ -269,3 +28,119 @@ def sample_top_p(probs, p):
     next_token = torch.multinomial(probs_sort, num_samples=1)
     next_token = torch.gather(probs_idx, -1, next_token)
     return next_token
+
+
+@torch.inference_mode()
+def generate(
+    prompt_tokens: list[list[list[int]]] | list[list[int]],
+    model: Transformer,
+    max_tokens: int,
+    embed_seqlens: list[list[int]] | None = None,
+    cat_embeddings: torch.Tensor | None = None,
+    insertion_lists: list[
+        list[int]
+    ] = [],  # Index in the hidden states of where to insert the embeddings (based on each sequence length)
+    temperature: float = 0.6,
+    top_p: float = 0.9,
+    eos_id: torch.Tensor | None = None,
+    pad_id: int | None = None,
+) -> tuple[list[list[int]], list[list[float]] | None]:
+    """
+    Generate text sequences based on provided prompts using the language generation model.
+
+    Args:
+        prompt_tokens (list[list[int]]): list of tokenized prompts, where each prompt is represented as a list of integers.
+        max_tokens (int): Maximum length of the generated text sequence.
+        temperature (float, optional): Temperature value for controlling randomness in sampling. Defaults to 0.6.
+        top_p (float, optional): Top-p probability threshold for nucleus sampling. Defaults to 0.9.
+        logprobs (bool, optional): Flag indicating whether to compute token log probabilities. Defaults to False.
+        echo (bool, optional): Flag indicating whether to include prompt tokens in the generated output. Defaults to False.
+
+    Returns:
+        tuple[list[list[int]], Optional[list[list[float]]]]: A tuple containing generated token sequences and, if logprobs is True, corresponding token log probabilities.
+
+    Note:
+        This method uses the provided prompts as a basis for generating text. It employs nucleus sampling to produce text with controlled randomness.
+        If logprobs is True, token log probabilities are computed for each generated token.
+
+    """
+
+    params = model.args
+    bsz = len(prompt_tokens)
+    assert bsz <= params.max_batch_size, (bsz, params.max_batch_size)
+    prompt_tokens = [sum(sample, []) for sample in prompt_tokens]
+
+    min_prompt_len = min(len(t) for t in prompt_tokens)
+    max_prompt_len = max(len(t) for t in prompt_tokens)
+    assert max_prompt_len <= params.max_seq_len
+
+    total_len = min(params.max_seq_len, max_tokens + max_prompt_len)
+
+    tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device=model.device)
+    for k, t in enumerate(prompt_tokens):
+        tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device=model.device)
+
+    prev_pos = 0
+    eos_reached = torch.tensor([False] * bsz, device=model.device)
+    input_text_mask = tokens != pad_id
+    if min_prompt_len == total_len:
+        logits = model.forward(
+            input_ids=tokens,
+            cat_embeddings=cat_embeddings,
+            insert_cat_embedds=insertion_lists,
+            embed_seqlens=embed_seqlens,
+            start_pos=prev_pos,
+            training=False,
+            pad_id=pad_id,
+        )
+        cat_embeddings = None
+
+    stop_tokens = eos_id.to(device=model.device) 
+
+    for cur_pos in range(min_prompt_len, total_len):
+        logits = model.forward(
+            tokens[:, prev_pos:cur_pos],
+            cat_embeddings=cat_embeddings,
+            insert_cat_embedds=insertion_lists,
+            embed_seqlens=embed_seqlens,
+            start_pos=prev_pos,
+            training=False,
+            pad_id=pad_id,
+        )
+
+        if temperature > 0:
+            probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
+            next_token = sample_top_p(probs, top_p)
+        else:
+            next_token = torch.argmax(logits[:, -1], dim=-1)
+
+        next_token = next_token.reshape(-1)
+        # only replace token if prompt has already been generated
+        next_token = torch.where(
+            input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
+        )
+        tokens[:, cur_pos] = next_token
+
+        eos_reached |= (~input_text_mask[:, cur_pos]) & (
+            torch.isin(next_token, stop_tokens)
+        )
+        prev_pos = cur_pos
+        if all(eos_reached):
+            break
+        cat_embeddings = None
+
+    out_tokens = []
+    for i, toks in enumerate(tokens.tolist()):
+        # cut to max gen len
+        start = len(prompt_tokens[i])
+        toks = toks[start : len(prompt_tokens[i]) + max_tokens]
+
+        # cut to after eos tok if any
+        for stop_token in eos_id.tolist():
+            try:
+                eos_idx = toks.index(stop_token)
+                toks = toks[:eos_idx]
+            except ValueError:
+                pass
+        out_tokens.append(toks)
+    return out_tokens

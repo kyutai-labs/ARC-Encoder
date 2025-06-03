@@ -16,20 +16,12 @@ from embed_llm.models.args import (
     PoolingArgs,
     DecoderArgs,
     LlamaModelArgs,
+    BridgeArgs,
 )
 
-# Mistral specifics
-from embed_llm.models.mistral.enhanced_transformer import (
-    Transformer as MistralTransformer,
-)
 
-from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_tokenizer
 from embed_llm.training.checkpointing import Checkpointer
-from embed_llm.training.distributed import (
-    get_rank,
-)
 
-Models = MistralTransformer
 ModelsArgs = MistralModelArgs
 Tokenizer = MistralTokenizer
 
@@ -43,7 +35,7 @@ def load_args(
     max_batch_size: int | None = None,
     pipe_path: str | None = None,
     pipe_args: EmbedAugArgs | None = None,
-    llm_name: str = "mistral",
+    llm_type: str = "mistral",
 ) -> tuple[ModelsArgs, EmbedAugArgs]:
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
 
@@ -74,11 +66,11 @@ def load_args(
                 if k in pipeline_args.embedder_params.pooling_module
             }
         )
-        if pipeline_args.embedder_params.pooling_module.get('inside_queries', False):   
+        if pipeline_args.embedder_params.pooling_module.get("inside_queries", False):
             pooling_args.where = "inside_queries"
-        elif pipeline_args.embedder_params.pooling_module.get('between', False):
+        elif pipeline_args.embedder_params.pooling_module.get("between", False):
             pooling_args.where = "between"
-            
+
         pipeline_args.embedder_params.pooling_module = pooling_args
 
         if isinstance(pipeline_args.decoder_module, dict):
@@ -88,14 +80,14 @@ def load_args(
                 insert_at=pipeline_args.decoder_module["insert_at"],
                 take_all_toks=pipeline_args.decoder_module.get("take_all_toks", False),
             )
-
+        pipeline_args.bridge_module = BridgeArgs(**pipeline_args.bridge_module)
     else:
         pipeline_args = pipe_args
 
     with open(folder / "params.json", "r") as f:
         args = json.loads(f.read())
 
-    if llm_name == 'mistral':
+    if llm_type == "mistral":
         llm_args = MistralModelArgs(
             lora=lora,
             dim=args["dim"],
@@ -120,14 +112,15 @@ def load_args(
         assert llm_args.vocab_size >= 32768, (
             "Make sure to use a model with a vocab size of at least 32768"
         )
-    elif llm_name == 'llama':
-
-        llm_args =  LlamaModelArgs(
-        max_batch_size=max_batch_size,
-        max_seq_len=args.get("max_seq_len", 2048),
-        lora=lora,
-        **args,
+    elif llm_type == "llama":
+        llm_args = LlamaModelArgs(
+            max_batch_size=max_batch_size,
+            max_seq_len=args.get("max_seq_len", 8192),
+            lora=lora,
+            **args,
         )
+    else:
+        raise ValueError(f"Unsupported llm_type: {llm_type}")
 
     if isinstance(pipeline_args.param_dtype, str):
         pipeline_args.param_dtype = getattr(torch, pipeline_args.param_dtype)
@@ -159,8 +152,9 @@ def load_state_dict(path: Path, dtype: torch.dtype) -> dict[str, torch.Tensor]:
     logger.info(f"Converting model to dtype {dtype} ...")
 
     for k, v in model_state_dict.items():
+        if v.dtype == dtype:
+            logger.info(f"Skipping conversion as it is already in {dtype} dtype.")
+            break
         model_state_dict[k] = v.to(dtype)
 
     return model_state_dict
-
-

@@ -1,28 +1,32 @@
-import os
-import torch
-import json
-import random
-from tqdm import tqdm, trange
 import argparse
+import json
 import logging
+import os
+import random
 import subprocess as sp
-from mistral_inference.transformer import Transformer
-from mistral_inference.generate import generate
-from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+import sys
 
-from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline
-from embed_llm.models.utils import is_torchrun
-from embed_llm.monitoring.utils import set_logger
-from embed_llm.generation.utils import eval_logger_info, ensure_reproducibility
-from embed_llm.generation.metrics import (
+import torch
+from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+from mistral_inference.generate import generate
+from mistral_inference.transformer import Transformer
+from tqdm import tqdm, trange
+
+sys.path.insert(0, "/home/hippolytepilchen/code/versatile_compressor")
+
+
+from embed_llm.generation.metrics import (  # noqa: E402
+    get_approx_em,
+    get_bleu_score,
     get_em,
     get_f1_score,
-    metric_max_over_ground_truths,
-    get_approx_em,
     get_substring_match_score,
-    get_bleu_score,
+    metric_max_over_ground_truths,
 )
-
+from embed_llm.generation.utils import ensure_reproducibility, eval_logger_info  # noqa: E402
+from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline  # noqa: E402
+from embed_llm.models.utils import is_torchrun   # noqa: E402
+from embed_llm.monitoring.utils import set_logger     # noqa: E402
 
 EVAL_DATA_PATH = {
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
@@ -143,9 +147,8 @@ def create_prompt(
     )
 
     if wdoc:
-        return [
-            "".join(list_prompt.append(f"Document: {doc}\nQuestion: {query}\nAnswer:"))
-        ], list_embed
+        list_prompt.append(f"Document: {doc.strip()}\nQuestion: {query}\nAnswer:")
+        return list_prompt, list_embed
     else:
         if w_embeds:
             if not reversed_template:
@@ -163,13 +166,13 @@ def create_prompt(
         else:
             list_embed = None
             list_prompt.append(f"\nQuestion: {query}\nAnswer:")
-
         return list_prompt, list_embed
 
 
 def evaluate_QA(
     run_name: str,
     benchmarks: list[str],
+    llm_path: str | None = None,
     ckpt: int | None = None,
     max_seq_len: int = 256,
     temps: list[float] = [0, 0.5, 0.7, 1],
@@ -191,7 +194,7 @@ def evaluate_QA(
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
-    llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
+    embedder_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
 
     # Loading model
     if not is_torchrun():
@@ -206,6 +209,7 @@ def evaluate_QA(
         run_name=run_name,
         tmp_path=tmp_path,
         llm_path=llm_path,
+        embedder_path=embedder_path,
         device=device,
         max_bs=max_bs,
         pipeline=pipeline,
@@ -213,7 +217,6 @@ def evaluate_QA(
         ckpt=ckpt,
         comp_rate=comp_rate,
     )
-
     if mistral:
         mistral_tokenizer = MistralTokenizer.from_file(
             "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3"
@@ -235,8 +238,8 @@ def evaluate_QA(
         if compressed_doc_in_icl and icl_examples == 0:
             continue
 
-        if benchmark == "HotpotQA":
-            max_multi_passage = 2
+        # if benchmark == "HotpotQA":
+        #     max_multi_passage = 2
 
         metrics[benchmark] = {}
         eval_data = EVAL_DATA_PATH[benchmark]
@@ -323,12 +326,13 @@ def evaluate_QA(
                         wdoc=query_w_context,
                         reversed_template=reversed_template,
                     )
+
                     batch_list_prompts.append(batch_list_prompt)
                     texts_to_embed.append(text_to_embed)
 
                 if not mistral:
                     generated_sequence, embed_tokens, embeds = pipeline.generate(
-                        text_to_embed=texts_to_embed,
+                        text_to_embed=texts_to_embed if w_embeds else None,
                         batch_list_prompts=batch_list_prompts,
                         temperature=temp,
                         max_tokens=max_seq_len,
@@ -546,6 +550,7 @@ def evaluate_QA(
 
 def evaluate_trad(
     run_name: str,
+    llm_path: str | None = None,
     ckpt: int | None = None,
     max_seq_len: int = 512,
     temps: list[float] = [0, 0.5, 0.7, 1],
@@ -559,10 +564,9 @@ def evaluate_trad(
     mistral: bool = False,
     seed: float = 0.42,
     comp_rate: int | None = None,
+    query_w_context: bool = False,
     fine_tuned: bool = False,
 ):
-    llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
-
     # Loading model
     if not is_torchrun():
         device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
@@ -575,6 +579,7 @@ def evaluate_trad(
     pipeline, ckpt = load_pipeline(
         run_name=run_name,
         tmp_path=tmp_path,
+        embedder_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B",
         llm_path=llm_path,
         device=device,
         max_bs=max_bs,
@@ -691,9 +696,9 @@ def evaluate_trad(
 
                 texts_to_embed = [[seq] for seq in text[i : i + bs]]
 
-                if not mistral:
+                if not query_w_context:
                     generated_sequence, embed_tokens, embeds = pipeline.generate(
-                        text_to_embed=texts_to_embed,
+                        text_to_embed=texts_to_embed if w_embeds else None,
                         batch_list_prompts=batch_list_prompts,
                         temperature=temp,
                         max_tokens=max_seq_len,
@@ -713,8 +718,6 @@ def evaluate_trad(
                     for seq in generated_sequence:
                         if len(seq.split("\n\n")[0]) > 1:
                             final_seq.append(seq.split("\n\n")[0].strip())
-                        elif "\nTranslation:" in seq.split("\n\n")[-1]:
-                            final_seq.append(seq.split("\nTranslation:")[1].strip())
                         else:
                             final_seq.append(seq.strip())
                     generated_sequences.extend(final_seq)
@@ -874,6 +877,8 @@ def arg_parser():
     )
     parser.add_argument("--reversed_template", action="store_true")
     parser.add_argument("--fine_tuned", action="store_true")
+    parser.add_argument("--llm_name", type=str, default="mistral_7B")
+    parser.add_argument("--query_w_context", action="store_true")
 
     return parser.parse_args()
 
@@ -905,7 +910,7 @@ if __name__ == "__main__":
 
     max_seq_len = args.max_seq_len
     n_passages = args.n_passages
-
+    llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/" + args.llm_name
     if args.run_name is not None:
         print("Evuating run:", args.run_name)
     # Evaluate Mistral using their code
@@ -1021,15 +1026,18 @@ if __name__ == "__main__":
                 args.run_name,
                 max_seq_len=max_seq_len,
                 temps=temp_tests,
+                llm_path=llm_path,
                 max_bs=args.bs,
                 output_file=output_file,
                 n_samples=n_passages,
                 tmp_path=tmp_path,
+                w_embeds=args.wo_embeds,
                 pipeline=None,
                 mistral=False,
                 seed=args.seed,
                 comp_rate=args.comp_rate,
                 fine_tuned=args.fine_tuned,
+                query_w_context=args.query_w_context,
                 benchmarks=benchmarks
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],
@@ -1041,6 +1049,7 @@ if __name__ == "__main__":
                 benchmarks,
                 ckpt=args.ckpt,
                 temps=temp_tests,
+                llm_path=llm_path,
                 max_bs=args.bs,
                 output_file=output_file,
                 n_samples=n_passages,
@@ -1054,6 +1063,7 @@ if __name__ == "__main__":
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
                 reversed_template=args.reversed_template,
                 comp_rate=args.comp_rate,
+                query_w_context=args.query_w_context,
             )
 
             for icl_ex in icl_tests[1:]:
@@ -1061,6 +1071,7 @@ if __name__ == "__main__":
                     args.run_name,
                     benchmarks,
                     temps=temp_tests,
+                    llm_path=llm_path,
                     max_bs=args.bs,
                     output_file=output_file,
                     n_samples=n_passages,
@@ -1076,4 +1087,5 @@ if __name__ == "__main__":
                     compressed_doc_in_icl=args.compressed_doc_in_icl,
                     reversed_template=args.reversed_template,
                     comp_rate=args.comp_rate,
+                    query_w_context=args.query_w_context,
                 )

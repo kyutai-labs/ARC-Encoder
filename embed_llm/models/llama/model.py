@@ -128,10 +128,11 @@ class Attention(nn.Module):
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
         if not training:
+            
             if self.cache_k is None:
                 self.cache_k = torch.zeros(
                     self.max_batch_size,
-                    self.max_seq_len + 1,
+                    self.max_seq_len,
                     self.n_local_kv_heads,
                     self.head_dim,
                 ).to(xq)
@@ -139,7 +140,7 @@ class Attention(nn.Module):
             if self.cache_v is None:
                 self.cache_v = torch.zeros(
                     self.max_batch_size,
-                    self.max_seq_len + 1,
+                    self.max_seq_len,
                     self.n_local_kv_heads,
                     self.head_dim,
                 ).to(xq)
@@ -232,7 +233,7 @@ class TransformerBlock(nn.Module):
         start_pos: int,
         freqs_cis: torch.Tensor,
         mask: torch.Tensor | None = None,
-        training: bool = True,
+        training: bool = False,
     ):
         h = x + self.attention(
             self.attention_norm(x), start_pos, freqs_cis, mask, training
@@ -247,11 +248,10 @@ class Transformer(nn.Module, LoRALoaderMixin):
         self.args = args
         self.vocab_size = args.vocab_size
         self.n_layers = args.n_layers
-        self.for_embedding = False
 
         self.tok_embeddings = nn.Embedding(args.vocab_size, args.dim)
 
-        layers = [torch.nn.ModuleList()]
+        self.layers = torch.nn.ModuleList()
         for layer_id in range(args.n_layers):
             block: TransformerBlock = TransformerBlock(layer_id, args)
             if checkpoint:
@@ -261,11 +261,7 @@ class Transformer(nn.Module, LoRALoaderMixin):
                     checkpoint_impl=torch_ckpt.CheckpointImpl.NO_REENTRANT,
                 )
                 block = non_reentrant_wrapper(block)
-            layers.append(block)
-        # To adapt to existing ckpt
-        self.layers = nn.ModuleDict(
-            {str(i - 1): layers[i] for i, layer in enumerate(layers)}
-        )
+            self.layers.append(block)
 
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.pos_to_keep = None
@@ -289,10 +285,10 @@ class Transformer(nn.Module, LoRALoaderMixin):
         # lazy init
         device = next(iter(self.parameters())).device
         if self._precomputed_freqs_cis is None:
-            theta = self.args.rope_theta or 1000000.0
+            theta = self.args.rope_theta or 10000.0
             self._precomputed_freqs_cis = precompute_freqs_cis(
                 self.args.dim // self.args.n_heads,
-                (self.args.max_seq_len + 1) * 2,
+                self.args.max_seq_len * 2,
                 theta=theta,
                 device=device,
             )
@@ -305,8 +301,8 @@ class Transformer(nn.Module, LoRALoaderMixin):
         cat_embeddings: torch.Tensor | None = None,
         insert_cat_embedds: list[list[int]] | None = None,
         start_pos: int = 0,
-        pad_token_id: int = -1,
-        training: bool = True,
+        pad_id: int = -1,
+        training: bool = False,
     ):
 
         _bsz, seqlen = input_ids.shape
@@ -317,20 +313,25 @@ class Transformer(nn.Module, LoRALoaderMixin):
                 cat_embeddings,
                 embed_seqlens=embed_seqlens,
                 insert_cat_embedds=insert_cat_embedds,
-                pad_token_id=pad_token_id,
+                pad_id=pad_id,
             )
 
             self.pos_to_keep = torch.tensor(
                 pos_to_keep, device=self.device, dtype=torch.bool
             )
-            seqlen = h.shape[1]
-        
-        freqs_cis = self.freqs_cis[start_pos:start_pos + seqlen].to(device=h.device)
+            new_seqlen = h.shape[1]
+        else:
+            new_seqlen = seqlen
+
+        freqs_cis = self.freqs_cis[start_pos : start_pos + new_seqlen].to(
+            device=h.device
+        )
 
         mask = None
-        if seqlen > 1:
-
-            mask = torch.full((seqlen, seqlen), float("-inf"), device=input_ids.device)
+        if new_seqlen > 1:
+            mask = torch.full(
+                (new_seqlen, new_seqlen), float("-inf"), device=input_ids.device
+            )
 
             mask = torch.triu(mask, diagonal=1)
 
@@ -340,25 +341,32 @@ class Transformer(nn.Module, LoRALoaderMixin):
             # j > cache_len + i, since row i corresponds to token cache_len + i.
             if not training:
                 mask = torch.hstack(
-                    [torch.zeros((seqlen, start_pos), device=input_ids.device), mask]
+                    [
+                        torch.zeros((new_seqlen, start_pos), device=input_ids.device),
+                        mask,
+                    ]
                 ).type_as(h)
-
-        for i in range(self.n_layers):
-            h = self.layers[str(i)](h, start_pos, freqs_cis, mask, training=training)
+        for layer in self.layers:
+            h = layer(h, start_pos, freqs_cis, mask, training=training)
 
         normalized_h = self.norm(h)
-
         if cat_embeddings is not None:
-            max_seqlen = max([sum(pos) for pos in pos_to_keep])
-            new_h = torch.ones(
-                (normalized_h.shape[0],max_seqlen, normalized_h.shape[-1]),
-                device=normalized_h.device,
-                dtype=normalized_h.dtype,
-            )* pad_token_id
-            
-            normalized_h = normalized_h[self.pos_to_keep,:]
-            for i, pos in enumerate(pos_to_keep):
-                new_h[i,:sum(pos),:] = normalized_h[i,pos,:]
+            max_seqlen = max([torch.sum(pos).item() for pos in self.pos_to_keep])
+            new_h = (
+                torch.ones(
+                    (normalized_h.shape[0], max_seqlen, normalized_h.shape[-1]),
+                    device=normalized_h.device,
+                    dtype=normalized_h.dtype,
+                )
+                * pad_id
+            )
+
+            for i, pos in enumerate(self.pos_to_keep):
+                new_h[i, : torch.sum(pos).item(), :] = normalized_h[i, pos, :]
+
+            h = new_h[:, :seqlen, :].clone()
+        else:
+            h = normalized_h
 
         output = self.output(h).float()
         return output

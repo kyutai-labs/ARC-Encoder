@@ -1,52 +1,44 @@
-from functools import partial
 from dataclasses import dataclass
-import torch
-from torch import nn
+from functools import partial
+from pathlib import Path
+
 import numpy as np
+import torch
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
+from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+from torch import nn
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask
 
-from pathlib import Path
-import torch
-from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-
 from embed_llm.models.args import (
-    EmbedAugArgs,
-    MistralModelArgs,
-    EmbedderArgs,
     DecoderArgs,
+    EmbedAugArgs,
+    EmbedderArgs,
+    MistralModelArgs,
 )
-
-# Mistral specifics
-from embed_llm.models.mistral.enhanced_transformer import (
-    Transformer as MistralTransformer,
-)
-
 from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_tokenizer
 from embed_llm.training.distributed import (
     get_rank,
 )
 
-Models = MistralTransformer
-ModelsArgs = MistralModelArgs
-Tokenizer = MistralTokenizer
 
 from embed_llm.models.embedding_modules import PoolingModule
+from embed_llm.models.loading import load_state_dict
 from embed_llm.models.lora import LoRALoaderMixin, maybe_lora
+from embed_llm.models.mistral.cache import (
+    BufferCache,
+    CacheInputMetadata,
+)
 from embed_llm.models.mistral.model import ModelBase
+from embed_llm.models.mistral.rope import precompute_freqs_cis
 from embed_llm.models.mistral.transformer_layers import (
     RMSNorm,
     TransformerBlock,
     insert_embeds,
     positions_from_sizes,
 )
-from embed_llm.models.mistral.rope import precompute_freqs_cis
 
-from embed_llm.models.loading import load_state_dict
-from embed_llm.models.mistral.cache import (
-    BufferCache,
-    CacheInputMetadata,
-)
+ModelsArgs = MistralModelArgs
+Tokenizer = MistralTokenizer
 
 
 @dataclass
@@ -361,7 +353,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             self_att_mask = BlockDiagonalCausalMask.from_seqlens(
                                 q_seqlen=new_seqlens, kv_seqlen=seqlens
                             )
-            
+
                         h, _, merge_based_on = self.layers[str(i)](
                             x=pooled_h,
                             other_kv=h,
@@ -369,8 +361,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             mask=self_att_mask,
                             freqs_cis_k=freqs_cis,
                             based_on=self.pooling_args.based_on,
-                            mixed_method_comp_seqlen=seqlens,
-                            mixed_method_n_mem_tokens=self.n_mem_tokens,
+                            mixed_method_comp_seqlen=seqlens
+                            if self.mixed_method
+                            else None,
+                            mixed_method_n_mem_tokens=self.n_mem_tokens
+                            if self.mixed_method
+                            else None,
                         )
                     else:
                         if not self.causal or (
@@ -740,7 +736,7 @@ def load_mistral_model(
     parll: bool = True,
 ) -> tuple[torch.nn.Module, int]:
     with torch.device("meta"):
-        model = MistralTransformer(
+        model = Transformer(
             args=llm_args,
             checkpoint=checkpoint,
             embedder_args=pipeline_args.embedder_params if for_embedding else None,
@@ -758,8 +754,12 @@ def load_mistral_model(
         model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
 
     if for_embedding:
-        tokenizer = load_mistral_tokenizer(Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")).instruct_tokenizer.tokenizer
+        tokenizer = load_mistral_tokenizer(
+            Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")
+        ).instruct_tokenizer.tokenizer
         return model, tokenizer
     else:
-        tokenizer = load_mistral_tokenizer(Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")).instruct_tokenizer.tokenizer
+        tokenizer = load_mistral_tokenizer(
+            Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")
+        ).instruct_tokenizer.tokenizer
         return model, tokenizer

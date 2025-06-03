@@ -1,4 +1,3 @@
-model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
 exp_name: test_ft
 
@@ -16,51 +15,54 @@ lora_embedder:
   rank: 128
   scaling: 2.0
 
-model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-no_eval: false
+embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
+llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.2-3B
+# Llama3.1-8B  Llama3.2-3B
+llm_type: llama
 num_microbatches: 1
 
 optim:
   final_lr: 1.0e-10
   initial_lr: 1.0e-20
-  max_lr: 1.0e-05
+  max_lr: 1.0e-06
   warm_up_steps: 500
   weight_decay: 0.1
+
 pipeline:
-  bridge_module:
-    bridge_type: null
   embedder_params:
     causal_embedder: true
     compress_rates:
-    - -4
-    mean_hid4embed: null
+    - -16
     n_truncated_layers: 16
     pooling_module:
-      pool_type: fusion
-      where: between
+      pool_type: mean_sa
+      where: before
     trained_layers: 4
+    rec_tok: true
+    mixed_method: true
+    memory_tokens: 128
   max_embeds: 1
-  trainable_llm: false
   w_embeds: true
-  w_prefix_prompt: false
-  decoder_module:
-    do: true
-    n_layers: 1
-    insert_at: 16
+  bridge_module:
+    bridge_type: mlp
+    in_dim: 4096
+    hidden_dim: 2048
+    out_dim: 3072
+
 from_ckpt:
   do: true
-  decoder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/Allstar_comp4/checkpoints/checkpoint_010000/llm/decoder/
-  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/Allstar_comp4/checkpoints/checkpoint_010000/embedder/
+  bridge_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/test_pretrain/checkpoints/checkpoint_000010/bridge_module
+  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/test_pretrain/checkpoints/checkpoint_000010/embedder/
 
 data:
   adapt_seq_len: true
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
   shuffle: false
-  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl:0.5,/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/synthesized/filtered/translation/dan_fr_esp_de_synth_filtered.jsonl:0.5
-  few_shot: 5
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl
 
 
 seq_len: 1024
+max_seq_len: 2048
 batch_size: 4
 num_microbatches: 1
 max_steps: 1000

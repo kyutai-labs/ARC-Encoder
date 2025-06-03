@@ -13,3 +13,4 @@ faiss-gpu
 transformers
 einops
 xformers==0.0.24
+sacrebleu

@@ -137,15 +137,16 @@ class Batchlist:
             y_np,
             to_embed,
             sizes,
-            y_mask_np,
+            batch_size=batch_size,
+            y_mask=y_mask_np,
             data_type=self.data_type,
             insert_embed_list=insert_embed_list,
-            batch_size=batch_size,
         )
 
 
 def build_data_loader(
-    tokenizer: Tokenizer,  # type: ignore
+    llm_tokenizer: Tokenizer,  # type: ignore
+    embed_tokenizer: Tokenizer,  # type: ignore
     args: DataArgs,
     batch_size: int,
     seq_len: int,
@@ -158,7 +159,8 @@ def build_data_loader(
 ) -> Iterator[Batch]:
     dataset = build_dataset(
         args=args,
-        tokenizer=tokenizer,
+        llm_tokenizer=llm_tokenizer,
+        embed_tokenizer=embed_tokenizer,
         seq_len=seq_len,
         seed=seed,
         rank=rank,

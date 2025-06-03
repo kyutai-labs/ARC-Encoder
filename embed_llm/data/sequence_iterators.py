@@ -49,7 +49,8 @@ def sequence_iterator_reconstruction(
     sizes: list[int],
     sample: TokenSample,
     seq_len: int,
-    tokenizer: Tokenizer,  # type: ignore
+    llm_tokenizer: Tokenizer,  # type: ignore
+    embed_tokenizer: Tokenizer,  # type: ignore
     adapt_seq_len: bool = False,
     few_shot_instruct: list[str] | None = None,
     few_shot: int = 0,
@@ -84,7 +85,7 @@ def sequence_iterator_reconstruction(
 
             to_embed_buffer.append(
                 {
-                    "text": tokenizer.decode(new_embed),
+                    "text": embed_tokenizer.decode(new_embed),
                     "tokens": new_embed,
                 }
             )
@@ -100,9 +101,14 @@ def sequence_iterator_reconstruction(
             for i in range(len(embed_tokens)):
                 new_embed.append(embed_tokens[i])
 
-            new_embed_tokens = sum([toks[:seq_len] for toks in new_embed], [])
+            new_embed_tokens = embed_tokenizer.encode(
+                llm_tokenizer.decode(sum([toks[:seq_len] for toks in new_embed], [])),
+                bos=False,
+                eos=False,
+            )
+
             new_embed_text = " ".join(
-                [tokenizer.decode(toks[:seq_len]).strip() for toks in new_embed]
+                [llm_tokenizer.decode(toks[:seq_len]).strip() for toks in new_embed]
             )
 
             to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
@@ -112,13 +118,13 @@ def sequence_iterator_reconstruction(
                     prefix = "Document: "
                 else:
                     prefix = "\n\n".join(few_shot_instruct) + "\n\nDocument: "
-                doc_tokens = tokenizer.encode(prefix, bos=True, eos=False)
+                doc_tokens = llm_tokenizer.encode(prefix, bos=True, eos=False)
                 insert_embed_list.append([len(doc_tokens)])
                 x_buffer.extend(doc_tokens)
                 y_buffer.extend(doc_tokens)
 
                 if few_shot_instruct is not None:
-                    question = tokenizer.decode(
+                    question = llm_tokenizer.decode(
                         [
                             int(tok)
                             for i, tok in enumerate(
@@ -127,7 +133,7 @@ def sequence_iterator_reconstruction(
                             if not curr_mask[i]
                         ]
                     )
-                    answer = tokenizer.decode(
+                    answer = llm_tokenizer.decode(
                         [
                             int(tok)
                             for i, tok in enumerate(
@@ -222,7 +228,8 @@ def sequence_iterator_inserted_embed_continuation(
     sample: TokenSample,
     cur_pos: int,
     seq_len: int,
-    tokenizer: Tokenizer,  # type: ignore
+    llm_tokenizer: Tokenizer,  # type: ignore
+    embed_tokenizer: Tokenizer,  # type: ignore
     data_type: str = "continuation",
     n_times_sl_insertion: int = 1,
     shorten_continuation: bool = False,
@@ -282,8 +289,10 @@ def sequence_iterator_inserted_embed_continuation(
 
         to_embed_buffer.append(
             {
-                "text": tokenizer.decode(new_embed),
-                "tokens": new_embed,
+                "text": llm_tokenizer.decode(new_embed),
+                "tokens": embed_tokenizer.encode(
+                    llm_tokenizer.decode(new_embed), eos=False, bos=False
+                ),
             }
         )
 

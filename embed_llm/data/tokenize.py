@@ -2,9 +2,10 @@ import logging
 import random
 from dataclasses import dataclass
 from mistral_common.tokens.tokenizers.base import Tokenizer as MistralTokenizer
+from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
 from embed_llm.data.utils import templates_for_qa
 
-Tokenizer = MistralTokenizer
+Tokenizer = MistralTokenizer | LlamaTokenizer
 
 logger = logging.getLogger("tokenize")
 
@@ -28,22 +29,27 @@ class TokenSample:
 
 def encode(
     data: dict[str, object],
-    tokenizer: Tokenizer | None = None,
+    llm_tokenizer: Tokenizer | None = None,  # type: ignore
+    embed_tokenizer: Tokenizer | None = None,  # type: ignore
     data_path: str | None = None,
     max_embed: int = 1,
 ) -> TokenSample | None:
-    return get_sample(data, data_path, tokenizer, max_embed)
+    return get_sample(data, data_path, llm_tokenizer, embed_tokenizer, max_embed)
 
 
 def get_sample(
-    data: dict[str, object], data_path: str, tokenizer, max_embed: int = 1
+    data: dict[str, object],
+    data_path: str,
+    llm_tokenizer,
+    embed_tokenizer,
+    max_embed: int = 1,
 ) -> str:
     if (
         "instruct_data" in data_path.lower()
         or "synthesized" in data_path.lower()
-        or 'translation' in data_path.lower()
-        or 'eval_qa' in data_path.lower()
-        or 'eval_read' in data_path.lower()
+        or "translation" in data_path.lower()
+        or "eval_qa" in data_path.lower()
+        or "eval_read" in data_path.lower()
     ):
         question = data["question"]
 
@@ -87,15 +93,15 @@ def get_sample(
 
         question = random.choice(templates_for_qa).format(question=question)
 
-        q_tokens = tokenizer.encode(question, bos=False, eos=False)
-        a_tokens = tokenizer.encode(answer, bos=False, eos=True)
+        q_tokens = llm_tokenizer.encode(question, bos=False, eos=False)
+        a_tokens = llm_tokenizer.encode(answer, bos=False, eos=True)
 
         masks = [False] * len(q_tokens) + [True] * len(a_tokens)
         # masks = [True] * len(q_tokens) + [True] * len(a_tokens)
 
         passages = EmbedPassage(
             [
-                tokenizer.encode(passage_sample, bos=False, eos=False)
+                embed_tokenizer.encode(passage_sample, bos=False, eos=False)
                 for passage_sample in embed_passage
             ],
             embed_passage,
@@ -123,13 +129,13 @@ def get_sample(
 
         assert isinstance(sample, str), sample
 
-        tokens = tokenizer.encode(sample, bos=True, eos=True)
+        tokens = llm_tokenizer.encode(sample, bos=True, eos=True)
 
         masks = [True] * len(tokens)
 
         passages = EmbedPassage(
             [
-                tokenizer.encode(passage_sample, bos=False, eos=False)
+                embed_tokenizer.encode(passage_sample, bos=False, eos=False)
                 for passage_sample in embed_passage
             ],
             embed_passage,

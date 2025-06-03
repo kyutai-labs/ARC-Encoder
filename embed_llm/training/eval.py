@@ -23,7 +23,6 @@ def evaluate(
     batches_rec: list[Batch],
     state: TrainState,
     batches_cont: list[Batch] | None = None,
-    train_llm: bool = False,
 ):
     # Create fake samples to make FSDP happy for unbalanced data
     num_samples = torch.tensor([len(batches_rec)], device="cuda", dtype=torch.long)
@@ -46,9 +45,7 @@ def evaluate(
     model.eval()
 
     if batches_cont is not None:
-        eval_loss_textcont = torch.tensor(0.0).cuda()
         eval_loss_embcont = torch.tensor(0.0).cuda()
-        eval_loss_nocontext = torch.tensor(0.0).cuda()
         main_logger_info(f"Start eval for {len(batches_rec)} continuation batches")
 
         for i, batch in enumerate(batches_cont):
@@ -65,64 +62,15 @@ def evaluate(
                     insert_cat_embedds=insert_cat_embedds,
                     batch_type="continuation",
                 )
+                if len(output.size()) > 2:
+                    output = output.view(-1, output.size(-1)).float()
+                    y = y.view(-1).long()
+                    y_mask = None if y_mask is None else y_mask.view(-1)
+                    assert output.size(0) == y.size(0), (
+                        f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}"
+                    )
 
                 eval_loss_embcont += compute_ce_loss_with_mask(output, y, y_mask)
-
-                if train_llm:
-                    output_rec_on_cont = model.forward(
-                        x=x, embeddings=None, seqlens=seqlens
-                    )
-                    eval_loss_nocontext += compute_ce_loss_with_mask(
-                        output_rec_on_cont, y, None
-                    )
-                    input_ids = []
-                    ground_truth = []
-                    seqlens = []
-                    mask = []
-
-                    test_x = []
-                    ind = 0
-                    for to_embed, size in zip(batch.to_embed, batch.sizes):
-                        input_ids.extend(to_embed["tokens"])
-                        test_x.extend(batch.x[ind : ind + size])
-                        input_ids.extend(batch.x[ind : ind + size])
-
-                        ground_truth.extend(to_embed["tokens"])
-                        ground_truth.extend(batch.y[ind : ind + size])
-                        seqlens.append(len(to_embed["tokens"]) + size)
-                        ind += size
-                        mask.extend([False] * len(to_embed["tokens"]))
-                        mask.extend([True] * size)
-                        # Trainable Embedder
-
-                    assert sum(seqlens) == len(input_ids), (
-                        f"Seqlens {sum(seqlens)} and input_ids {len(input_ids)} should be the same"
-                    )
-                    assert sum(mask) == len(output), (
-                        f"Mask {sum(mask)} and output {len(output)} should be the same"
-                    )
-
-                    assert torch.equal(
-                        torch.tensor(torch.from_numpy(np.array(test_x))).cuda(), x
-                    ), "Input ids should be the same"
-
-                    input_ids = torch.from_numpy(np.array(input_ids)).cuda(
-                        non_blocking=True
-                    )
-                    mask = torch.tensor(mask).cuda(non_blocking=True)
-                    ground_truth = torch.from_numpy(np.array(ground_truth)).cuda(
-                        non_blocking=True
-                    )
-                    assert torch.equal(torch.masked_select(ground_truth, mask), y), (
-                        "Ground truth and mask should be the same"
-                    )
-
-                    output_wo_embed = model.forward(
-                        x=input_ids, embeddings=None, seqlens=seqlens
-                    )
-                    eval_loss_textcont += compute_ce_loss_with_mask(
-                        output_wo_embed, ground_truth, mask
-                    )
 
     eval_loss_rec = torch.tensor(0.0).cuda()
     main_logger_info(f"Start eval for {len(batches_rec)} reconstruction batches")
@@ -141,6 +89,13 @@ def evaluate(
                 insert_cat_embedds=insert_cat_embedds,
                 batch_type="reconstruction",
             )
+            if len(output.size()) > 2:
+                output = output.view(-1, output.size(-1)).float()
+                y = y.view(-1).long()
+                y_mask = None if y_mask is None else y_mask.view(-1)
+                assert output.size(0) == y.size(0), (
+                    f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}"
+                )
             if not batch.is_pad_only:
                 eval_loss_rec += compute_ce_loss_with_mask(output, y, y_mask)
                 assert batch.is_pad_only or y.abs().sum() != 0, (
@@ -160,29 +115,6 @@ def evaluate(
         eval_loss_embcont /= total_num_samples
         state.this_eval_loss_embcont = eval_loss_embcont.item()
         state.this_eval_perplexity_embcont = (2**eval_loss_embcont).item()
-
-        if train_llm:
-            dist.all_reduce(eval_loss_textcont, op=dist.ReduceOp.SUM)
-            dist.all_reduce(eval_loss_nocontext, op=dist.ReduceOp.SUM)
-            eval_loss_textcont /= total_num_samples
-            eval_loss_nocontext /= total_num_samples
-            state.this_eval_loss_nocontext = eval_loss_nocontext.item()
-            state.this_eval_loss_textcont = eval_loss_textcont.item()
-            state.this_eval_perplexity_textcont = (2**eval_loss_textcont).item()
-            state.this_eval_perplexity_nocontext = (2**eval_loss_nocontext).item()
-        else:
-            state.this_eval_loss_textcont = None
-            state.this_eval_loss_nocontext = None
-            state.this_eval_perplexity_textcont = None
-            state.this_eval_perplexity_nocontext = None
-
-    else:
-        state.this_eval_loss_textcont = None
-        state.this_eval_loss_embcont = None
-        state.this_eval_perplexity_textcont = None
-        state.this_eval_perplexity_embcont = None
-        state.this_eval_loss_nocontext = None
-        state.this_eval_perplexity_nocontext = None
 
     # train mode!
     model.train()
