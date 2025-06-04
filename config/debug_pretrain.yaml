@@ -8,7 +8,6 @@ exp_name: test_pretrain2
 
 
 continuation: 0.8
-textual_continuation: 0.0
 
 lora_embedder:
   enable: false
@@ -26,11 +25,10 @@ optim:
   weight_decay: 0.1
 
 pipeline:
-
   embedder_params:
     causal_embedder: true
     compress_rates:
-    - -1
+    - -16
     n_truncated_layers: 16
     pooling_module:
       pool_type: mean_sa
@@ -43,11 +41,11 @@ pipeline:
   max_embeds: 1
   w_embeds: true
   w_prefix_prompt: false
-  # bridge_module:
-  #   bridge_type: rms
-  #   in_dim: 4096
-  #   hidden_dim: 2048
-  #   out_dim: 3072
+  bridge_module:
+    bridge_type: rms
+    in_dim: 4096
+    hidden_dim: 2048
+    out_dim: 4096
 
 
 data:

@@ -17,8 +17,12 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/new_method/SA_merge_L4_CR16_pt_5rec_learnedmix.yaml 
-config/experiments/new_method/SA_merge_L4_CR16_decL16_pt_5rec_learnedmix.yaml
+config/experiments/No_Comp/NC_same_enc_llama8B.yaml 
+config/experiments/No_Comp/NC_same_enc_llama3B.yaml 
+config/experiments/No_Comp/NC_Mistral7B_mlp_new.yaml 
+config/experiments/No_Comp/NC_llama8B_new.yaml 
+config/experiments/No_Comp/NC_llama8B_mlp_new.yaml 
+config/experiments/No_Comp/NC_llama3B_mlp_new.yaml
 )
 
 

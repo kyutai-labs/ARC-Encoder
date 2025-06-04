@@ -3,7 +3,6 @@ exp_name: test_ft
 
 
 continuation: 0.0
-textual_continuation: 0.0
 
 lora_llm:
   enable: false
@@ -15,9 +14,10 @@ lora_embedder:
   rank: 128
   scaling: 2.0
 
-embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.2-3B
+embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
+llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
 # Llama3.1-8B  Llama3.2-3B
+embed_type: llama
 llm_type: llama
 num_microbatches: 1
 
@@ -27,6 +27,7 @@ optim:
   max_lr: 1.0e-06
   warm_up_steps: 500
   weight_decay: 0.1
+
 
 pipeline:
   embedder_params:
@@ -40,19 +41,21 @@ pipeline:
     trained_layers: 4
     rec_tok: true
     mixed_method: true
+    mixed_learned_method: true
     memory_tokens: 128
   max_embeds: 1
   w_embeds: true
+  w_prefix_prompt: false
   bridge_module:
-    bridge_type: mlp
+    bridge_type: rms
     in_dim: 4096
     hidden_dim: 2048
-    out_dim: 3072
+    out_dim: 4096
 
 from_ckpt:
   do: true
-  bridge_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/test_pretrain/checkpoints/checkpoint_000010/bridge_module
-  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/test_pretrain/checkpoints/checkpoint_000010/embedder/
+  bridge_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/test_pretrain2/checkpoints/checkpoint_000003/bridge_module/
+  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/test_pretrain2/checkpoints/checkpoint_000003/embedder/
 
 data:
   adapt_seq_len: true
@@ -62,7 +65,6 @@ data:
 
 
 seq_len: 1024
-max_seq_len: 2048
 batch_size: 4
 num_microbatches: 1
 max_steps: 1000

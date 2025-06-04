@@ -151,7 +151,7 @@ def load_training_model(
         assert not any(
             p.is_meta
             for n, p in augmented_model.named_parameters()
-            if "rec_tok" not in n and "cont_tok" not in n
+            if "rec_tok" not in n and "cont_tok" not in n and "cl_mem_tokens" not in n
         ), (
             f"All parameters should be initialized by now {[n for n, p in augmented_model.named_parameters() if p.is_meta]}"
         )
@@ -397,7 +397,7 @@ def load_training_model_from_ckpt(
         assert not any(
             p.is_meta
             for n, p in augmented_model.named_parameters()
-            if "rec_tok" not in n and "cont_tok" not in n
+            if "rec_tok" not in n and "cont_tok" not in n and "cl_mem_tokens" not in n
         ), "All parameters should be initialized by now"
 
         assert all(p.dtype == param_dtype for p in augmented_model.parameters()), (

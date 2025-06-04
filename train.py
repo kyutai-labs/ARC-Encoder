@@ -592,11 +592,7 @@ def _train(
         grad_norm = torch.tensor([0.0], device="cuda")
         for name, p in model.named_parameters():
             if p.requires_grad:
-                if (
-                    args.textual_continuation * args.continuation == 0.0
-                    and pipeline.pipeline_args.embedder_params.matryoshka_training
-                    is not None and not pipeline.pipeline_args.embedder_params.mixed_learned_method
-                ):
+                if pipeline.pipeline_args.embedder_params.matryoshka_training is not None and not pipeline.pipeline_args.embedder_params.mixed_learned_method:
                     assert p.grad is not None, f"None grad for this param {name}"
                     if torch.any(torch.isnan(p.grad)).item():
                         print(f"Grad contains NaN for this param {name}")

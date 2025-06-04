@@ -60,10 +60,9 @@ class EmbedderArgs(Serializable):
         elif self.mixed_method:
             if isinstance(self.pooling_module, PoolingArgs):
                 assert self.pooling_module.where == "before" and "sa" in self.pooling_module.pool_type, self.pooling_module
-                
+            print('Warning: take care that max_seq_len // compress_rate <= memory_tokens if using mixed method')
         if self.mixed_learned_method:
             assert self.mixed_method
-            
         if self.matryoshka_training is not None:
             assert self.memory_tokens > 0, self.matryoshka_training
             assert len(self.matryoshka_training.keys()) > 1, self.matryoshka_training
