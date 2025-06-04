@@ -4,16 +4,18 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
+
 import numpy as np
 import torch.distributed as dist
-from embed_llm.training.distributed import get_rank
+
 from embed_llm.data.args import DataArgs
-from embed_llm.data.tokenize import Mask, TokenSample, encode, Tokenizer
 from embed_llm.data.sequence_iterators import (
-    sequence_iterator_reconstruction,
-    sequence_iterator_inserted_embed_continuation,
     SequenceEmbedMaskAndSizes,
+    sequence_iterator_inserted_embed_continuation,
+    sequence_iterator_reconstruction,
 )
+from embed_llm.data.tokenize import Mask, Tokenizer, TokenSample, encode
+from embed_llm.training.distributed import get_rank
 
 logger = logging.getLogger("dataset")
 
@@ -99,6 +101,7 @@ def parse_data_sources(
     seen: set[str] = set()
     sources: list[DataDir | DataFile] = []
     weights: list[float] = []
+    few_shots: list[int] = []
     for source in pretrain_data.strip().split(","):
         if not source:
             continue
@@ -107,9 +110,15 @@ def parse_data_sources(
         if len(source_items) == 1:
             path_ = source_items[0]
             weight = 1.0
+            few_shot = 0
         elif len(source_items) == 2:
             path_, weight_ = source_items
             weight = float(weight_)
+            few_shot = 0
+        elif len(source_items) == 3:
+            path_, weight_, few_shot_ = source_items
+            weight = float(weight_)
+            few_shot = int(few_shot_)
         else:
             raise ValueError(
                 f"{source} is not correctly formatted. Make sure to format each data source as \
@@ -119,8 +128,11 @@ def parse_data_sources(
         assert path_ not in seen, (
             f"{path_} seems to be duplicated. Make sure to only add it once."
         )
-        assert weight > 0, (
-            f"Make sure to define strictly positive data sampling weights, not {weight}"
+        # assert weight > 0, (
+        #     f"Make sure to define strictly positive data sampling weights, not {weight}"
+        # )
+        assert few_shot >= 0, (
+            f"Make sure to define non-negative few-shot value, not {few_shot}"
         )
 
         data: DataDir | DataFile
@@ -133,11 +145,14 @@ def parse_data_sources(
                 f"The path {path_} does not exist. Make sure {path_} is either a file or \
                     directory that contains training data."
             )
-
-        sources.append(data)
-        weights.append(weight)
-
-        seen.add(path_)
+        if weight <= 0:
+            seen.add(path_)
+            continue
+        else:   
+            sources.append(data)
+            weights.append(weight)
+            few_shots.append(few_shot)
+            seen.add(path_)
 
     sum_weights = sum(weights)
     n_weights = [weight / sum_weights for weight in weights]
@@ -146,7 +161,7 @@ def parse_data_sources(
     assert abs(1 - sum(n_weights)) < 1e-8, (
         f"Defined data sampling weights {weights} must sum to 1."
     )
-    return sources, n_weights
+    return sources, n_weights, few_shots
 
 
 def sequence_iterator(
@@ -322,7 +337,7 @@ def build_dataset(
     max_embeds: int = 1,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     data = args.train_data if not is_eval else args.eval_data
-    sources, probabilities = parse_data_sources(data)
+    sources, probabilities, few_shots = parse_data_sources(data)
 
     dataset_iterators = [
         get_dataset_iterator(
@@ -348,9 +363,9 @@ def build_dataset(
             continuation=continuation,
             n_times_sl_insertion=args.n_times_sl_insertion,
             rec_seq_len_factor=args.rec_seq_len_factor,
-            few_shot=args.few_shot,
+            few_shot=max(args.few_shot, fs),
         )
-        for it in dataset_iterators
+        for fs, it in zip(few_shots, dataset_iterators)
     ]
 
     # make sure random_seed is different per rank and original seed

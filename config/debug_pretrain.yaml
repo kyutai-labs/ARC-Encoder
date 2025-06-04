@@ -6,17 +6,11 @@ exp_name: test_pretrain
 continuation: 0.8
 textual_continuation: 0.0
 
-lora_llm:
-  enable: false
-  rank: 128
-  scaling: 2.0
-
 lora_embedder:
   enable: false
   rank: 128
   scaling: 2.0
 
-model_id_or_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
 no_eval: false
 num_microbatches: 1
 
@@ -28,6 +22,7 @@ optim:
   weight_decay: 0.1
 
 pipeline:
+
   embedder_params:
     causal_embedder: true
     compress_rates:
@@ -41,13 +36,7 @@ pipeline:
     mixed_method: true
     memory_tokens: 128
   max_embeds: 1
-  trainable_llm: false
   w_embeds: true
-  w_prefix_prompt: false
-  decoder_module:
-    do: true
-    n_layers: 1
-    insert_at: 16
 
 
 

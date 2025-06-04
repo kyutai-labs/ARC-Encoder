@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=2-9%5
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -17,38 +17,13 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/mem_toks/ft/64memtoks_dec_TS.yaml 
-config/experiments/mem_toks/ft/64memtoks_dec_squad.yaml
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_60QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_40QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_20QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_0QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_fs_60QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_fs_40QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_fs_20QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_fs_0QA.yaml
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_longtry.yaml
 )
 
 
-# config/experiments/mem_toks/ft/64memtoks_nodec_conttok_TS.yaml 
-# config/experiments/mem_toks/ft/64memtoks_nodec_conttok_squad.yaml 
-# config/experiments/mem_toks/ft/4memtoks_nodec_squad.yaml 
-# config/experiments/mem_toks/ft/4memtoks_nodec_rec_TS.yaml
-# config/experiments/mem_toks/ft/64memtoks_dec_conttok_TS.yaml 
-# config/experiments/mem_toks/ft/64memtoks_dec_conttok_squad.yaml
 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_TS.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_mixed_TS.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_mixed_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_mixed_ft32_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_mixed_ft8_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_TS.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_mixed_TS.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_mixed_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_mixed_ft32_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_mixed_ft8_squad.yaml
+
+
 
 
 # Get the specific config file for this array task
@@ -94,9 +69,9 @@ case $RUN_NAME in
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
         --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5
 
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad  --fine_tuned
+    # srun --gpus=$N_GPU  \
+    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+    #     --n_passages 500 --run_name $RUN_NAME --eval_trad  --fine_tuned
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \

@@ -492,7 +492,7 @@ def _train(
                             [int(tok) for tok in batch.y[ind : ind + size]]
                         )
                     )
-                    if y_mask is None
+                    if batch.y_mask is None
                     else len(
                         pipeline.tokenizer.decode(
                             [
