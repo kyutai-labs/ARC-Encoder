@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
-#SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
+#SBATCH --chdir=/home/hippolytepilchen/code/versatile_compressor
 #SBATCH --job-name=fine_tuning_comp
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
 #SBATCH --dependency=afterany:747998_2

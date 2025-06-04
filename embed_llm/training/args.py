@@ -71,7 +71,6 @@ class TrainArgs(Serializable):
     num_microbatches: int = 1
 
     seq_len: int = 2048  # Number of tokens per batch per device.
-    max_seq_len: int = 2048  # Maximum sequence length for the model.
     batch_size: int = 1
     max_norm: float = 1.0  # Gradient clipping.
     max_steps: int = 100  # Number of training steps.
