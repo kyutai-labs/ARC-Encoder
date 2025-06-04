@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 from embed_llm.models.args import PoolingArgs
-from embed_llm.models.merging import smart_merge
+from embed_llm.models.utils.merging import smart_merge
 
 
 def split_integer(x: int, n: int) -> list[int]:

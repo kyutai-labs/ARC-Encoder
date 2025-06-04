@@ -1,8 +1,8 @@
 import logging
 import random
 from dataclasses import dataclass
-from mistral_common.tokens.tokenizers.base import Tokenizer as MistralTokenizer
-from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
+from embed_llm.models.utils.mistral_tokenizer import MistralTokenizer
+from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
 from embed_llm.data.utils import templates_for_qa
 
 Tokenizer = MistralTokenizer | LlamaTokenizer

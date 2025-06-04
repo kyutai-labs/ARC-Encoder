@@ -7,11 +7,11 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataP
 
 from embed_llm.models.args import LoraArgs
 from embed_llm.models.augmented_model import EmbedAugPipeline
-from embed_llm.models.loading import (
+from embed_llm.models.utils.loading import (
     load_args,
     load_state_dict,
 )
-from embed_llm.models.utils import (
+from embed_llm.models.utils.utils import (
     get_fsdp_policy,
     initialize_lora_parameters,
     initialize_decoder_layers_parameters,
@@ -27,14 +27,7 @@ from embed_llm.training.mixed_precision import (
     bfSixteen,
     bfSixteen_mixed,
 )
-
-# Mistral specifics
-from embed_llm.models.mistral.enhanced_transformer import load_mistral_model
-
-
-# Llama specifics
-from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
-from embed_llm.models.llama.model import Transformer as LlamaTransformer
+from embed_llm.models.enhanced_transformer import load_model
 
 
 def load_training_model(
@@ -52,7 +45,7 @@ def load_training_model(
         lora_llm,
         max_batch_size=max_batch_size,
         pipe_args=train_args.pipeline,
-        llm_type=train_args.llm_type,
+        args_type=train_args.llm_type,
     )
     # Load pretrained params on rank 0 for LLM
     if not pipeline_args.trainable_llm:
@@ -60,25 +53,16 @@ def load_training_model(
             "LoRA is not supported for pretrained models"
         )
 
-    if train_args.llm_type == "mistral":
-        llm, llm_tokenizer = load_mistral_model(
-            llm_args=llm_args,
-            pipeline_args=pipeline_args,
-            folder=llm_folder,
-            checkpoint=checkpoint,
-            param_dtype=param_dtype,
-            for_embedding=False,
-        )
-
-    elif train_args.llm_type == "llama":
-        llm_tokenizer = LlamaTokenizer(model_path=str(llm_folder / "tokenizer.model"))
-        with torch.device("meta"):
-            llm = LlamaTransformer(args=llm_args, checkpoint=checkpoint)
-
-        if get_rank() == 0:
-            state_dict = load_state_dict(llm_folder, dtype=param_dtype)
-            llm.load_state_dict(state_dict, assign=True)  # type: ignore
-            main_logger_info("Loaded model on cpu!")
+    llm, llm_tokenizer = load_model(
+        llm_args=llm_args,
+        pipeline_args=pipeline_args,
+        folder=llm_folder,
+        checkpoint=checkpoint,
+        param_dtype=param_dtype,
+        for_embedding=False,
+        llm_type=train_args.llm_type,
+        embed_type=train_args.embed_type,
+    )
 
     main_logger_info("Loading embedder model ...")
     embed_args, _ = load_args(
@@ -86,17 +70,19 @@ def load_training_model(
         lora_embedder,
         max_batch_size=max_batch_size,
         pipe_args=train_args.pipeline,
-        llm_type="mistral",  # Embedder is always Mistral for now
+        args_type=train_args.embed_type,
     )
     embed_args.lora = lora_embedder
     # Load pretrained params on rank 0
-    llm_embedder, embed_tokenizer = load_mistral_model(
+    llm_embedder, embed_tokenizer = load_model(
         llm_args=embed_args,
         pipeline_args=pipeline_args,
         folder=embed_folder,
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=True,
+        llm_type=train_args.llm_type,
+        embed_type=train_args.embed_type,
     )
 
     # Create the pipeline
@@ -105,9 +91,6 @@ def load_training_model(
         llm_tokenizer=llm_tokenizer,
         embed_tokenizer=embed_tokenizer,
         embedding_model=llm_embedder,
-        max_seq_len=train_args.max_seq_len,
-        pad_id=0 if not hasattr(llm_tokenizer, "pad_id") else llm_tokenizer.pad_id,
-        llm_type=train_args.llm_type,
     )
 
     with torch.device("meta"):
@@ -115,18 +98,12 @@ def load_training_model(
 
     if get_rank() == 0:
         if pipeline_args.decoder_module.do:
-            assert train_args.llm_type == "mistral", (
-                "Decoder module is only supported for Mistral models"
-            )
             main_logger_info("Initializing  layers for decoder ...")
             initialize_decoder_layers_parameters(
                 augmented_model.llm, param_dtype, augmented_model.llm.decoder_args
             )
 
         if lora_llm.enable and pipeline_args.trainable_llm:
-            assert train_args.llm_type == "mistral", (
-                "Decoder module is only supported for Mistral models"
-            )
             main_logger_info("Initializing lora layers  for LLM ...")
             # initialize LoRA layers
             initialize_lora_parameters(augmented_model.llm, param_dtype)
@@ -303,7 +280,7 @@ def load_training_model_from_ckpt(
         lora_llm,
         max_batch_size=max_batch_size,
         pipe_args=train_args.pipeline,
-        llm_type=train_args.llm_type,
+        args_type=train_args.llm_type,
     )
     # Load pretrained params on rank 0 for LLM
     if not pipeline_args.trainable_llm:
@@ -311,25 +288,16 @@ def load_training_model_from_ckpt(
             "LoRA is not supported for pretrained models"
         )
 
-    if train_args.llm_type == "mistral":
-        llm, llm_tokenizer = load_mistral_model(
-            llm_args=llm_args,
-            pipeline_args=pipeline_args,
-            folder=llm_folder,
-            checkpoint=checkpoint,
-            param_dtype=param_dtype,
-            for_embedding=False,
-        )
-
-    elif train_args.llm_type == "llama":
-        llm_tokenizer = LlamaTokenizer(model_path=str(llm_folder / "tokenizer.model"))
-        with torch.device("meta"):
-            llm = LlamaTransformer(args=llm_args, checkpoint=checkpoint)
-
-        if get_rank() == 0:
-            state_dict = load_state_dict(llm_folder, dtype=param_dtype)
-            llm.load_state_dict(state_dict, assign=True)  # type: ignore
-            main_logger_info("Loaded model on cpu!")
+    llm, llm_tokenizer = load_model(
+        llm_args=llm_args,
+        pipeline_args=pipeline_args,
+        folder=llm_folder,
+        checkpoint=checkpoint,
+        param_dtype=param_dtype,
+        for_embedding=False,
+        llm_type=train_args.llm_type,
+        embed_type=train_args.embed_type,
+    )
 
     main_logger_info("Loading embedder model ...")
     embed_args, _ = load_args(
@@ -337,16 +305,19 @@ def load_training_model_from_ckpt(
         lora_embedder,
         max_batch_size=max_batch_size,
         pipe_args=train_args.pipeline,
+        args_type=train_args.embed_type,
     )
     embed_args.lora = lora_embedder
     # Load pretrained params on rank 0
-    llm_embedder, embed_tokenizer = load_mistral_model(
+    llm_embedder, embed_tokenizer = load_model(
         llm_args=embed_args,
         pipeline_args=pipeline_args,
         folder=embed_folder,
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=True,
+        llm_type=train_args.llm_type,
+        embed_type=train_args.embed_type,
     )
 
     # Create the pipeline
@@ -355,9 +326,6 @@ def load_training_model_from_ckpt(
         llm_tokenizer=llm_tokenizer,
         embed_tokenizer=embed_tokenizer,
         embedding_model=llm_embedder,
-        max_seq_len=train_args.max_seq_len,
-        pad_id=0 if not hasattr(llm_tokenizer, "pad_id") else llm_tokenizer.pad_id,
-        llm_type=train_args.llm_type,
     )
 
     with torch.device("meta"):
@@ -365,9 +333,6 @@ def load_training_model_from_ckpt(
 
     if get_rank() == 0:
         if pipeline_args.decoder_module.do:
-            assert train_args.llm_type == "mistral", (
-                "Decoder module is only supported for Mistral models"
-            )
             assert decoder_path is not None, (
                 "Decoder path is required for decoder module"
             )
@@ -381,17 +346,11 @@ def load_training_model_from_ckpt(
             )
 
         if pipeline_args.trainable_llm and not lora_llm.enable:
-            assert train_args.llm_type == "mistral", (
-                "Decoder module is only supported for Mistral models"
-            )
             assert llm_path is not None, "LLM path is required for training"
             main_logger_info("Loading trained layers  for LLM ...")
             state_dict = load_state_dict(Path(llm_path), dtype=param_dtype)
             augmented_model.llm.load_state_dict(state_dict, assign=True, strict=False)
         elif pipeline_args.trainable_llm and lora_llm.enable:
-            assert train_args.llm_type == "mistral", (
-                "Decoder module is only supported for Mistral models"
-            )
             assert llm_path is not None, "LLM path is required for training"
             main_logger_info("Loading LoRA layers  for LLM ...")
             augmented_model.llm.load_lora(Path(llm_path), scaling=lora_llm.scaling)

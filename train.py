@@ -18,7 +18,7 @@ import torch.distributed as dist
 from torch.optim import AdamW, lr_scheduler
 
 from embed_llm.data.data_loader import build_data_loader
-from embed_llm.models.mistral.transformer_layers import insert_embeds
+from embed_llm.models.transformer_layers import insert_embeds
 from embed_llm.models.wrapped_models_training import (
     load_training_model,
     load_training_model_from_ckpt,
@@ -468,7 +468,7 @@ def _train(
                 )
 
             mb_loss = compute_ce_loss_with_mask(
-                logits=output, target=y, target_mask=y_mask, pad_id=pipeline.pad_id if pipeline.llm_type == 'llama' else None
+                logits=output, target=y, target_mask=y_mask
             )
             train_ppl += 2 ** (mb_loss.item())
 
@@ -500,8 +500,7 @@ def _train(
                     compute_bpt_loss(
                         output[ind : ind + size, ...],
                         y[ind : ind + size],
-                        None if y_mask is None else y_mask[ind : ind + size],
-                        pad_id=pipeline.pad_id if pipeline.llm_type == 'llama' else None
+                        None if y_mask is None else y_mask[ind : ind + size]
                     )
                 ).item()
                 batch_bpc += loss_in_bits / (
@@ -658,7 +657,6 @@ def _train(
                 batches_rec=eval_batches,
                 state=state,
                 batches_cont=eval_batches_4cont,
-                pad_id=pipeline.pad_id if pipeline.llm_type == 'llama' else None
             )
 
             eval_logs = get_eval_logs(

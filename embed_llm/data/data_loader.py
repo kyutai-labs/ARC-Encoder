@@ -19,7 +19,6 @@ class Batch:
     data_type: str = "reconstruction"
     insert_embed_list: list[list[int]] | None = None
 
-
     def __post_init__(self):
         assert self.x.ndim == 1
         assert self.x.shape == self.y.shape

@@ -14,15 +14,12 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataP
 #     ReversedLatentAttention,
 # )
 
-# Mistral specifics
+
 from embed_llm.models.args import DecoderArgs
-from embed_llm.models.mistral.transformer_layers import TransformerBlock as MistralTransformerBlock
+from embed_llm.models.transformer_layers import TransformerBlock 
 from embed_llm.training.distributed import (
     get_rank,
 )
-
-# Llama specifics
-from embed_llm.models.llama.model import TransformerBlock as LlamaTransformerBlock
 
 
 logger = logging.getLogger(__name__)
@@ -51,8 +48,7 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
         torch_wrap.transformer_auto_wrap_policy,
         transformer_layer_cls=set(
             [
-                MistralTransformerBlock,
-                LlamaTransformerBlock,
+                TransformerBlock,
             ]
         ),
     )

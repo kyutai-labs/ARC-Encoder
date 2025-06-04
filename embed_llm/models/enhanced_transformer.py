@@ -15,29 +15,32 @@ from embed_llm.models.args import (
     EmbedderArgs,
     ModelArgs,
 )
-from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_tokenizer
+from embed_llm.models.utils.mistral_tokenizer import (
+    load_tokenizer as load_mistral_tokenizer,
+)
+from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
 from embed_llm.training.distributed import (
     get_rank,
 )
 
 
 from embed_llm.models.embedding_modules import PoolingModule
-from embed_llm.models.loading import load_state_dict
-from embed_llm.models.lora import LoRALoaderMixin, maybe_lora
-from embed_llm.models.mistral.cache import (
+from embed_llm.models.utils.loading import load_state_dict
+from embed_llm.models.utils.lora import LoRALoaderMixin, maybe_lora
+from embed_llm.models.utils.cache import (
     BufferCache,
     CacheInputMetadata,
 )
-from embed_llm.models.mistral.model import ModelBase
-from embed_llm.models.mistral.rope import precompute_freqs_cis
-from embed_llm.models.mistral.transformer_layers import (
+from embed_llm.models.utils.model import ModelBase
+from embed_llm.models.utils.rope import precompute_freqs_cis
+from embed_llm.models.transformer_layers import (
     RMSNorm,
     TransformerBlock,
     insert_embeds,
     positions_from_sizes,
 )
 
-Tokenizer = MistralTokenizer
+Tokenizer = MistralTokenizer | LlamaTokenizer
 
 
 @dataclass
@@ -725,7 +728,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         return outs.float()
 
 
-def load_mistral_model(
+def load_model(
     llm_args: ModelArgs,
     pipeline_args: EmbedAugArgs,
     folder: Path,
@@ -733,6 +736,8 @@ def load_mistral_model(
     param_dtype: torch.dtype,
     for_embedding: bool = False,
     parll: bool = True,
+    llm_type: str = "mistral",
+    embed_type: str = "mistral",
 ) -> tuple[torch.nn.Module, int]:
     with torch.device("meta"):
         model = Transformer(
@@ -752,13 +757,15 @@ def load_mistral_model(
 
         model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
 
-    if for_embedding:
+    if (llm_type == "mistral" and not for_embedding) or (embed_type == "mistral" and for_embedding): 
         tokenizer = load_mistral_tokenizer(
             Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")
         ).instruct_tokenizer.tokenizer
         return model, tokenizer
+    elif (llm_type == "llama" and not for_embedding) or (embed_type == "llama" and for_embedding):
+        tokenizer = LlamaTokenizer(
+            model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B/tokenizer.model"
+        )
     else:
-        tokenizer = load_mistral_tokenizer(
-            Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")
-        ).instruct_tokenizer.tokenizer
-        return model, tokenizer
+        raise ValueError(f"Unknown llm_type: {llm_type} or embed_type: {embed_type}")
+    return model, tokenizer

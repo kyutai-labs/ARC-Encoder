@@ -23,7 +23,6 @@ def evaluate(
     batches_rec: list[Batch],
     state: TrainState,
     batches_cont: list[Batch] | None = None,
-    pad_id: int | None = None,
 ):
     # Create fake samples to make FSDP happy for unbalanced data
     num_samples = torch.tensor([len(batches_rec)], device="cuda", dtype=torch.long)
@@ -72,7 +71,7 @@ def evaluate(
                     )
 
                 eval_loss_embcont += compute_ce_loss_with_mask(
-                    output, y, y_mask, pad_id=pad_id
+                    output, y, y_mask
                 )
 
     eval_loss_rec = torch.tensor(0.0).cuda()
@@ -101,7 +100,7 @@ def evaluate(
                 )
             if not batch.is_pad_only:
                 eval_loss_rec += compute_ce_loss_with_mask(
-                    output, y, y_mask, pad_id=pad_id
+                    output, y, y_mask
                 )
                 assert batch.is_pad_only or y.abs().sum() != 0, (
                     "Pad sample is used to compute loss."

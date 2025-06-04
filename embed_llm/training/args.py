@@ -110,6 +110,9 @@ class TrainArgs(Serializable):
         None  # Path to the directory containing the LLM model or model id: "mistral-small"
     )
     llm_type: str = "mistral"  # Name of the model to use or llama
+    embed_type: str = (
+        "mistral"  # Type of the embedder to use, either "mistral" or "llama"
+    )
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None
@@ -131,16 +134,3 @@ class TrainArgs(Serializable):
 
         if self.continuation < 1 and self.data.n_times_sl_insertion > 0:
             print("For reconstruction training, no text inserted before embeddings")
-
-        if self.llm_type != "mistral":
-            assert not self.lora_llm.enable, "LoRA is not supported for Llama models"
-            assert not self.pipeline.trainable_llm, (
-                "Pipeline training is not supported for Llama models"
-            )
-            assert not self.pipeline.decoder_module.do, (
-                "Decoder module is not supported for Llama models"
-            )
-
-        if self.llm_path is None:
-            assert self.llm_type == "mistral"
-            self.llm_path = self.embedder_path

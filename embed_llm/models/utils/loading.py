@@ -6,8 +6,8 @@ from pathlib import Path
 import safetensors
 import safetensors.torch
 import torch
-from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-
+from embed_llm.models.utils.mistral_tokenizer import MistralTokenizer
+from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
 from embed_llm.models.args import (
     EmbedAugArgs,
     LoraArgs,
@@ -21,7 +21,7 @@ from embed_llm.models.args import (
 
 from embed_llm.training.checkpointing import Checkpointer
 
-Tokenizer = MistralTokenizer
+Tokenizer = MistralTokenizer | LlamaTokenizer
 
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ def load_args(
     max_batch_size: int | None = None,
     pipe_path: str | None = None,
     pipe_args: EmbedAugArgs | None = None,
-    llm_type: str = "mistral",
+    args_type: str = "mistral",
 ) -> tuple[ModelArgs, EmbedAugArgs]:
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
 
@@ -85,7 +85,7 @@ def load_args(
     with open(folder / "params.json", "r") as f:
         args = json.loads(f.read())
 
-    if llm_type == "mistral":
+    if args_type == "mistral":
         llm_args = ModelArgs(
             lora=lora,
             dim=args["dim"],
@@ -110,11 +110,11 @@ def load_args(
         assert llm_args.vocab_size >= 32768, (
             "Make sure to use a model with a vocab size of at least 32768"
         )
-    elif llm_type == "llama":
+    elif args_type == "llama":
         if args.get("ffn_dim_multiplier", None) is not None:
-            hidden_dim = int(args["ffn_dim_multiplier"] * args["hidden_dim"])
+            hidden_dim = int(args["ffn_dim_multiplier"] * int(2 * 4 * args["dim"] / 3))
         else:
-            hidden_dim = args["hidden_dim"]
+            hidden_dim = int(2 * 4 * args["dim"] / 3)
         hidden_dim = args["multiple_of"] * (
             (hidden_dim + args["multiple_of"] - 1) // args["multiple_of"]
         )
@@ -124,7 +124,7 @@ def load_args(
             dim=args["dim"],
             n_layers=args["n_layers"],
             head_dim=args["dim"] // args["n_heads"],
-            hidden_dim=args["hidden_dim"],
+            hidden_dim=hidden_dim,
             n_heads=args["n_heads"],
             n_kv_heads=args["n_kv_heads"],
             norm_eps=args["norm_eps"],
@@ -134,7 +134,7 @@ def load_args(
         )
 
     else:
-        raise ValueError(f"Unsupported llm_type: {llm_type}")
+        raise ValueError(f"Unsupported llm_type: {args_type}")
 
     if isinstance(pipeline_args.param_dtype, str):
         pipeline_args.param_dtype = getattr(torch, pipeline_args.param_dtype)

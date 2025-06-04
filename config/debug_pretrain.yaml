@@ -1,7 +1,8 @@
-embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
+embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
 llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
 # Llama3.1-8B  Llama3.2-3B
 llm_type: llama
+embed_type: llama
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
 exp_name: test_pretrain2
 
@@ -62,8 +63,8 @@ max_steps: 10000
 seed: 0
 log_freq: 1
 eval_freq: 50
-no_eval: true
-ckpt_freq: 10
+no_eval: false
+ckpt_freq: 3
 
 # from_ckpt:
 #   do: True

@@ -25,8 +25,8 @@ from embed_llm.generation.metrics import (  # noqa: E402
 )
 from embed_llm.generation.utils import ensure_reproducibility, eval_logger_info  # noqa: E402
 from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline  # noqa: E402
-from embed_llm.models.utils import is_torchrun   # noqa: E402
-from embed_llm.monitoring.utils import set_logger     # noqa: E402
+from embed_llm.models.utils.utils import is_torchrun  # noqa: E402
+from embed_llm.monitoring.utils import set_logger  # noqa: E402
 
 EVAL_DATA_PATH = {
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
@@ -173,6 +173,7 @@ def evaluate_QA(
     run_name: str,
     benchmarks: list[str],
     llm_path: str | None = None,
+    embed_path: str | None = None,
     ckpt: int | None = None,
     max_seq_len: int = 256,
     temps: list[float] = [0, 0.5, 0.7, 1],
@@ -194,8 +195,6 @@ def evaluate_QA(
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
-    embedder_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B"
-
     # Loading model
     if not is_torchrun():
         device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
@@ -209,7 +208,7 @@ def evaluate_QA(
         run_name=run_name,
         tmp_path=tmp_path,
         llm_path=llm_path,
-        embedder_path=embedder_path,
+        embedder_path=embed_path,
         device=device,
         max_bs=max_bs,
         pipeline=pipeline,
@@ -551,6 +550,7 @@ def evaluate_QA(
 def evaluate_trad(
     run_name: str,
     llm_path: str | None = None,
+    embed_path: str | None = None,
     ckpt: int | None = None,
     max_seq_len: int = 512,
     temps: list[float] = [0, 0.5, 0.7, 1],
@@ -579,7 +579,7 @@ def evaluate_trad(
     pipeline, ckpt = load_pipeline(
         run_name=run_name,
         tmp_path=tmp_path,
-        embedder_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B",
+        embedder_path=embed_path,
         llm_path=llm_path,
         device=device,
         max_bs=max_bs,
@@ -878,6 +878,7 @@ def arg_parser():
     parser.add_argument("--reversed_template", action="store_true")
     parser.add_argument("--fine_tuned", action="store_true")
     parser.add_argument("--llm_name", type=str, default="mistral_7B")
+    parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--query_w_context", action="store_true")
 
     return parser.parse_args()
@@ -911,6 +912,9 @@ if __name__ == "__main__":
     max_seq_len = args.max_seq_len
     n_passages = args.n_passages
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/" + args.llm_name
+    embed_path = (
+        "/lustre/scwpod02/client/kyutai-interns/hippop/models/" + args.embed_name
+    )
     if args.run_name is not None:
         print("Evuating run:", args.run_name)
     # Evaluate Mistral using their code
@@ -1027,6 +1031,7 @@ if __name__ == "__main__":
                 max_seq_len=max_seq_len,
                 temps=temp_tests,
                 llm_path=llm_path,
+                embed_path=embed_path,
                 max_bs=args.bs,
                 output_file=output_file,
                 n_samples=n_passages,
@@ -1050,6 +1055,7 @@ if __name__ == "__main__":
                 ckpt=args.ckpt,
                 temps=temp_tests,
                 llm_path=llm_path,
+                embed_path=embed_path,
                 max_bs=args.bs,
                 output_file=output_file,
                 n_samples=n_passages,
@@ -1072,6 +1078,7 @@ if __name__ == "__main__":
                     benchmarks,
                     temps=temp_tests,
                     llm_path=llm_path,
+                    embed_path=embed_path,
                     max_bs=args.bs,
                     output_file=output_file,
                     n_samples=n_passages,

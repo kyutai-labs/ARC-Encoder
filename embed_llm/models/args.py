@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import torch
 from simple_parsing.helpers import Serializable
 
-from embed_llm.models.lora import LoraArgs
+from embed_llm.models.utils.lora import LoraArgs
 
 
 @dataclass
