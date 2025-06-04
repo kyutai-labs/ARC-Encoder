@@ -10,7 +10,7 @@ import yaml
 
 from embed_llm.data.data_loader import Batch
 from embed_llm.generation.utils import eval_logger_info
-from embed_llm.models.args import EmbedAugArgs, LoraArgs, MistralModelArgs
+from embed_llm.models.args import EmbedAugArgs, LoraArgs
 from embed_llm.models.utils import group_embed_seqlens, is_torchrun
 from embed_llm.models.embedding_modules import EmbProjector
 from embed_llm.models.loading import (
@@ -34,7 +34,7 @@ from embed_llm.models.llama.generation import generate as llama_generate
 
 
 Models = MistralTransformer | LlamaTransformer
-ModelsArgs = MistralModelArgs
+
 
 logger = logging.getLogger(__name__)
 
@@ -178,9 +178,10 @@ class EmbedAugModel(nn.Module):
                 embed_seqlens = [size + 1 for size in embed_seqlens]
                 embeddings = new_embeddings.clone()
 
+            # print('Embedding shape:', embeddings.shape, embed_seqlens)
             # Only one insertion of embedding per sample
             embed_seqlens = group_embed_seqlens(embed_seqlens, [1] * len(seqlens))
-
+            # print('Grouped embed_seqlens:', embed_seqlens)
         if self.bridge_module is not None:
             embeddings = self.bridge_module(embeddings)
 
@@ -424,9 +425,7 @@ class EmbedAugPipeline(nn.Module):
             max_seq_len=8192
             if not hasattr(llm_args, "max_seq_len")
             else llm_args.max_seq_len,  # type: ignore
-            pad_id=0
-            if not hasattr(llm_tokenizer, "pad_id")
-            else llm_tokenizer.pad_id,
+            pad_id=0 if not hasattr(llm_tokenizer, "pad_id") else llm_tokenizer.pad_id,
             llm_type=train_args["llm_type"],
         )
 

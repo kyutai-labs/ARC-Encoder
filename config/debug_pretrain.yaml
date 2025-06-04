@@ -1,5 +1,5 @@
 embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.2-3B
+llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
 # Llama3.1-8B  Llama3.2-3B
 llm_type: llama
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
@@ -38,11 +38,11 @@ pipeline:
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
-  bridge_module:
-    bridge_type: rms
-    in_dim: 4096
-    hidden_dim: 2048
-    out_dim: 3072
+  # bridge_module:
+  #   bridge_type: rms
+  #   in_dim: 4096
+  #   hidden_dim: 2048
+  #   out_dim: 3072
 
 
 data:

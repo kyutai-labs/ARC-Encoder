@@ -1,6 +1,7 @@
 import dataclasses
 import numpy as np
 from embed_llm.data.tokenize import Mask, TokenSample, Tokenizer
+from embed_llm.models.llama.tokenizer import Tokenizer as LlamaTokenizer
 
 
 @dataclasses.dataclass()
@@ -287,14 +288,29 @@ def sequence_iterator_inserted_embed_continuation(
         )
         new_embed = x[cur_pos : cur_pos + left_tokens // 2]
 
-        to_embed_buffer.append(
-            {
-                "text": llm_tokenizer.decode(new_embed),
-                "tokens": embed_tokenizer.encode(
-                    llm_tokenizer.decode(new_embed), eos=False, bos=False
-                ),
-            }
-        )
+        # Modifier ici car ca depasse seqlen
+        if isinstance(llm_tokenizer, LlamaTokenizer):
+            new_text = llm_tokenizer.decode(new_embed)
+            bos = "<|begin_of_text|>" in new_text
+            eos = "<|end_of_text|>" in new_text
+            for sp_tok in llm_tokenizer.special_tokens.keys():
+                new_text = new_text.replace(sp_tok, "")
+            to_embed_buffer.append(
+                {
+                    "text": new_text,
+                    "tokens": embed_tokenizer.encode(new_text, bos=bos, eos=eos),
+                }
+            )
+            # print(
+            #     f"New embed Llama vs Mistral: {len(new_embed)} | {len(embed_tokenizer.encode(new_text, bos=bos, eos=eos))}"
+            # )
+        else:
+            to_embed_buffer.append(
+                {
+                    "text": llm_tokenizer.decode(new_embed),
+                    "tokens": new_embed,
+                }
+            )
 
         cur_pos += len(x[cur_pos : cur_pos + left_tokens // 2])
 

@@ -425,7 +425,7 @@ def _train(
             x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
                 pipeline.prepare_forward(batch)
             )
-
+            # print('embed_seqlens', embed_seqlens)
             # if get_rank() == 0:
             #     to_gen = [
             #         int(tok)

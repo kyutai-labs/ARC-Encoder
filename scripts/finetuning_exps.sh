@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=2-9%5
+#SBATCH --array=0-1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -9,6 +9,7 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=fine_tuning_comp
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
+#SBATCH --dependency=afterany:747998_2
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
@@ -17,38 +18,9 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/mem_toks/ft/64memtoks_dec_TS.yaml 
-config/experiments/mem_toks/ft/64memtoks_dec_squad.yaml
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_60QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_40QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_20QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_0QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_fs_60QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_fs_40QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_fs_20QA.yaml 
-config/experiments/datasets/SA_merge_L4_CR4_decL16_ft_fs_0QA.yaml
+config/experiments/No_Comp/ft/NC_llama8B_squad.yaml 
+config/experiments/No_Comp/ft/NC_llama3B_rms_squad.yaml
 )
-
-
-# config/experiments/mem_toks/ft/64memtoks_nodec_conttok_TS.yaml 
-# config/experiments/mem_toks/ft/64memtoks_nodec_conttok_squad.yaml 
-# config/experiments/mem_toks/ft/4memtoks_nodec_squad.yaml 
-# config/experiments/mem_toks/ft/4memtoks_nodec_rec_TS.yaml
-# config/experiments/mem_toks/ft/64memtoks_dec_conttok_TS.yaml 
-# config/experiments/mem_toks/ft/64memtoks_dec_conttok_squad.yaml
-
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_TS.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_mixed_TS.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_mixed_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_mixed_ft32_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_mixed_ft8_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_TS.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_mixed_TS.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_mixed_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_mixed_ft32_squad.yaml 
-# config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_mixed_ft8_squad.yaml
 
 
 # Get the specific config file for this array task
@@ -80,27 +52,33 @@ echo "Starting evaluation of run $RUN_NAME"
 case $RUN_NAME in
 
 
-
-*)
+*llama3B*)
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0
-
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 3
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/eval_llama.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0  --llm_name Llama3.2-3B 
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/eval_llama.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5  --llm_name Llama3.2-3B 
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad  --fine_tuned
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/eval_llama.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad   --llm_name Llama3.2-3B 
+
+    ;;
+
+*llama8B*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/test_llama.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0  --llm_name Llama3.1-8B 
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad 
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/eval_llama.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5  --llm_name Llama3.1-8B 
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/eval_llama.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad   --llm_name Llama3.1-8B 
 
     ;;
 

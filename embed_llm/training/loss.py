@@ -9,9 +9,15 @@ def compute_ce_loss_with_mask(
     pad_id: int | None = None,
 ):
     if target_mask is None:
-        return F.cross_entropy(logits, target, reduction="mean", ignore_index=pad_id)
+        if pad_id is None:
+            return F.cross_entropy(logits, target, reduction="mean")
+        else:
+            return F.cross_entropy(logits, target, reduction="mean", ignore_index=pad_id)
 
-    mb_loss = F.cross_entropy(logits, target, reduction="none", ignore_index=pad_id)
+    if pad_id is None:
+        mb_loss = F.cross_entropy(logits, target, reduction="none")
+    else:
+        mb_loss = F.cross_entropy(logits, target, reduction="none", ignore_index=pad_id)
     mb_loss = torch.sum(mb_loss * target_mask) / torch.sum(target_mask)
 
     return mb_loss
@@ -19,7 +25,10 @@ def compute_ce_loss_with_mask(
 
 def compute_bpt_loss(logits, targets, target_mask: torch.Tensor | None, pad_id: int | None = None,):
     # Compute the cross-entropy loss
-    loss = F.cross_entropy(logits, targets, reduction="none", ignore_index=pad_id)
+    if pad_id is None:
+        loss = F.cross_entropy(logits, targets, reduction="none")
+    else:
+        loss = F.cross_entropy(logits, targets, reduction="none", ignore_index=pad_id)
 
     # Convert the loss from nats to bits
     loss_in_bits = loss / torch.log(torch.tensor(2.0))

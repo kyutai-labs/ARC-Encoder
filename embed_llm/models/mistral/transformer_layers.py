@@ -48,7 +48,7 @@ def insert_embeds(
         tokenized_prompts: dictionary containing tokenized prompts (if prefix and suffix instruction)
         batch_type: type of batch (reconstruction, continuation, etc.)
     """
-
+    # print('embed_seqlens', embed_seqlens)
     if pad_id is not None:
         if isinstance(embed_seqlens, list):
             if isinstance(embed_seqlens[0], list):
@@ -68,7 +68,6 @@ def insert_embeds(
             )
             * pad_id
         )
-
         pos_to_keep = [[] for _ in range(len(h))]
         # For generation
         ind_embeds = 0
@@ -103,6 +102,10 @@ def insert_embeds(
                 new_h_states[i, ind_h : ind_h + left_toks, :] = h[i, ind_toks:, :]
                 pos_to_keep[i].extend([True] * (new_h_states.shape[1] - ind_h))
 
+        assert sum([sum([not p for p in pos]) for pos in pos_to_keep]) == ind_embeds, (
+            f"Sum of pos_to_keep: {sum([sum(pos) for pos in pos_to_keep])} != "
+            f"len(h) - ind_embeds: {len(h) - ind_embeds}"
+        )
         assert len(pos_to_keep) == len(new_h_states), (
             f"len(pos_to_keep): {len(pos_to_keep)} != len(new_h_states): {len(new_h_states)}"
         )

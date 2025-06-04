@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-6
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -9,7 +9,7 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/versatile_compressor
 #SBATCH --job-name=pretrain_llama
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx16,par2dc5-ai-prd-cl02s03dgx20,par2dc5-ai-prd-cl02s02dgx23,par2dc5-ai-prd-cl02s04dgx18,par2dc5-ai-prd-cl02s03dgx21,par2dc5-ai-prd-cl02s03dgx18,par2dc5-ai-prd-cl02s03dgx16
+
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
@@ -17,13 +17,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/No_Comp/NC_llama3B_mlp_v2.yaml 
-config/experiments/No_Comp/NC_llama3B_rms.yaml 
-config/experiments/No_Comp/NC_llama8B_v2.yaml 
-config/experiments/No_Comp/NC_llama3B_mlp_nobot_v2.yaml
-config/experiments/No_Comp/NC_llama8B_rms.yaml
-config/experiments/No_Comp/NC_llama8B_mlp.yaml 
-config/experiments/No_Comp/NC_llama8B_mlp_nobot.yaml 
+config/experiments/No_Comp/NC_Mistral7B_mlp_nobot.yaml
 )
 
 

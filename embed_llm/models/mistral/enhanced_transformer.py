@@ -13,7 +13,7 @@ from embed_llm.models.args import (
     DecoderArgs,
     EmbedAugArgs,
     EmbedderArgs,
-    MistralModelArgs,
+    ModelArgs,
 )
 from embed_llm.models.mistral.tokenizer import load_tokenizer as load_mistral_tokenizer
 from embed_llm.training.distributed import (
@@ -37,7 +37,6 @@ from embed_llm.models.mistral.transformer_layers import (
     positions_from_sizes,
 )
 
-ModelsArgs = MistralModelArgs
 Tokenizer = MistralTokenizer
 
 
@@ -64,7 +63,7 @@ class SimpleInputMetadata:
 class Transformer(ModelBase, LoRALoaderMixin):
     def __init__(
         self,
-        args: MistralModelArgs,
+        args: ModelArgs,
         embedder_args: EmbedderArgs | None = None,
         decoder_args: DecoderArgs | None = None,
         checkpoint: bool = False,
@@ -727,7 +726,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
 
 def load_mistral_model(
-    llm_args: ModelsArgs,
+    llm_args: ModelArgs,
     pipeline_args: EmbedAugArgs,
     folder: Path,
     checkpoint: bool,

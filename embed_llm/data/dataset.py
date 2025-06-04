@@ -60,7 +60,11 @@ def maybe_load_local_dataset(
             continue
 
         data_sample: TokenSample = encode(
-            data,  llm_tokenizer=llm_tokenizer, embed_tokenizer=embed_tokenizer, data_path=str(path), max_embed=max_embeds
+            data,
+            llm_tokenizer=llm_tokenizer,
+            embed_tokenizer=embed_tokenizer,
+            data_path=str(path),
+            max_embed=max_embeds,
         )
         data_list.append(data_sample)
 
@@ -431,7 +435,7 @@ def get_dataset_iterator(
                 rank=rank,
                 world_size=world_size,
                 llm_tokenizer=llm_tokenizer,
-                embed_tokenizer=embed_tokenizer,    
+                embed_tokenizer=embed_tokenizer,
                 max_embeds=max_embeds,
             )
 

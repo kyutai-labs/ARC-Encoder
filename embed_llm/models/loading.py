@@ -11,18 +11,16 @@ from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 from embed_llm.models.args import (
     EmbedAugArgs,
     LoraArgs,
-    MistralModelArgs,
+    ModelArgs,
     EmbedderArgs,
     PoolingArgs,
     DecoderArgs,
-    LlamaModelArgs,
     BridgeArgs,
 )
 
 
 from embed_llm.training.checkpointing import Checkpointer
 
-ModelsArgs = MistralModelArgs
 Tokenizer = MistralTokenizer
 
 
@@ -36,7 +34,7 @@ def load_args(
     pipe_path: str | None = None,
     pipe_args: EmbedAugArgs | None = None,
     llm_type: str = "mistral",
-) -> tuple[ModelsArgs, EmbedAugArgs]:
+) -> tuple[ModelArgs, EmbedAugArgs]:
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
 
     if pipe_path is not None:
@@ -88,7 +86,7 @@ def load_args(
         args = json.loads(f.read())
 
     if llm_type == "mistral":
-        llm_args = MistralModelArgs(
+        llm_args = ModelArgs(
             lora=lora,
             dim=args["dim"],
             n_layers=args["n_layers"],
@@ -113,12 +111,28 @@ def load_args(
             "Make sure to use a model with a vocab size of at least 32768"
         )
     elif llm_type == "llama":
-        llm_args = LlamaModelArgs(
-            max_batch_size=max_batch_size,
-            max_seq_len=args.get("max_seq_len", 8192),
-            lora=lora,
-            **args,
+        if args.get("ffn_dim_multiplier", None) is not None:
+            hidden_dim = int(args["ffn_dim_multiplier"] * args["hidden_dim"])
+        else:
+            hidden_dim = args["hidden_dim"]
+        hidden_dim = args["multiple_of"] * (
+            (hidden_dim + args["multiple_of"] - 1) // args["multiple_of"]
         )
+
+        llm_args = ModelArgs(
+            lora=lora,
+            dim=args["dim"],
+            n_layers=args["n_layers"],
+            head_dim=args["dim"] // args["n_heads"],
+            hidden_dim=args["hidden_dim"],
+            n_heads=args["n_heads"],
+            n_kv_heads=args["n_kv_heads"],
+            norm_eps=args["norm_eps"],
+            vocab_size=args["vocab_size"],
+            rope_theta=args["rope_theta"],
+            max_batch_size=max_batch_size,
+        )
+
     else:
         raise ValueError(f"Unsupported llm_type: {llm_type}")
 
