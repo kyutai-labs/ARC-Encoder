@@ -119,9 +119,11 @@ def load_training_model(
 
             torch.nn.init.ones_(augmented_model.embedder.mem_embeddings.weight)
 
-        assert not any(p.is_meta for n, p in augmented_model.named_parameters() if "rec_tok" not in n and 'cont_tok' not in n), (
-            "All parameters should be initialized by now"
-        )
+        assert not any(
+            p.is_meta
+            for n, p in augmented_model.named_parameters()
+            if "rec_tok" not in n and "cont_tok" not in n and "cl_mem" not in n
+        ), "All parameters should be initialized by now"
 
         assert all(p.dtype == param_dtype for p in augmented_model.parameters()), (
             f"All parameters should be on {param_dtype}"
@@ -139,11 +141,9 @@ def load_training_model(
         assert all(p.is_meta for p in augmented_model.parameters()), (
             "All parameters should be on meta"
         )
-    
+
     ignored_states = []
-    if (
-        pipeline_args.embedder_params.rec_tok
-    ):
+    if pipeline_args.embedder_params.rec_tok:
         augmented_model.embedder.rec_tok.weight = torch.nn.Parameter(
             torch.ones_like(
                 augmented_model.embedder.rec_tok.weight,
@@ -152,9 +152,19 @@ def load_training_model(
             )
         )
         ignored_states.append(augmented_model.embedder.rec_tok.weight)
-    if (
-        pipeline_args.embedder_params.cont_tok
-    ):
+
+    if pipeline_args.embedder_params.mixed_learned_method:
+        augmented_model.embedder.cl_mem_tokens.weight = torch.nn.Parameter(
+            torch.ones_like(
+                augmented_model.embedder.cl_mem_tokens.weight,
+                device="cuda",
+                dtype=param_dtype,
+            )
+        )
+
+        ignored_states.append(augmented_model.embedder.cl_mem_tokens.weight)
+
+    if pipeline_args.embedder_params.cont_tok:
         augmented_model.embedder.cont_tok.weight = torch.nn.Parameter(
             torch.ones_like(
                 augmented_model.embedder.cont_tok.weight,
@@ -190,11 +200,18 @@ def load_training_model(
             and not lora_embedder.enable
         ):
             param.requires_grad = True
-        elif pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name:
+        elif (
+            pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name
+        ):
             param.requires_grad = True
         elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
             param.requires_grad = True
         elif pipeline_args.embedder_params.cont_tok and "cont_tok" in name:
+            param.requires_grad = True
+        elif (
+            pipeline_args.embedder_params.mixed_learned_method
+            and "cl_mem_tokens" in name
+        ):
             param.requires_grad = True
         else:
             param.requires_grad = False
@@ -320,9 +337,11 @@ def load_training_model_from_ckpt(
                 state_dict, assign=True, strict=False
             )
 
-        assert not any(p.is_meta for n, p in augmented_model.named_parameters() if "rec_tok" not in n and 'cont_tok' not in n), (
-            "All parameters should be initialized by now"
-        )
+        assert not any(
+            p.is_meta
+            for n, p in augmented_model.named_parameters()
+            if "rec_tok" not in n and "cont_tok" not in n and "cl_mem" not in n
+        ), "All parameters should be initialized by now"
 
         assert all(p.dtype == param_dtype for p in augmented_model.parameters()), (
             f"All parameters should be on {param_dtype}"
@@ -341,24 +360,49 @@ def load_training_model_from_ckpt(
             "All parameters should be on meta"
         )
     ignored_states = []
+    st_loaded = False
     if pipeline_args.embedder_params.rec_tok:
-        augmented_model.embedder.rec_tok.weight = torch.nn.Parameter(
-            torch.ones_like(
-                augmented_model.embedder.rec_tok.weight,
-                device="cuda",
-                dtype=param_dtype,
-            )
+        state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
+        st_loaded = True
+        augmented_model.embedder.rec_tok.load_state_dict(
+            {
+                k.split("rec_tok.")[-1]: v.cuda()
+                for k, v in state_dict.items()
+                if "rec_tok" in k
+            },
+            strict=True,
+            assign=True,
         )
         ignored_states.append(augmented_model.embedder.rec_tok.weight)
-    if pipeline_args.embedder_params.cont_tok:
-        augmented_model.embedder.cont_tok.weight = torch.nn.Parameter(
-            torch.ones_like(
-                augmented_model.embedder.cont_tok.weight,
-                device="cuda",
-                dtype=param_dtype,
-            )
+    if pipeline_args.embedder_params.mixed_learned_method:
+        if not st_loaded:
+            state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
+            st_loaded = True
+        augmented_model.embedder.cl_mem_tokens.load_state_dict(
+            {
+                k.split("cl_mem_tokens.")[-1]: v.cuda()
+                for k, v in state_dict.items()
+                if "cl_mem_tokens" in k
+            },
+            strict=True,
+            assign=True,
         )
-        ignored_states.append(augmented_model.embedder.cont_tok.weight)        
+        ignored_states.append(augmented_model.embedder.cl_mem_tokens.weight)
+
+    if pipeline_args.embedder_params.cont_tok:
+        if not st_loaded:
+            state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
+            st_loaded = True
+        augmented_model.embedder.cont_tok.load_state_dict(
+            {
+                k.split("cont_tok.")[-1]: v.cuda()
+                for k, v in state_dict.items()
+                if "cont_tok" in k
+            },
+            strict=True,
+            assign=True,
+        )
+        ignored_states.append(augmented_model.embedder.cont_tok.weight)
 
     torch.distributed.barrier()
 
@@ -386,15 +430,22 @@ def load_training_model_from_ckpt(
             and not lora_embedder.enable
         ):
             param.requires_grad = True
-        elif pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name:
+        elif (
+            pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name
+        ):
             param.requires_grad = True
         elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
             param.requires_grad = True
         elif pipeline_args.embedder_params.cont_tok and "cont_tok" in name:
             param.requires_grad = True
+        elif (
+            pipeline_args.embedder_params.mixed_learned_method
+            and "cl_mem_tokens" in name
+        ):
+            param.requires_grad = True
         else:
             param.requires_grad = False
-        
+
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)

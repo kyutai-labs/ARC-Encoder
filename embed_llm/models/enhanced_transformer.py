@@ -97,6 +97,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 assert len(self.compress_rates) == 1, (
                     "Mixed method requires only one compression rate"
                 )
+            self.cl_mem_tokens = (
+                None
+                if not embedder_args.mixed_learned_method
+                else torch.nn.Embedding(self.n_mem_tokens, 1)
+            )
         else:
             self.for_embedding = False
             self.compress_rates = []
@@ -133,6 +138,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.rec_tok = None
             self.cont_tok = None
             self.mixed_method = False
+            self.cl_mem_tokens = None
         self.pos_to_keep = None
 
         layers = []
@@ -337,7 +343,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             self_att_mask = BlockDiagonalCausalMask.from_seqlens(
                                 q_seqlen=new_seqlens, kv_seqlen=seqlens
                             )
-            
+
                         h, _, merge_based_on = self.layers[str(i)](
                             x=pooled_h,
                             other_kv=h,
@@ -345,8 +351,13 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             mask=self_att_mask,
                             freqs_cis_k=freqs_cis,
                             based_on=self.pooling_args.based_on,
-                            mixed_method_comp_seqlen=seqlens if self.mixed_method else None,
-                            mixed_method_n_mem_tokens=self.n_mem_tokens if self.mixed_method else None,
+                            mixed_method_comp_seqlen=seqlens
+                            if self.mixed_method
+                            else None,
+                            mixed_method_n_mem_tokens=self.n_mem_tokens
+                            if self.mixed_method
+                            else None,
+                            cl_mem_tokens=self.cl_mem_tokens,
                         )
                     else:
                         if not self.causal or (

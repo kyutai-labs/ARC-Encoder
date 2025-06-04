@@ -27,18 +27,17 @@ optim:
   warm_up_steps: 500
   weight_decay: 0.1
 pipeline:
-  bridge_module:
-    bridge_type: null
   embedder_params:
     causal_embedder: true
     compress_rates:
     - -4
-    mean_hid4embed: null
     n_truncated_layers: 16
     pooling_module:
-      pool_type: fusion
-      where: between
+      pool_type: mean_sa
+      where: before
     trained_layers: 4
+    rec_tok: true
+    cont_tok: true
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
@@ -49,8 +48,8 @@ pipeline:
     insert_at: 16
 from_ckpt:
   do: true
-  decoder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/Allstar_comp4/checkpoints/checkpoint_010000/llm/decoder/
-  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/Allstar_comp4/checkpoints/checkpoint_010000/embedder/
+  decoder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/SA_merge_L4_CR4_decL16_pt_5rec_conttok/checkpoints/checkpoint_010000/llm/decoder/
+  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/SA_merge_L4_CR4_decL16_pt_5rec_conttok/checkpoints/checkpoint_010000/embedder/
 
 data:
   adapt_seq_len: true

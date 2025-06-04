@@ -34,6 +34,7 @@ pipeline:
     trained_layers: 4
     rec_tok: true
     mixed_method: true
+    mixed_learned_method: true
     memory_tokens: 128
   max_embeds: 1
   w_embeds: true
