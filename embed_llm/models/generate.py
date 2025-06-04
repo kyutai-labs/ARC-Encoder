@@ -1,5 +1,5 @@
 import torch
-from embed_llm.models.mistral.cache import BufferCache
+from embed_llm.models.utils.cache import BufferCache
 from embed_llm.models.enhanced_transformer import Transformer
 
 

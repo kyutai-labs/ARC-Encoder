@@ -1,5 +1,5 @@
 from pathlib import Path
-
+import math
 import torch
 from torch.distributed.fsdp import BackwardPrefetch
 from torch.distributed.fsdp.api import ShardingStrategy
@@ -7,12 +7,11 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataP
 
 from embed_llm.models.args import LoraArgs
 from embed_llm.models.augmented_model import EmbedAugPipeline
-from embed_llm.models.loading import (
+from embed_llm.models.utils.loading import (
     load_args,
-    load_model,
     load_state_dict,
 )
-from embed_llm.models.utils import (
+from embed_llm.models.utils.utils import (
     get_fsdp_policy,
     initialize_lora_parameters,
     initialize_decoder_layers_parameters,
@@ -28,11 +27,13 @@ from embed_llm.training.mixed_precision import (
     bfSixteen,
     bfSixteen_mixed,
 )
+from embed_llm.models.enhanced_transformer import load_model
 
 
 def load_training_model(
     train_args: TrainArgs,
-    folder: Path,
+    llm_folder: Path,
+    embed_folder: Path,
     lora_llm: LoraArgs,
     lora_embedder: LoraArgs,
     param_dtype: torch.dtype,
@@ -40,10 +41,11 @@ def load_training_model(
     max_batch_size: int = 32,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
     llm_args, pipeline_args = load_args(
-        folder,
+        llm_folder,
         lora_llm,
         max_batch_size=max_batch_size,
         pipe_args=train_args.pipeline,
+        args_type=train_args.llm_type,
     )
     # Load pretrained params on rank 0 for LLM
     if not pipeline_args.trainable_llm:
@@ -51,36 +53,48 @@ def load_training_model(
             "LoRA is not supported for pretrained models"
         )
 
-    model, tokenizer = load_model(
+    llm, llm_tokenizer = load_model(
         llm_args=llm_args,
         pipeline_args=pipeline_args,
-        folder=folder,
+        folder=llm_folder,
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=False,
+        llm_type=train_args.llm_type,
+        embed_type=train_args.embed_type,
     )
 
     main_logger_info("Loading embedder model ...")
-    llm_args.lora = lora_embedder
+    embed_args, _ = load_args(
+        embed_folder,
+        lora_embedder,
+        max_batch_size=max_batch_size,
+        pipe_args=train_args.pipeline,
+        args_type=train_args.embed_type,
+    )
+    embed_args.lora = lora_embedder
     # Load pretrained params on rank 0
-    llm_embedder = load_model(
-        llm_args=llm_args,
+    llm_embedder, embed_tokenizer = load_model(
+        llm_args=embed_args,
         pipeline_args=pipeline_args,
-        folder=folder,
+        folder=embed_folder,
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=True,
+        llm_type=train_args.llm_type,
+        embed_type=train_args.embed_type,
     )
 
     # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
         pipeline_args=pipeline_args,
-        tokenizer=tokenizer,
+        llm_tokenizer=llm_tokenizer,
+        embed_tokenizer=embed_tokenizer,
         embedding_model=llm_embedder,
     )
 
     with torch.device("meta"):
-        augmented_model = augmented_pipeline.get_model(llm=model)
+        augmented_model = augmented_pipeline.get_model(llm=llm)
 
     if get_rank() == 0:
         if pipeline_args.decoder_module.do:
@@ -118,12 +132,29 @@ def load_training_model(
             )
 
             torch.nn.init.ones_(augmented_model.embedder.mem_embeddings.weight)
+        if pipeline_args.bridge_module.bridge_type is not None:
+            main_logger_info("Initializing bridge module for embedder ...")
+            for name, module in augmented_model.named_modules():
+                if "bridge_module" in name and len(list(module.named_children())) == 0:
+                    for p_name, param in module.named_parameters():
+                        # Create a new param to the right device and dtype
+                        module._parameters[p_name] = torch.nn.Parameter(
+                            torch.empty_like(param, device="cpu", dtype=param_dtype)
+                        )
+                        # Replace the old param with the new ones
+                        param = module._parameters[p_name]
+                        if "layer" in name:
+                            torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+                        elif "norm" in name:
+                            torch.nn.init.constant_(param, val=1.0)
 
         assert not any(
             p.is_meta
             for n, p in augmented_model.named_parameters()
-            if "rec_tok" not in n and "cont_tok" not in n and "cl_mem" not in n
-        ), "All parameters should be initialized by now"
+            if "rec_tok" not in n and "cont_tok" not in n and "cl_mem_tokens" not in n
+        ), (
+            f"All parameters should be initialized by now {[n for n, p in augmented_model.named_parameters() if p.is_meta]}"
+        )
 
         assert all(p.dtype == param_dtype for p in augmented_model.parameters()), (
             f"All parameters should be on {param_dtype}"
@@ -216,6 +247,10 @@ def load_training_model(
         else:
             param.requires_grad = False
 
+    for name, param in augmented_model.named_parameters():
+        if pipeline_args.bridge_module.bridge_type is not None and "bridge" in name:
+            param.requires_grad = True
+
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
@@ -245,7 +280,9 @@ def load_training_model(
 
 def load_training_model_from_ckpt(
     train_args: TrainArgs,
-    folder: Path,
+    llm_folder: Path,
+    embed_folder: Path,
+    bridge_folder: Path,
     lora_llm: LoraArgs,
     lora_embedder: LoraArgs,
     param_dtype: torch.dtype,
@@ -256,10 +293,11 @@ def load_training_model_from_ckpt(
     max_batch_size: int = 32,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
     llm_args, pipeline_args = load_args(
-        folder,
+        llm_folder,
         lora_llm,
         max_batch_size=max_batch_size,
         pipe_args=train_args.pipeline,
+        args_type=train_args.llm_type,
     )
     # Load pretrained params on rank 0 for LLM
     if not pipeline_args.trainable_llm:
@@ -267,36 +305,48 @@ def load_training_model_from_ckpt(
             "LoRA is not supported for pretrained models"
         )
 
-    model, tokenizer = load_model(
+    llm, llm_tokenizer = load_model(
         llm_args=llm_args,
         pipeline_args=pipeline_args,
-        folder=folder,
+        folder=llm_folder,
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=False,
+        llm_type=train_args.llm_type,
+        embed_type=train_args.embed_type,
     )
 
     main_logger_info("Loading embedder model ...")
-    llm_args.lora = lora_embedder
+    embed_args, _ = load_args(
+        embed_folder,
+        lora_embedder,
+        max_batch_size=max_batch_size,
+        pipe_args=train_args.pipeline,
+        args_type=train_args.embed_type,
+    )
+    embed_args.lora = lora_embedder
     # Load pretrained params on rank 0
-    llm_embedder = load_model(
-        llm_args=llm_args,
+    llm_embedder, embed_tokenizer = load_model(
+        llm_args=embed_args,
         pipeline_args=pipeline_args,
-        folder=folder,
+        folder=embed_folder,
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=True,
+        llm_type=train_args.llm_type,
+        embed_type=train_args.embed_type,
     )
 
     # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
         pipeline_args=pipeline_args,
-        tokenizer=tokenizer,
+        llm_tokenizer=llm_tokenizer,
+        embed_tokenizer=embed_tokenizer,
         embedding_model=llm_embedder,
     )
 
     with torch.device("meta"):
-        augmented_model = augmented_pipeline.get_model(llm=model)
+        augmented_model = augmented_pipeline.get_model(llm=llm)
 
     if get_rank() == 0:
         if pipeline_args.decoder_module.do:
@@ -337,10 +387,17 @@ def load_training_model_from_ckpt(
                 state_dict, assign=True, strict=False
             )
 
+        if pipeline_args.bridge_module.bridge_type is not None:
+            main_logger_info("Initializing bridge module parameters ...")
+            state_dict = load_state_dict(Path(bridge_folder), dtype=param_dtype)
+            augmented_model.bridge_module.load_state_dict(
+                state_dict, assign=True, strict=True
+            )
+
         assert not any(
             p.is_meta
             for n, p in augmented_model.named_parameters()
-            if "rec_tok" not in n and "cont_tok" not in n and "cl_mem" not in n
+            if "rec_tok" not in n and "cont_tok" not in n and "cl_mem_tokens" not in n
         ), "All parameters should be initialized by now"
 
         assert all(p.dtype == param_dtype for p in augmented_model.parameters()), (
@@ -445,7 +502,9 @@ def load_training_model_from_ckpt(
             param.requires_grad = True
         else:
             param.requires_grad = False
-
+    for name, param in augmented_model.named_parameters():
+        if pipeline_args.bridge_module.bridge_type is not None and "bridge" in name:
+            param.requires_grad = True    
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)

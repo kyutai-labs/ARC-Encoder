@@ -14,12 +14,13 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataP
 #     ReversedLatentAttention,
 # )
 
-# Mistral specifics
+
 from embed_llm.models.args import DecoderArgs
-from embed_llm.models.mistral.transformer_layers import TransformerBlock
+from embed_llm.models.transformer_layers import TransformerBlock 
 from embed_llm.training.distributed import (
     get_rank,
 )
+
 
 logger = logging.getLogger(__name__)
 

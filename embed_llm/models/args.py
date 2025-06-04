@@ -3,18 +3,7 @@ from dataclasses import dataclass, field
 import torch
 from simple_parsing.helpers import Serializable
 
-from embed_llm.models.lora import LoraArgs
-
-
-@dataclass
-class MLPProjectArgs(Serializable):
-    hidden_dim: int = 4096
-    n_layers: int = 1
-    act: str = "gelu"
-    in_dim: int | None = None
-    out_dim: int | None = None
-    type: str = "mlp"
-    first_rms_norm: bool = False
+from embed_llm.models.utils.lora import LoraArgs
 
 
 @dataclass
@@ -22,6 +11,14 @@ class PoolingArgs(Serializable):
     pool_type: str = "mean_sa"
     where: str = "before"  # "before", "inside_queries", "between", "attention"
     based_on: str | None = None  # "q", "k", "v"
+
+
+@dataclass
+class BridgeArgs(Serializable):
+    bridge_type: str | None = None
+    in_dim: int = 4096
+    out_dim: int | None = None
+    hidden_dim: int | None = None
 
 
 @dataclass
@@ -63,16 +60,16 @@ class EmbedderArgs(Serializable):
         elif self.mixed_method:
             if isinstance(self.pooling_module, PoolingArgs):
                 assert self.pooling_module.where == "before" and "sa" in self.pooling_module.pool_type, self.pooling_module
-                
+            print('Warning: take care that max_seq_len // compress_rate <= memory_tokens if using mixed method')
         if self.mixed_learned_method:
             assert self.mixed_method
-            
         if self.matryoshka_training is not None:
             assert self.memory_tokens > 0, self.matryoshka_training
             assert len(self.matryoshka_training.keys()) > 1, self.matryoshka_training
-            assert max([int(k) for k in self.matryoshka_training.keys()]) <= self.memory_tokens, (
-                self.matryoshka_training, self.memory_tokens
-            )
+            assert (
+                max([int(k) for k in self.matryoshka_training.keys()])
+                <= self.memory_tokens
+            ), (self.matryoshka_training, self.memory_tokens)
 
 
 @dataclass
@@ -85,6 +82,7 @@ class EmbedAugArgs(Serializable):
     w_embeds: bool = True
     decoder_module: DecoderArgs = field(default_factory=DecoderArgs)
     comp_rate_curriculum: dict | None = None
+    bridge_module: BridgeArgs = field(default_factory=BridgeArgs)
 
     def __post_init__(self) -> None:
         if self.comp_rate_curriculum is not None:
@@ -95,7 +93,7 @@ class EmbedAugArgs(Serializable):
 
 
 @dataclass
-class MistralModelArgs(Serializable):
+class ModelArgs(Serializable):
     dim: int
     n_layers: int
     head_dim: int

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
-from embed_llm.models.mistral.cache import BufferCache
+from embed_llm.models.utils.cache import BufferCache
 
 
 class ModelBase(nn.Module, ABC):

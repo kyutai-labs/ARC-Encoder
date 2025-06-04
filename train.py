@@ -1,28 +1,38 @@
 import dataclasses
 import logging
 import os
+import sys
 import pprint
-from contextlib import ExitStack
-from pathlib import Path
-import fire
-import torch.cuda
-import torch.distributed as dist
-from torch.optim import AdamW, lr_scheduler
-import numpy as np
 import random
 
 # Debugging
-
 import subprocess as sp
+import warnings
+from contextlib import ExitStack
+from pathlib import Path
 
+import fire
+import numpy as np
+import torch.cuda
+import torch.distributed as dist
+from torch.optim import AdamW, lr_scheduler
 
+from embed_llm.data.data_loader import build_data_loader
+from embed_llm.models.transformer_layers import insert_embeds
 from embed_llm.models.wrapped_models_training import (
     load_training_model,
     load_training_model_from_ckpt,
 )
+from embed_llm.monitoring.metrics_logger import (
+    MetricsLogger,
+    eval_log_msg,
+    get_eval_logs,
+    get_train_logs,
+    train_log_msg,
+)
+from embed_llm.monitoring.utils import set_logger
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.checkpointing import Checkpointer
-from embed_llm.data.data_loader import build_data_loader
 from embed_llm.training.distributed import (
     BACKEND,
     avg_aggregate,
@@ -33,30 +43,17 @@ from embed_llm.training.distributed import (
 )
 from embed_llm.training.eval import evaluate
 from embed_llm.training.loss import (
-    compute_ce_loss_with_mask,
     compute_bpt_loss,
+    compute_ce_loss_with_mask,
     compute_kl_loss_with_mask,
 )
-
 from embed_llm.training.utils import (
+    CONTINUATION_PROMPT,
+    PARAPHRASE_PROMPT,
     TrainState,
     logged_closing,
     set_random_seed,
-    PARAPHRASE_PROMPT,
-    CONTINUATION_PROMPT,
 )
-
-from embed_llm.models.mistral.transformer_layers import insert_embeds
-from embed_llm.monitoring.metrics_logger import (
-    MetricsLogger,
-    eval_log_msg,
-    get_eval_logs,
-    get_train_logs,
-    train_log_msg,
-)
-
-from embed_llm.monitoring.utils import set_logger
-import warnings
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 # Define depending on the model
@@ -151,8 +148,9 @@ def _train(
     exit_stack.enter_context(logged_closing(eval_logger, "eval_logger"))
 
     # 5. Potentially download model
-    if Path(args.model_id_or_path).is_dir():
-        model_folder = Path(args.model_id_or_path)
+    if Path(args.llm_path).is_dir() and Path(args.embedder_path).is_dir():
+        llm_folder = Path(args.llm_path)
+        embed_folder = Path(args.embedder_path)
     else:
         raise ValueError(
             "Invalid folder path. Please set `args.initial_model` to a valid folder path."
@@ -166,7 +164,9 @@ def _train(
     if args.from_ckpt.do:
         pipeline, model = load_training_model_from_ckpt(
             train_args=args,
-            folder=model_folder,
+            llm_folder=llm_folder,
+            embed_folder=embed_folder,
+            bridge_folder=Path(args.from_ckpt.bridge_path),
             lora_llm=args.lora_llm,
             lora_embedder=args.lora_embedder,
             checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
@@ -179,7 +179,8 @@ def _train(
     else:
         pipeline, model = load_training_model(
             train_args=args,
-            folder=model_folder,
+            llm_folder=llm_folder,
+            embed_folder=embed_folder,
             lora_llm=args.lora_llm,
             lora_embedder=args.lora_embedder,
             checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
@@ -194,7 +195,8 @@ def _train(
 
     """ Load  Dataloader"""
     train_data_loader = build_data_loader(
-        tokenizer=pipeline.tokenizer,
+        llm_tokenizer=pipeline.llm_tokenizer,
+        embed_tokenizer=pipeline.embed_tokenizer,
         args=args.data,
         seq_len=args.seq_len,
         batch_size=args.batch_size,
@@ -208,7 +210,8 @@ def _train(
     main_logger_info("Data loader done")
     if not args.no_eval:
         eval_data_loader_4rec = build_data_loader(
-            tokenizer=pipeline.tokenizer,
+            llm_tokenizer=pipeline.llm_tokenizer,
+            embed_tokenizer=pipeline.embed_tokenizer,
             args=args.data,
             seq_len=args.seq_len,
             batch_size=(
@@ -236,7 +239,8 @@ def _train(
 
         if args.continuation > 0.0:
             eval_data_loader_4cont = build_data_loader(
-                tokenizer=pipeline.tokenizer,
+                llm_tokenizer=pipeline.llm_tokenizer,
+                embed_tokenizer=pipeline.embed_tokenizer,
                 args=args.data,
                 seq_len=args.seq_len,
                 batch_size=(
@@ -302,16 +306,24 @@ def _train(
         main_logger_info("Using paraphrase prompt")
         model.tokenized_prompts["reconstruction"] = []
         for prompt in PARAPHRASE_PROMPT:
-            prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=True, eos=False)
-            suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
+            prefix = pipeline.llm_tokenizer.encode(
+                prompt["prefix"], bos=True, eos=False
+            )
+            suffix = pipeline.llm_tokenizer.encode(
+                prompt["suffix"], bos=False, eos=False
+            )
             model.tokenized_prompts["reconstruction"].append(
                 {"prefix": prefix, "suffix": suffix}
             )
 
         model.tokenize_prompts["continuation"] = []
         for prompt in CONTINUATION_PROMPT:
-            prefix = pipeline.tokenizer.encode(prompt["prefix"], bos=False, eos=False)
-            suffix = pipeline.tokenizer.encode(prompt["suffix"], bos=False, eos=False)
+            prefix = pipeline.llm_tokenizer.encode(
+                prompt["prefix"], bos=False, eos=False
+            )
+            suffix = pipeline.llm_tokenizer.encode(
+                prompt["suffix"], bos=False, eos=False
+            )
             model.tokenize_prompts["continuation"].append(
                 {"prefix": prefix, "suffix": suffix}
             )
@@ -347,6 +359,7 @@ def _train(
 
     while state.step < args.max_steps:
         state.start_step()
+        torch.cuda.memory._record_memory_history(max_entries=100000)
 
         is_last_step = state.step == args.max_steps
 
@@ -412,7 +425,7 @@ def _train(
             x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
                 pipeline.prepare_forward(batch)
             )
-
+            # print('embed_seqlens', embed_seqlens)
             # if get_rank() == 0:
             #     to_gen = [
             #         int(tok)
@@ -424,51 +437,19 @@ def _train(
             #     #     int(tok)
             #     #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
             #     # ]
-            #     print("Beginning", pipeline.tokenizer.decode(to_gen))
-            #     # print('Embed', pipeline.tokenizer.decode(embed))
+            #     print("Beginning", pipeline.llm_tokenizer.decode(to_gen))
+            #     # print('Embed', pipeline.embed_tokenizer.decode(embed))
             #     # print('embedding tokens', batch.to_embed[13]["tokens"])
             #     # print('embed', batch.to_embed[13]["text"])
-            #     # print('Continuation', pipeline.tokenizer.decode(continuation))
+            #     # print('Continuation', pipeline.llm_tokenizer.decode(continuation))
             #     # print('X len', len(batch.x))
             #     # print("Sizes", batch.sizes)
             #     # print("Embed seqlens", embed_seqlens)
             #     # print('Insert cat embedds', insert_cat_embedds)
 
-            if args.textual_continuation * args.continuation > 0.0:
-                rand_noembed_continuation = (
-                    torch.rand(1).cuda()
-                    if get_rank() == 0
-                    else torch.tensor([0.0], device="cuda")
-                )
-                dist.broadcast(rand_noembed_continuation, 0)
-
-                if (
-                    batch.data_type == "continuation"
-                    and rand_noembed_continuation < args.textual_continuation
-                ):
-                    x = []
-                    y = []
-                    seqlens = []
-                    y_mask = []
-                    ind = 0
-                    for to_embed, size in zip(batch.to_embed, batch.sizes):
-                        x.extend(to_embed["tokens"])
-                        x.extend(batch.x[ind : ind + size])
-                        y.extend(to_embed["tokens"])
-                        y.extend(batch.y[ind : ind + size])
-                        seqlens.append(len(to_embed["tokens"]) + size)
-                        ind += size
-                        y_mask.extend([False] * len(to_embed["tokens"]))
-                        y_mask.extend([True] * size)
-
-                    x = torch.from_numpy(np.array(x)).cuda(non_blocking=True)
-                    y_mask = torch.tensor(y_mask).cuda(non_blocking=True)
-                    y = torch.from_numpy(np.array(y)).cuda(non_blocking=True)
-                    batch.data_type = "textual_continuation"
-                    embeddings = None
-
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
+
             output = model.forward(
                 x=x,
                 embeddings=embeddings,
@@ -477,6 +458,15 @@ def _train(
                 insert_cat_embedds=insert_cat_embedds,
                 batch_type=batch.data_type,
             )
+
+            if len(output.size()) > 2:
+                output = output.view(-1, output.size(-1)).float()
+                y = y.view(-1).long()
+                y_mask = None if y_mask is None else y_mask.view(-1)
+                assert output.size(0) == y.size(0), (
+                    f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}"
+                )
+
             mb_loss = compute_ce_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
@@ -488,13 +478,13 @@ def _train(
             for i, size in enumerate(batch.sizes):
                 if (
                     len(
-                        pipeline.tokenizer.decode(
+                        pipeline.llm_tokenizer.decode(
                             [int(tok) for tok in batch.y[ind : ind + size]]
                         )
                     )
                     if batch.y_mask is None
                     else len(
-                        pipeline.tokenizer.decode(
+                        pipeline.llm_tokenizer.decode(
                             [
                                 int(tok)
                                 for tok in batch.y[ind : ind + size][
@@ -510,18 +500,18 @@ def _train(
                     compute_bpt_loss(
                         output[ind : ind + size, ...],
                         y[ind : ind + size],
-                        None if y_mask is None else y_mask[ind : ind + size],
+                        None if y_mask is None else y_mask[ind : ind + size]
                     )
                 ).item()
                 batch_bpc += loss_in_bits / (
                     len(
-                        pipeline.tokenizer.decode(
+                        pipeline.llm_tokenizer.decode(
                             [int(tok) for tok in batch.y[ind : ind + size]]
                         )
                     )
                     if y_mask is None
                     else len(
-                        pipeline.tokenizer.decode(
+                        pipeline.llm_tokenizer.decode(
                             [
                                 int(tok)
                                 for tok in batch.y[ind : ind + size][
@@ -602,11 +592,7 @@ def _train(
         grad_norm = torch.tensor([0.0], device="cuda")
         for name, p in model.named_parameters():
             if p.requires_grad:
-                if (
-                    args.textual_continuation * args.continuation == 0.0
-                    and pipeline.pipeline_args.embedder_params.matryoshka_training
-                    is not None and not pipeline.pipeline_args.embedder_params.mixed_learned_method
-                ):
+                if pipeline.pipeline_args.embedder_params.matryoshka_training is not None and not pipeline.pipeline_args.embedder_params.mixed_learned_method:
                     assert p.grad is not None, f"None grad for this param {name}"
                     if torch.any(torch.isnan(p.grad)).item():
                         print(f"Grad contains NaN for this param {name}")
@@ -618,6 +604,12 @@ def _train(
                         grad_norm += torch.norm(p.grad).item() ** 2
 
         if torch.any(torch.isnan(grad_norm)).item():
+            if dist.is_initialized():
+                try:
+                    dist.destroy_process_group()
+                except Exception:
+                    pass
+            sys.exit(1)
             raise ValueError(
                 f"Grad contains NaN before clipping or Inf values at step {state.step}"
             )
@@ -662,7 +654,6 @@ def _train(
                 batches_rec=eval_batches,
                 state=state,
                 batches_cont=eval_batches_4cont,
-                train_llm=args.pipeline.trainable_llm,
             )
 
             eval_logs = get_eval_logs(
@@ -670,13 +661,9 @@ def _train(
                 avg_loss,
                 state.this_eval_perplexity_rec,
                 state.this_eval_loss_rec,
-                eval_ppl_textcont=state.this_eval_perplexity_textcont,
-                eval_loss_textcont=state.this_eval_loss_textcont,
                 eval_ppl_embcont=state.this_eval_perplexity_embcont,
                 eval_loss_embcont=state.this_eval_loss_embcont,
                 train_bpc=bpc_avg,
-                eval_loss_nocontext=state.this_eval_loss_nocontext,
-                eval_ppl_nocontext=state.this_eval_perplexity_nocontext,
             )
 
             main_logger_info(eval_log_msg(eval_logs))
@@ -684,7 +671,15 @@ def _train(
 
         # Timing
         state.end_step(n_batch_tokens)
+        try:
+            torch.cuda.memory._dump_snapshot(
+                f"{'/lustre/scwpod02/client/kyutai-interns/hippop/experiments/snapshot'}.pickle"
+            )
+        except Exception as e:
+            logger.error(f"Failed to capture memory snapshot {e}")
 
+        # Stop recording memory snapshot history.
+        torch.cuda.memory._record_memory_history(enabled=None)
         if state.step % args.log_freq == 0 or state.step == 1 or is_last_step:
             train_logs = get_train_logs(
                 state=state,

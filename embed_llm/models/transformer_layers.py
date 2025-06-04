@@ -8,13 +8,13 @@ from functools import reduce
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 from xformers.ops.fmha.attn_bias import BlockDiagonalMask, BlockDiagonalCausalMask
 
-from embed_llm.models.lora import maybe_lora
+from embed_llm.models.utils.lora import maybe_lora
 from embed_llm.models.args import PoolingArgs
 from embed_llm.models.embedding_modules import PoolingModule
 from embed_llm.training.args import LoraArgs
 
-from embed_llm.models.mistral.cache import CacheView
-from embed_llm.models.mistral.rope import apply_rotary_emb
+from embed_llm.models.utils.cache import CacheView
+from embed_llm.models.utils.rope import apply_rotary_emb
 
 
 def repeat_kv(
@@ -29,7 +29,7 @@ def insert_embeds(
     h: torch.Tensor,
     embeds: torch.Tensor,
     embed_seqlens: list[list[int]],
-    seqlens: list[int],
+    seqlens: list[int] | None = None,
     tok_embeddings: nn.Module | None = None,
     insert_cat_embedds: list[list[int]] | None = None,
     tokenized_prompts: dict[str, list[dict[str, list[int]]]] | None = None,
@@ -104,7 +104,9 @@ def insert_embeds(
             decod_sub_mask.extend([True] * len(prefixes[i]))
 
         size_embed = sum(embed_seqlens[i])
-        for sub_embed_size, insert_idx in zip(embed_seqlens[i], insert_cat_embedds[i]):
+        for sub_embed_size, insert_idx in zip(
+            embed_seqlens[i], insert_cat_embedds[i]
+        ):
             new_h_states[ind_h : insert_idx + ind_h] = h[
                 ind_toks : insert_idx + ind_toks
             ]
@@ -125,7 +127,9 @@ def insert_embeds(
         if ind_toks < sum(seqlens[: i + 1]):
             left_toks = sum(seqlens[: i + 1]) - ind_toks
             # Insert the remaining tokens
-            new_h_states[ind_h : ind_h + left_toks] = h[ind_toks : ind_toks + left_toks]
+            new_h_states[ind_h : ind_h + left_toks] = h[
+                ind_toks : ind_toks + left_toks
+            ]
             pos_to_keep.extend([True] * left_toks)
             # Hide all the texts that are after compressed embeddings
             decod_sub_mask.extend([False] * left_toks)
@@ -133,7 +137,9 @@ def insert_embeds(
             ind_h += left_toks
 
         if len(suffixes) > 0:
-            tok_after_embed = tok_embeddings(torch.tensor(suffixes[i], device=h.device))
+            tok_after_embed = tok_embeddings(
+                torch.tensor(suffixes[i], device=h.device)
+            )
             new_h_states[ind_h : ind_h + len(suffixes[i]), :] = tok_after_embed
             ind_h += len(suffixes[i])
             decod_sub_mask.extend([False] * len(suffixes[i]))

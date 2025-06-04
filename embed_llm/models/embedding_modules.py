@@ -1,9 +1,8 @@
 import torch
-
 from torch import nn
 
-from embed_llm.models.args import PoolingArgs, MLPProjectArgs
-from embed_llm.models.merging import smart_merge
+from embed_llm.models.args import PoolingArgs
+from embed_llm.models.utils.merging import smart_merge
 
 
 def split_integer(x: int, n: int) -> list[int]:
@@ -33,7 +32,7 @@ def split_integer(x: int, n: int) -> list[int]:
 
 
 class RMSNorm(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, dim: int, eps: float = 1e-5):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
@@ -46,27 +45,19 @@ class RMSNorm(torch.nn.Module):
         return output * self.weight
 
 
-class MLP_block(nn.Module):
+class EmbProjector(nn.Module):
     def __init__(
         self,
         in_dim: int,
         out_dim: int,
-        act: str,
         dtype: torch.dtype | None = None,
         hidden_dim: int | None = None,
-        rms_norm: bool = False,
+        type: str = "mlp",
     ):
         super().__init__()
 
         if hidden_dim is None:
             hidden_dim = out_dim
-
-        if act == "relu":
-            self.act = nn.ReLU()
-        elif act == "gelu":
-            self.act = nn.GELU()
-        else:
-            self.act = nn.Identity()
 
         if dtype is not None:
             self.layer1 = nn.Linear(in_dim, hidden_dim, dtype=dtype, bias=False)
@@ -75,67 +66,23 @@ class MLP_block(nn.Module):
             self.layer1 = nn.Linear(in_dim, hidden_dim, bias=False)
             self.layer2 = nn.Linear(hidden_dim, out_dim, bias=False)
 
-        self.rms_norm = RMSNorm(in_dim, eps=1e-5) if rms_norm else None
+        self.proj_type = type
+
+        if self.proj_type == "mlp":
+            self.norm = None
+        elif self.proj_type == "rms":
+            self.norm = RMSNorm(in_dim)
 
     def forward(self, x):
-        if self.rms_norm is None:
-            out = self.act(self.layer1(x))
-        else:
-            out = self.act(self.layer1(self.rms_norm(x)))
-        out = self.layer2(out) + x
-        return out
-
-
-class MLP_project(nn.Module):
-    def __init__(self, args: MLPProjectArgs, dtype: torch.dtype | None = None):
-        super().__init__()
-        self.layers = nn.ModuleList()
-        self.n_layers = args.n_layers
-        self.args = args
-        if args.n_layers == 1:
-            print(
-                "If n_layers is 1, hidden_dim must be equal to out_dim, \
-                \n but hidden_dim is not equal to out_dim so hidden_dim is set to out_dim"
-            )
-            self.layers.append(
-                MLP_block(
-                    in_dim=args.in_dim,
-                    out_dim=args.out_dim,
-                    act=args.act,
-                    dtype=dtype,
-                    rms_norm=args.first_rms_norm,
-                )
-            )
-        else:
-            self.layers.append(
-                MLP_block(
-                    in_dim=args.in_dim,
-                    out_dim=args.out_dim,
-                    act=args.act,
-                    dtype=dtype,
-                    rms_norm=args.first_rms_norm,
-                )
-            )
-            for _ in range(args.n_layers - 2):
-                self.layers.append(
-                    MLP_block(
-                        in_dim=args.in_dim,
-                        out_dim=args.out_dim,
-                        act=args.act,
-                        dtype=dtype,
-                    )
-                )
-
-            self.layers.append(
-                MLP_block(
-                    in_dim=args.in_dim, out_dim=args.out_dim, act=args.act, dtype=dtype
-                )
-            )
-
-    def forward(self, x):
-        for i in range(self.n_layers):
-            x = self.layers[i](x)
-        return x
+        if self.proj_type == "mlp":
+            x = self.layer1(x)
+            x = self.layer2(x)
+            return x
+        elif self.proj_type == "rms":
+            x = self.norm(x)
+            x = self.layer1(x)
+            x = self.layer2(x)
+            return x
 
 
 class PoolingModule(nn.Module):
@@ -189,7 +136,6 @@ class PoolingModule(nn.Module):
                 seqlens=seqlens,
                 comp_rate=comp_rate,
                 metric=self.pool_type.split("metric_")[-1],
-
                 pruning="pruning" in self.pool_type,
                 merge_base=merge_base,
             )

@@ -1,35 +1,30 @@
 import logging
 import os
 from pathlib import Path
-
 import numpy as np
 import torch
 import torch.distributed
 import torch.nn as nn
 import yaml
-from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-from mistral_inference.transformer import Transformer
+
 
 from embed_llm.data.data_loader import Batch
 from embed_llm.generation.utils import eval_logger_info
-from embed_llm.models.args import EmbedAugArgs, LoraArgs, MistralModelArgs
-
-from embed_llm.models.loading import (
+from embed_llm.models.args import EmbedAugArgs, LoraArgs
+from embed_llm.models.utils.utils import group_embed_seqlens, is_torchrun
+from embed_llm.models.embedding_modules import EmbProjector
+from embed_llm.models.utils.loading import (
     load_args,
-    load_model,
     load_state_dict,
 )
 
-# Mistral specifics
-from embed_llm.models.enhanced_transformer import (
-    Transformer as MistralTransformer,
-)
-from embed_llm.models.mistral.generate import generate as mistral_generate
-from embed_llm.models.utils import group_embed_seqlens, is_torchrun
 
-Models = MistralTransformer
-ModelsArgs = MistralModelArgs
-Tokenizer = MistralTokenizer
+from embed_llm.models.enhanced_transformer import Transformer, load_model
+from embed_llm.models.generate import generate as transformer_generate
+
+from mistral_inference.transformer import Transformer as MistralTransformer
+from embed_llm.data.tokenize import Tokenizer
+
 
 logger = logging.getLogger(__name__)
 
@@ -38,14 +33,22 @@ class EmbedAugModel(nn.Module):
     def __init__(
         self,
         pipeline_args: EmbedAugArgs,
-        llm: Models,
-        embedder: Models | None = None,
+        llm: Transformer,
+        embedder: Transformer | None = None,
     ):
         super().__init__()
         self.llm = llm
         self.w_embeds = pipeline_args.w_embeds
         self.embedder = embedder
         self.tokenized_prompts = {}
+        self.bridge_module = None
+        if pipeline_args.bridge_module.bridge_type is not None:
+            self.bridge_module = EmbProjector(
+                in_dim=pipeline_args.bridge_module.in_dim,
+                out_dim=pipeline_args.bridge_module.out_dim,
+                hidden_dim=pipeline_args.bridge_module.hidden_dim,
+                type=pipeline_args.bridge_module.bridge_type,
+            )
 
     def forward(
         self,
@@ -88,8 +91,10 @@ class EmbedAugModel(nn.Module):
 
                 embed_seqlens = [size + 1 for size in embed_seqlens]
                 embeddings = new_embeddings.clone()
-                
-            elif self.embedder.cont_tok is not None and (batch_type == "continuation" or batch_type == "instruct"):
+
+            elif self.embedder.cont_tok is not None and (
+                batch_type == "continuation" or batch_type == "instruct"
+            ):
                 sp_cont_tok = self.embedder.cont_tok(
                     torch.tensor([0]).to(embeddings.device)
                 )
@@ -117,10 +122,13 @@ class EmbedAugModel(nn.Module):
                 embed_seqlens = [size + 1 for size in embed_seqlens]
                 embeddings = new_embeddings.clone()
 
+            # print('Embedding shape:', embeddings.shape, embed_seqlens)
             # Only one insertion of embedding per sample
             embed_seqlens = group_embed_seqlens(embed_seqlens, [1] * len(seqlens))
+            # print('Grouped embed_seqlens:', embed_seqlens)
+        if self.bridge_module is not None:
+            embeddings = self.bridge_module(embeddings)
 
-        # Embed seqlens is a list of lists of the number of tokens in each subpassage
         return self.llm.forward(
             input_ids=x,
             seqlens=seqlens,
@@ -135,16 +143,17 @@ class EmbedAugPipeline(nn.Module):
     def __init__(
         self,
         pipeline_args: EmbedAugArgs,
-        embedding_model: object,
-        tokenizer: object = None,
+        embedding_model: Transformer,
+        llm_tokenizer: Tokenizer | None = None,
+        embed_tokenizer: Tokenizer | None = None,
     ):
         super().__init__()
 
         self.embedding_model = embedding_model
-        self.tokenizer = tokenizer
+        self.llm_tokenizer = llm_tokenizer
+        self.embed_tokenizer = embed_tokenizer
         self.pipeline_args = pipeline_args
         self.model = None
-        self.generate = None
 
     def get_model(self, llm: object) -> nn.Module:
         return EmbedAugModel(
@@ -172,6 +181,9 @@ class EmbedAugPipeline(nn.Module):
         for to_embed in batch.to_embed:
             assert not len(to_embed["tokens"]) <= 1
             embed_seqlens.append(len(to_embed["tokens"]))
+        seqlens = batch.sizes
+
+        insert_cat_embedds = batch.insert_embed_list
 
         x = torch.from_numpy(batch.x).cuda(non_blocking=True)
         y = torch.from_numpy(batch.y).cuda(non_blocking=True)
@@ -180,15 +192,12 @@ class EmbedAugPipeline(nn.Module):
             if batch.y_mask is not None
             else None
         )
-        seqlens = batch.sizes
-
-        insert_cat_embedds = batch.insert_embed_list
-
         return x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds
 
     @staticmethod
     def load_inference_model(
         llm_path: str,
+        embedder_path: str,
         ckpt_path: str | None,
         device: str,
         max_batch_size: int = 4,
@@ -205,12 +214,13 @@ class EmbedAugPipeline(nn.Module):
             lora=lora_llm,
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
+            args_type=train_args["llm_type"],
         )
 
         if pipeline_args.trainable_llm:
             assert Path(ckpt_path + "/llm").exists()
 
-        llm, tokenizer = load_model(
+        llm, llm_tokenizer = load_model(
             llm_args=llm_args,
             pipeline_args=pipeline_args,
             folder=Path(llm_path)
@@ -219,8 +229,10 @@ class EmbedAugPipeline(nn.Module):
             checkpoint=False,
             param_dtype=param_dtype,
             parll=is_torchrun(),
+            llm_type=train_args["llm_type"],
+            embed_type=train_args.get("embed_type", "mistral"),
         )
-        print('Pipeline args:', pipeline_args)
+
         if pipeline_args.trainable_llm and lora_llm.enable:
             llm.load_lora(Path(ckpt_path + "/llm/lora.safetensors"))
         elif pipeline_args.trainable_llm:
@@ -240,14 +252,23 @@ class EmbedAugPipeline(nn.Module):
 
         llm_args.lora = lora_embedder
 
-        llm_embedder = load_model(
-            llm_args=llm_args,
+        embed_args, pipeline_args = load_args(
+            Path(embedder_path),
+            lora=lora_embedder,
+            max_batch_size=max_batch_size,
+            pipe_path=ckpt_path,
+            args_type=train_args.get("embed_type", "mistral"),
+        )
+        llm_embedder, embed_tokenizer = load_model(
+            llm_args=embed_args,
             pipeline_args=pipeline_args,
-            folder=Path(llm_path),
+            folder=Path(embedder_path),
             checkpoint=False,
             param_dtype=param_dtype,
             for_embedding=True,
             parll=is_torchrun(),
+            llm_type=train_args["llm_type"],
+            embed_type=train_args.get("embed_type", "mistral"),
         )
 
         if lora_embedder.enable:
@@ -274,7 +295,11 @@ class EmbedAugPipeline(nn.Module):
             llm_embedder.load_state_dict(
                 trained_layers_state_dict,
                 strict=False,
-                assign=(pipeline_args.embedder_params.memory_tokens > 0 or pipeline_args.embedder_params.rec_tok or pipeline_args.embedder_params.cont_tok),
+                assign=(
+                    pipeline_args.embedder_params.memory_tokens > 0
+                    or pipeline_args.embedder_params.rec_tok
+                    or pipeline_args.embedder_params.cont_tok
+                ),
             )
         else:
             print("No trained layers, not loading any new state dict for the embedder")
@@ -286,23 +311,29 @@ class EmbedAugPipeline(nn.Module):
         augmented_pipeline = EmbedAugPipeline(
             pipeline_args=pipeline_args,
             embedding_model=llm_embedder,
-            tokenizer=tokenizer,
+            llm_tokenizer=llm_tokenizer,
+            embed_tokenizer=embed_tokenizer,
         )
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
 
+        if pipeline_args.bridge_module.bridge_type is not None:
+            state_dict = load_state_dict(
+                Path(ckpt_path + "/bridge_module"), dtype=param_dtype
+            )
+
+            augmented_pipeline.model.bridge_module.load_state_dict(state_dict)
         augmented_pipeline.model = augmented_pipeline.model.to(device)
 
         augmented_pipeline.model.eval()
 
         for name, parm in augmented_pipeline.model.named_parameters():
             parm.requires_grad = False
-        augmented_pipeline.generate = augmented_pipeline.generate_mistral
 
         return augmented_pipeline
 
     @torch.inference_mode()
-    def generate_mistral(
+    def generate(
         self,
         text_to_embed: str | list[str] | list[list[str]] | None,
         device: str,
@@ -311,7 +342,6 @@ class EmbedAugPipeline(nn.Module):
         temperature: float = 0.6,
         truncate_line: bool = False,
         device_generation: str | None = None,
-        embed_seqlens: list[int] | None = None,
         give_n_tokens: bool = False,
         **kwargs,
     ):
@@ -357,10 +387,9 @@ class EmbedAugPipeline(nn.Module):
             w_embeds = False
         else:
             w_embeds = self.pipeline_args.w_embeds
-
         if w_embeds:
             x = [
-                self.tokenizer.encode(text, bos=False, eos=False)
+                self.embed_tokenizer.encode(text, bos=False, eos=False)
                 for l_text in text_to_embed
                 for text in l_text
             ]
@@ -406,6 +435,8 @@ class EmbedAugPipeline(nn.Module):
             embed_seqlens = group_embed_seqlens(
                 embed_seqlens, [len(l_text) for l_text in text_to_embed]
             )
+            if self.model.bridge_module is not None:
+                embeddings = self.model.bridge_module(embeddings)
 
         else:
             embeddings = None
@@ -431,11 +462,11 @@ class EmbedAugPipeline(nn.Module):
                     # if embed_seqlens is not None and len(embed_seqlens) > 0:
 
                     if index == 0:
-                        toks = self.tokenizer.encode(prompt, bos=True, eos=False)
+                        toks = self.llm_tokenizer.encode(prompt, bos=True, eos=False)
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
                     else:
-                        toks = self.tokenizer.encode(prompt, bos=False, eos=False)
+                        toks = self.llm_tokenizer.encode(prompt, bos=False, eos=False)
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
 
@@ -453,15 +484,11 @@ class EmbedAugPipeline(nn.Module):
             else:
                 prompt = "".join(l_prompts)
                 encoded_prompt.append(
-                    [self.tokenizer.encode(prompt, bos=True, eos=False)]
+                    [self.llm_tokenizer.encode(prompt, bos=True, eos=False)]
                 )
 
-        eos_id = self.tokenizer.eos_id
-
-        if is_torchrun():
-            torch.distributed.barrier()
-
-        generated_tokens = mistral_generate(
+        eos_id = self.llm_tokenizer.eos_id
+        generated_tokens = transformer_generate(
             prompt_tokens=encoded_prompt,
             insertion_lists=insertion_lists,
             model=self.model.llm
@@ -474,17 +501,13 @@ class EmbedAugPipeline(nn.Module):
             cat_embeddings=embeddings,
             **kwargs,
         )
+
         produced_text = [
-            self.tokenizer.decode(generated_tokens[i])
+            self.llm_tokenizer.decode(generated_tokens[i])
             for i in range(len(generated_tokens))
         ]
-
         if truncate_line:
-            final_texts = []
-            for text in produced_text:
-                if "\n" in text:
-                    text = text.split("\n")[0].strip()
-                final_texts.append(text)
+            final_texts = [text.split("\n\n")[0].strip() for text in produced_text]
         else:
             final_texts = produced_text
 
@@ -504,6 +527,7 @@ class EmbedAugPipeline(nn.Module):
 def load_pipeline(
     run_name: str | None,
     llm_path: str,
+    embedder_path: str,
     device: str,
     max_bs: int,
     tmp_path: str = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/",
@@ -512,7 +536,6 @@ def load_pipeline(
     ckpt: int | None = None,
     comp_rate: int | None = None,
 ) -> EmbedAugPipeline | Transformer:
-
     if not mistral:
         if pipeline is None:
             # Get last checkpoint
@@ -537,6 +560,7 @@ def load_pipeline(
 
             pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
                 llm_path=llm_path,
+                embedder_path=embedder_path,
                 ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
                 device=device,
                 max_batch_size=max_bs,
@@ -563,7 +587,7 @@ def load_pipeline(
         return pipeline, ckpt
     else:
         if pipeline is None:
-            mistral_model = Transformer.from_folder(
+            mistral_model = MistralTransformer.from_folder(
                 "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/",
                 device=device,
                 max_batch_size=max_bs,

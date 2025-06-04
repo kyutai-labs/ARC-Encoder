@@ -5,8 +5,8 @@ import os
 import random
 import numpy as np
 import torch
-from embed_llm.models.utils import is_torchrun
-from embed_llm.models.loading import (
+from embed_llm.models.utils.utils import is_torchrun
+from embed_llm.models.utils.loading import (
     load_state_dict,
 )
 import safetensors.torch

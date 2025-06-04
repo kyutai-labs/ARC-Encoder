@@ -1,28 +1,46 @@
-from functools import partial
 from dataclasses import dataclass
-import torch
-from torch import nn
+from functools import partial
+from pathlib import Path
+
 import numpy as np
+import torch
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
+from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+from torch import nn
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask
 
-from embed_llm.models.args import MistralModelArgs, EmbedderArgs, DecoderArgs
+from embed_llm.models.args import (
+    DecoderArgs,
+    EmbedAugArgs,
+    EmbedderArgs,
+    ModelArgs,
+)
+from embed_llm.models.utils.mistral_tokenizer import (
+    load_tokenizer as load_mistral_tokenizer,
+)
+from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
+from embed_llm.training.distributed import (
+    get_rank,
+)
+
+
 from embed_llm.models.embedding_modules import PoolingModule
-from embed_llm.models.lora import LoRALoaderMixin, maybe_lora
-from embed_llm.models.mistral.model import ModelBase
-from embed_llm.models.mistral.transformer_layers import (
+from embed_llm.models.utils.loading import load_state_dict
+from embed_llm.models.utils.lora import LoRALoaderMixin, maybe_lora
+from embed_llm.models.utils.cache import (
+    BufferCache,
+    CacheInputMetadata,
+)
+from embed_llm.models.utils.model import ModelBase
+from embed_llm.models.utils.rope import precompute_freqs_cis
+from embed_llm.models.transformer_layers import (
     RMSNorm,
     TransformerBlock,
     insert_embeds,
     positions_from_sizes,
 )
-from embed_llm.models.mistral.rope import precompute_freqs_cis
 
-
-from embed_llm.models.mistral.cache import (
-    BufferCache,
-    CacheInputMetadata,
-)
+Tokenizer = MistralTokenizer | LlamaTokenizer
 
 
 @dataclass
@@ -48,7 +66,7 @@ class SimpleInputMetadata:
 class Transformer(ModelBase, LoRALoaderMixin):
     def __init__(
         self,
-        args: MistralModelArgs,
+        args: ModelArgs,
         embedder_args: EmbedderArgs | None = None,
         decoder_args: DecoderArgs | None = None,
         checkpoint: bool = False,
@@ -715,3 +733,50 @@ class Transformer(ModelBase, LoRALoaderMixin):
         outs = self.output(h)
 
         return outs.float()
+
+
+def load_model(
+    llm_args: ModelArgs,
+    pipeline_args: EmbedAugArgs,
+    folder: Path,
+    checkpoint: bool,
+    param_dtype: torch.dtype,
+    for_embedding: bool = False,
+    parll: bool = True,
+    llm_type: str = "mistral",
+    embed_type: str = "mistral",
+) -> tuple[torch.nn.Module, int]:
+    with torch.device("meta"):
+        model = Transformer(
+            args=llm_args,
+            checkpoint=checkpoint,
+            embedder_args=pipeline_args.embedder_params if for_embedding else None,
+            decoder_args=pipeline_args.decoder_module,
+        )
+
+    if not parll or get_rank() == 0:
+        state_dict = load_state_dict(folder, dtype=param_dtype)
+
+        if not for_embedding and (llm_args.lora is None or not llm_args.lora.enable):
+            assert all([k in model.state_dict() for k in state_dict.keys()]), (
+                f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
+            )
+
+        model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
+
+    if (llm_type == "mistral" and not for_embedding) or (
+        embed_type == "mistral" and for_embedding
+    ):
+        tokenizer = load_mistral_tokenizer(
+            Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")
+        ).instruct_tokenizer.tokenizer
+        return model, tokenizer
+    elif (llm_type == "llama" and not for_embedding) or (
+        embed_type == "llama" and for_embedding
+    ):
+        tokenizer = LlamaTokenizer(
+            model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B/tokenizer.model"
+        )
+    else:
+        raise ValueError(f"Unknown llm_type: {llm_type} or embed_type: {embed_type}")
+    return model, tokenizer
