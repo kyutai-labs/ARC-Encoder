@@ -17,10 +17,12 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_5rec_conttok_TS.yaml 
-config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_decL16_pt_5rec_conttok_squad.yaml 
-config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_pt_5rec_conttok_TS.yaml 
-config/experiments/rec_sweeps/ft/SA_merge_L4_CR4_pt_5rec_conttok_squad.yaml
+config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_learnedmixed_squad.yaml 
+config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_learnedmixed_ft32_squad.yaml 
+config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_learnedmixed_ft8_squad.yaml 
+config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_learnedmixed_squad.yaml 
+config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_learnedmixed_ft32_squad.yaml 
+config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_learnedmixed_ft8_squad.yaml
 )
 
 
