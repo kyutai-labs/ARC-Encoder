@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0
+#SBATCH --array=0-1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -17,7 +17,8 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/No_Comp/NC_Mistral7B_mlp_nobot.yaml
+config/experiments/new_method/SA_merge_L4_CR16_pt_5rec_learnedmix.yaml 
+config/experiments/new_method/SA_merge_L4_CR16_decL16_pt_5rec_learnedmix.yaml
 )
 
 

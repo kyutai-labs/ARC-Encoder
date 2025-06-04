@@ -183,6 +183,18 @@ def load_training_model(
             )
         )
         ignored_states.append(augmented_model.embedder.rec_tok.weight)
+
+    if pipeline_args.embedder_params.mixed_learned_method:
+        augmented_model.embedder.cl_mem_tokens.weight = torch.nn.Parameter(
+            torch.ones_like(
+                augmented_model.embedder.cl_mem_tokens.weight,
+                device="cuda",
+                dtype=param_dtype,
+            )
+        )
+
+        ignored_states.append(augmented_model.embedder.cl_mem_tokens.weight)
+
     if pipeline_args.embedder_params.cont_tok:
         augmented_model.embedder.cont_tok.weight = torch.nn.Parameter(
             torch.ones_like(
@@ -226,6 +238,11 @@ def load_training_model(
         elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
             param.requires_grad = True
         elif pipeline_args.embedder_params.cont_tok and "cont_tok" in name:
+            param.requires_grad = True
+        elif (
+            pipeline_args.embedder_params.mixed_learned_method
+            and "cl_mem_tokens" in name
+        ):
             param.requires_grad = True
         else:
             param.requires_grad = False
@@ -400,22 +417,47 @@ def load_training_model_from_ckpt(
             "All parameters should be on meta"
         )
     ignored_states = []
+    st_loaded = False
     if pipeline_args.embedder_params.rec_tok:
-        augmented_model.embedder.rec_tok.weight = torch.nn.Parameter(
-            torch.ones_like(
-                augmented_model.embedder.rec_tok.weight,
-                device="cuda",
-                dtype=param_dtype,
-            )
+        state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
+        st_loaded = True
+        augmented_model.embedder.rec_tok.load_state_dict(
+            {
+                k.split("rec_tok.")[-1]: v.cuda()
+                for k, v in state_dict.items()
+                if "rec_tok" in k
+            },
+            strict=True,
+            assign=True,
         )
         ignored_states.append(augmented_model.embedder.rec_tok.weight)
+    if pipeline_args.embedder_params.mixed_learned_method:
+        if not st_loaded:
+            state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
+            st_loaded = True
+        augmented_model.embedder.cl_mem_tokens.load_state_dict(
+            {
+                k.split("cl_mem_tokens.")[-1]: v.cuda()
+                for k, v in state_dict.items()
+                if "cl_mem_tokens" in k
+            },
+            strict=True,
+            assign=True,
+        )
+        ignored_states.append(augmented_model.embedder.cl_mem_tokens.weight)
+
     if pipeline_args.embedder_params.cont_tok:
-        augmented_model.embedder.cont_tok.weight = torch.nn.Parameter(
-            torch.ones_like(
-                augmented_model.embedder.cont_tok.weight,
-                device="cuda",
-                dtype=param_dtype,
-            )
+        if not st_loaded:
+            state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
+            st_loaded = True
+        augmented_model.embedder.cont_tok.load_state_dict(
+            {
+                k.split("cont_tok.")[-1]: v.cuda()
+                for k, v in state_dict.items()
+                if "cont_tok" in k
+            },
+            strict=True,
+            assign=True,
         )
         ignored_states.append(augmented_model.embedder.cont_tok.weight)
 
@@ -453,13 +495,16 @@ def load_training_model_from_ckpt(
             param.requires_grad = True
         elif pipeline_args.embedder_params.cont_tok and "cont_tok" in name:
             param.requires_grad = True
+        elif (
+            pipeline_args.embedder_params.mixed_learned_method
+            and "cl_mem_tokens" in name
+        ):
+            param.requires_grad = True
         else:
             param.requires_grad = False
-
     for name, param in augmented_model.named_parameters():
         if pipeline_args.bridge_module.bridge_type is not None and "bridge" in name:
-            param.requires_grad = True
-
+            param.requires_grad = True    
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)

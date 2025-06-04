@@ -115,6 +115,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 assert len(self.compress_rates) == 1, (
                     "Mixed method requires only one compression rate"
                 )
+            self.cl_mem_tokens = (
+                None
+                if not embedder_args.mixed_learned_method
+                else torch.nn.Embedding(self.n_mem_tokens, 1)
+            )
         else:
             self.for_embedding = False
             self.compress_rates = []
@@ -151,6 +156,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.rec_tok = None
             self.cont_tok = None
             self.mixed_method = False
+            self.cl_mem_tokens = None
         self.pos_to_keep = None
 
         layers = []
@@ -369,6 +375,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             mixed_method_n_mem_tokens=self.n_mem_tokens
                             if self.mixed_method
                             else None,
+                            cl_mem_tokens=self.cl_mem_tokens,
                         )
                     else:
                         if not self.causal or (
@@ -757,12 +764,16 @@ def load_model(
 
         model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
 
-    if (llm_type == "mistral" and not for_embedding) or (embed_type == "mistral" and for_embedding): 
+    if (llm_type == "mistral" and not for_embedding) or (
+        embed_type == "mistral" and for_embedding
+    ):
         tokenizer = load_mistral_tokenizer(
             Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")
         ).instruct_tokenizer.tokenizer
         return model, tokenizer
-    elif (llm_type == "llama" and not for_embedding) or (embed_type == "llama" and for_embedding):
+    elif (llm_type == "llama" and not for_embedding) or (
+        embed_type == "llama" and for_embedding
+    ):
         tokenizer = LlamaTokenizer(
             model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B/tokenizer.model"
         )

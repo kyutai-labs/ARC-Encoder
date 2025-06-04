@@ -389,6 +389,7 @@ class TransformerBlock(nn.Module):
         where: str = "before",
         mixed_method_comp_seqlen: list[int] | None = None,
         mixed_method_n_mem_tokens: int | None = None,
+        cl_mem_tokens: nn.Module | None = None,
     ) -> torch.Tensor:
         # If comp_rate not None and freqs_cis_k is None, pooling between modules
         r, merge_based_on, seqlens = self.attention.forward(
@@ -429,10 +430,17 @@ class TransformerBlock(nn.Module):
             )
             for j, size in enumerate(seqlens):
                 ind += mixed_method_comp_seqlen[j] - mixed_method_n_mem_tokens
-                new_h[ind_new_h : ind_new_h + size] = (
-                    h[ind_new_h : ind_new_h + size]
-                    + other_kv[ind : ind + mixed_method_n_mem_tokens][:size]
-                ) / 2
+                if cl_mem_tokens is not None:
+                    cl = cl_mem_tokens(torch.arange(size, device=h.device, dtype=torch.long).view(-1))
+                    new_h[ind_new_h : ind_new_h + size] = (
+                        h[ind_new_h : ind_new_h + size]
+                        + other_kv[ind : ind + mixed_method_n_mem_tokens][:size] * cl
+                    ) / (1 + cl)
+                else:
+                    new_h[ind_new_h : ind_new_h + size] = (
+                        h[ind_new_h : ind_new_h + size]
+                        + other_kv[ind : ind + mixed_method_n_mem_tokens][:size]
+                    ) / 2
                 ind_new_h += size
                 ind += mixed_method_n_mem_tokens
 

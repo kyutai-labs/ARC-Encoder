@@ -593,8 +593,9 @@ def _train(
         for name, p in model.named_parameters():
             if p.requires_grad:
                 if (
-                    pipeline.pipeline_args.embedder_params.matryoshka_training
-                    is not None
+                    args.textual_continuation * args.continuation == 0.0
+                    and pipeline.pipeline_args.embedder_params.matryoshka_training
+                    is not None and not pipeline.pipeline_args.embedder_params.mixed_learned_method
                 ):
                     assert p.grad is not None, f"None grad for this param {name}"
                     if torch.any(torch.isnan(p.grad)).item():

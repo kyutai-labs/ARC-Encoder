@@ -52,5 +52,141 @@
                 ]
             }
         }
+    },
+    "SA_merge_L4_CR4_pt_5rec_llama8B_v2": {
+        "20000": {
+            "NQ": {
+                "EM": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 2,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.0,
+                            "approx_Metric": 0.03,
+                            "Prop context containing the answer": 0.58,
+                            "xRAG metric": 0.04,
+                            "n_passages": 1,
+                            "compress_ratio": 3.959646381452124,
+                            "compressed_icl": false
+                        }
+                    ]
+                },
+                "F1": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 2,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.01709187558333054,
+                            "n_passages": 1,
+                            "compress_ratio": 3.959646381452124,
+                            "compressed_icl": false
+                        }
+                    ]
+                }
+            },
+            "TRIVIAQA": {
+                "EM": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 2,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.24,
+                            "approx_Metric": 0.31,
+                            "Prop context containing the answer": 0.66,
+                            "xRAG metric": 0.31,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9661810059489753,
+                            "compressed_icl": false
+                        }
+                    ]
+                },
+                "F1": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 2,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.34216406195678223,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9661810059489753,
+                            "compressed_icl": false
+                        }
+                    ]
+                }
+            },
+            "SQUAD": {
+                "EM": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 2,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.03,
+                            "approx_Metric": 0.05,
+                            "Prop context containing the answer": 0.99,
+                            "xRAG metric": 0.05,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        }
+                    ]
+                },
+                "F1": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 2,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.05031594587890269,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        }
+                    ]
+                }
+            },
+            "HotpotQA": {
+                "EM": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 2,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.05,
+                            "approx_Metric": 0.09,
+                            "Prop context containing the answer": 0.36,
+                            "xRAG metric": 0.09,
+                            "n_passages": 1,
+                            "compress_ratio": 3.955437342908215,
+                            "compressed_icl": false
+                        }
+                    ]
+                },
+                "F1": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 2,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.06800182520546524,
+                            "n_passages": 1,
+                            "compress_ratio": 3.955437342908215,
+                            "compressed_icl": false
+                        }
+                    ]
+                }
+            }
+        }
     }
 }
