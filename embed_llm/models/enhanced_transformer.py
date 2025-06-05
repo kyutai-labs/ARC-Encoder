@@ -161,7 +161,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         layers = []
 
-        for i in range(args.n_layers):
+        for i in range(self.n_layers):
             block = TransformerBlock(
                 dim=args.dim,
                 hidden_dim=args.hidden_dim,
@@ -189,8 +189,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
         self.layers = nn.ModuleDict({str(i): layers[i] for i in range(self.n_layers)})
-
-        self.n_local_layers = len(self.layers)
 
         self.output = None
         if not self.for_embedding:
@@ -256,10 +254,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
         token_embeds = self.tok_embeddings(input_ids)
-
+        merge_based_on = None
         h = token_embeds
-
+        # print('input shape', h.shape, seqlens)
         if self.mem_embeddings is not None:
+            # print('should not be here')
             mem_embeddings = self.mem_embeddings(
                 torch.arange(
                     self.n_mem_tokens, device=h.device, dtype=input_ids.dtype
@@ -303,8 +302,9 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 and not isinstance(self_att_mask, BlockDiagonalMask)
             ):
                 self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
-
+            # print('going into layer', i)
             if i >= self.start_compressing:
+                # print('compressing')
                 if self.pooling_args.where == "inside_queries":
                     h, new_seqlens, merge_based_on = self.layers[str(i)](
                         x=h,
@@ -424,13 +424,15 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 seqlens = new_seqlens
                 compress_index += 1
             else:
+                # print('not compressing')
                 h, _, merge_based_on = self.layers[str(i)](
                     x=h,
                     freqs_cis=freqs_cis,
                     mask=self_att_mask,
                     based_on=self.pooling_args.based_on,
                 )
-
+                # if get_rank() == 0:
+                # print('Embed h stats at layer', i, h.shape, torch.min(h), torch.max(h), torch.mean(h), torch.std(h))
         if self.n_mem_tokens > 0 and not self.mixed_method:
             new_h = torch.zeros(
                 (self.n_mem_tokens * len(seqlens), h.shape[1]),
@@ -445,6 +447,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 ind += size
             seqlens = [self.n_mem_tokens] * len(seqlens)
             h = new_h.clone()
+        # print('output shape', h.shape, seqlens)
         return h, seqlens
 
     def forward(
@@ -562,7 +565,16 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     decod_index += 1
 
             h, _, _ = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
-
+            # if get_rank() == 0:
+            #     print(
+            #         "DECODER h stats at layer",
+            #         i,
+            #         h.shape,
+            #         torch.min(h),
+            #         torch.max(h),
+            #         torch.mean(h),
+            #         torch.std(h),
+            #     )
         normalized_h = self.norm(h)
 
         if cat_embeddings is not None:

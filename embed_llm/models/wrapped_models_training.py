@@ -257,6 +257,22 @@ def load_training_model(
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
+    # if get_rank() == 0:
+    #     llama_state_dict = load_state_dict(embed_folder, param_dtype)
+    #     # print('state dict llama', llama_state_dict.keys())
+    #     # print('embedder state dict', augmented_model.embedder.state_dict().keys())
+    #     # print('LLM model state dict', augmented_model.llm.state_dict().keys())
+    #     # for name, param in augmented_model.llm.named_parameters():
+    #     #     name = name.replace('_checkpoint_wrapped_module.', '')  
+    #     #     if name in llama_state_dict.keys():
+    #     #         print("LLM Name:", name, torch.equal(param, llama_state_dict[name]))
+    #     for name, param in augmented_model.embedder.named_parameters():
+    #         name = name.replace('_checkpoint_wrapped_module.', '')  
+    #         if name in llama_state_dict.keys():
+    #             print(
+    #                 "Embedder Name:", name, torch.equal(param, llama_state_dict[name])
+    #             )
+
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
@@ -271,7 +287,6 @@ def load_training_model(
     )
 
     main_logger_info("Model sharded!")
-
     return (
         augmented_pipeline,
         wrapped_model,
@@ -504,7 +519,7 @@ def load_training_model_from_ckpt(
             param.requires_grad = False
     for name, param in augmented_model.named_parameters():
         if pipeline_args.bridge_module.bridge_type is not None and "bridge" in name:
-            param.requires_grad = True    
+            param.requires_grad = True
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)

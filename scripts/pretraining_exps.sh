@@ -1,12 +1,12 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-1
+#SBATCH --array=3-5
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
-#SBATCH --chdir=/home/hippolytepilchen/code/versatile_compressor
+#SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=pretrain_llama
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
 
@@ -54,32 +54,50 @@ echo "Starting evaluation of run $RUN_NAME"
 
 case $RUN_NAME in
 
+*same_enc_llama8B*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --llm_name Llama3.1-8B --embed_name Llama3.1-8B
+
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad   --llm_name Llama3.1-8B --embed_name Llama3.1-8B
+
+    ;;
+
+*same_enc_llama3B*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --llm_name Llama3.2-3B --embed_name Llama3.2-3B
+
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad   --llm_name Llama3.2-3B --embed_name Llama3.2-3B
+
+    ;;
+
 *llama3B*)
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/eval_llama.json \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
         --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --llm_name Llama3.2-3B
 
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/eval_llama.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME   --llm_name Llama3.2-3B --ckpt 9000
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/eval_llama.json \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
         --n_passages 500 --run_name $RUN_NAME --eval_trad   --llm_name Llama3.2-3B
 
     ;;
 
 *llama8B*)
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/eval_llama.json \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
         --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --llm_name Llama3.1-8B
 
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/eval_llama.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME   --llm_name Llama3.1-8B --ckpt 19000
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/versatile_compressor/results/NVEmbed/eval_llama.json \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
         --n_passages 500 --run_name $RUN_NAME --eval_trad   --llm_name Llama3.1-8B
 
     ;;
@@ -90,16 +108,9 @@ case $RUN_NAME in
         --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME 
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --ckpt 9000
-
-    srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json  \
         --n_passages 500 --run_name $RUN_NAME --eval_trad 
 
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json  \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad --ckpt 9000
 
     ;;
 

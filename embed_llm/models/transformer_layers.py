@@ -370,8 +370,6 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(dim, eps=norm_eps)
         self.ffn_norm = RMSNorm(dim, eps=norm_eps)
 
-        self.feed_forward: nn.Module
-
         self.feed_forward = FeedForward(dim=dim, hidden_dim=hidden_dim, lora=lora)
         self.pooling_module = None
 

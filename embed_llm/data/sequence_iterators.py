@@ -2,7 +2,6 @@ import dataclasses
 import numpy as np
 from embed_llm.data.tokenize import Mask, TokenSample, Tokenizer
 from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
-from embed_llm.models.utils.mistral_tokenizer import MistralTokenizer
 
 
 @dataclasses.dataclass()
@@ -290,8 +289,8 @@ def sequence_iterator_inserted_embed_continuation(
         new_embed = x[cur_pos : cur_pos + left_tokens // 2]
 
         # Modifier ici car ca depasse seqlen
-        if isinstance(llm_tokenizer, LlamaTokenizer) and isinstance(
-            embed_tokenizer, MistralTokenizer
+        if isinstance(llm_tokenizer, LlamaTokenizer) and not isinstance(
+            embed_tokenizer, LlamaTokenizer
         ):
             new_text = llm_tokenizer.decode(new_embed)
             bos = "<|begin_of_text|>" in new_text

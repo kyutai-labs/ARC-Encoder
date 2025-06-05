@@ -4,16 +4,12 @@ import logging
 import os
 import random
 import subprocess as sp
-import sys
 
 import torch
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 from mistral_inference.generate import generate
 from mistral_inference.transformer import Transformer
 from tqdm import tqdm, trange
-
-sys.path.insert(0, "/home/hippolytepilchen/code/versatile_compressor")
-
 
 from embed_llm.generation.metrics import (  # noqa: E402
     get_approx_em,

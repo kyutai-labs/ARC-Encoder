@@ -355,7 +355,11 @@ def _train(
     if n_mem_toks > 0:
         state.comp_rate = n_mem_toks
     else:
-        state.comp_rate = pipeline.pipeline_args.embedder_params.compress_rates[-1]
+        state.comp_rate = (
+            None
+            if len(pipeline.pipeline_args.embedder_params.compress_rates) == 0
+            else pipeline.pipeline_args.embedder_params.compress_rates[-1]
+        )
 
     while state.step < args.max_steps:
         state.start_step()
@@ -449,7 +453,6 @@ def _train(
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
-
             output = model.forward(
                 x=x,
                 embeddings=embeddings,
@@ -500,7 +503,7 @@ def _train(
                     compute_bpt_loss(
                         output[ind : ind + size, ...],
                         y[ind : ind + size],
-                        None if y_mask is None else y_mask[ind : ind + size]
+                        None if y_mask is None else y_mask[ind : ind + size],
                     )
                 ).item()
                 batch_bpc += loss_in_bits / (
@@ -592,7 +595,11 @@ def _train(
         grad_norm = torch.tensor([0.0], device="cuda")
         for name, p in model.named_parameters():
             if p.requires_grad:
-                if pipeline.pipeline_args.embedder_params.matryoshka_training is not None and not pipeline.pipeline_args.embedder_params.mixed_learned_method:
+                if (
+                    pipeline.pipeline_args.embedder_params.matryoshka_training
+                    is not None
+                    and not pipeline.pipeline_args.embedder_params.mixed_learned_method
+                ):
                     assert p.grad is not None, f"None grad for this param {name}"
                     if torch.any(torch.isnan(p.grad)).item():
                         print(f"Grad contains NaN for this param {name}")

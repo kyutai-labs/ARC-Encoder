@@ -214,7 +214,7 @@ class EmbedAugPipeline(nn.Module):
             lora=lora_llm,
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
-            args_type=train_args["llm_type"],
+            args_type=train_args.get("llm_type", "mistral"),
         )
 
         if pipeline_args.trainable_llm:
@@ -229,7 +229,7 @@ class EmbedAugPipeline(nn.Module):
             checkpoint=False,
             param_dtype=param_dtype,
             parll=is_torchrun(),
-            llm_type=train_args["llm_type"],
+            llm_type=train_args.get("llm_type", "mistral"),
             embed_type=train_args.get("embed_type", "mistral"),
         )
 
@@ -267,7 +267,7 @@ class EmbedAugPipeline(nn.Module):
             param_dtype=param_dtype,
             for_embedding=True,
             parll=is_torchrun(),
-            llm_type=train_args["llm_type"],
+            llm_type=train_args.get("llm_type", "mistral"),
             embed_type=train_args.get("embed_type", "mistral"),
         )
 

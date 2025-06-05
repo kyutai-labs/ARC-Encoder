@@ -45,7 +45,7 @@ def generate(
     )
 
     cache = BufferCache(
-        model.n_local_layers,
+        model.n_layers,
         model.args.max_batch_size,
         cache_window,
         model.args.n_kv_heads,
