@@ -166,7 +166,9 @@ def _train(
             train_args=args,
             llm_folder=llm_folder,
             embed_folder=embed_folder,
-            bridge_folder=Path(args.from_ckpt.bridge_path),
+            bridge_folder=None
+            if args.from_ckpt.bridge_path is None
+            else Path(args.from_ckpt.bridge_path),
             lora_llm=args.lora_llm,
             lora_embedder=args.lora_embedder,
             checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
@@ -363,8 +365,7 @@ def _train(
 
     while state.step < args.max_steps:
         state.start_step()
-        torch.cuda.memory._record_memory_history(max_entries=100000)
-
+        # Check if we are at the last step
         is_last_step = state.step == args.max_steps
 
         if state.step in switch_steps.keys():
@@ -678,15 +679,7 @@ def _train(
 
         # Timing
         state.end_step(n_batch_tokens)
-        try:
-            torch.cuda.memory._dump_snapshot(
-                f"{'/lustre/scwpod02/client/kyutai-interns/hippop/experiments/snapshot'}.pickle"
-            )
-        except Exception as e:
-            logger.error(f"Failed to capture memory snapshot {e}")
 
-        # Stop recording memory snapshot history.
-        torch.cuda.memory._record_memory_history(enabled=None)
         if state.step % args.log_freq == 0 or state.step == 1 or is_last_step:
             train_logs = get_train_logs(
                 state=state,

@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-3%2
+#SBATCH --array=0-3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -9,7 +9,6 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=fine_tuning_comp
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
-#SBATCH --dependency=afterany:747998_2
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
@@ -18,14 +17,13 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_learnedmixed_squad.yaml 
-config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_learnedmixed_ft32_squad.yaml 
-config/experiments/new_method/ft/SA_merge_L4_CR16_pt_5rec_learnedmixed_ft8_squad.yaml 
-config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_learnedmixed_squad.yaml 
-config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_learnedmixed_ft32_squad.yaml 
-config/experiments/new_method/ft/SA_merge_L4_CR16_decL16_pt_5rec_learnedmixed_ft8_squad.yaml
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_60QA_v2.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_40QA_v2.yaml 
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_20QA_v2.yaml
+config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_unif.yaml
 )
 
+# Modify QA path in train data
 
 
 # Get the specific config file for this array task
@@ -107,7 +105,11 @@ case $RUN_NAME in
 *)
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME 
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json  \

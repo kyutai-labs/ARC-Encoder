@@ -40,23 +40,36 @@ ATLAS_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwik
 # ]
 
 instruction_prompts = {
-    # "QA1": "Generate a question and its answer based solely on the content of the document above.",
-    # "QA2": "Using the information in the document, create a factual QA pair.",
-    # "QA3": "Write one question that can be answered from the previous passage, and provide the correct answer.",
-    # "QA4": "Ask questions concerning the preceding passage and provide a short answer.",
-    # "QA5": "Formulate a factual question. The question should require a short answer. Then, provide the answer.",
-    "S1": "Summarize the key points of the document in 2 to 3 sentences.",
-    "S2": "Provide a concise summary that captures the essence of the text above.",
-    "S3": "Write a short summary of the previous document, focusing on its main message.",
-    "T1": "Translate the previous document into Spanish.",
-    "T2": "Render the document into fluent German while preserving its meaning.",
-    "T3": "Provide a French translation of the text above.",
-    "P1": "Paraphrase the document using clearer and simpler wording.",
-    "P2": "Rewrite the passage based on its content without directly copying any phrasing.",
-    "P3": "Rephrase the document in a style suitable for a younger audience.",
-    "P4": "Reword the passage to make it more accessible while keeping the original meaning.",
+    "QA1": "Generate a question and its answer based solely on the content of the document above.",
+    "QA2": "Using the information in the document, create a factual QA pair.",
+    "QA3": "Write one question that can be answered from the previous passage, and provide the correct answer.",
+    "QA4": "Ask questions concerning the preceding passage and provide a short answer.",
+    "QA5": "Formulate a factual question. The question should require a short answer. Then, provide the answer.",
+    # "S1": "Summarize the key points of the document in 2 to 3 sentences.",
+    # "S2": "Provide a concise summary that captures the essence of the text above.",
+    # "S3": "Write a short summary of the previous document, focusing on its main message.",
+    # "T1": "Translate the previous document into Spanish.",
+    # "T2": "Render the document into fluent German while preserving its meaning.",
+    # "T3": "Provide a French translation of the text above.",
+    # "P1": "Paraphrase the document using clearer and simpler wording.",
+    # "P2": "Rewrite the passage based on its content without directly copying any phrasing.",
+    # "P3": "Rephrase the document in a style suitable for a younger audience.",
+    # "P4": "Reword the passage to make it more accessible while keeping the original meaning.",
     # "R1": "Reconstruct perfectly the passage.",
 }
+
+leading_prompts = [
+    # 'Try AS MUCH AS POSSIBLE to give a question USING "when" as the question word !',
+    # 'Try AS MUCH AS POSSIBLE to give a question USING "where" as the question word !',
+    # 'Try AS MUCH AS POSSIBLE to give a question USING "who" as the question word !',
+    # 'Try AS MUCH AS POSSIBLE to give a question USING "what" as the question word !',
+    # 'Try AS MUCH AS POSSIBLE to give a question USING "why" as the question word !',
+    # 'Try AS MUCH AS POSSIBLE to give a question USING "how" as the question word !',
+    # 'Try AS MUCH AS POSSIBLE to give a question USING "which" as the question word !',
+    "Try AS MUCH AS POSSIBLE to NOT USE the question words 'why', 'how', 'where', 'when', 'who', 'what' or 'which' !",
+    # "Try AS MUCH AS POSSIBLE to give a question ANSWERED BY a yes or no !",
+    # "Try AS MUCH AS POSSIBLE to give a QUIZZ LIKE question !",
+]
 
 translate_prompts = [
     "Translate the previous document into {language}.",
@@ -116,13 +129,19 @@ class Batch:
     prompt_key: str
 
 
-def dataset_from_file(file_path, n_passages: int = 1):
+def dataset_from_file(
+    file_path,
+    n_passages: int = 1,
+    every: int = 1,
+):
     sample = []
     n_sample = random.randint(1, n_passages)
     while True:
         with open(file_path, "r") as f:
             lines = f.readlines()
             for idx, line in enumerate(reversed(lines)):
+                if idx % 10 != every or idx < 100000:
+                    continue
                 data = json.loads(line)
                 if passage_filter(data["text"]):
                     sample.append(data["text"].strip())
@@ -137,8 +156,9 @@ def dataloader_from_file(
     batch_size,
     n_passages: int = 1,
     translate: bool = False,
+    every: int = 1,
 ):
-    dataset = dataset_from_file(file_path, n_passages)
+    dataset = dataset_from_file(file_path, n_passages, every=every)
 
     probs = []
     for key in list(instruction_prompts.keys()):
@@ -151,13 +171,14 @@ def dataloader_from_file(
     while True:
         if translate:
             language = random.choice(LANGUAGES)
-            prompt = random.choice(translate_prompts).format(
-                language=language
-            )
+            prompt = random.choice(translate_prompts).format(language=language)
             prompt_key = language
         else:
             prompt_key = np.random.choice(list(instruction_prompts.keys()), p=probs)
             prompt = instruction_prompts[prompt_key]
+        if "qa" in str(prompt_key).lower():
+            leading_prompt = random.choice(leading_prompts)
+            prompt = f"{prompt}\n{leading_prompt}"
 
         passage = next(dataset)
         batch_list.append(
@@ -182,6 +203,7 @@ def synthesize_data(
     ds_name: str,
     translate: bool = False,
     n_passages: int = 1,
+    every: int = 1,
 ):
     if not Path(output_path).exists():
         Path(output_path).mkdir(parents=True, exist_ok=True)
@@ -193,7 +215,9 @@ def synthesize_data(
         top_p=top_p,
         max_tokens=1024,
     )
-    dataloader = dataloader_from_file(data_path, batch_size, n_passages, translate)
+    dataloader = dataloader_from_file(
+        data_path, batch_size, n_passages, translate, every
+    )
     output_buffer = []
     n_samples = 0
     for step in range(max_steps):
@@ -270,7 +294,7 @@ def arg_parser():
     parser.add_argument(
         "--temperature",
         type=float,
-        default=0.8,
+        default=0.6,
     )
     parser.add_argument(
         "--top_p",
@@ -320,6 +344,13 @@ def arg_parser():
     )
 
     parser.add_argument("--ds_name", type=str, default="synth")
+    parser.add_argument(
+        "--every",
+        type=int,
+        default=1,
+        help="Every nth passage to sample",
+        choices=list(range(1, 11)),
+    )
 
     return parser.parse_args()
 
@@ -338,4 +369,5 @@ if __name__ == "__main__":
         ds_name=args.ds_name,
         translate=args.translate,
         n_passages=args.n_passages,
+        every=args.every,
     )

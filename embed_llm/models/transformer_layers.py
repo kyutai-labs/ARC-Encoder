@@ -429,11 +429,13 @@ class TransformerBlock(nn.Module):
             for j, size in enumerate(seqlens):
                 ind += mixed_method_comp_seqlen[j] - mixed_method_n_mem_tokens
                 if cl_mem_tokens is not None:
+                   
                     cl = cl_mem_tokens(torch.arange(size, device=h.device, dtype=torch.long).view(-1))
+                    cl = torch.nn.functional.sigmoid(cl)
                     new_h[ind_new_h : ind_new_h + size] = (
-                        h[ind_new_h : ind_new_h + size]
+                        h[ind_new_h : ind_new_h + size] * (1 - cl)
                         + other_kv[ind : ind + mixed_method_n_mem_tokens][:size] * cl
-                    ) / (1 + cl)
+                    ) 
                 else:
                     new_h[ind_new_h : ind_new_h + size] = (
                         h[ind_new_h : ind_new_h + size]

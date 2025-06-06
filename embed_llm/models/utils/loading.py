@@ -78,7 +78,8 @@ def load_args(
                 insert_at=pipeline_args.decoder_module["insert_at"],
                 take_all_toks=pipeline_args.decoder_module.get("take_all_toks", False),
             )
-        pipeline_args.bridge_module = BridgeArgs(**pipeline_args.bridge_module)
+        if isinstance(pipeline_args.bridge_module, dict):
+            pipeline_args.bridge_module = BridgeArgs(**pipeline_args.bridge_module)
     else:
         pipeline_args = pipe_args
 

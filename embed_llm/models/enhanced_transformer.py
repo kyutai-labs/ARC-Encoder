@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+# import os
+# import pickle
+
 
 import numpy as np
 import torch
@@ -431,8 +434,22 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     mask=self_att_mask,
                     based_on=self.pooling_args.based_on,
                 )
-                # if get_rank() == 0:
-                # print('Embed h stats at layer', i, h.shape, torch.min(h), torch.max(h), torch.mean(h), torch.std(h))
+
+            # if get_rank() == 0:
+            #     filename = (
+            #         "/home/hippolytepilchen/code/hp_v2/results/analysis/mistral7B_embeds_layer_"
+            #         + str(i)
+            #         + ".pkl"
+            #     )
+            #     if os.path.exists(filename):
+            #         with open(filename, "rb") as f:
+            #             data = pickle.load(f)
+            #     else:
+            #         data = []
+            #     data.append(h.detach().clone().cpu().numpy())
+            #     with open(filename, "wb") as f:
+            #         pickle.dump(data, f)
+
         if self.n_mem_tokens > 0 and not self.mixed_method:
             new_h = torch.zeros(
                 (self.n_mem_tokens * len(seqlens), h.shape[1]),
@@ -565,16 +582,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     decod_index += 1
 
             h, _, _ = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
-            # if get_rank() == 0:
-            #     print(
-            #         "DECODER h stats at layer",
-            #         i,
-            #         h.shape,
-            #         torch.min(h),
-            #         torch.max(h),
-            #         torch.mean(h),
-            #         torch.std(h),
-            #     )
+
         normalized_h = self.norm(h)
 
         if cat_embeddings is not None:

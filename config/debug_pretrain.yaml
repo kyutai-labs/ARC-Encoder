@@ -1,8 +1,8 @@
 # Llama3.1-8B  Llama3.2-3B
-embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
-llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
-llm_type: llama
-embed_type: llama
+embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
+llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
+llm_type: mistral
+embed_type: mistral
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
 exp_name: test_pretrain2
 
@@ -20,18 +20,18 @@ num_microbatches: 1
 optim:
   final_lr: 1.0e-10
   initial_lr: 1.0e-20
-  max_lr: 5.0e-05
-  warm_up_steps: 500
+  max_lr: 5.0e-10
+  warm_up_steps: 3
   weight_decay: 0.1
 
 pipeline:
   embedder_params:
     causal_embedder: true
-    n_truncated_layers: 16
+    n_truncated_layers: 0
     pooling_module:
       pool_type: mean_sa
       where: before
-    trained_layers: 0
+    trained_layers: 1
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
@@ -40,11 +40,11 @@ pipeline:
   #   do: true
   #   n_layers: 1
 
-  bridge_module:
-    bridge_type: mlp
-    in_dim: 4096
-    hidden_dim: 4096
-    out_dim: 4096
+  # bridge_module:
+  #   bridge_type: mlp
+  #   in_dim: 4096
+  #   hidden_dim: 4096
+  #   out_dim: 4096
 
 
 data:
@@ -58,7 +58,7 @@ data:
 seq_len: 256
 batch_size: 4
 num_microbatches: 1
-max_steps: 10000
+max_steps: 5
 
 
 seed: 0
