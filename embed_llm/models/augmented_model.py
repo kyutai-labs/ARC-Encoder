@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 import numpy as np
 import torch
-import torch.distributed
 import torch.nn as nn
 import yaml
 
@@ -259,6 +258,7 @@ class EmbedAugPipeline(nn.Module):
             pipe_path=ckpt_path,
             args_type=train_args.get("embed_type", "mistral"),
         )
+
         llm_embedder, embed_tokenizer = load_model(
             llm_args=embed_args,
             pipeline_args=pipeline_args,
@@ -272,22 +272,30 @@ class EmbedAugPipeline(nn.Module):
         )
 
         if lora_embedder.enable:
-            assert Path(ckpt_path + "/embedder/lora.safetensors").exists()
+            embed_path = (
+                Path(ckpt_path + "/embedder")
+                if not train_args.get("freeze_embedder", False)
+                else Path(train_args["from_ckpt"]["embedder_path"])
+            )
+            assert (embed_path / "lora.safetensors").exists()
             llm_embedder.load_lora(
-                Path(ckpt_path + "/embedder/lora.safetensors"),
+                embed_path / "lora.safetensors",
             )
 
         elif (
             pipeline_args.embedder_params.trained_layers > 0
             or pipeline_args.embedder_params.memory_tokens > 0
         ):
-            trained_layers_state_dict = load_state_dict(
-                Path(ckpt_path + "/embedder"), dtype=param_dtype
+            embed_path = (
+                Path(ckpt_path + "/embedder")
+                if not train_args.get("freeze_embedder", False)
+                else Path(train_args["from_ckpt"]["embedder_path"])
             )
+            trained_layers_state_dict = load_state_dict(embed_path, dtype=param_dtype)
             assert all(
                 [
                     k in llm_embedder.state_dict()
-                    for k in trained_layers_state_dict.keys()
+                    for k in trained_layers_state_dict.keys() if (not train_args.get("freeze_embedder", False) and 'rec_tok' in k)
                 ]
             ), (
                 f"Ckpt state dict keys do not match model keys. Missing keys: {set(trained_layers_state_dict.keys()) - set(llm_embedder.state_dict().keys())}"

@@ -334,7 +334,6 @@ def _train(
     model.train()
     torch.cuda.empty_cache()
     train_ppl = torch.tensor([0.0], device="cuda")
-
     if pipeline.pipeline_args.comp_rate_curriculum is not None:
         switch_steps = dict(
             [
@@ -365,6 +364,7 @@ def _train(
 
     while state.step < args.max_steps:
         state.start_step()
+  
         # Check if we are at the last step
         is_last_step = state.step == args.max_steps
 
@@ -414,7 +414,6 @@ def _train(
         bpc = torch.tensor([0.0], device="cuda")
         kl_loss = torch.tensor([0.0], device="cuda")
         n_batch_tokens: int = 0
-
         # Number of steps to accumulate gradients before doing an optimizer step.
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
@@ -430,27 +429,29 @@ def _train(
             x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
                 pipeline.prepare_forward(batch)
             )
+ 
             # print('embed_seqlens', embed_seqlens)
             # if get_rank() == 0:
             #     to_gen = [
             #         int(tok)
-            #         for tok in batch.x
+            #         for tok in batch.x[:batch.sizes[0]]
             #     ]
+
             #     # target = [int(tok) for tok in batch.y]
-            #     # embed = [int(tokens) for tokens in batch.to_embed[13]["tokens"]]
+            #     embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"]]
             #     # continuation = [
             #     #     int(tok)
             #     #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
             #     # ]
             #     print("Beginning", pipeline.llm_tokenizer.decode(to_gen))
-            #     # print('Embed', pipeline.embed_tokenizer.decode(embed))
+            #     print('Embed', pipeline.embed_tokenizer.decode(embed))
             #     # print('embedding tokens', batch.to_embed[13]["tokens"])
             #     # print('embed', batch.to_embed[13]["text"])
             #     # print('Continuation', pipeline.llm_tokenizer.decode(continuation))
             #     # print('X len', len(batch.x))
             #     # print("Sizes", batch.sizes)
             #     # print("Embed seqlens", embed_seqlens)
-            #     # print('Insert cat embedds', insert_cat_embedds)
+            #     print('Insert cat embedds', insert_cat_embedds)
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
@@ -462,15 +463,6 @@ def _train(
                 insert_cat_embedds=insert_cat_embedds,
                 batch_type=batch.data_type,
             )
-
-            if len(output.size()) > 2:
-                output = output.view(-1, output.size(-1)).float()
-                y = y.view(-1).long()
-                y_mask = None if y_mask is None else y_mask.view(-1)
-                assert output.size(0) == y.size(0), (
-                    f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}"
-                )
-
             mb_loss = compute_ce_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
@@ -559,7 +551,6 @@ def _train(
                 kl_loss += kl_loss_distill.item()
             bpc += batch_bpc / len(batch.sizes)
             loss += mb_loss.item()
-
             mb_loss.backward()
             if y_mask is None:
                 n_batch_tokens += x.numel()
@@ -610,7 +601,6 @@ def _train(
                         if torch.any(torch.isnan(p.grad)).item():
                             print(f"Grad contains NaN for this param {name}")
                         grad_norm += torch.norm(p.grad).item() ** 2
-
         if torch.any(torch.isnan(grad_norm)).item():
             if dist.is_initialized():
                 try:

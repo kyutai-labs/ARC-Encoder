@@ -1,83 +1,57 @@
+data:
+  adapt_seq_len: true
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
+  shuffle: false
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl:1.0:3
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
-exp_name: test_ft
-
-
-continuation: 0.0
-
-lora_llm:
-  enable: false
-  rank: 128
-  scaling: 2.0
-
-lora_embedder:
-  enable: false
-  rank: 128
-  scaling: 2.0
-
-embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
+embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
 llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
-# Llama3.1-8B  Llama3.2-3B
-embed_type: llama
 llm_type: llama
+embed_type: mistral
+
 num_microbatches: 1
-
+seed: 0
+max_steps: 2000
+seq_len: 1024
+log_freq: 10
+batch_size: 16
+ckpt_freq: 50
+eval_freq: 50
+no_eval: true
+textual_continuation: 0.0
+continuation: 0.0
 optim:
-  final_lr: 1.0e-10
-  initial_lr: 1.0e-20
-  max_lr: 1.0e-06
-  warm_up_steps: 500
+  final_lr: 1.0e-30
+  initial_lr: 1.0e-30
+  max_lr: 1.0e-30
+  warm_up_steps: 100
   weight_decay: 0.1
-
-
 pipeline:
   embedder_params:
     causal_embedder: true
     compress_rates:
-    - -16
+    - -4
     n_truncated_layers: 16
     pooling_module:
       pool_type: mean_sa
       where: before
     trained_layers: 4
-    rec_tok: true
-    mixed_method: true
-    mixed_learned_method: true
-    memory_tokens: 128
   max_embeds: 1
+  trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
   bridge_module:
-    bridge_type: rms
+    bridge_type: mlp
     in_dim: 4096
     hidden_dim: 2048
     out_dim: 4096
-
 from_ckpt:
   do: true
-  bridge_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/test_pretrain2/checkpoints/checkpoint_000003/bridge_module/
-  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/test_pretrain2/checkpoints/checkpoint_000003/embedder/
-
-data:
-  adapt_seq_len: true
-  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
-  shuffle: false
-  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl
-
-
-seq_len: 1024
-batch_size: 4
-num_microbatches: 1
-max_steps: 1000
-
-
-seed: 0
-log_freq: 1
-eval_freq: 50
-no_eval: false
-ckpt_freq: 30
-
-# SQUAD: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl
-# NQ, TRIVIAQA: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/  nq_open_data.jsonl, triviaqa_data.jsonl
-
-
-
+  bridge_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/Pool4_llama8B_mlp_div2_5rec/checkpoints/checkpoint_010000/bridge_module/
+  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/Pool4_llama8B_mlp_div2_5rec/checkpoints/checkpoint_010000/embedder/
+exp_name: test_ft
+# wandb:
+#   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
+#   offline: false
+#   project: embed_llm
+#   run_name: Pool4_to_llama_mlp_squad

@@ -188,5 +188,148 @@
                 }
             }
         }
+    },
+    "Pool4_llama8B_mlp_div2_5rec_ftsquad": {
+        "1000": {
+            "SQUAD": {
+                "EM": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.22,
+                            "approx_Metric": 0.65,
+                            "Prop context containing the answer": 0.99,
+                            "xRAG metric": 0.65,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        },
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.22,
+                            "approx_Metric": 0.65,
+                            "Prop context containing the answer": 0.99,
+                            "xRAG metric": 0.65,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        },
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.42,
+                            "approx_Metric": 0.61,
+                            "Prop context containing the answer": 0.99,
+                            "xRAG metric": 0.61,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        },
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 5,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.55,
+                            "approx_Metric": 0.61,
+                            "Prop context containing the answer": 0.99,
+                            "xRAG metric": 0.57,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        }
+                    ]
+                },
+                "F1": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.3627031751794573,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        },
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.3627031751794573,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        },
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.5835132583451055,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        },
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 5,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.6667435897435895,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        }
+                    ]
+                }
+            }
+        }
+    },
+    "Pool4_llama8B_mlp_div2_5rec": {
+        "10000": {
+            "SQUAD": {
+                "EM": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.18,
+                            "approx_Metric": 0.72,
+                            "Prop context containing the answer": 0.99,
+                            "xRAG metric": 0.72,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        }
+                    ]
+                },
+                "F1": {
+                    "0": [
+                        {
+                            "n_samples": 100,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.36860332848404254,
+                            "n_passages": 1,
+                            "compress_ratio": 3.9696349066354966,
+                            "compressed_icl": false
+                        }
+                    ]
+                }
+            }
+        }
     }
 }

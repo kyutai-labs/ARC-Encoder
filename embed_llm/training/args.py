@@ -112,6 +112,7 @@ class TrainArgs(Serializable):
     embed_type: str = (
         "mistral"  # Type of the embedder to use, either "mistral" or "llama"
     )
+    freeze_embedder: bool = False  # If True, the embedder will not be trained.
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None

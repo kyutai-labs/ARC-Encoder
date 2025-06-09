@@ -72,17 +72,19 @@ class EmbProjector(nn.Module):
             self.norm = None
         elif self.proj_type == "rms":
             self.norm = RMSNorm(in_dim)
-
+            
     def forward(self, x):
         if self.proj_type == "mlp":
             x = self.layer1(x)
             x = self.layer2(x)
-            return x
         elif self.proj_type == "rms":
             x = self.norm(x)
             x = self.layer1(x)
             x = self.layer2(x)
-            return x
+        elif self.proj_type == "residual":
+            out = self.layer1(x)
+            x = self.layer2(out) + x
+        return x
 
 
 class PoolingModule(nn.Module):

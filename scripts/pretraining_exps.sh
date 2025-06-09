@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-3
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -10,17 +10,14 @@
 #SBATCH --job-name=pretrain_llama
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
 
+
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 
 
-
 CONFIG_FILES=(
-config/experiments/No_Comp/NC_llama8B_rms.yaml 
-config/experiments/No_Comp/NC_llama8B_mlp_div16.yaml 
-config/experiments/No_Comp/NC_llama8B_mlp_div4.yaml 
-config/experiments/No_Comp/NC_llama8B_mlp_div2.yaml
+config/experiments/multi_encoder/Pool8_llama8B_mlp_div2_5rec.yaml 
 )
 
 

@@ -4,7 +4,7 @@ import torch
 from torch.distributed.fsdp import BackwardPrefetch
 from torch.distributed.fsdp.api import ShardingStrategy
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
-
+# import safetensors
 from embed_llm.models.args import LoraArgs
 from embed_llm.models.augmented_model import EmbedAugPipeline
 from embed_llm.models.utils.loading import (
@@ -257,22 +257,6 @@ def load_training_model(
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
-    # if get_rank() == 0:
-    #     llama_state_dict = load_state_dict(embed_folder, param_dtype)
-    #     # print('state dict llama', llama_state_dict.keys())
-    #     # print('embedder state dict', augmented_model.embedder.state_dict().keys())
-    #     # print('LLM model state dict', augmented_model.llm.state_dict().keys())
-    #     # for name, param in augmented_model.llm.named_parameters():
-    #     #     name = name.replace('_checkpoint_wrapped_module.', '')  
-    #     #     if name in llama_state_dict.keys():
-    #     #         print("LLM Name:", name, torch.equal(param, llama_state_dict[name]))
-    #     for name, param in augmented_model.embedder.named_parameters():
-    #         name = name.replace('_checkpoint_wrapped_module.', '')  
-    #         if name in llama_state_dict.keys():
-    #             print(
-    #                 "Embedder Name:", name, torch.equal(param, llama_state_dict[name])
-    #             )
-
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
@@ -295,9 +279,9 @@ def load_training_model(
 
 def load_training_model_from_ckpt(
     train_args: TrainArgs,
-    llm_folder: Path,
-    embed_folder: Path,
-    bridge_folder: Path,
+    llm_folder: Path | None,
+    embed_folder: Path | None,
+    bridge_folder: Path | None,
     lora_llm: LoraArgs,
     lora_embedder: LoraArgs,
     param_dtype: torch.dtype,
@@ -403,11 +387,30 @@ def load_training_model_from_ckpt(
             )
 
         if pipeline_args.bridge_module.bridge_type is not None:
-            main_logger_info("Initializing bridge module parameters ...")
-            state_dict = load_state_dict(Path(bridge_folder), dtype=param_dtype)
-            augmented_model.bridge_module.load_state_dict(
-                state_dict, assign=True, strict=True
-            )
+            if bridge_folder is None:
+                main_logger_info("Initializing bridge module for embedder ...")
+                for name, module in augmented_model.named_modules():
+                    if (
+                        "bridge_module" in name
+                        and len(list(module.named_children())) == 0
+                    ):
+                        for p_name, param in module.named_parameters():
+                            # Create a new param to the right device and dtype
+                            module._parameters[p_name] = torch.nn.Parameter(
+                                torch.empty_like(param, device="cpu", dtype=param_dtype)
+                            )
+                            # Replace the old param with the new ones
+                            param = module._parameters[p_name]
+                            if "layer" in name:
+                                torch.nn.init.kaiming_uniform_(param, a=math.sqrt(5))
+                            elif "norm" in name:
+                                torch.nn.init.constant_(param, val=1.0)
+            else:
+                main_logger_info("Initializing bridge module parameters ...")
+                state_dict = load_state_dict(Path(bridge_folder), dtype=param_dtype)
+                augmented_model.bridge_module.load_state_dict(
+                    state_dict, assign=True, strict=True
+                )
 
         assert not any(
             p.is_meta
@@ -490,7 +493,11 @@ def load_training_model_from_ckpt(
             param.requires_grad = False
 
     for name, param in augmented_model.embedder.named_parameters():
-        if (lora_embedder.enable or pipeline_args.embedder_params) and "lora" in name:
+        if (
+            (lora_embedder.enable or pipeline_args.embedder_params)
+            and "lora" in name
+            and not train_args.freeze_embedder
+        ):
             param.requires_grad = True
         elif (
             any(
@@ -500,19 +507,31 @@ def load_training_model_from_ckpt(
                 ]
             )
             and not lora_embedder.enable
+            and not train_args.freeze_embedder
         ):
             param.requires_grad = True
         elif (
-            pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name
+            pipeline_args.embedder_params.memory_tokens > 0
+            and "mem_embeddings" in name
+            and not train_args.freeze_embedder
         ):
             param.requires_grad = True
-        elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
+        elif (
+            pipeline_args.embedder_params.rec_tok
+            and "rec_tok" in name
+            and not train_args.freeze_embedder
+        ):
             param.requires_grad = True
-        elif pipeline_args.embedder_params.cont_tok and "cont_tok" in name:
+        elif (
+            pipeline_args.embedder_params.cont_tok
+            and "cont_tok" in name
+            and not train_args.freeze_embedder
+        ):
             param.requires_grad = True
         elif (
             pipeline_args.embedder_params.mixed_learned_method
             and "cl_mem_tokens" in name
+            and not train_args.freeze_embedder
         ):
             param.requires_grad = True
         else:
@@ -521,7 +540,39 @@ def load_training_model_from_ckpt(
         if pipeline_args.bridge_module.bridge_type is not None and "bridge" in name:
             param.requires_grad = True
     log_train_params(augmented_model)
+    # ckpt_path = '/'.join(train_args.from_ckpt.bridge_path.split("/")[:-2]) if train_args.from_ckpt.bridge_path else None
+    # bridge_state_dict = safetensors.torch.load_file(
+    #     Path(ckpt_path + "/bridge_module/consolidated.safetensors")
+    # )
+    # if get_rank() == 0:
+    #     for name, param in bridge_state_dict.items():
+    #         if name in augmented_model.bridge_module.state_dict():
+    #             print(
+    #                 "Name:",
+    #                 name,
+    #                 "Param shape:",
+    #                 param.shape,
+    #                 torch.equal(
+    #                     param.to('cuda'), augmented_model.bridge_module.state_dict()[name].to('cuda')
+    #                 ), augmented_model.bridge_module.state_dict()[name].device
+    #             )
 
+    #     embedder_layer_state_dict = safetensors.torch.load_file(
+    #         Path(ckpt_path + "/embedder/consolidated.safetensors")
+    #     )
+
+    #     for name, param in embedder_layer_state_dict.items():
+    #         if name in augmented_model.embedder.state_dict():
+    #             name = name.replace('_checkpoint_wrapped_module.', '')
+    #             print(
+    #                 "Name:",
+    #                 name,
+    #                 "Param shape:",
+    #                 param.shape,
+    #                 torch.equal(
+    #                     param.to('cuda'), augmented_model.embedder.state_dict()[name].to('cuda')
+    #                 ), augmented_model.embedder.state_dict()[name].device
+    #             )
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")

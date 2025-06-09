@@ -102,23 +102,31 @@ def sequence_iterator_reconstruction(
             for i in range(len(embed_tokens)):
                 new_embed.append(embed_tokens[i])
 
-            new_embed_tokens = embed_tokenizer.encode(
-                llm_tokenizer.decode(sum([toks[:seq_len] for toks in new_embed], [])),
-                bos=False,
-                eos=False,
-            )
-
+            new_embed_tokens = sum([toks[:seq_len] for toks in new_embed], [])
             new_embed_text = " ".join(
-                [llm_tokenizer.decode(toks[:seq_len]).strip() for toks in new_embed]
+                [embed_tokenizer.decode(toks[:seq_len]).strip() for toks in new_embed]
             )
-
+            if isinstance(
+                embed_tokenizer, LlamaTokenizer
+            ):
+  
+                for sp_tok in llm_tokenizer.special_tokens.keys():
+                    new_embed_text = new_embed_text.replace(sp_tok, "")
+            
             to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
 
             if data_type == "instruct":
                 if few_shot_instruct is None:
                     prefix = "Document: "
                 else:
-                    prefix = "\n\n".join(few_shot_instruct) + "\n\nDocument: "
+                    prefix = (
+                        "\n\n".join(
+                            few_shot_instruct[
+                                : np.random.randint(0, len(few_shot_instruct) + 1)
+                            ]
+                        ))
+                    
+                    prefix = prefix + "\n\nDocument: " if len(prefix) > 0 else "Document: "
                 doc_tokens = llm_tokenizer.encode(prefix, bos=True, eos=False)
                 insert_embed_list.append([len(doc_tokens)])
                 x_buffer.extend(doc_tokens)
@@ -288,7 +296,6 @@ def sequence_iterator_inserted_embed_continuation(
         )
         new_embed = x[cur_pos : cur_pos + left_tokens // 2]
 
-        # Modifier ici car ca depasse seqlen
         if isinstance(llm_tokenizer, LlamaTokenizer) and not isinstance(
             embed_tokenizer, LlamaTokenizer
         ):
