@@ -59,12 +59,15 @@ class EmbProjector(nn.Module):
         if hidden_dim is None:
             hidden_dim = out_dim
 
-        if dtype is not None:
-            self.layer1 = nn.Linear(in_dim, hidden_dim, dtype=dtype, bias=False)
-            self.layer2 = nn.Linear(hidden_dim, out_dim, dtype=dtype, bias=False)
+        if type not in ["linear"]:
+            if dtype is not None:
+                self.layer1 = nn.Linear(in_dim, hidden_dim, dtype=dtype, bias=False)
+                self.layer2 = nn.Linear(hidden_dim, out_dim, dtype=dtype, bias=False)
+            else:
+                self.layer1 = nn.Linear(in_dim, hidden_dim, bias=False)
+                self.layer2 = nn.Linear(hidden_dim, out_dim, bias=False)
         else:
-            self.layer1 = nn.Linear(in_dim, hidden_dim, bias=False)
-            self.layer2 = nn.Linear(hidden_dim, out_dim, bias=False)
+            self.layer1 = nn.Linear(in_dim, out_dim, bias=False)
 
         self.proj_type = type
 
@@ -84,6 +87,8 @@ class EmbProjector(nn.Module):
         elif self.proj_type == "residual":
             out = self.layer1(x)
             x = self.layer2(out) + x
+        elif self.proj_type == "linear":
+            x = self.layer1(x)
         return x
 
 

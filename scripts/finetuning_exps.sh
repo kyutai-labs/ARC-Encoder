@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-1
+#SBATCH --array=2-3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -9,7 +9,7 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=fine_tuning_mixed_models
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
-
+#SBATCH --dependency=afterany:760668_0 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
@@ -19,8 +19,8 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 CONFIG_FILES=(
 config/experiments/multi_encoder/ft/Pool4_switch_mlp_div2_5rec_ftsquad.yaml 
 config/experiments/multi_encoder/ft/Pool4_switch_mlp_div2_5rec_ftsquad_v2.yaml
-# config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ftsquad.yaml 
-# config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ft16squad.yaml
+config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ftsquad.yaml 
+config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ft16squad.yaml
 )
 # config/experiments/multi_encoder/ft/Pool4_llama8Benc_mistraldec_mlp_div2_20rec_ftsquad.yaml 
 # config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_20rec_learnmore_ftsquad.yaml 
