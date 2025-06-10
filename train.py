@@ -272,8 +272,9 @@ def _train(
 
     # 9. Load optimizer
     optimizer = AdamW(
-        model.parameters(),
-        lr=args.optim.max_lr,
+        [{'params': model.llm.parameters(), 'lr': args.optim.max_lr},
+         {'params': model.embedder.parameters(), 'lr': args.optim.max_lr},
+         {'params': model.bridge_module.parameters(), 'lr': args.optim.max_lr_projector}],
         betas=(0.9, 0.95),
         eps=1e-08,
         weight_decay=args.optim.weight_decay,
@@ -285,7 +286,7 @@ def _train(
 
     scheduler = lr_scheduler.OneCycleLR(
         optimizer,
-        max_lr=args.optim.max_lr,
+        max_lr=[args.optim.max_lr, args.optim.max_lr, args.optim.max_lr_projector],
         total_steps=args.max_steps,
         pct_start=float(args.optim.warm_up_steps) / args.max_steps,
         anneal_strategy="cos",
@@ -751,7 +752,6 @@ def _train(
         loss_item = loss.item()
         avg_loss = avg_aggregate(loss_item)
         train_ppl = avg_aggregate(train_ppl)
-
         bpc_item = (
             bpc.item() if args.num_microbatches <= 1 else bpc / (args.num_microbatches)
         )

@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-4
+#SBATCH --array=0-1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -17,11 +17,8 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/multi_encoder/Memtoks64_llama8B_mlp_div2_10rec_learnmore.yaml
 config/experiments/multi_encoder/Pool4_llama8B_mlp_div2_20rec_learnmore.yaml
-config/experiments/multi_encoder/MixedPool16_llama8B_mlp_div2_5rec_learned.yaml 
-config/experiments/multi_encoder/Memtoks64_llama8B_mlp_div2_10rec_conttok.yaml 
-config/experiments/multi_encoder/Pool4_llama8B_mlp_div2_20rec_conttok.yaml
+config/experiments/multi_decoder/Pool4_to_llama_mlp_pt_diff_lr.yaml
 )
 
 

@@ -91,8 +91,7 @@ general_prompts = [
 ]
 
 pwc_prompt = [
-    "Design 10 prompts specified to the above text to test understanding of the above text. These prompts should be diverse and cover as many aspects (e.g., {a_1}, {a_2}, {a_3}, {a_4}, {a_5}, {a_6} and {a_7}) of the text as possible. \
-        The first half of these prompts should be like an instruction, the other should be like a question. In addition to the prompts specified to the above text, please also design 5 general prompts like {gen_p1}, {gen_p2}, {gen_p3}, {gen_p4} and {gen_p5}. Each prompt should be outputted in the following format: [{'prompt': your generated prompt, 'answer': the answer to the prompt}]"
+    "Design 10 prompts specified to the above text to test understanding of the above text. These prompts should be diverse and cover as many aspects (e.g., {a_1}, {a_2}, {a_3}, {a_4}, {a_5}, {a_6} and {a_7}) of the text as possible. The first half of these prompts should be like an instruction, the other should be like a question. In addition to the prompts specified to the above text, please also design 5 general prompts like {gen_p1}, {gen_p2}, {gen_p3}, {gen_p4} and {gen_p5}. Each prompt should be outputted in the following format: [{format}]"
 ]
 
 translate_prompts = [
@@ -237,11 +236,15 @@ def dataloader_from_file(
                         gen_p3=general_prompts[2],
                         gen_p4=general_prompts[3],
                         gen_p5=general_prompts[4],
+                        format="{'prompt': your generated prompt, 'answer': the answer to the prompt}",
                     ),
                     passage=passages,
                     prompt_key="PWC",
                 )
             )
+            if len(batch_list) == batch_size:
+                yield batch_list
+                batch_list = []
 
 
 def synthesize_data(

@@ -14,6 +14,11 @@ class OptimArgs(Serializable):
     warm_up_steps: int = 2000
     initial_lr: float = 0
     final_lr: float = 1e-5
+    max_lr_projector: float | None = None
+    
+    def __post_init__(self) -> None:
+        if self.max_lr_projector is None:
+            self.max_lr_projector = self.max_lr
 
 
 @dataclass
