@@ -71,6 +71,30 @@ leading_prompts = [
     # "Try AS MUCH AS POSSIBLE to give a QUIZZ LIKE question !",
 ]
 
+
+aspects = [
+    "topic",
+    "genre",
+    "structure",
+    "style",
+    "polarity",
+    "key",
+    "information",
+    "details",
+]
+general_prompts = [
+    "rephrase the above text",
+    "summarize the above text",
+    "write a title for the above text",
+    "extract a few keywords for the above text",
+    "write a paragraph (i.e., continuation) that follows the above text",
+]
+
+pwc_prompt = [
+    "Design 10 prompts specified to the above text to test understanding of the above text. These prompts should be diverse and cover as many aspects (e.g., {a_1}, {a_2}, {a_3}, {a_4}, {a_5}, {a_6} and {a_7}) of the text as possible. \
+        The first half of these prompts should be like an instruction, the other should be like a question. In addition to the prompts specified to the above text, please also design 5 general prompts like {gen_p1}, {gen_p2}, {gen_p3}, {gen_p4} and {gen_p5}. Each prompt should be outputted in the following format: [{'prompt': your generated prompt, 'answer': the answer to the prompt}]"
+]
+
 translate_prompts = [
     "Translate the previous document into {language}.",
     "Render the document into fluent {language} while preserving its meaning.",
@@ -140,13 +164,13 @@ def dataset_from_file(
         with open(file_path, "r") as f:
             lines = f.readlines()
             for idx, line in enumerate(reversed(lines)):
-                if idx % 10 != every or idx < 100000:
+                if idx % 10 != every:
                     continue
                 data = json.loads(line)
                 if passage_filter(data["text"]):
                     sample.append(data["text"].strip())
                 if len(sample) == n_sample:
-                    yield ("\n".join(sample))[:16000]
+                    yield ("\n".join(sample))[:15000]
                     n_sample = random.randint(1, n_passages)
                     sample = []
 
@@ -157,38 +181,67 @@ def dataloader_from_file(
     n_passages: int = 1,
     translate: bool = False,
     every: int = 1,
+    pwc: bool = False,
 ):
     dataset = dataset_from_file(file_path, n_passages, every=every)
+    if not pwc:
+        probs = []
+        for key in list(instruction_prompts.keys()):
+            if key != "R1":
+                probs.append(1)
+            else:
+                probs.append(0.1)
+        probs = probs / np.sum(probs)
+        batch_list = []
+        while True:
+            if translate:
+                language = random.choice(LANGUAGES)
+                prompt = random.choice(translate_prompts).format(language=language)
+                prompt_key = language
+            else:
+                prompt_key = np.random.choice(list(instruction_prompts.keys()), p=probs)
+                prompt = instruction_prompts[prompt_key]
+            if "qa" in str(prompt_key).lower():
+                leading_prompt = random.choice(leading_prompts)
+                prompt = f"{prompt}\n{leading_prompt}"
 
-    probs = []
-    for key in list(instruction_prompts.keys()):
-        if key != "R1":
-            probs.append(1)
-        else:
-            probs.append(0.1)
-    probs = probs / np.sum(probs)
-    batch_list = []
-    while True:
-        if translate:
-            language = random.choice(LANGUAGES)
-            prompt = random.choice(translate_prompts).format(language=language)
-            prompt_key = language
-        else:
-            prompt_key = np.random.choice(list(instruction_prompts.keys()), p=probs)
-            prompt = instruction_prompts[prompt_key]
-        if "qa" in str(prompt_key).lower():
-            leading_prompt = random.choice(leading_prompts)
-            prompt = f"{prompt}\n{leading_prompt}"
-
-        passage = next(dataset)
-        batch_list.append(
-            Batch(
-                instruction_prompts=prompt, passage=passage, prompt_key=str(prompt_key)
+            passage = next(dataset)
+            batch_list.append(
+                Batch(
+                    instruction_prompts=prompt,
+                    passage=passage,
+                    prompt_key=str(prompt_key),
+                )
             )
-        )
-        if len(batch_list) == batch_size:
-            yield batch_list
-            batch_list = []
+            if len(batch_list) == batch_size:
+                yield batch_list
+                batch_list = []
+    else:
+        batch_list = []
+        while True:
+            passages = next(dataset)
+            random.shuffle(aspects)
+            random.shuffle(general_prompts)
+            batch_list.append(
+                Batch(
+                    instruction_prompts=pwc_prompt[0].format(
+                        a_1=aspects[0],
+                        a_2=aspects[1],
+                        a_3=aspects[2],
+                        a_4=aspects[3],
+                        a_5=aspects[4],
+                        a_6=aspects[5],
+                        a_7=aspects[6],
+                        gen_p1=general_prompts[0],
+                        gen_p2=general_prompts[1],
+                        gen_p3=general_prompts[2],
+                        gen_p4=general_prompts[3],
+                        gen_p5=general_prompts[4],
+                    ),
+                    passage=passages,
+                    prompt_key="PWC",
+                )
+            )
 
 
 def synthesize_data(
@@ -204,6 +257,7 @@ def synthesize_data(
     translate: bool = False,
     n_passages: int = 1,
     every: int = 1,
+    pwc: bool = False,
 ):
     if not Path(output_path).exists():
         Path(output_path).mkdir(parents=True, exist_ok=True)
@@ -216,7 +270,7 @@ def synthesize_data(
         max_tokens=1024,
     )
     dataloader = dataloader_from_file(
-        data_path, batch_size, n_passages, translate, every
+        data_path, batch_size, n_passages, translate, every, pwc
     )
     output_buffer = []
     n_samples = 0
@@ -351,6 +405,11 @@ def arg_parser():
         help="Every nth passage to sample",
         choices=list(range(1, 11)),
     )
+    parser.add_argument(
+        "--pwc",
+        action="store_true",
+        help="Use PWC prompts",
+    )
 
     return parser.parse_args()
 
@@ -370,4 +429,5 @@ if __name__ == "__main__":
         translate=args.translate,
         n_passages=args.n_passages,
         every=args.every,
+        pwc=args.pwc,
     )

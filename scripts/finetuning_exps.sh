@@ -22,6 +22,12 @@ config/experiments/multi_encoder/ft/Pool4_switch_mlp_div2_5rec_ftsquad_v2.yaml
 # config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ftsquad.yaml 
 # config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ft16squad.yaml
 )
+# config/experiments/multi_encoder/ft/Pool4_llama8Benc_mistraldec_mlp_div2_20rec_ftsquad.yaml 
+# config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_20rec_learnmore_ftsquad.yaml 
+# config/experiments/multi_encoder/ft/MixedPool16_llama8B_mlp_div2_5rec_learned_ftsquad.yaml 
+# config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_20rec_conttok_ftsquad.yaml 
+# config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_10rec_learnmore_ftsquad.yaml 
+# config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_10rec_conttok_ftsquad.yaml
 
 # Modify QA path in train data
 
