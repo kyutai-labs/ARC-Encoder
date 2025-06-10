@@ -1,7 +1,7 @@
 # Llama3.1-8B  Llama3.2-3B
 embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-llm_type: mistral
+llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
+llm_type: llama
 embed_type: mistral
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
 exp_name: test_pretrain2

@@ -5,12 +5,16 @@ from embed_llm.models.utils.mistral_tokenizer import MistralTokenizer
 from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
 from embed_llm.data.utils import templates_for_qa
 
-Tokenizer = MistralTokenizer | LlamaTokenizer
-
 logger = logging.getLogger("tokenize")
 
 Sequence = list[int]
 Mask = list[bool]
+
+
+@dataclass()
+class Tokenizer:
+    tokenizer: MistralTokenizer | LlamaTokenizer
+    model_name: str
 
 
 @dataclass()
@@ -93,15 +97,15 @@ def get_sample(
 
         question = random.choice(templates_for_qa).format(question=question)
 
-        q_tokens = llm_tokenizer.encode(question, bos=False, eos=False)
-        a_tokens = llm_tokenizer.encode(answer, bos=False, eos=True)
+        q_tokens = llm_tokenizer.tokenizer.encode(question, bos=False, eos=False)
+        a_tokens = llm_tokenizer.tokenizer.encode(answer, bos=False, eos=True)
 
         masks = [False] * len(q_tokens) + [True] * len(a_tokens)
         # masks = [True] * len(q_tokens) + [True] * len(a_tokens)
 
         passages = EmbedPassage(
             [
-                embed_tokenizer.encode(passage_sample, bos=False, eos=False)
+                embed_tokenizer.tokenizer.encode(passage_sample, bos=False, eos=False)
                 for passage_sample in embed_passage
             ],
             embed_passage,
@@ -129,13 +133,13 @@ def get_sample(
 
         assert isinstance(sample, str), sample
 
-        tokens = llm_tokenizer.encode(sample, bos=True, eos=True)
+        tokens = llm_tokenizer.tokenizer.encode(sample, bos=True, eos=True)
 
         masks = [True] * len(tokens)
 
         passages = EmbedPassage(
             [
-                embed_tokenizer.encode(passage_sample, bos=False, eos=False)
+                embed_tokenizer.tokenizer.encode(passage_sample, bos=False, eos=False)
                 for passage_sample in embed_passage
             ],
             embed_passage,

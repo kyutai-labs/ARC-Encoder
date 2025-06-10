@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-34%10
+#SBATCH --array=0-1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -17,44 +17,17 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_60QA_v2.yaml
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_40QA_v2.yaml
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_20QA_v2.yaml
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_unif.yaml
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_pwc.yaml
-config/experiments/multi_decoder/Pool4_to_llama_mlpres_squad.yaml 
-config/experiments/multi_decoder/Pool4_to_llama_mlpres_pt.yaml 
-config/experiments/multi_decoder/Pool4_to_llama_mlp_pt.yaml 
-config/experiments/multi_decoder/Pool4_to_llama_mlp_squad.yaml
-config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_5rec_ftsquad_long.yaml
-config/experiments/datasets/SA_merge_L4_CR4_decL16_pt_ft_fs_pwc.yaml
+config/experiments/multi_encoder/ft/Pool4_switch_mlp_div2_5rec_ftsquad.yaml 
 config/experiments/multi_encoder/ft/Pool4_switch_mlp_div2_5rec_ftsquad_v2.yaml
-config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_5rec_ftsquad_fs.yaml
-config/experiments/multi_encoder/ft/Pool32_llama8B_mlp_div2_5rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Pool16_llama8B_mlp_div2_5rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Pool32_llama8B_mlp_div2_5rec_ft16squad.yaml
-config/experiments/multi_encoder/ft/Pool16_llama8B_mlp_div2_5rec_ft32squad.yaml
-config/experiments/multi_encoder/ft/Pool16_llama8B_mlp_div2_5rec_ft8squad.yaml
-config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ft16squad.yaml
-config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_20rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_0rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_5rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_0rec_ftonly.yaml
-config/experiments/multi_encoder/ft/MixedPool16_llama8B_mlp_div2_5rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/MixedPool16_llama8B_mlp_div2_5rec_ft32squad.yaml
-config/experiments/multi_encoder/ft/MixedPool16_llama8B_mlp_div2_5rec_ft8squad.yaml
-config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_10rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_5rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_0rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_0rec_ftonly.yaml
-config/experiments/multi_encoder/ft/Memtoks32_llama8B_mlp_div2_5rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Memtoks16_llama8B_mlp_div2_5rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Memtoks8_llama8B_mlp_div2_5rec_ftsquad.yaml
-config/experiments/multi_encoder/ft/Memtoks4_llama8B_mlp_div2_5rec_ftsquad.yaml
 # config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ftsquad.yaml 
 # config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ft16squad.yaml
 )
+# config/experiments/multi_encoder/ft/Pool4_llama8Benc_mistraldec_mlp_div2_20rec_ftsquad.yaml 
+# config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_20rec_learnmore_ftsquad.yaml 
+# config/experiments/multi_encoder/ft/MixedPool16_llama8B_mlp_div2_5rec_learned_ftsquad.yaml 
+# config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_20rec_conttok_ftsquad.yaml 
+# config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_10rec_learnmore_ftsquad.yaml 
+# config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_10rec_conttok_ftsquad.yaml
 
 # Modify QA path in train data
 

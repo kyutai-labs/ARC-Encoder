@@ -4,10 +4,10 @@ data:
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl:1.0:3
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
-embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
-llm_type: llama
-embed_type: mistral
+embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
+llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
+llm_type: mistral
+embed_type: llama
 
 num_microbatches: 1
 seed: 0

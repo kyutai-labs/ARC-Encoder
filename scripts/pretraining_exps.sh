@@ -1,15 +1,15 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0
+#SBATCH --array=0-4
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
-#SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
+#SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
 #SBATCH --job-name=pretrain_llama
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
-
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx08,par2dc5-ai-prd-cl02s03dgx09,par2dc5-ai-prd-cl02s04dgx07,par2dc5-ai-prd-cl02s04dgx20,par2dc5-ai-prd-cl02s03dgx01,par2dc5-ai-prd-cl02s03dgx16,par2dc5-ai-prd-cl02s03dgx02,par2dc5-ai-prd-cl02s02dgx32
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
@@ -17,7 +17,11 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/multi_encoder/Pool8_llama8B_mlp_div2_5rec.yaml 
+config/experiments/multi_encoder/Memtoks64_llama8B_mlp_div2_10rec_learnmore.yaml
+config/experiments/multi_encoder/Pool4_llama8B_mlp_div2_20rec_learnmore.yaml
+config/experiments/multi_encoder/MixedPool16_llama8B_mlp_div2_5rec_learned.yaml 
+config/experiments/multi_encoder/Memtoks64_llama8B_mlp_div2_10rec_conttok.yaml 
+config/experiments/multi_encoder/Pool4_llama8B_mlp_div2_20rec_conttok.yaml
 )
 
 
@@ -49,6 +53,17 @@ echo "Starting evaluation of run $RUN_NAME"
 
 case $RUN_NAME in
 
+*llama8Benc*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.1-8B
+
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad  --embed_name Llama3.1-8B
+
+    ;;
 *same_enc_llama8B*)
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
