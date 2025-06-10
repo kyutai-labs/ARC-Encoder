@@ -116,7 +116,7 @@ def load_training_model(
         llm_tokenizer=Tokenizer(llm_tokenizer, model_name=train_args.llm_type),
         embed_tokenizer=Tokenizer(embed_tokenizer, model_name=train_args.embed_type),
         embedding_model=llm_embedder,
-        llm_2_tokenizer=llm_2_tokenizer
+        llm_2_tokenizer= None if llm_2_tokenizer is None else Tokenizer(llm_2_tokenizer, model_name='mistral' if train_args.llm_type == 'llama' else 'llama')
     )
 
     with torch.device("meta"):
@@ -392,7 +392,7 @@ def load_training_model_from_ckpt(
         llm_tokenizer=Tokenizer(llm_tokenizer, model_name=train_args.llm_type),
         embed_tokenizer=Tokenizer(embed_tokenizer, model_name=train_args.embed_type),
         embedding_model=llm_embedder,
-        llm_2_tokenizer=llm_2_tokenizer
+        llm_2_tokenizer= None if llm_2_tokenizer is None else Tokenizer(llm_2_tokenizer, model_name='mistral' if train_args.llm_type == 'llama' else 'llama')
     )
 
 
