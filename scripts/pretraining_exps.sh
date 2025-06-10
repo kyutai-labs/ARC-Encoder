@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=2
+#SBATCH --array=2-5
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -23,6 +23,9 @@ config/experiments/multi_encoder/Pool4_llama8Benc_mistraldec_mlp_div2_20rec.yaml
 config/experiments/No_Comp/NC_Ll8Benc_Mistral7B_mlp_new.yaml 
 config/experiments/No_Comp/NC_Ll3Benc_Mistral7B_mlp_new.yaml
 config/experiments/No_Comp/NC_Mistral7B_nomlp_new.yaml
+config/experiments/multi_decoder/Pool4_to_mistral_mlp_pt.yaml 
+config/experiments/multi_decoder/Pool4_to_llama_mlpres_pt.yaml 
+config/experiments/multi_decoder/Pool4_to_llama_mlp_pt.yaml
 )
 
 

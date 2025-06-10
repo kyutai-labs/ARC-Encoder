@@ -109,7 +109,7 @@ def sequence_iterator_reconstruction(
                 ]
             )
             if embed_tokenizer.model_name == "llama":
-                for sp_tok in llm_tokenizer.tokenizer.special_tokens.keys():
+                for sp_tok in embed_tokenizer.tokenizer.special_tokens.keys():
                     new_embed_text = new_embed_text.replace(sp_tok, "")
 
             to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
