@@ -11,6 +11,7 @@ from embed_llm.models.utils.loading import (
     load_args,
     load_state_dict,
 )
+from embed_llm.data.tokenize import Tokenizer
 from embed_llm.models.utils.utils import (
     get_fsdp_policy,
     initialize_lora_parameters,
@@ -39,6 +40,7 @@ def load_training_model(
     param_dtype: torch.dtype,
     checkpoint: bool = False,
     max_batch_size: int = 32,
+    llm_folder_2: Path | None = None,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
     llm_args, pipeline_args = load_args(
         llm_folder,
@@ -84,17 +86,39 @@ def load_training_model(
         llm_type=train_args.llm_type,
         embed_type=train_args.embed_type,
     )
-
+    if llm_folder_2 is not None:
+        llm_2_args, _ = load_args(
+            llm_folder_2,
+            lora_llm,
+            max_batch_size=max_batch_size,
+            pipe_args=train_args.pipeline,
+            args_type=train_args.llm_type,
+        )
+        llm_2, llm_2_tokenizer = load_model(
+            llm_args=llm_2_args,
+            pipeline_args=pipeline_args,
+            folder=llm_folder_2,
+            checkpoint=checkpoint,
+            param_dtype=param_dtype,
+            for_embedding=False,
+            llm_type=train_args.llm_type,
+            embed_type=train_args.embed_type,
+        )
+    else:
+        llm_2 = None
+        llm_2_tokenizer = None
+        
     # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
         pipeline_args=pipeline_args,
-        llm_tokenizer=llm_tokenizer,
-        embed_tokenizer=embed_tokenizer,
+        llm_tokenizer=Tokenizer(llm_tokenizer, model_name=train_args.llm_type),
+        embed_tokenizer=Tokenizer(embed_tokenizer, model_name=train_args.embed_type),
         embedding_model=llm_embedder,
+        llm_2_tokenizer=llm_2_tokenizer
     )
 
     with torch.device("meta"):
-        augmented_model = augmented_pipeline.get_model(llm=llm)
+        augmented_model = augmented_pipeline.get_model(llm=llm, llm_2=llm_2)
 
     if get_rank() == 0:
         if pipeline_args.decoder_module.do:
@@ -217,6 +241,7 @@ def load_training_model(
             param.requires_grad = True
         else:
             param.requires_grad = False
+            
 
     for name, param in augmented_model.embedder.named_parameters():
         if (lora_embedder.enable or pipeline_args.embedder_params) and "lora" in name:
@@ -290,6 +315,7 @@ def load_training_model_from_ckpt(
     llm_path: Path | None = None,
     checkpoint: bool = False,
     max_batch_size: int = 32,
+    llm_folder_2: Path | None = None,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
     llm_args, pipeline_args = load_args(
         llm_folder,
@@ -314,6 +340,28 @@ def load_training_model_from_ckpt(
         llm_type=train_args.llm_type,
         embed_type=train_args.embed_type,
     )
+    
+    if llm_folder_2 is not None:
+        llm_2_args, _ = load_args(
+            llm_folder_2,
+            lora_llm,
+            max_batch_size=max_batch_size,
+            pipe_args=train_args.pipeline,
+            args_type=train_args.llm_type,
+        )
+        llm_2, llm_2_tokenizer = load_model(
+            llm_args=llm_2_args,
+            pipeline_args=pipeline_args,
+            folder=llm_folder_2,
+            checkpoint=checkpoint,
+            param_dtype=param_dtype,
+            for_embedding=False,
+            llm_type=train_args.llm_type,
+            embed_type=train_args.embed_type,
+        )
+    else:
+        llm_2 = None
+        llm_2_tokenizer = None
 
     main_logger_info("Loading embedder model ...")
     embed_args, _ = load_args(
@@ -339,13 +387,15 @@ def load_training_model_from_ckpt(
     # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
         pipeline_args=pipeline_args,
-        llm_tokenizer=llm_tokenizer,
-        embed_tokenizer=embed_tokenizer,
+        llm_tokenizer=Tokenizer(llm_tokenizer, model_name=train_args.llm_type),
+        embed_tokenizer=Tokenizer(embed_tokenizer, model_name=train_args.embed_type),
         embedding_model=llm_embedder,
+        llm_2_tokenizer=llm_2_tokenizer
     )
 
+
     with torch.device("meta"):
-        augmented_model = augmented_pipeline.get_model(llm=llm)
+        augmented_model = augmented_pipeline.get_model(llm=llm, llm_2=llm_2)
 
     if get_rank() == 0:
         if pipeline_args.decoder_module.do:
@@ -539,6 +589,7 @@ def load_training_model_from_ckpt(
     for name, param in augmented_model.named_parameters():
         if pipeline_args.bridge_module.bridge_type is not None and "bridge" in name:
             param.requires_grad = True
+            
     log_train_params(augmented_model)
     # ckpt_path = '/'.join(train_args.from_ckpt.bridge_path.split("/")[:-2]) if train_args.from_ckpt.bridge_path else None
     # bridge_state_dict = safetensors.torch.load_file(

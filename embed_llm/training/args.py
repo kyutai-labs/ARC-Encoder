@@ -108,6 +108,10 @@ class TrainArgs(Serializable):
     llm_path: str | None = (
         None  # Path to the directory containing the LLM model or model id: "mistral-small"
     )
+    llm_path_2: str | None = None
+    prob_forward: list[float] = field(
+        default_factory=lambda: [0.5, 0.5]
+    )  # Probability of forwarding the LLM and embedder, respectively. The sum must be 1.0.
     llm_type: str = "mistral"  # Name of the model to use or llama
     embed_type: str = (
         "mistral"  # Type of the embedder to use, either "mistral" or "llama"

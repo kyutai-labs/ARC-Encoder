@@ -33,6 +33,7 @@ class EmbedAugModel(nn.Module):
         self,
         pipeline_args: EmbedAugArgs,
         llm: Transformer,
+        llm_2: Transformer | None = None,
         embedder: Transformer | None = None,
     ):
         super().__init__()
@@ -48,6 +49,7 @@ class EmbedAugModel(nn.Module):
                 hidden_dim=pipeline_args.bridge_module.hidden_dim,
                 type=pipeline_args.bridge_module.bridge_type,
             )
+        self.llm_2 = llm_2
 
     def forward(
         self,
@@ -57,6 +59,7 @@ class EmbedAugModel(nn.Module):
         embed_seqlens: list[int] | None = None,
         insert_cat_embedds: list[list[int]] | None = None,
         batch_type: str = "continuation",
+        llm_number: int = 1,
     ) -> torch.Tensor:
         if embeddings is not None:
             embeddings, embed_seqlens = self.embedder.forward_embedder(
@@ -128,14 +131,24 @@ class EmbedAugModel(nn.Module):
         if self.bridge_module is not None:
             embeddings = self.bridge_module(embeddings)
 
-        return self.llm.forward(
-            input_ids=x,
-            seqlens=seqlens,
-            embed_seqlens=embed_seqlens,
-            cat_embeddings=embeddings,
-            tokenized_prompts=self.tokenized_prompts,
-            insert_cat_embedds=insert_cat_embedds,
-        )
+        if llm_number == 1:
+            return self.llm.forward(
+                input_ids=x,
+                seqlens=seqlens,
+                embed_seqlens=embed_seqlens,
+                cat_embeddings=embeddings,
+                tokenized_prompts=self.tokenized_prompts,
+                insert_cat_embedds=insert_cat_embedds,
+            )
+        elif llm_number == 2:
+            return self.llm_2.forward(
+                input_ids=x,
+                seqlens=seqlens,
+                embed_seqlens=embed_seqlens,
+                cat_embeddings=embeddings,
+                tokenized_prompts=self.tokenized_prompts,
+                insert_cat_embedds=insert_cat_embedds,
+            )
 
 
 class EmbedAugPipeline(nn.Module):
@@ -144,20 +157,23 @@ class EmbedAugPipeline(nn.Module):
         pipeline_args: EmbedAugArgs,
         embedding_model: Transformer,
         llm_tokenizer: Tokenizer | None = None,
+        llm_2_tokenizer: Tokenizer | None = None,
         embed_tokenizer: Tokenizer | None = None,
     ):
         super().__init__()
 
         self.embedding_model = embedding_model
         self.llm_tokenizer = llm_tokenizer
+        self.llm_2_tokenizer = llm_2_tokenizer
         self.embed_tokenizer = embed_tokenizer
         self.pipeline_args = pipeline_args
         self.model = None
 
-    def get_model(self, llm: object) -> nn.Module:
+    def get_model(self, llm: object, llm_2: object) -> nn.Module:
         return EmbedAugModel(
             pipeline_args=self.pipeline_args,
             llm=llm,
+            llm_2=llm_2,
             embedder=self.embedding_model,
         )
 
