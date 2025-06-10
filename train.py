@@ -308,10 +308,10 @@ def _train(
         main_logger_info("Using paraphrase prompt")
         model.tokenized_prompts["reconstruction"] = []
         for prompt in PARAPHRASE_PROMPT:
-            prefix = pipeline.llm_tokenizer.encode(
+            prefix = pipeline.llm_tokenizer.tokenizer.encode(
                 prompt["prefix"], bos=True, eos=False
             )
-            suffix = pipeline.llm_tokenizer.encode(
+            suffix = pipeline.llm_tokenizer.tokenizer.encode(
                 prompt["suffix"], bos=False, eos=False
             )
             model.tokenized_prompts["reconstruction"].append(
@@ -320,10 +320,10 @@ def _train(
 
         model.tokenize_prompts["continuation"] = []
         for prompt in CONTINUATION_PROMPT:
-            prefix = pipeline.llm_tokenizer.encode(
+            prefix = pipeline.llm_tokenizer.tokenizer.encode(
                 prompt["prefix"], bos=False, eos=False
             )
-            suffix = pipeline.llm_tokenizer.encode(
+            suffix = pipeline.llm_tokenizer.tokenizer.encode(
                 prompt["suffix"], bos=False, eos=False
             )
             model.tokenize_prompts["continuation"].append(
@@ -430,7 +430,7 @@ def _train(
                 pipeline.prepare_forward(batch)
             )
  
-            # print('embed_seqlens', embed_seqlens)
+            # # print('embed_seqlens', embed_seqlens)
             # if get_rank() == 0:
             #     to_gen = [
             #         int(tok)
@@ -443,11 +443,11 @@ def _train(
             #     #     int(tok)
             #     #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
             #     # ]
-            #     print("Beginning", pipeline.llm_tokenizer.decode(to_gen))
-            #     print('Embed', pipeline.embed_tokenizer.decode(embed))
+            #     print("Beginning", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
+            #     print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
             #     # print('embedding tokens', batch.to_embed[13]["tokens"])
             #     # print('embed', batch.to_embed[13]["text"])
-            #     # print('Continuation', pipeline.llm_tokenizer.decode(continuation))
+            #     # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))
             #     # print('X len', len(batch.x))
             #     # print("Sizes", batch.sizes)
             #     # print("Embed seqlens", embed_seqlens)
@@ -474,13 +474,13 @@ def _train(
             for i, size in enumerate(batch.sizes):
                 if (
                     len(
-                        pipeline.llm_tokenizer.decode(
+                        pipeline.llm_tokenizer.tokenizer.decode(
                             [int(tok) for tok in batch.y[ind : ind + size]]
                         )
                     )
                     if batch.y_mask is None
                     else len(
-                        pipeline.llm_tokenizer.decode(
+                        pipeline.llm_tokenizer.tokenizer.decode(
                             [
                                 int(tok)
                                 for tok in batch.y[ind : ind + size][
@@ -501,13 +501,13 @@ def _train(
                 ).item()
                 batch_bpc += loss_in_bits / (
                     len(
-                        pipeline.llm_tokenizer.decode(
+                        pipeline.llm_tokenizer.tokenizer.decode(
                             [int(tok) for tok in batch.y[ind : ind + size]]
                         )
                     )
                     if y_mask is None
                     else len(
-                        pipeline.llm_tokenizer.decode(
+                        pipeline.llm_tokenizer.tokenizer.decode(
                             [
                                 int(tok)
                                 for tok in batch.y[ind : ind + size][

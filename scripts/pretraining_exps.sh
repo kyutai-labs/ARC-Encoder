@@ -1,12 +1,12 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0
+#SBATCH --array=2
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
-#SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
+#SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
 #SBATCH --job-name=pretrain_llama
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
 
@@ -18,6 +18,11 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 CONFIG_FILES=(
 config/experiments/multi_encoder/Pool8_llama8B_mlp_div2_5rec.yaml 
+config/experiments/new_method/SA_merge_L4_CR16_pt_5rec_new_learnedmix.yaml
+config/experiments/multi_encoder/Pool4_llama8Benc_mistraldec_mlp_div2_20rec.yaml
+config/experiments/No_Comp/NC_Ll8Benc_Mistral7B_mlp_new.yaml 
+config/experiments/No_Comp/NC_Ll3Benc_Mistral7B_mlp_new.yaml
+config/experiments/No_Comp/NC_Mistral7B_nomlp_new.yaml
 )
 
 
@@ -49,6 +54,17 @@ echo "Starting evaluation of run $RUN_NAME"
 
 case $RUN_NAME in
 
+*llama8Benc*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.1-8B
+
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad  --embed_name Llama3.1-8B
+
+    ;;
 *same_enc_llama8B*)
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \

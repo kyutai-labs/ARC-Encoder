@@ -295,7 +295,8 @@ class EmbedAugPipeline(nn.Module):
             assert all(
                 [
                     k in llm_embedder.state_dict()
-                    for k in trained_layers_state_dict.keys() if (not train_args.get("freeze_embedder", False) and 'rec_tok' in k)
+                    for k in trained_layers_state_dict.keys()
+                    if (not train_args.get("freeze_embedder", False) and "rec_tok" in k)
                 ]
             ), (
                 f"Ckpt state dict keys do not match model keys. Missing keys: {set(trained_layers_state_dict.keys()) - set(llm_embedder.state_dict().keys())}"
@@ -319,8 +320,12 @@ class EmbedAugPipeline(nn.Module):
         augmented_pipeline = EmbedAugPipeline(
             pipeline_args=pipeline_args,
             embedding_model=llm_embedder,
-            llm_tokenizer=llm_tokenizer,
-            embed_tokenizer=embed_tokenizer,
+            llm_tokenizer=Tokenizer(
+                tokenizer=llm_tokenizer, model_name=train_args.get("llm_type", "mistral")
+            ),
+            embed_tokenizer=Tokenizer(
+                tokenizer=embed_tokenizer, model_name=train_args.get("embed_type", "mistral")
+            ),
         )
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
@@ -397,7 +402,7 @@ class EmbedAugPipeline(nn.Module):
             w_embeds = self.pipeline_args.w_embeds
         if w_embeds:
             x = [
-                self.embed_tokenizer.encode(text, bos=False, eos=False)
+                self.embed_tokenizer.tokenizer.encode(text, bos=False, eos=False)
                 for l_text in text_to_embed
                 for text in l_text
             ]
@@ -470,11 +475,11 @@ class EmbedAugPipeline(nn.Module):
                     # if embed_seqlens is not None and len(embed_seqlens) > 0:
 
                     if index == 0:
-                        toks = self.llm_tokenizer.encode(prompt, bos=True, eos=False)
+                        toks = self.llm_tokenizer.tokenizer.encode(prompt, bos=True, eos=False)
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
                     else:
-                        toks = self.llm_tokenizer.encode(prompt, bos=False, eos=False)
+                        toks = self.llm_tokenizer.tokenizer.encode(prompt, bos=False, eos=False)
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
 
@@ -492,10 +497,10 @@ class EmbedAugPipeline(nn.Module):
             else:
                 prompt = "".join(l_prompts)
                 encoded_prompt.append(
-                    [self.llm_tokenizer.encode(prompt, bos=True, eos=False)]
+                    [self.llm_tokenizer.tokenizer.encode(prompt, bos=True, eos=False)]
                 )
 
-        eos_id = self.llm_tokenizer.eos_id
+        eos_id = self.llm_tokenizer.tokenizer.eos_id
         generated_tokens = transformer_generate(
             prompt_tokens=encoded_prompt,
             insertion_lists=insertion_lists,
@@ -511,7 +516,7 @@ class EmbedAugPipeline(nn.Module):
         )
 
         produced_text = [
-            self.llm_tokenizer.decode(generated_tokens[i])
+            self.llm_tokenizer.tokenizer.decode(generated_tokens[i])
             for i in range(len(generated_tokens))
         ]
         if truncate_line:

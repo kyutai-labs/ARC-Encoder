@@ -4,6 +4,7 @@ import torch
 from torch.distributed.fsdp import BackwardPrefetch
 from torch.distributed.fsdp.api import ShardingStrategy
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
+
 # import safetensors
 from embed_llm.models.args import LoraArgs
 from embed_llm.models.augmented_model import EmbedAugPipeline
@@ -11,6 +12,7 @@ from embed_llm.models.utils.loading import (
     load_args,
     load_state_dict,
 )
+from embed_llm.data.tokenize import Tokenizer
 from embed_llm.models.utils.utils import (
     get_fsdp_policy,
     initialize_lora_parameters,
@@ -88,8 +90,12 @@ def load_training_model(
     # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
         pipeline_args=pipeline_args,
-        llm_tokenizer=llm_tokenizer,
-        embed_tokenizer=embed_tokenizer,
+        llm_tokenizer=Tokenizer(
+            tokenizer=llm_tokenizer, model_name=train_args.llm_type
+        ),
+        embed_tokenizer=Tokenizer(
+            tokenizer=embed_tokenizer, model_name=train_args.embed_type
+        ),
         embedding_model=llm_embedder,
     )
 
@@ -339,8 +345,12 @@ def load_training_model_from_ckpt(
     # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
         pipeline_args=pipeline_args,
-        llm_tokenizer=llm_tokenizer,
-        embed_tokenizer=embed_tokenizer,
+        llm_tokenizer=Tokenizer(
+            tokenizer=llm_tokenizer, model_name=train_args.llm_type
+        ),
+        embed_tokenizer=Tokenizer(
+            tokenizer=embed_tokenizer, model_name=train_args.embed_type
+        ),
         embedding_model=llm_embedder,
     )
 

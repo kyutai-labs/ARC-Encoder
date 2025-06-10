@@ -1,7 +1,6 @@
 import dataclasses
 import numpy as np
 from embed_llm.data.tokenize import Mask, TokenSample, Tokenizer
-from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
 
 
 @dataclasses.dataclass()
@@ -86,7 +85,7 @@ def sequence_iterator_reconstruction(
 
             to_embed_buffer.append(
                 {
-                    "text": embed_tokenizer.decode(new_embed),
+                    "text": embed_tokenizer.tokenizer.decode(new_embed),
                     "tokens": new_embed,
                 }
             )
@@ -104,36 +103,37 @@ def sequence_iterator_reconstruction(
 
             new_embed_tokens = sum([toks[:seq_len] for toks in new_embed], [])
             new_embed_text = " ".join(
-                [embed_tokenizer.decode(toks[:seq_len]).strip() for toks in new_embed]
+                [
+                    embed_tokenizer.tokenizer.decode(toks[:seq_len]).strip()
+                    for toks in new_embed
+                ]
             )
-            if isinstance(
-                embed_tokenizer, LlamaTokenizer
-            ):
-  
-                for sp_tok in llm_tokenizer.special_tokens.keys():
+            if embed_tokenizer.model_name == "llama":
+                for sp_tok in llm_tokenizer.tokenizer.special_tokens.keys():
                     new_embed_text = new_embed_text.replace(sp_tok, "")
-            
+
             to_embed_buffer.append({"text": new_embed_text, "tokens": new_embed_tokens})
 
             if data_type == "instruct":
                 if few_shot_instruct is None:
                     prefix = "Document: "
                 else:
+                    prefix = "\n\n".join(
+                        few_shot_instruct[
+                            : np.random.randint(0, len(few_shot_instruct) + 1)
+                        ]
+                    )
+
                     prefix = (
-                        "\n\n".join(
-                            few_shot_instruct[
-                                : np.random.randint(0, len(few_shot_instruct) + 1)
-                            ]
-                        ))
-                    
-                    prefix = prefix + "\n\nDocument: " if len(prefix) > 0 else "Document: "
-                doc_tokens = llm_tokenizer.encode(prefix, bos=True, eos=False)
+                        prefix + "\n\nDocument: " if len(prefix) > 0 else "Document: "
+                    )
+                doc_tokens = llm_tokenizer.tokenizer.encode(prefix, bos=True, eos=False)
                 insert_embed_list.append([len(doc_tokens)])
                 x_buffer.extend(doc_tokens)
                 y_buffer.extend(doc_tokens)
 
                 if few_shot_instruct is not None:
-                    question = llm_tokenizer.decode(
+                    question = llm_tokenizer.tokenizer.decode(
                         [
                             int(tok)
                             for i, tok in enumerate(
@@ -142,7 +142,7 @@ def sequence_iterator_reconstruction(
                             if not curr_mask[i]
                         ]
                     )
-                    answer = llm_tokenizer.decode(
+                    answer = llm_tokenizer.tokenizer.decode(
                         [
                             int(tok)
                             for i, tok in enumerate(
@@ -296,27 +296,43 @@ def sequence_iterator_inserted_embed_continuation(
         )
         new_embed = x[cur_pos : cur_pos + left_tokens // 2]
 
-        if isinstance(llm_tokenizer, LlamaTokenizer) and not isinstance(
-            embed_tokenizer, LlamaTokenizer
+        if (
+            llm_tokenizer.model_name == "llama"
+            and embed_tokenizer.model_name == "mistral"
         ):
-            new_text = llm_tokenizer.decode(new_embed)
+            new_text = llm_tokenizer.tokenizer.decode(new_embed)
             bos = "<|begin_of_text|>" in new_text
             eos = "<|end_of_text|>" in new_text
-            for sp_tok in llm_tokenizer.special_tokens.keys():
+            for sp_tok in llm_tokenizer.tokenizer.special_tokens.keys():
                 new_text = new_text.replace(sp_tok, "")
             to_embed_buffer.append(
                 {
                     "text": new_text,
-                    "tokens": embed_tokenizer.encode(new_text, bos=bos, eos=eos),
+                    "tokens": embed_tokenizer.tokenizer.encode(
+                        new_text, bos=bos, eos=eos
+                    ),
                 }
             )
-            # print(
-            #     f"New embed Llama vs Mistral: {len(new_embed)} | {len(embed_tokenizer.encode(new_text, bos=bos, eos=eos))}"
-            # )
+
+        elif (
+            llm_tokenizer.model_name == "mistral"
+            and embed_tokenizer.model_name == "llama"
+        ):
+            bos = llm_tokenizer.tokenizer.bos_id in new_embed
+            eos = llm_tokenizer.tokenizer.eos_id in new_embed
+            new_text = llm_tokenizer.tokenizer.decode(new_embed)
+            to_embed_buffer.append(
+                {
+                    "text": new_text,
+                    "tokens": embed_tokenizer.tokenizer.encode(
+                        new_text, bos=bos, eos=eos
+                    ),
+                }
+            )
         else:
             to_embed_buffer.append(
                 {
-                    "text": llm_tokenizer.decode(new_embed),
+                    "text": llm_tokenizer.tokenizer.decode(new_embed),
                     "tokens": new_embed,
                 }
             )
