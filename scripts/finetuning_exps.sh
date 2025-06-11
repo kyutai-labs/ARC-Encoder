@@ -9,7 +9,7 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=fine_tuning_mixed_models
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
-#SBATCH --dependency=afterany:760668_0 
+
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
@@ -17,10 +17,6 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/multi_encoder/ft/Pool4_switch_mlp_div2_5rec_ftsquad.yaml 
-config/experiments/multi_encoder/ft/Pool4_switch_mlp_div2_5rec_ftsquad_v2.yaml
-config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ftsquad.yaml 
-config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ft16squad.yaml
 )
 # config/experiments/multi_encoder/ft/Pool4_llama8Benc_mistraldec_mlp_div2_20rec_ftsquad.yaml 
 # config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_20rec_learnmore_ftsquad.yaml 
@@ -28,6 +24,19 @@ config/experiments/multi_encoder/ft/Pool8_llama8B_mlp_div2_5rec_ft16squad.yaml
 # config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_20rec_conttok_ftsquad.yaml 
 # config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_10rec_learnmore_ftsquad.yaml 
 # config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_10rec_conttok_ftsquad.yaml
+
+# config/experiments/smaller_encoder/ft/Pool4_llama3Benc_mistraldec_mlp_div2_20rec_ftsquad.yaml 
+# config/experiments/smaller_encoder/ft/Pool4_llama3Benc_mistraldec_mlp_div2_10rec_learnmore_ftsquad.yaml 
+# config/experiments/smaller_encoder/ft/Pool4_llama3Benc_mistraldec_mlp_div2_10rec_ftsquad.yaml 
+# config/experiments/smaller_encoder/ft/Pool4_llama3Benc_mistraldec_mlp_div2_10rec_conttok_ftsquad.yaml 
+# config/experiments/smaller_encoder/ft/Pool4_llama3Benc_mistraldec_mlp_div2_0rec_ftsquad.yaml
+# config/experiments/heavier_pt/ft/CP16_M7B_MLP2_L8B_20rec_ftsquad.yaml 
+# config/experiments/heavier_pt/ft/CP16_M7B_MLP2_L8B_20rec_Dist_ftsquad.yaml 
+# config/experiments/heavier_pt/ft/CP16_M7B_M7B_5rec_ftsquad.yaml 
+# config/experiments/heavier_pt/ft/CP16_L8B_MLP2_M7B_20rec_ftsquad.yaml 
+# config/experiments/heavier_pt/ft/CP16_L8B_L8B_5rec_ftsquad.yaml 
+# config/experiments/heavier_pt/ft/CP16_L3B_MLP2_M7B_20rec_ftsquad.yaml 
+# config/experiments/heavier_pt/ft/CP16_L3B_MLP2_L8B_20rec_ftsquad.yaml
 
 # Modify QA path in train data
 

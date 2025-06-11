@@ -188,9 +188,12 @@ def evaluate_QA(
     compressed_doc_in_icl: bool = False,
     reversed_template: bool = False,
     comp_rate: int | None = None,
+    bridge_ckpt: bool
+    | str
+    | None = None,  # Path to the bridge checkpoint if using a bridge model
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
-
+    llm_name = llm_path.split("/")[-1]
     # Loading model
     if not is_torchrun():
         device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
@@ -211,6 +214,9 @@ def evaluate_QA(
         mistral=mistral,
         ckpt=ckpt,
         comp_rate=comp_rate,
+        bridge_ckpt=bridge_ckpt,
+        llm_type="llama" if "llama" in llm_path.lower() else "mistral",
+        embed_type="llama" if "llama" in embed_path.lower() else "mistral",
     )
     if mistral:
         mistral_tokenizer = MistralTokenizer.from_file(
@@ -416,6 +422,7 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                     "compressed_icl": compressed_doc_in_icl,
+                    "llm_name": llm_name,
                 }
                 value_f1 = (
                     sum(
@@ -436,6 +443,7 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                     "compressed_icl": compressed_doc_in_icl,
+                    "llm_name": llm_name,
                 }
 
                 eval_logger_info(
@@ -480,6 +488,7 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "prop context containing the answer": n_answer_in_context,
                     "compressed_icl": compressed_doc_in_icl,
+                    "llm_name": llm_name,
                 }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
@@ -562,8 +571,13 @@ def evaluate_trad(
     comp_rate: int | None = None,
     query_w_context: bool = False,
     fine_tuned: bool = False,
+    bridge_ckpt: bool
+    | str
+    | None = None,  # Path to the bridge checkpoint if using a bridge model
 ):
     # Loading model
+    llm_name = llm_path.split("/")[-1]
+
     if not is_torchrun():
         device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
         device_count = torch.cuda.device_count()
@@ -583,6 +597,9 @@ def evaluate_trad(
         mistral=mistral,
         ckpt=ckpt,
         comp_rate=comp_rate,
+        bridge_ckpt=bridge_ckpt,
+        llm_type="llama" if "llama" in llm_path.lower() else "mistral",
+        embed_type="llama" if "llama" in embed_path.lower() else "mistral",
     )
 
     if mistral:
@@ -792,6 +809,7 @@ def evaluate_trad(
                 "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                 "language": benchmark,
                 "fine_tuned": fine_tuned,
+                "llm_name": llm_name,
             }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
@@ -876,6 +894,7 @@ def arg_parser():
     parser.add_argument("--llm_name", type=str, default="mistral_7B")
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--query_w_context", action="store_true")
+    parser.add_argument("--bridge_ckpt", type=str, default=None)
 
     return parser.parse_args()
 
@@ -1042,6 +1061,7 @@ if __name__ == "__main__":
                 benchmarks=benchmarks
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],
+                bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
             )
             torch.cuda.empty_cache()
         else:
@@ -1066,6 +1086,7 @@ if __name__ == "__main__":
                 reversed_template=args.reversed_template,
                 comp_rate=args.comp_rate,
                 query_w_context=args.query_w_context,
+                bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
             )
 
             for icl_ex in icl_tests[1:]:
@@ -1091,4 +1112,5 @@ if __name__ == "__main__":
                     reversed_template=args.reversed_template,
                     comp_rate=args.comp_rate,
                     query_w_context=args.query_w_context,
+                    bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
                 )

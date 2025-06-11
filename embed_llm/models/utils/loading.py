@@ -168,7 +168,6 @@ def load_state_dict(path: Path, dtype: torch.dtype) -> dict[str, torch.Tensor]:
 
     for k, v in model_state_dict.items():
         if v.dtype == dtype:
-            logger.info(f"Skipping conversion as it is already in {dtype} dtype.")
             break
         model_state_dict[k] = v.to(dtype)
 

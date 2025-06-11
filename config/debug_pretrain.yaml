@@ -7,12 +7,7 @@ run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
 exp_name: test_pretrain2
 
 
-continuation: 0.95
-
-lora_embedder:
-  enable: false
-  rank: 128
-  scaling: 2.0
+continuation: 0.5
 
 no_eval: false
 num_microbatches: 1
@@ -25,19 +20,21 @@ optim:
   weight_decay: 0.1
   max_lr_projector: 5.0e-5
 
+loss_args: 
+  kl: true
+  kl_weight: 3.0
+  top_k: 0.001 # Eq 1% 
 pipeline:
   embedder_params:
     causal_embedder: true
     compress_rates:
-    - -16
+    - -4
     n_truncated_layers: 16
     pooling_module:
       pool_type: mean_sa
       where: before
-    trained_layers: 4
+    trained_layers: 8
     rec_tok: true
-    mixed_method: true
-    memory_tokens: 128
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
@@ -66,7 +63,7 @@ max_steps: 10000
 seed: 0
 log_freq: 1
 eval_freq: 50
-no_eval: false
+no_eval: true
 ckpt_freq: 10
 
 # from_ckpt:

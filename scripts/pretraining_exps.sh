@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-1
+#SBATCH --array=3-7
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -9,16 +9,26 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
 #SBATCH --job-name=pretrain_llama
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx08,par2dc5-ai-prd-cl02s03dgx09,par2dc5-ai-prd-cl02s04dgx07,par2dc5-ai-prd-cl02s04dgx20,par2dc5-ai-prd-cl02s03dgx01,par2dc5-ai-prd-cl02s03dgx16,par2dc5-ai-prd-cl02s03dgx02,par2dc5-ai-prd-cl02s02dgx32
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 
 
+
 CONFIG_FILES=(
-config/experiments/multi_encoder/Pool4_llama8B_mlp_div2_20rec_learnmore.yaml
-config/experiments/multi_decoder/Pool4_to_llama_mlp_pt_diff_lr.yaml
+config/experiments/heavier_pt/CP16_M7B_MLP2_L8B_20rec.yaml 
+config/experiments/heavier_pt/CP16_M7B_MLP2_L8B_20rec_Dist.yaml 
+config/experiments/heavier_pt/CP16_M7B_M7B_5rec.yaml 
+config/experiments/heavier_pt/CP16_L8B_MLP2_M7B_20rec.yaml 
+config/experiments/heavier_pt/CP16_L8B_L8B_5rec.yaml 
+config/experiments/smaller_encoder/Pool4_llama3Benc_mistraldec_mlp_div2_10rec.yaml 
+config/experiments/smaller_encoder/Pool4_llama3Benc_mistraldec_mlp_div2_10rec_learnmore.yaml 
+config/experiments/smaller_encoder/Pool4_llama3Benc_mistraldec_mlp_div2_20rec.yaml 
+config/experiments/smaller_encoder/Pool4_llama3Benc_mistraldec_mlp_div2_0rec.yaml
+config/experiments/smaller_encoder/Pool4_llama3Benc_mistraldec_mlp_div2_10rec_conttok.yaml 
+config/experiments/heavier_pt/CP16_L3B_MLP2_M7B_20rec.yaml 
+config/experiments/heavier_pt/CP16_L3B_MLP2_L8B_20rec.yaml
 )
 
 
