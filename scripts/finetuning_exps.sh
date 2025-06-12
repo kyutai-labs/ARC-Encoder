@@ -17,28 +17,24 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/multi_encoder/ft/Pool4_llama8Benc_mistraldec_mlp_div2_20rec_ftsquad.yaml 
-config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_20rec_learnmore_ftsquad.yaml 
-config/experiments/multi_encoder/ft/MixedPool16_llama8B_mlp_div2_5rec_learned_ftsquad.yaml 
-config/experiments/multi_encoder/ft/Pool4_llama8B_mlp_div2_20rec_conttok_ftsquad.yaml 
-config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_10rec_learnmore_ftsquad.yaml 
-config/experiments/multi_encoder/ft/Memtoks64_llama8B_mlp_div2_10rec_conttok_ftsquad.yaml
 config/experiments/smaller_encoder/ft/Pool4_llama3Benc_mistraldec_mlp_div2_20rec_ftsquad.yaml 
 config/experiments/smaller_encoder/ft/Pool4_llama3Benc_mistraldec_mlp_div2_10rec_learnmore_ftsquad.yaml 
 config/experiments/smaller_encoder/ft/Pool4_llama3Benc_mistraldec_mlp_div2_10rec_ftsquad.yaml 
 config/experiments/smaller_encoder/ft/Pool4_llama3Benc_mistraldec_mlp_div2_10rec_conttok_ftsquad.yaml 
 config/experiments/smaller_encoder/ft/Pool4_llama3Benc_mistraldec_mlp_div2_0rec_ftsquad.yaml
-config/experiments/heavier_pt/ft/CP16_M7B_MLP2_L8B_20rec_ftsquad.yaml 
-config/experiments/heavier_pt/ft/CP16_M7B_MLP2_L8B_20rec_Dist_ftsquad.yaml 
-config/experiments/heavier_pt/ft/CP16_M7B_M7B_5rec_ftsquad.yaml 
+config/experiments/heavier_pt/ft/CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad.yaml
+config/experiments/multi_decoder/ft/Pool4_ftsquad_to_mistral_ftsquad.yaml 
+config/experiments/multi_decoder/ft/Pool4_ftsquad_to_llama_ftsquad.yaml
 config/experiments/heavier_pt/ft/CP16_L8B_MLP2_M7B_20rec_ftsquad.yaml 
 config/experiments/heavier_pt/ft/CP16_L8B_L8B_5rec_ftsquad.yaml 
 config/experiments/heavier_pt/ft/CP16_L3B_MLP2_M7B_20rec_ftsquad.yaml 
 config/experiments/heavier_pt/ft/CP16_L3B_MLP2_L8B_20rec_ftsquad.yaml
+config/experiments/heavier_pt/ft/CP16_M7B_MLP2_L8B_20rec_ftsquad.yaml 
+config/experiments/heavier_pt/ft/CP16_M7B_MLP2_L8B_20rec_Dist_ftsquad.yaml 
+config/experiments/heavier_pt/ft/CP16_M7B_M7B_5rec_ftsquad.yaml 
 config/experiments/heavier_pt/ft/CP16_M7B_MLP2_L8B_20rec_lesslayers_ftsquad.yaml
 )
-# config/experiments/multi_decoder/ft/Pool4_ftsquad_to_mistral_ftsquad.yaml 
-# config/experiments/multi_decoder/ft/Pool4_ftsquad_to_llama_ftsquad.yaml
+
 
 # Modify QA path in train data
 
