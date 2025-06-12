@@ -288,6 +288,8 @@ class EmbedAugPipeline(nn.Module):
         elif (
             pipeline_args.embedder_params.trained_layers > 0
             or pipeline_args.embedder_params.memory_tokens > 0
+            or pipeline_args.embedder_params.rec_tok
+            or pipeline_args.embedder_params.cont_tok
         ):
             embed_path = (
                 Path(ckpt_path + "/embedder")
@@ -299,8 +301,7 @@ class EmbedAugPipeline(nn.Module):
             assert all(
                 [
                     k in llm_embedder.state_dict()
-                    for k in trained_layers_state_dict.keys()
-                    if (not train_args.get("freeze_embedder", False) and "rec_tok" in k)
+                    for k in trained_layers_state_dict.keys() if 'rec_tok' not in k 
                 ]
             ), (
                 f"Ckpt state dict keys do not match model keys. Missing keys: {set(trained_layers_state_dict.keys()) - set(llm_embedder.state_dict().keys())}"
@@ -314,8 +315,23 @@ class EmbedAugPipeline(nn.Module):
                     or pipeline_args.embedder_params.cont_tok
                 ),
             )
+
+            if (
+                train_args.get("freeze_embedder", False)
+                and (pipeline_args.embedder_params.rec_tok or pipeline_args.embedder_params.cont_tok)
+            ):
+                embed_path = Path(ckpt_path + "/embedder")
+                supp_tok_state_dict = load_state_dict(embed_path, dtype=param_dtype)
+                assert "rec_tok" in supp_tok_state_dict or 'cont_tok' in supp_tok_state_dict, (
+                    f"no supp tok found in state dict {supp_tok_state_dict.keys()}"
+                )
+                llm_embedder.load_state_dict(
+                    supp_tok_state_dict, strict=False, assign=True
+                )
         else:
-            logger.info("No trained layers, not loading any new state dict for the embedder")
+            logger.info(
+                "No trained layers, not loading any new state dict for the embedder"
+            )
 
         llm_embedder = llm_embedder.to(device)
 
@@ -324,27 +340,26 @@ class EmbedAugPipeline(nn.Module):
         augmented_pipeline = EmbedAugPipeline(
             pipeline_args=pipeline_args,
             embedding_model=llm_embedder,
-            llm_tokenizer=Tokenizer(
-                tokenizer=llm_tokenizer, model_name=llm_type
-            ),
-            embed_tokenizer=Tokenizer(
-                tokenizer=embed_tokenizer, model_name=embed_type
-            ),
+            llm_tokenizer=Tokenizer(tokenizer=llm_tokenizer, model_name=llm_type),
+            embed_tokenizer=Tokenizer(tokenizer=embed_tokenizer, model_name=embed_type),
         )
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
 
-        if pipeline_args.bridge_module.bridge_type is not None and bridge_ckpt_path is not None:
+        if (
+            pipeline_args.bridge_module.bridge_type is not None
+            and bridge_ckpt_path is not None
+        ):
             logger.info(
                 f"Loading bridge module from {bridge_ckpt_path} with dtype {param_dtype}"
             )
-            state_dict = load_state_dict(
-                Path(bridge_ckpt_path), dtype=param_dtype
-            )
+            state_dict = load_state_dict(Path(bridge_ckpt_path), dtype=param_dtype)
 
             augmented_pipeline.model.bridge_module.load_state_dict(state_dict)
         else:
-            logger.info('No bridge module or no checkpoint provided, skipping loading bridge module')
+            logger.info(
+                "No bridge module or no checkpoint provided, skipping loading bridge module"
+            )
             augmented_pipeline.model.bridge_module = None
         augmented_pipeline.model = augmented_pipeline.model.to(device)
 
@@ -485,11 +500,15 @@ class EmbedAugPipeline(nn.Module):
                     # if embed_seqlens is not None and len(embed_seqlens) > 0:
 
                     if index == 0:
-                        toks = self.llm_tokenizer.tokenizer.encode(prompt, bos=True, eos=False)
+                        toks = self.llm_tokenizer.tokenizer.encode(
+                            prompt, bos=True, eos=False
+                        )
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
                     else:
-                        toks = self.llm_tokenizer.tokenizer.encode(prompt, bos=False, eos=False)
+                        toks = self.llm_tokenizer.tokenizer.encode(
+                            prompt, bos=False, eos=False
+                        )
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
 
@@ -590,9 +609,13 @@ def load_pipeline(
                 ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
                 device=device,
                 max_batch_size=max_bs,
-                bridge_ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt + '/bridge_module/' if bridge_ckpt is None else (
-                    bridge_ckpt if isinstance(bridge_ckpt, str) else None
-                ),
+                bridge_ckpt_path=tmp_path
+                + run_name
+                + "/checkpoints/"
+                + last_ckpt
+                + "/bridge_module/"
+                if bridge_ckpt is None
+                else (bridge_ckpt if isinstance(bridge_ckpt, str) else None),
                 llm_type=llm_type,
                 embed_type=embed_type,
             )

@@ -45,6 +45,7 @@ class EmbedderArgs(Serializable):
     cont_tok: bool = False
     compress_rates: list[int] = field(default_factory=list)
     trained_layers: int = 0
+    train_embedding_mtx: bool = False
     causal_embedder: bool = True
     trained_causal: bool = True
     matryoshka_training: dict[int, float] | None = None

@@ -176,6 +176,7 @@ def _train(
             decoder_path=args.from_ckpt.decoder_path,
             embedder_path=args.from_ckpt.embedder_path,
             llm_path=args.from_ckpt.llm_path,
+            supp_toks_path=args.from_ckpt.supp_toks_path,
         )
     else:
         pipeline, model = load_training_model(
