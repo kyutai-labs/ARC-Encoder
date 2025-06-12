@@ -128,8 +128,8 @@ class EmbedAugModel(nn.Module):
             # Only one insertion of embedding per sample
             embed_seqlens = group_embed_seqlens(embed_seqlens, [1] * len(seqlens))
             # print('Grouped embed_seqlens:', embed_seqlens)
-        if self.bridge_module is not None:
-            embeddings = self.bridge_module(embeddings)
+            if self.bridge_module is not None:
+                embeddings = self.bridge_module(embeddings)
 
         if llm_number == 1:
             return self.llm.forward(
@@ -215,8 +215,11 @@ class EmbedAugPipeline(nn.Module):
         embedder_path: str,
         ckpt_path: str | None,
         device: str,
+        llm_type: str = "mistral",
+        embed_type: str = "mistral",
         max_batch_size: int = 4,
         param_dtype: torch.dtype = torch.float32,
+        bridge_ckpt_path: str | None = None,
     ):
         with open(os.path.join(ckpt_path, "../../args.yaml"), "r") as f:
             train_args = yaml.safe_load(f)
@@ -229,7 +232,7 @@ class EmbedAugPipeline(nn.Module):
             lora=lora_llm,
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
-            args_type=train_args.get("llm_type", "mistral"),
+            args_type=llm_type,
         )
 
         if pipeline_args.trainable_llm:
@@ -244,10 +247,10 @@ class EmbedAugPipeline(nn.Module):
             checkpoint=False,
             param_dtype=param_dtype,
             parll=is_torchrun(),
-            llm_type=train_args.get("llm_type", "mistral"),
-            embed_type=train_args.get("embed_type", "mistral"),
+            llm_type=llm_type,
+            embed_type=embed_type,
         )
-
+        logger.info("Loading LLM from")
         if pipeline_args.trainable_llm and lora_llm.enable:
             llm.load_lora(Path(ckpt_path + "/llm/lora.safetensors"))
         elif pipeline_args.trainable_llm:
@@ -272,7 +275,7 @@ class EmbedAugPipeline(nn.Module):
             lora=lora_embedder,
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
-            args_type=train_args.get("embed_type", "mistral"),
+            args_type=embed_type,
         )
 
         llm_embedder, embed_tokenizer = load_model(
@@ -283,8 +286,8 @@ class EmbedAugPipeline(nn.Module):
             param_dtype=param_dtype,
             for_embedding=True,
             parll=is_torchrun(),
-            llm_type=train_args.get("llm_type", "mistral"),
-            embed_type=train_args.get("embed_type", "mistral"),
+            llm_type=llm_type,
+            embed_type=embed_type,
         )
 
         if lora_embedder.enable:
@@ -301,18 +304,20 @@ class EmbedAugPipeline(nn.Module):
         elif (
             pipeline_args.embedder_params.trained_layers > 0
             or pipeline_args.embedder_params.memory_tokens > 0
+            or pipeline_args.embedder_params.rec_tok
+            or pipeline_args.embedder_params.cont_tok
         ):
             embed_path = (
                 Path(ckpt_path + "/embedder")
                 if not train_args.get("freeze_embedder", False)
                 else Path(train_args["from_ckpt"]["embedder_path"])
             )
+            logger.info("Loading embedder trained layers")
             trained_layers_state_dict = load_state_dict(embed_path, dtype=param_dtype)
             assert all(
                 [
                     k in llm_embedder.state_dict()
-                    for k in trained_layers_state_dict.keys()
-                    if (not train_args.get("freeze_embedder", False) and "rec_tok" in k)
+                    for k in trained_layers_state_dict.keys() if 'rec_tok' not in k 
                 ]
             ), (
                 f"Ckpt state dict keys do not match model keys. Missing keys: {set(trained_layers_state_dict.keys()) - set(llm_embedder.state_dict().keys())}"
@@ -326,8 +331,23 @@ class EmbedAugPipeline(nn.Module):
                     or pipeline_args.embedder_params.cont_tok
                 ),
             )
+
+            if (
+                train_args.get("freeze_embedder", False)
+                and (pipeline_args.embedder_params.rec_tok or pipeline_args.embedder_params.cont_tok)
+            ):
+                embed_path = Path(ckpt_path + "/embedder")
+                supp_tok_state_dict = load_state_dict(embed_path, dtype=param_dtype)
+                assert "rec_tok" in supp_tok_state_dict or 'cont_tok' in supp_tok_state_dict, (
+                    f"no supp tok found in state dict {supp_tok_state_dict.keys()}"
+                )
+                llm_embedder.load_state_dict(
+                    supp_tok_state_dict, strict=False, assign=True
+                )
         else:
-            print("No trained layers, not loading any new state dict for the embedder")
+            logger.info(
+                "No trained layers, not loading any new state dict for the embedder"
+            )
 
         llm_embedder = llm_embedder.to(device)
 
@@ -336,22 +356,27 @@ class EmbedAugPipeline(nn.Module):
         augmented_pipeline = EmbedAugPipeline(
             pipeline_args=pipeline_args,
             embedding_model=llm_embedder,
-            llm_tokenizer=Tokenizer(
-                tokenizer=llm_tokenizer, model_name=train_args.get("llm_type", "mistral")
-            ),
-            embed_tokenizer=Tokenizer(
-                tokenizer=embed_tokenizer, model_name=train_args.get("embed_type", "mistral")
-            ),
+            llm_tokenizer=Tokenizer(tokenizer=llm_tokenizer, model_name=llm_type),
+            embed_tokenizer=Tokenizer(tokenizer=embed_tokenizer, model_name=embed_type),
         )
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
 
-        if pipeline_args.bridge_module.bridge_type is not None:
-            state_dict = load_state_dict(
-                Path(ckpt_path + "/bridge_module"), dtype=param_dtype
+        if (
+            pipeline_args.bridge_module.bridge_type is not None
+            and bridge_ckpt_path is not None
+        ):
+            logger.info(
+                f"Loading bridge module from {bridge_ckpt_path} with dtype {param_dtype}"
             )
+            state_dict = load_state_dict(Path(bridge_ckpt_path), dtype=param_dtype)
 
             augmented_pipeline.model.bridge_module.load_state_dict(state_dict)
+        else:
+            logger.info(
+                "No bridge module or no checkpoint provided, skipping loading bridge module"
+            )
+            augmented_pipeline.model.bridge_module = None
         augmented_pipeline.model = augmented_pipeline.model.to(device)
 
         augmented_pipeline.model.eval()
@@ -491,11 +516,15 @@ class EmbedAugPipeline(nn.Module):
                     # if embed_seqlens is not None and len(embed_seqlens) > 0:
 
                     if index == 0:
-                        toks = self.llm_tokenizer.tokenizer.encode(prompt, bos=True, eos=False)
+                        toks = self.llm_tokenizer.tokenizer.encode(
+                            prompt, bos=True, eos=False
+                        )
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
                     else:
-                        toks = self.llm_tokenizer.tokenizer.encode(prompt, bos=False, eos=False)
+                        toks = self.llm_tokenizer.tokenizer.encode(
+                            prompt, bos=False, eos=False
+                        )
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
 
@@ -564,6 +593,9 @@ def load_pipeline(
     mistral: bool = False,
     ckpt: int | None = None,
     comp_rate: int | None = None,
+    bridge_ckpt: bool | str | None = None,
+    llm_type: str = "mistral",
+    embed_type: str = "mistral",
 ) -> EmbedAugPipeline | Transformer:
     if not mistral:
         if pipeline is None:
@@ -593,6 +625,15 @@ def load_pipeline(
                 ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
                 device=device,
                 max_batch_size=max_bs,
+                bridge_ckpt_path=tmp_path
+                + run_name
+                + "/checkpoints/"
+                + last_ckpt
+                + "/bridge_module/"
+                if bridge_ckpt is None
+                else (bridge_ckpt if isinstance(bridge_ckpt, str) else None),
+                llm_type=llm_type,
+                embed_type=embed_type,
             )
 
             ckpt = int(last_ckpt.split("_")[-1])

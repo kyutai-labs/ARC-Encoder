@@ -56,6 +56,7 @@ class CkptArgs(Serializable):
     embedder_path: str | None = None
     bridge_path: str | None = None
     llm_path: str | None = None
+    supp_toks_path: str | None = None
 
 
 @dataclass

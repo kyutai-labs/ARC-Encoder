@@ -68,6 +68,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "compress_ratio",
             "EM approx_Metric",
             "xRAG metric",
+            "llm_name"
         ]
     elif benchmark.lower() == "factkg":
         key_list = [
@@ -80,6 +81,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "Metric",
             "Prop_a_in_cont",
             "n_passages",
+            "llm_name"
         ]
     elif benchmark.lower() == "traduction":
         key_list = [
@@ -91,6 +93,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "Bleu",
             "compress_ratio",
             "fine_tuned",
+            "llm_name"
         ]
     else:
         raise ValueError("Invalid benchmark")
@@ -124,6 +127,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                             "compress_ratio": result.get(
                                                 "compress_ratio", None
                                             ),
+                                            "llm_name": result.get("llm_name", 'mistral_7B'),
                                         },
                                         index=[0],
                                     ),
@@ -139,6 +143,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                             "language",
                             "fine_tuned",
                             "compress_ratio",
+                            "llm_name",
                         ]
                     )
                     .first()
@@ -193,6 +198,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                 "EM approx_Metric": res.get(
                                                     "approx_Metric", None
                                                 ),
+                                                "llm_name": res.get("llm_name", 'mistral_7B'),
                                             },
                                             index=[0],
                                         ),
@@ -224,6 +230,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                             None,
                                         ),
                                         "n_passages": res.get("n_passages", 1),
+                                        "llm_name": res.get("llm_name", 'mistral_7B'),
                                     },
                                     index=[0],
                                 )
@@ -260,6 +267,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                 "n_passages",
                                 "compressed_icl",
                                 "compress_ratio",
+                                "llm_name",
                             ]
                         )
                         .first()

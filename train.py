@@ -18,7 +18,6 @@ import torch.distributed as dist
 from torch.optim import AdamW, lr_scheduler
 
 from embed_llm.data.data_loader import build_data_loader
-from embed_llm.models.transformer_layers import insert_embeds
 from embed_llm.models.wrapped_models_training import (
     load_training_model,
     load_training_model_from_ckpt,
@@ -177,6 +176,7 @@ def _train(
             decoder_path=args.from_ckpt.decoder_path,
             embedder_path=args.from_ckpt.embedder_path,
             llm_path=args.from_ckpt.llm_path,
+            supp_toks_path=args.from_ckpt.supp_toks_path,
             llm_folder_2=None if args.llm_path_2 is None else Path(args.llm_path_2),
         )
     else:
@@ -272,9 +272,19 @@ def _train(
 
     # 9. Load optimizer
     optimizer = AdamW(
-        [{'params': model.llm.parameters(), 'lr': args.optim.max_lr},
-         {'params': model.embedder.parameters(), 'lr': args.optim.max_lr},
-         {'params': model.bridge_module.parameters(), 'lr': args.optim.max_lr_projector}],
+        [
+            {"params": model.llm.parameters(), "lr": args.optim.max_lr},
+            {"params": model.embedder.parameters(), "lr": args.optim.max_lr},
+        ]
+        if model.bridge_module is None
+        else [
+            {"params": model.llm.parameters(), "lr": args.optim.max_lr},
+            {"params": model.embedder.parameters(), "lr": args.optim.max_lr},
+            {
+                "params": model.bridge_module.parameters(),
+                "lr": args.optim.max_lr_projector,
+            },
+        ],
         betas=(0.9, 0.95),
         eps=1e-08,
         weight_decay=args.optim.weight_decay,
@@ -286,7 +296,9 @@ def _train(
 
     scheduler = lr_scheduler.OneCycleLR(
         optimizer,
-        max_lr=[args.optim.max_lr, args.optim.max_lr, args.optim.max_lr_projector],
+        max_lr=[args.optim.max_lr, args.optim.max_lr]
+        if model.bridge_module is None
+        else [args.optim.max_lr, args.optim.max_lr, args.optim.max_lr_projector],
         total_steps=args.max_steps,
         pct_start=float(args.optim.warm_up_steps) / args.max_steps,
         anneal_strategy="cos",
@@ -367,7 +379,7 @@ def _train(
 
     while state.step < args.max_steps:
         state.start_step()
-  
+
         # Check if we are at the last step
         is_last_step = state.step == args.max_steps
 
@@ -432,7 +444,7 @@ def _train(
             x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
                 pipeline.prepare_forward(batch)
             )
- 
+
             # # # print('embed_seqlens', embed_seqlens)
             # if get_rank() == 0:
             #     to_gen = [
@@ -645,36 +657,74 @@ def _train(
                     )
                 )
                 ind += size
-
             if args.loss_args.kl:
-                full_context_x, new_seqlens, _, before_embed_mask = insert_embeds(
-                    h=x.unsqueeze(-1),
-                    embeds=embeddings.unsqueeze(-1),
-                    embed_seqlens=[[sl] for sl in embed_seqlens],
-                    seqlens=seqlens,
-                    insert_cat_embedds=insert_cat_embedds,
+                new_seqlens = []
+                ind_toks = 0
+                full_context_x = []
+                target_mask = []
+                for i, size in enumerate(seqlens):
+                    assert size > 0
+                    # Used during training only
+                    assert len(insert_cat_embedds[i]) == 1, (
+                        f"More than one embedding ({len(insert_cat_embedds[i])}) to insert in the batch {i}"
+                    )
+                    seqlen = 0
+                    insert_idx = insert_cat_embedds[i][0]
+                    full_context_x.extend(x[ind_toks : ind_toks + insert_idx].tolist())
+                    target_mask.extend(
+                        [True] * len(x[ind_toks : ind_toks + insert_idx])
+                        if y_mask is None
+                        else y_mask[ind_toks : ind_toks + insert_idx]
+                    )
+                    ind_toks += insert_idx
+                    seqlen += len(x[ind_toks : ind_toks + insert_idx])
+                    context = pipeline.llm_tokenizer.tokenizer.encode(
+                        batch.to_embed[i]["text"], bos=False, eos=False
+                    )
+                    full_context_x.extend(context)
+                    seqlen += len(context)
+                    target_mask.extend([False] * len(context))
+
+                    if ind_toks < sum(seqlens[: i + 1]):
+                        left_toks = sum(seqlens[: i + 1]) - ind_toks
+                        full_context_x.extend(
+                            x[ind_toks : ind_toks + left_toks].tolist()
+                        )
+                        target_mask.extend(
+                            [True] * len(x[ind_toks : ind_toks + left_toks])
+                            if y_mask is None
+                            else y_mask[ind_toks : ind_toks + left_toks]
+                        )
+                        seqlen += left_toks
+                        ind_toks += left_toks
+                    new_seqlens.append(seqlen)
+                assert ind_toks == sum(seqlens[: i + 1]), (
+                    f"Ind toks {ind_toks} != sum seqlens {sum(seqlens[: i + 1])}"
                 )
+                full_context_x = torch.tensor(full_context_x).cuda(non_blocking=True)
+                target_mask = torch.tensor(target_mask).cuda(non_blocking=True)
                 with torch.no_grad():
                     model.eval()
-                    full_context_output = model.forward(
-                        x=full_context_x.squeeze(-1).detach(),
-                        embeddings=None,
+                    full_context_output = model.llm.forward(
+                        input_ids=full_context_x,
                         seqlens=new_seqlens,
                         embed_seqlens=None,
                         insert_cat_embedds=None,
+                        tokenized_prompts=None,
+                        cat_embeddings=None,
                     )
                     model.train()
                 kl_loss_distill = compute_kl_loss_with_mask(
                     target_logits=full_context_output.detach(),
                     pred_logits=output,
-                    target_mask=~torch.Tensor(sum(before_embed_mask, [])).to(
-                        dtype=torch.bool, device=full_context_output.device
-                    ),
+                    target_mask=target_mask,
                     pred_mask=y_mask,
                     temp=args.loss_args.temperature,
                     topk=args.loss_args.top_k,
+                ) * int(
+                    batch.data_type != "reconstruction"
                 )
-                mb_loss = mb_loss + args.loss_args.kl_weight * kl_loss_distill
+                mb_loss = mb_loss + args.loss_args.kl_weight * kl_loss_distill 
                 kl_loss += kl_loss_distill.item()
             bpc += batch_bpc / len(batch.sizes)
             loss += mb_loss.item()
