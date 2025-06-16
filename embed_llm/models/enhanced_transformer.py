@@ -582,7 +582,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                     decod_index += 1
 
             h, _, _ = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
-
         normalized_h = self.norm(h)
 
         if cat_embeddings is not None:

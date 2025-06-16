@@ -7,6 +7,7 @@ def compute_ce_loss_with_mask(
     target: torch.Tensor,
     target_mask: torch.Tensor | None,
 ):
+
     if target_mask is None:
         return F.cross_entropy(logits, target, reduction="mean")
 
@@ -35,6 +36,7 @@ def compute_kl_loss_with_mask(
     temp: float = 1.0,
     topk: float | None = None,
 ):
+
     if target_mask is None:
         target_mask = torch.ones(
             target_logits.shape[0], dtype=torch.bool, device=target_logits.device
@@ -49,7 +51,7 @@ def compute_kl_loss_with_mask(
     )
 
     assert target_logits.size(-1) == pred_logits.size(-1), (
-        "Logits should have the same size."
+        f"Target logits size {target_logits.size(-1)} does not match the predicted logits size {pred_logits.size(-1)}."
     )
     n_vocab = target_logits.size(-1)
 

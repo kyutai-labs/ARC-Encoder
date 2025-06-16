@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import yaml
-
+from torch.nn import ModuleList
 
 from embed_llm.data.data_loader import Batch
 from embed_llm.generation.utils import eval_logger_info
@@ -43,12 +43,25 @@ class EmbedAugModel(nn.Module):
         self.tokenized_prompts = {}
         self.bridge_module = None
         if pipeline_args.bridge_module.bridge_type is not None:
-            self.bridge_module = EmbProjector(
-                in_dim=pipeline_args.bridge_module.in_dim,
-                out_dim=pipeline_args.bridge_module.out_dim,
-                hidden_dim=pipeline_args.bridge_module.hidden_dim,
-                type=pipeline_args.bridge_module.bridge_type,
-            )
+            if pipeline_args.bridge_module.bridge_type == "bimodule":
+                self.bridge_module = nn.ModuleList(
+                    [
+                        EmbProjector(
+                            in_dim=pipeline_args.bridge_module.in_dim,
+                            out_dim=pipeline_args.bridge_module.out_dim,
+                            hidden_dim=pipeline_args.bridge_module.hidden_dim,
+                            type='mlp',
+                        )
+                        for _ in range(2)
+                    ]
+                )
+            else:
+                self.bridge_module = EmbProjector(
+                    in_dim=pipeline_args.bridge_module.in_dim,
+                    out_dim=pipeline_args.bridge_module.out_dim,
+                    hidden_dim=pipeline_args.bridge_module.hidden_dim,
+                    type=pipeline_args.bridge_module.bridge_type,
+                )
         self.llm_2 = llm_2
 
     def forward(
@@ -124,12 +137,15 @@ class EmbedAugModel(nn.Module):
                 embed_seqlens = [size + 1 for size in embed_seqlens]
                 embeddings = new_embeddings.clone()
 
-            # print('Embedding shape:', embeddings.shape, embed_seqlens)
-            # Only one insertion of embedding per sample
+
             embed_seqlens = group_embed_seqlens(embed_seqlens, [1] * len(seqlens))
-            # print('Grouped embed_seqlens:', embed_seqlens)
             if self.bridge_module is not None:
-                embeddings = self.bridge_module(embeddings)
+                if isinstance(
+                    self.bridge_module, ModuleList
+                ):
+                    embeddings = self.bridge_module[llm_number-1](embeddings)
+                else:
+                    embeddings = self.bridge_module(embeddings)
 
         if llm_number == 1:
             return self.llm.forward(
@@ -220,6 +236,8 @@ class EmbedAugPipeline(nn.Module):
         max_batch_size: int = 4,
         param_dtype: torch.dtype = torch.float32,
         bridge_ckpt_path: str | None = None,
+        llm_2_path: str | None = None,
+        llm_2_type: str = "mistral",
     ):
         with open(os.path.join(ckpt_path, "../../args.yaml"), "r") as f:
             train_args = yaml.safe_load(f)
@@ -267,6 +285,28 @@ class EmbedAugPipeline(nn.Module):
 
         llm = llm.to(device)
         llm.eval()
+        if llm_2_path is not None:
+            llm_2_args, _ = load_args(
+                Path(llm_2_path),
+                lora=lora_llm,
+                max_batch_size=max_batch_size,
+                pipe_path=ckpt_path,
+                args_type=llm_2_type,
+            )
+            llm_2, llm_2_tokenizer = load_model(
+                llm_args=llm_2_args,
+                pipeline_args=pipeline_args,
+                folder=Path(llm_2_path),
+                checkpoint=False,
+                param_dtype=param_dtype,
+                for_embedding=False,
+                llm_type=llm_2_type,
+                embed_type=embed_type,
+            )
+        else:
+            print('llm_2_path is None')
+            llm_2 = None
+            llm_2_tokenizer = None
 
         llm_args.lora = lora_embedder
 
@@ -358,9 +398,12 @@ class EmbedAugPipeline(nn.Module):
             embedding_model=llm_embedder,
             llm_tokenizer=Tokenizer(tokenizer=llm_tokenizer, model_name=llm_type),
             embed_tokenizer=Tokenizer(tokenizer=embed_tokenizer, model_name=embed_type),
+            llm_2_tokenizer= None if llm_2_tokenizer is None else Tokenizer(
+                tokenizer=llm_2_tokenizer, model_name=llm_2_type
+            ) 
         )
 
-        augmented_pipeline.store_model(augmented_pipeline.get_model(llm))
+        augmented_pipeline.store_model(augmented_pipeline.get_model(llm=llm, llm_2=llm_2))
 
         if (
             pipeline_args.bridge_module.bridge_type is not None
@@ -397,6 +440,7 @@ class EmbedAugPipeline(nn.Module):
         truncate_line: bool = False,
         device_generation: str | None = None,
         give_n_tokens: bool = False,
+        bridge_number: int = 1,
         **kwargs,
     ):
         """
@@ -490,7 +534,13 @@ class EmbedAugPipeline(nn.Module):
                 embed_seqlens, [len(l_text) for l_text in text_to_embed]
             )
             if self.model.bridge_module is not None:
-                embeddings = self.model.bridge_module(embeddings)
+                if isinstance(
+                    self.model.bridge_module, nn.ModuleList
+                ):
+                    embeddings = self.model.bridge_module[bridge_number-1](embeddings)
+                else:
+                    embeddings = self.model.bridge_module(embeddings)
+
 
         else:
             embeddings = None

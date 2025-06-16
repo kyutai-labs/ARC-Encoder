@@ -119,6 +119,7 @@ class TrainArgs(Serializable):
         default_factory=lambda: [0.5, 0.5]
     )  # Probability of forwarding the LLM and embedder, respectively. The sum must be 1.0.
     llm_type: str = "mistral"  # Name of the model to use or llama
+    llm_2_type: str | None = None  # Name of the second model to use, if any
     embed_type: str = (
         "mistral"  # Type of the embedder to use, either "mistral" or "llama"
     )
@@ -144,3 +145,9 @@ class TrainArgs(Serializable):
 
         if self.continuation < 1 and self.data.n_times_sl_insertion > 0:
             print("For reconstruction training, no text inserted before embeddings")
+            
+        if self.llm_path_2 is not None:
+            if self.llm_type == "mistral":
+                assert self.llm_2_type == 'llama', (
+                    "If using two LLMs, llm_2_type must be the other one."
+                )

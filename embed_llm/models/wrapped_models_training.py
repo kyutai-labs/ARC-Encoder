@@ -94,7 +94,7 @@ def load_training_model(
             lora_llm,
             max_batch_size=max_batch_size,
             pipe_args=train_args.pipeline,
-            args_type=train_args.llm_type,
+            args_type=train_args.llm_2_type,
         )
         llm_2, llm_2_tokenizer = load_model(
             llm_args=llm_2_args,
@@ -103,7 +103,7 @@ def load_training_model(
             checkpoint=checkpoint,
             param_dtype=param_dtype,
             for_embedding=False,
-            llm_type=train_args.llm_type,
+            llm_type=train_args.llm_2_type,
             embed_type=train_args.embed_type,
         )
     else:
@@ -244,7 +244,9 @@ def load_training_model(
         else:
             param.requires_grad = False
             
-
+    for name, param in augmented_model.llm_2.named_parameters():
+        param.requires_grad = False
+        
     for name, param in augmented_model.embedder.named_parameters():
         if (lora_embedder.enable or pipeline_args.embedder_params) and "lora" in name:
             param.requires_grad = True
@@ -275,10 +277,10 @@ def load_training_model(
             param.requires_grad = True
         else:
             param.requires_grad = False
-
-    for name, param in augmented_model.named_parameters():
-        if pipeline_args.bridge_module.bridge_type is not None and "bridge" in name:
-            param.requires_grad = True
+    
+    if pipeline_args.bridge_module.bridge_type is not None:
+        for name, param in augmented_model.bridge_module.named_parameters():
+                param.requires_grad = True
 
     log_train_params(augmented_model)
 
@@ -298,7 +300,7 @@ def load_training_model(
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
         ignored_states=ignored_states,
     )
-
+    
     main_logger_info("Model sharded!")
     return (
         augmented_pipeline,
@@ -352,7 +354,7 @@ def load_training_model_from_ckpt(
             lora_llm,
             max_batch_size=max_batch_size,
             pipe_args=train_args.pipeline,
-            args_type=train_args.llm_type,
+            args_type=train_args.llm_2_type,
         )
         llm_2, llm_2_tokenizer = load_model(
             llm_args=llm_2_args,
@@ -361,7 +363,7 @@ def load_training_model_from_ckpt(
             checkpoint=checkpoint,
             param_dtype=param_dtype,
             for_embedding=False,
-            llm_type=train_args.llm_type,
+            llm_type=train_args.llm_2_type,
             embed_type=train_args.embed_type,
         )
     else:
@@ -556,6 +558,9 @@ def load_training_model_from_ckpt(
             param.requires_grad = True
         else:
             param.requires_grad = False
+            
+    for name, param in augmented_model.llm_2.named_parameters():
+        param.requires_grad = False
 
     for name, param in augmented_model.embedder.named_parameters():
         if (
@@ -601,9 +606,9 @@ def load_training_model_from_ckpt(
             param.requires_grad = True
         else:
             param.requires_grad = False
-    for name, param in augmented_model.named_parameters():
-        if pipeline_args.bridge_module.bridge_type is not None and "bridge" in name:
-            param.requires_grad = True
+    if pipeline_args.bridge_module.bridge_type is not None:
+        for name, param in augmented_model.bridge_module.named_parameters():
+                param.requires_grad = True
             
     log_train_params(augmented_model)
     # ckpt_path = '/'.join(train_args.from_ckpt.bridge_path.split("/")[:-2]) if train_args.from_ckpt.bridge_path else None
