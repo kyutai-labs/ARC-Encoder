@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-1
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
@@ -17,8 +17,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-Pool4_llama8Benc_mistraldec_mlp_div2_20rec
-MixedPool16_llama8B_mlp_div2_5rec_learned
+Pool4_ftsquad_to_llama_ftsquad
 )
 
 
@@ -46,7 +45,18 @@ echo "Starting at: $(date)"
 
 case $RUN_NAME in
 
+*_to_llama_*)
 
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B 
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json  \
+        --n_passages 500  --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B 
+
+    ;;
 
 *llama8B_*)
     srun --gpus=$N_GPU  \

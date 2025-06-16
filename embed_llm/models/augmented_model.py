@@ -378,7 +378,7 @@ class EmbedAugPipeline(nn.Module):
             ):
                 embed_path = Path(ckpt_path + "/embedder")
                 supp_tok_state_dict = load_state_dict(embed_path, dtype=param_dtype)
-                assert "rec_tok" in supp_tok_state_dict or 'cont_tok' in supp_tok_state_dict, (
+                assert "rec_tok.weight" in supp_tok_state_dict or 'cont_tok.weight' in supp_tok_state_dict, (
                     f"no supp tok found in state dict {supp_tok_state_dict.keys()}"
                 )
                 llm_embedder.load_state_dict(

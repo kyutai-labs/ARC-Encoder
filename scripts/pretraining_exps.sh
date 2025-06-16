@@ -9,11 +9,10 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
 #SBATCH --job-name=mix_decoder_pt
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
-#SBATCH --dependency=afterany:768271_5
+
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
-
 
 
 CONFIG_FILES=(
