@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=12-16
+#SBATCH --array=0-5
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -9,7 +9,6 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
 #SBATCH --job-name=mix_modules
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx16,par2dc5-ai-prd-cl02s02dgx32,par2dc5-ai-prd-cl02s03dgx31,par2dc5-ai-prd-cl02s04dgx22,par2dc5-ai-prd-cl02s04dgx09,par2dc5-ai-prd-cl02s04dgx11,par2dc5-ai-prd-cl02s04dgx12,par2dc5-ai-prd-cl02s02dgx10,par2dc5-ai-prd-cl02s01dgx04,par2dc5-ai-prd-cl02s01dgx11,par2dc5-ai-prd-cl02s04dgx22
 
 
 # Set up environment
@@ -17,23 +16,12 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/heavier_pt/CP16_M7B_MLP2_L8B_20rec_1e6.yaml
-config/experiments/heavier_pt/CP16_M7B_MLP2_L8B_20rec_5e6.yaml 
-config/experiments/heavier_pt/CP16_M7B_MLP2_L8B_20rec_5wdc5e6.yaml 
-config/experiments/heavier_pt/CP16_M7B_MLP2_L8B_20rec_5wdc1e5.yaml 
-config/experiments/heavier_pt/CP16_L8B_MLP2_M7B_20rec_Dist.yaml 
-config/experiments/heavier_pt/CP16_L8B_L8B_5rec.yaml 
-config/experiments/heavier_pt/CP16_L8B_MLP2_M7B_20rec.yaml 
-config/experiments/heavier_pt/CP16_L3B_MLP2_L8B_20rec.yaml 
-config/experiments/heavier_pt/CP16_L3B_MLP2_M7B_20rec.yaml 
-config/experiments/multi_decoder/Pool4_ftsquad_to_llama_pt.yaml # Check if well evaluated
-config/experiments/heavier_pt/CP16_M7B_MLP2_L8B_20rec_5clip.yaml
-config/experiments/multi_decoder/Pool4_to_llama_mlp_pt_rec_tok.yaml # Check if well evaluated
-config/experiments/multi_decoder/Pool4_ftsquad_to_mistral_pt.yaml # Check if well evaluated
-config/experiments/heavier_pt/CP16_M7B_MLP2_L8B_20rec_lesslayers.yaml
-config/experiments/heavier_pt/CP16_M7B_M7B_5rec.yaml 
-config/experiments/heavier_pt/CP16_M7B_MLP2_L8B_20rec_Dist.yaml 
-config/experiments/heavier_pt/CP16_M7B_MLP2_L8B_20rec.yaml
+config/experiments/heavier_pt/CPtrue16_L8B_MLP2_M7B_20rec.yaml 
+config/experiments/heavier_pt/CPtrue16_L8B_MLP2_M7B_20rec_Dist.yaml 
+config/experiments/heavier_pt/CPtrue16_L8B_L8B_5rec.yaml 
+config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_20rec.yaml 
+config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_20rec_Dist.yaml 
+config/experiments/heavier_pt/CPtrue16_L3B_MLP2_L8B_20rec.yaml
 )
 
 
