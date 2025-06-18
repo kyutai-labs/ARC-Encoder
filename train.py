@@ -549,9 +549,9 @@ def _train(
                         [True] * len(x[ind_toks : ind_toks + insert_idx])
                         if y_mask is None
                         else y_mask[ind_toks : ind_toks + insert_idx]
-                    )
+                    )                    
+                    seqlen += len(x[ind_toks : ind_toks + insert_idx].tolist())
                     ind_toks += insert_idx
-                    seqlen += len(x[ind_toks : ind_toks + insert_idx])
                     context = pipeline.llm_tokenizer.tokenizer.encode(
                         batch.to_embed[i]["text"], bos=False, eos=False
                     )
@@ -569,14 +569,15 @@ def _train(
                             if y_mask is None
                             else y_mask[ind_toks : ind_toks + left_toks]
                         )
-                        seqlen += left_toks
-                        ind_toks += left_toks
+                        seqlen += len(x[ind_toks : ind_toks + left_toks].tolist())
+                        ind_toks += len(x[ind_toks : ind_toks + left_toks].tolist())
                     new_seqlens.append(seqlen)
                 assert ind_toks == sum(seqlens[: i + 1]), (
                     f"Ind toks {ind_toks} != sum seqlens {sum(seqlens[: i + 1])}"
                 )
                 full_context_x = torch.tensor(full_context_x).cuda(non_blocking=True)
                 target_mask = torch.tensor(target_mask).cuda(non_blocking=True)
+
                 with torch.no_grad():
                     model.eval()
                     full_context_output = model.llm.forward(
@@ -595,10 +596,8 @@ def _train(
                     pred_mask=y_mask,
                     temp=args.loss_args.temperature,
                     topk=args.loss_args.top_k,
-                ) * int(
-                    batch.data_type != "reconstruction"
-                )
-                mb_loss = mb_loss + args.loss_args.kl_weight * kl_loss_distill 
+                ) * int(batch.data_type != "reconstruction")
+                mb_loss = mb_loss + args.loss_args.kl_weight * kl_loss_distill
                 kl_loss += kl_loss_distill.item()
             bpc += batch_bpc / len(batch.sizes)
             loss += mb_loss.item()
