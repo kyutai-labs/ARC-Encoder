@@ -13,6 +13,7 @@ from embed_llm.data.sequence_iterators import (
     SequenceEmbedMaskAndSizes,
     sequence_iterator_inserted_embed_continuation,
     sequence_iterator_reconstruction,
+    sequence_iterator_interleaved_cont,
 )
 from embed_llm.data.tokenize import Mask, Tokenizer, TokenSample, encode
 from embed_llm.training.distributed import get_rank
@@ -181,6 +182,7 @@ def sequence_iterator(
     rec_seq_len_factor: int = 1,
     few_shot: int = 0,
     n_interleaved: int = 1,
+    loss_last_cont_only: bool = False,  # If True, the loss will be computed only on the last continuation token.
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -188,22 +190,22 @@ def sequence_iterator(
 
     x_buffer: list[int] = []
     y_buffer: list[int] = []
-    to_embed_buffer: list[dict[str, str | int]] = []
+    to_embed_buffer: list[dict[list[str], list[list[int]]]] = []
     insert_embed_list: list[list[int]] = []
     mask_buffer: Mask = []
     sizes: list[int] = []
-    n_missing_cont = seq_len * 2
+    n_missing_cont = seq_len * 2 + n_times_sl_insertion * seq_len if n_interleaved <= 1 else seq_len
 
     x_buffer_cont: list[int] = []
     y_buffer_cont: list[int] = []
     insert_embed_cont_list: list[list[int]] = []
-    to_embed_buffer_cont: list[dict[str, str | int]] = []
+    to_embed_buffer_cont: list[dict[list[str], list[list[int]]]] = []
     mask_buffer_cont: Mask = []
     sizes_cont: list[int] = []
 
     few_shot_instruct = []
     cur_pos = 0
-    n_missing = int(seq_len * rec_seq_len_factor)
+    n_missing = seq_len // n_interleaved if continuation > 0 and n_interleaved > 1 else int(seq_len * rec_seq_len_factor) 
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
 
@@ -218,6 +220,7 @@ def sequence_iterator(
         if do_continuation:
             while True:
                 n_times_sl_insertion = n_times_sl_insertion if not is_finite else 0
+                
                 res = sequence_iterator_inserted_embed_continuation(
                     sample=sample,
                     x_buffer=x_buffer_cont,
@@ -234,7 +237,22 @@ def sequence_iterator(
                     cur_pos=cur_pos,
                     n_times_sl_insertion=n_times_sl_insertion,
                     shorten_continuation=(rec_seq_len_factor > 1.0),
+                ) if n_interleaved <= 1 else sequence_iterator_interleaved_cont(
+                    sample=sample,
+                    x_buffer=x_buffer_cont,
+                    y_buffer=y_buffer_cont,
+                    mask_buffer=mask_buffer_cont,
+                    to_embed_buffer=to_embed_buffer_cont,
+                    insert_embed_list=insert_embed_cont_list,
+                    sizes=sizes_cont,
+                    seq_len=seq_len,
+                    llm_tokenizer=llm_tokenizer,
+                    embed_tokenizer=embed_tokenizer,
+                    n_missing=n_missing_cont,
+                    data_type="continuation",
+                    cur_pos=cur_pos,
                     n_interleaved=n_interleaved,
+                    loss_last_cont_only=loss_last_cont_only,  
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -247,7 +265,7 @@ def sequence_iterator(
                     sizes_cont = []
                     n_missing_cont = (
                         seq_len * 2 + n_times_sl_insertion * seq_len
-                    )  # 2*seq_len for compressed tokens and contionuation, + the ones for text before compressed tokens
+                    if n_interleaved <= 1 else seq_len) # 2*seq_len for compressed tokens and contionuation, + the ones for text before compressed tokens
                     cur_pos = res[1]
                 else:
                     (
@@ -281,6 +299,7 @@ def sequence_iterator(
                     few_shot_instruct=few_shot_instruct if few_shot > 0 else None,
                     few_shot=few_shot,
                     n_interleaved=n_interleaved,
+                    loss_last_cont_only=loss_last_cont_only,  # If True, the loss will be computed only on the last continuation token.
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -291,7 +310,7 @@ def sequence_iterator(
                     to_embed_buffer = []
                     insert_embed_list = []
                     sizes = []
-                    n_missing = int(seq_len * rec_seq_len_factor)
+                    n_missing = seq_len // n_interleaved if continuation > 0 and n_interleaved > 1 else int(seq_len * rec_seq_len_factor)
                     cur_pos = res[1]
                 else:
                     (
@@ -314,7 +333,7 @@ def sequence_iterator(
             x_buffer.extend(n_missing * [0])
             y_buffer.extend(n_missing * [0])
             sizes.append(n_missing)
-            to_embed_buffer.append({"text": "", "tokens": []})
+            to_embed_buffer.append({"text": [""], "tokens": [[]]})
             if len(insert_embed_cont_list) > 0:
                 insert_embed_cont_list.append([0])
 
@@ -379,6 +398,7 @@ def build_dataset(
             rec_seq_len_factor=args.rec_seq_len_factor,
             few_shot=max(args.few_shot, fs),
             n_interleaved=args.n_interleaved,
+            loss_last_cont_only=args.loss_last_cont_only,  
         )
         for fs, it in zip(few_shots, dataset_iterators)
     ]

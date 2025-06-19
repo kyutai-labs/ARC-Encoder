@@ -11,7 +11,7 @@ from embed_llm.data.tokenize import Tokenizer
 class Batch:
     x: np.ndarray
     y: np.ndarray
-    to_embed: list[dict[str, list[int] | str]]
+    to_embed: list[dict[list[str], list[list[int]]]]
     sizes: list[int]
     batch_size: int
     y_mask: np.ndarray | None = None
@@ -24,9 +24,7 @@ class Batch:
         assert self.x.shape == self.y.shape
         assert self.x.dtype == np.int64
         assert self.y.dtype == np.int64
-        assert self.insert_embed_list is None or len(
-            sum(self.insert_embed_list, [])
-        ) == len(self.sizes), f"{self.insert_embed_list}, {self.sizes}"
+        assert self.insert_embed_list is None or len(self.insert_embed_list) == len(self.sizes), f"{self.insert_embed_list}, {self.sizes}"
         assert isinstance(self.sizes, list)
         assert isinstance(self.to_embed, list)
         assert sum(self.sizes) == self.x.size == self.y.size, (
@@ -49,14 +47,14 @@ class Batch:
             assert self.y_mask is None
             # create all 0's mask for pad samples
             self.y_mask = np.zeros_like(self.x)
-            self.to_embed = [{"text": "", "tokens": [0]} for _ in self.to_embed]
+            self.to_embed = [{"text": [""], "tokens": [[0]]} for _ in self.to_embed]
 
 
 @dataclasses.dataclass
 class Batchlist:
     x: list[list[int]] = dataclasses.field(default_factory=list)
     y: list[list[int]] = dataclasses.field(default_factory=list)
-    to_embed: list[list[dict[str, list[int] | str]]] = dataclasses.field(
+    to_embed: list[list[dict[list[str], list[list[int]]]]] = dataclasses.field(
         default_factory=list
     )
     insert_embed_list: list[list[list[int]]] | None = None
@@ -81,7 +79,7 @@ class Batchlist:
         self,
         x: list[int],
         y: list[int],
-        to_embed: list[dict[str, list[int] | str]],
+        to_embed: list[list[dict[list[str], list[list[int]]]]],
         sizes: list[int],
         y_mask: list[bool],
         data_type: str,
@@ -174,7 +172,7 @@ def build_data_loader(
         assert all(s >= 0 for s in sample.sizes)
 
         # Avoid empty samples
-        if any([len(embed["tokens"]) <= 1 for embed in sample.to_embed]):
+        if any([len(l_toks) <= 1 for embed in sample.to_embed for l_toks in embed["tokens"]]):
             print("Skipping empty sample")
             continue
 

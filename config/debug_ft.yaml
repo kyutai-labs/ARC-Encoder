@@ -3,6 +3,7 @@ data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl:1.0:3
+  n_interleaved: 3
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
 llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
 embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
@@ -12,7 +13,7 @@ num_microbatches: 1
 seed: 0
 max_steps: 1000
 seq_len: 1024
-log_freq: 10
+log_freq: 1
 batch_size: 16
 ckpt_freq: 50
 eval_freq: 50
