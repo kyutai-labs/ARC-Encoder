@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=1-3
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -41,15 +41,15 @@ CONFIG_FILES=(
 # config/experiments/datasets/CP16_L3B_MLP2_L8B_20rec_ft_lowres_short_ts_fs.yaml
 # config/experiments/heavier_pt/ft/CP16_L8B_to_mistral_10rec_ftsquad.yaml
 # config/experiments/heavier_pt/ft/CP16_L8B_to_mistral_10rec_ftsquad_wDist.yaml
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad.yaml 
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad_25k.yaml 
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad_20k.yaml 
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad_15k.yaml
+# config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad.yaml 
+# config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad_25k.yaml 
+# config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad_20k.yaml 
+# config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad_15k.yaml
+config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_L8B_20rec_ftsquad.yaml
 config/experiments/heavier_pt/ft/CPtrue16_L8B_MLP2_M7B_20rec_ftsquad.yaml 
 config/experiments/heavier_pt/ft/CPtrue16_L8B_MLP2_M7B_20rec_Dist_ftsquad.yaml 
 config/experiments/heavier_pt/ft/CPtrue16_L8B_L8B_5rec_ftsquad.yaml 
 config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_Dist_ftsquad.yaml 
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_L8B_20rec_ftsquad.yaml
 )
 
 
