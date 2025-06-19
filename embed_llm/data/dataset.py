@@ -180,6 +180,7 @@ def sequence_iterator(
     n_times_sl_insertion: int = 1,
     rec_seq_len_factor: int = 1,
     few_shot: int = 0,
+    n_interleaved: int = 1,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -233,6 +234,7 @@ def sequence_iterator(
                     cur_pos=cur_pos,
                     n_times_sl_insertion=n_times_sl_insertion,
                     shorten_continuation=(rec_seq_len_factor > 1.0),
+                    n_interleaved=n_interleaved,
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -278,6 +280,7 @@ def sequence_iterator(
                     insert_embed_list=insert_embed_list,
                     few_shot_instruct=few_shot_instruct if few_shot > 0 else None,
                     few_shot=few_shot,
+                    n_interleaved=n_interleaved,
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -375,6 +378,7 @@ def build_dataset(
             n_times_sl_insertion=args.n_times_sl_insertion,
             rec_seq_len_factor=args.rec_seq_len_factor,
             few_shot=max(args.few_shot, fs),
+            n_interleaved=args.n_interleaved,
         )
         for fs, it in zip(few_shots, dataset_iterators)
     ]

@@ -26,5 +26,16 @@ class DataArgs(Serializable):
     shuffle: bool = False
     adapt_seq_len: bool = False
     n_times_sl_insertion: int = 1
+    n_interleaved: int = 1  # Number of interleaved sequences to use for training. If > 0, the data will be interleaved.
     rec_seq_len_factor: float = 1.0  # If > 1.0, the seqlen will be increased for reconstruction and it will shorten continuation (fixed seqlen for embedding but shorter text to continue)
     few_shot: int = 0
+    prefix: str | None = None  # If set, the prefix will be prepended to each datapath.
+
+    def __post_init__(self) -> None:
+        if self.prefix is not None:
+            self.train_data = ",".join(
+                [self.prefix + train_path for train_path in self.train_data.split(",")]
+            )
+            self.eval_data = ",".join(
+                [self.prefix + eval_path for eval_path in self.eval_data.split(",")]
+            )

@@ -64,13 +64,21 @@ def create_prompt_prefix(
     max_examples: int | None = None,
     compressed_doc_in_icl: bool = False,
     reversed_template: bool = False,
+    shorter_icl: bool = False,
 ) -> tuple[list[str], list[str] | None]:
     max_examples = max_examples if max_examples is not None else len(queries)
     prompt_str = []
     to_embed_str = []
 
     prompt = ""
-
+    if shorter_icl:
+        generate_exs = list(zip(queries, answers, docs))
+        generate_exs.sort(key=lambda arg: len(arg[-1]), reverse=True)
+        queries, answers, docs = (
+            [ex[0] for ex in generate_exs],
+            [ex[1] for ex in generate_exs],
+            [ex[2] for ex in generate_exs],
+        )
     if docs is not None:
         if compressed_doc_in_icl:
             if not reversed_template:
@@ -191,6 +199,7 @@ def evaluate_QA(
     bridge_ckpt: bool
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
+    shorter_icl: bool = False,  # If True, use shorter ICL examples
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
     llm_name = llm_path.split("/")[-1]
@@ -294,6 +303,7 @@ def evaluate_QA(
             max_examples=icl_examples,
             compressed_doc_in_icl=compressed_doc_in_icl,
             reversed_template=reversed_template,
+            shorter_icl=shorter_icl,
         )
 
         new_context, new_questions, new_answers = (
@@ -574,6 +584,7 @@ def evaluate_trad(
     bridge_ckpt: bool
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
+    shorter_icl: bool = False,  # If True, use shorter ICL examples
 ):
     # Loading model
     llm_name = llm_path.split("/")[-1]
@@ -640,12 +651,26 @@ def evaluate_trad(
         random.shuffle(c, random=lambda: seed)
         text, traduction = zip(*c)
 
-        prompt_prefix = "\n\n".join(
-            [
-                f"Document: {doc}\nTranslation: {answ}"
-                for doc, answ, _ in zip(text, traduction, range(5))
-            ]
-        )
+        if shorter_icl:
+            generate_exs = list(zip(text, traduction, range(5)))
+            generate_exs.sort(key=lambda arg: len(arg[0]), reverse=True)
+
+            prompt_prefix = "\n\n".join(
+                [
+                    f"Document: {doc}\nTranslation: {answ}"
+                    for doc, answ, _ in generate_exs
+                ]
+            )
+        else:
+            prompt_prefix = "\n\n".join(
+                [
+                    f"Document: {doc}\nTranslation: {answ}"
+                    for doc, answ, _ in zip(text, traduction, range(5))
+                ]
+            )
+
+        if shorter_icl:
+            pass
         new_text, new_trad = (
             list(text[5:]),
             list(traduction[5:]),
@@ -895,6 +920,7 @@ def arg_parser():
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--query_w_context", action="store_true")
     parser.add_argument("--bridge_ckpt", type=str, default=None)
+    parser.add_argument("--shorter_icl", action="store_true")
 
     return parser.parse_args()
 
@@ -952,6 +978,7 @@ if __name__ == "__main__":
                 benchmarks=benchmarks
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],
+                shorter_icl=args.shorter_icl,
             )
             torch.cuda.empty_cache()
 
@@ -972,6 +999,7 @@ if __name__ == "__main__":
                 query_w_context=False,
                 w_embeds=False,
                 reversed_template=args.reversed_template,
+                shorter_icl=args.shorter_icl,
             )
             torch.cuda.empty_cache()
         eval_logger_info(logger, "EVALUATING WITH CONTEXT")
@@ -992,6 +1020,7 @@ if __name__ == "__main__":
             max_multi_passage=args.multi_passages,
             seed=args.seed,
             reversed_template=args.reversed_template,
+            shorter_icl=args.shorter_icl,
         )
         torch.cuda.empty_cache()
 
@@ -1014,6 +1043,7 @@ if __name__ == "__main__":
                     w_embeds=False,
                     pipeline=mistral_model,
                     reversed_template=args.reversed_template,
+                    shorter_icl=args.shorter_icl,
                 )
                 torch.cuda.empty_cache()
             eval_logger_info(logger, "EVALUATING WITH CONTEXT")
@@ -1035,6 +1065,7 @@ if __name__ == "__main__":
                 max_multi_passage=args.multi_passages,
                 seed=args.seed,
                 reversed_template=args.reversed_template,
+                shorter_icl=args.shorter_icl,
             )
             torch.cuda.empty_cache()
 
@@ -1061,7 +1092,10 @@ if __name__ == "__main__":
                 benchmarks=benchmarks
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],
-                bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
+                bridge_ckpt=args.bridge_ckpt
+                if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
+                else False,
+                shorter_icl=args.shorter_icl,
             )
             torch.cuda.empty_cache()
         else:
@@ -1086,7 +1120,10 @@ if __name__ == "__main__":
                 reversed_template=args.reversed_template,
                 comp_rate=args.comp_rate,
                 query_w_context=args.query_w_context,
-                bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
+                bridge_ckpt=args.bridge_ckpt
+                if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
+                else False,
+                shorter_icl=args.shorter_icl,
             )
 
             for icl_ex in icl_tests[1:]:
@@ -1112,5 +1149,9 @@ if __name__ == "__main__":
                     reversed_template=args.reversed_template,
                     comp_rate=args.comp_rate,
                     query_w_context=args.query_w_context,
-                    bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
+                    bridge_ckpt=args.bridge_ckpt
+                    if args.bridge_ckpt is None
+                    or "false" not in args.bridge_ckpt.lower()
+                    else False,
+                    shorter_icl=args.shorter_icl,
                 )

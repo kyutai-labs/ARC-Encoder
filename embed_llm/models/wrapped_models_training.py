@@ -246,6 +246,11 @@ def load_training_model(
         elif pipeline_args.embedder_params.cont_tok and "cont_tok" in name:
             param.requires_grad = True
         elif (
+            pipeline_args.embedder_params.train_embedding_mtx
+            and "tok_embeddings" in name
+        ):
+            param.requires_grad = True
+        elif (
             pipeline_args.embedder_params.mixed_learned_method
             and "cl_mem_tokens" in name
         ):
@@ -293,6 +298,7 @@ def load_training_model_from_ckpt(
     param_dtype: torch.dtype,
     decoder_path: Path | None = None,
     embedder_path: Path | None = None,
+    supp_toks_path: Path | None = None,
     llm_path: Path | None = None,
     checkpoint: bool = False,
     max_batch_size: int = 32,
@@ -447,7 +453,10 @@ def load_training_model_from_ckpt(
     ignored_states = []
     st_loaded = False
     if pipeline_args.embedder_params.rec_tok:
-        state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
+        supp_toks_path = (
+            Path(embedder_path) if supp_toks_path is None else Path(supp_toks_path)
+        )
+        state_dict = load_state_dict(supp_toks_path, dtype=param_dtype)
         st_loaded = True
         augmented_model.embedder.rec_tok.load_state_dict(
             {
@@ -460,9 +469,7 @@ def load_training_model_from_ckpt(
         )
         ignored_states.append(augmented_model.embedder.rec_tok.weight)
     if pipeline_args.embedder_params.mixed_learned_method:
-        if not st_loaded:
-            state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
-            st_loaded = True
+        state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
         augmented_model.embedder.cl_mem_tokens.load_state_dict(
             {
                 k.split("cl_mem_tokens.")[-1]: v.cuda()
@@ -476,7 +483,10 @@ def load_training_model_from_ckpt(
 
     if pipeline_args.embedder_params.cont_tok:
         if not st_loaded:
-            state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
+            supp_toks_path = (
+                Path(embedder_path) if supp_toks_path is None else Path(supp_toks_path)
+            )
+            state_dict = load_state_dict(supp_toks_path, dtype=param_dtype)
             st_loaded = True
         augmented_model.embedder.cont_tok.load_state_dict(
             {
@@ -527,16 +537,14 @@ def load_training_model_from_ckpt(
         ):
             param.requires_grad = True
         elif (
-            pipeline_args.embedder_params.rec_tok
-            and "rec_tok" in name
+            pipeline_args.embedder_params.train_embedding_mtx
+            and "tok_embeddings" in name
             and not train_args.freeze_embedder
         ):
             param.requires_grad = True
-        elif (
-            pipeline_args.embedder_params.cont_tok
-            and "cont_tok" in name
-            and not train_args.freeze_embedder
-        ):
+        elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
+            param.requires_grad = True
+        elif pipeline_args.embedder_params.cont_tok and "cont_tok" in name:
             param.requires_grad = True
         elif (
             pipeline_args.embedder_params.mixed_learned_method
