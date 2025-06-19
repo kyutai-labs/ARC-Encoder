@@ -1,23 +1,24 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=1
+#SBATCH --array=2
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
-#SBATCH --job-name=verylong_heavy_pt
+#SBATCH --job-name=cp8_heavy_pt
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
-
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx12
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 
 CONFIG_FILES=(
-config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_20rec_very_long_best.yaml
-config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_20rec_very_long_v3.yaml
+config/experiments/heavier_pt/CP8_L3B_MLP2_M7B_20rec.yaml 
+config/experiments/heavier_pt/CP8_L3B_MLP2_L8B_20rec.yaml
+config/experiments/heavier_pt/CP8_L3B_MLP16_L8B_20rec.yaml
 )
 
 

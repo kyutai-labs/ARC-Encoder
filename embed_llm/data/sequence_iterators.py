@@ -54,6 +54,7 @@ def sequence_iterator_reconstruction(
     adapt_seq_len: bool = False,
     few_shot_instruct: list[str] | None = None,
     few_shot: int = 0,
+    n_interleaved: int = 1,
 ) -> SequenceEmbedMaskAndSizes:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -242,6 +243,7 @@ def sequence_iterator_inserted_embed_continuation(
     data_type: str = "continuation",
     n_times_sl_insertion: int = 1,
     shorten_continuation: bool = False,
+    n_interleaved: int = 1,
 ) -> SequenceEmbedMaskAndSizes:
     assert 0 <= len(x_buffer) < (1 + n_times_sl_insertion) * seq_len, len(x_buffer)
     tokens, mask = sample.tokens, sample.masks[1:]

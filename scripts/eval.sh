@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0
+#SBATCH --array=1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
@@ -17,7 +17,8 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad_wDist
+CP16_L8B_to_mistral_10rec_ftsquad_wDist
+CP16_L8B_to_mistral_10rec_ftsquad
 )
 
 
@@ -59,7 +60,7 @@ case $RUN_NAME in
 
     ;;
 
-*P16_L8B_MLP2_M7B*)
+*L8B_to_mistral*)
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
         --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --llm_name mistral_7B --embed_name Llama3.1-8B --n_icl_exs 5
