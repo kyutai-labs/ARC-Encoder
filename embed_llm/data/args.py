@@ -27,6 +27,7 @@ class DataArgs(Serializable):
     adapt_seq_len: bool = False
     n_times_sl_insertion: int = 1
     n_interleaved: int = 1  # Number of interleaved sequences to use for training. If > 0, the data will be interleaved.
+    loss_last_cont_only: bool | None = None  # If True, the loss will be computed only on the last continuation token.
     rec_seq_len_factor: float = 1.0  # If > 1.0, the seqlen will be increased for reconstruction and it will shorten continuation (fixed seqlen for embedding but shorter text to continue)
     few_shot: int = 0
     prefix: str | None = None  # If set, the prefix will be prepended to each datapath.
@@ -39,3 +40,7 @@ class DataArgs(Serializable):
             self.eval_data = ",".join(
                 [self.prefix + eval_path for eval_path in self.eval_data.split(",")]
             )
+        if self.adapt_seq_len:
+           self.loss_last_cont_only = self.loss_last_cont_only if self.loss_last_cont_only is not None else True
+        else:
+            self.loss_last_cont_only = self.loss_last_cont_only if self.loss_last_cont_only is not None else False

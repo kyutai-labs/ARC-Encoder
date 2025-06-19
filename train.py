@@ -443,28 +443,34 @@ def _train(
                 pipeline.prepare_forward(batch)
             )
 
-            # # # print('embed_seqlens', embed_seqlens)
+            # print('embed seqlens', embed_seqlens)
             # if get_rank() == 0:
-            #     to_gen = [
-            #         int(tok)
-            #         for tok in batch.x[:batch.sizes[0]]
-            #     ]
-
-            #     # target = [int(tok) for tok in batch.y]
-            #     embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"]]
-            #     # continuation = [
+            #     # to_gen = [
             #     #     int(tok)
-            #     #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
+            #     #     for tok in batch.x[:batch.sizes[0]]
             #     # ]
-            #     print("Beginning", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
-            #     print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
-            #     # print('embedding tokens', batch.to_embed[13]["tokens"])
-            #     # print('embed', batch.to_embed[13]["text"])
-            #     # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))
-            #     # print('X len', len(batch.x))
-            #     # print("Sizes", batch.sizes)
-            #     # print("Embed seqlens", embed_seqlens)
-            #     print('Insert cat embedds', insert_cat_embedds)
+            #     ind_toks = 0
+            #     # print('Insert cat embedds', insert_cat_embedds)
+            #     for j, insert_idx in enumerate(insert_cat_embedds[0]):
+            #         print('TEXT',pipeline.llm_tokenizer.tokenizer.decode(x[ind_toks : ind_toks + insert_idx].tolist()))
+            #         print('CONTEXT',batch.to_embed[0]["text"][j])
+            #         ind_toks += insert_idx
+            #     print('TEXT',pipeline.llm_tokenizer.tokenizer.decode(x[ind_toks:seqlens[0]].tolist()))
+            #     # # target = [int(tok) for tok in batch.y]
+            #     # embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"]]
+            #     # # continuation = [
+            #     # #     int(tok)
+            #     # #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
+            #     # # ]
+            #     # print("Beginning", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
+            #     # print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
+            #     # # print('embedding tokens', batch.to_embed[13]["tokens"])
+            #     # # print('embed', batch.to_embed[13]["text"])
+            #     # # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))
+            #     # # print('X len', len(batch.x))
+            #     # # print("Sizes", batch.sizes)
+            #     # # print("Embed seqlens", embed_seqlens)
+            #     # print('Insert cat embedds', insert_cat_embedds)
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
             # with profile(use_cuda = True) as prof:
@@ -476,6 +482,7 @@ def _train(
                 insert_cat_embedds=insert_cat_embedds,
                 batch_type=batch.data_type,
             )
+            
             mb_loss = compute_ce_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
@@ -538,26 +545,23 @@ def _train(
                 target_mask = []
                 for i, size in enumerate(seqlens):
                     assert size > 0
-                    # Used during training only
-                    assert len(insert_cat_embedds[i]) == 1, (
-                        f"More than one embedding ({len(insert_cat_embedds[i])}) to insert in the batch {i}"
-                    )
+
                     seqlen = 0
-                    insert_idx = insert_cat_embedds[i][0]
-                    full_context_x.extend(x[ind_toks : ind_toks + insert_idx].tolist())
-                    target_mask.extend(
-                        [True] * len(x[ind_toks : ind_toks + insert_idx])
-                        if y_mask is None
-                        else y_mask[ind_toks : ind_toks + insert_idx]
-                    )                    
-                    seqlen += len(x[ind_toks : ind_toks + insert_idx].tolist())
-                    ind_toks += insert_idx
-                    context = pipeline.llm_tokenizer.tokenizer.encode(
-                        batch.to_embed[i]["text"], bos=False, eos=False
-                    )
-                    full_context_x.extend(context)
-                    seqlen += len(context)
-                    target_mask.extend([False] * len(context))
+                    for j, insert_idx in enumerate(insert_cat_embedds[i]):
+                        full_context_x.extend(x[ind_toks : ind_toks + insert_idx].tolist())
+                        target_mask.extend(
+                            [True] * len(x[ind_toks : ind_toks + insert_idx])
+                            if y_mask is None
+                            else y_mask[ind_toks : ind_toks + insert_idx]
+                        )                    
+                        seqlen += len(x[ind_toks : ind_toks + insert_idx].tolist())
+                        ind_toks += insert_idx
+                        context = pipeline.llm_tokenizer.tokenizer.encode(
+                            batch.to_embed[i]["text"][j], bos=False, eos=False
+                        )
+                        full_context_x.extend(context)
+                        seqlen += len(context)
+                        target_mask.extend([False] * len(context))
 
                     if ind_toks < sum(seqlens[: i + 1]):
                         left_toks = sum(seqlens[: i + 1]) - ind_toks
@@ -572,6 +576,7 @@ def _train(
                         seqlen += len(x[ind_toks : ind_toks + left_toks].tolist())
                         ind_toks += len(x[ind_toks : ind_toks + left_toks].tolist())
                     new_seqlens.append(seqlen)
+
                 assert ind_toks == sum(seqlens[: i + 1]), (
                     f"Ind toks {ind_toks} != sum seqlens {sum(seqlens[: i + 1])}"
                 )
