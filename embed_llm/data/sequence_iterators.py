@@ -84,14 +84,48 @@ def sequence_iterator_reconstruction(
 
         # If instruct data type do not split the passage into smaller embeddings
         if data_type == "reconstruction" and len(embed_tokens) == 1:
-            new_embed = embed_tokens[0][cur_pos : cur_pos + n_missing]
+            new_embed = tokens[cur_pos : cur_pos + n_missing]
+            if (
+                llm_tokenizer.model_name == "llama"
+                and embed_tokenizer.model_name == "mistral"
+            ):
+                new_text = llm_tokenizer.tokenizer.decode(new_embed)
+                bos = "<|begin_of_text|>" in new_text
+                eos = "<|end_of_text|>" in new_text
+                for sp_tok in llm_tokenizer.tokenizer.special_tokens.keys():
+                    new_text = new_text.replace(sp_tok, "")
+                to_embed_buffer.append(
+                    {
+                        "text": [new_text],
+                        "tokens": [
+                            embed_tokenizer.tokenizer.encode(new_text, bos=bos, eos=eos)
+                        ],
+                    }
+                )
 
-            to_embed_buffer.append(
-                {
-                    "text": [embed_tokenizer.tokenizer.decode(new_embed)],
-                    "tokens": [new_embed],
-                }
-            )
+            elif (
+                llm_tokenizer.model_name == "mistral"
+                and embed_tokenizer.model_name == "llama"
+            ):
+                bos = llm_tokenizer.tokenizer.bos_id in new_embed
+                eos = llm_tokenizer.tokenizer.eos_id in new_embed
+                new_text = llm_tokenizer.tokenizer.decode(new_embed)
+                to_embed_buffer.append(
+                    {
+                        "text": [new_text],
+                        "tokens": [
+                            embed_tokenizer.tokenizer.encode(new_text, bos=bos, eos=eos)
+                        ],
+                    }
+                )
+            else:
+                to_embed_buffer.append(
+                    {
+                        "text": [llm_tokenizer.tokenizer.decode(new_embed)],
+                        "tokens": [new_embed],
+                    }
+                )
+
             # Each sample consists in: Embeddings + text (no text before the embeddings)
             insert_embed_list.append([0])
 
@@ -319,7 +353,6 @@ def sequence_iterator_inserted_embed_continuation(
                 len(to_embed_buffer),
                 len(sizes),
             )
-
             # we don't want to yield sequences with a mask filled with False
             if any(mask_buffer):
                 return (

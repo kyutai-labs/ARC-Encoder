@@ -1,19 +1,20 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=4-7
+#SBATCH --array=8-10
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
-#SBATCH --job-name=interleaved_heavy_pt
+#SBATCH --job-name=rec_gs_heavy_pt
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
 
 
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
+
 
 CONFIG_FILES=(
 config/experiments/heavier_pt/CP8_L3B_MLP2_M7B_20rec.yaml 
@@ -22,8 +23,10 @@ config/experiments/heavier_pt/CP8_L3B_MLP16_L8B_20rec.yaml
 config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_50rec.yaml
 config/experiments/heavier_pt/CP8_L3B_MLP2_M7B_20rec_3interleaved.yaml 
 config/experiments/heavier_pt/CP8_L3B_MLP2_L8B_20rec_3interleaved.yaml 
-config/experiments/heavier_pt/CP4_L3B_MLP2_L8B_20rec_3interleaved.yaml 
-config/experiments/heavier_pt/CP4_L3B_MLP2_M7B_20rec_3interleaved.yaml
+config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_5rec.yaml
+config/experiments/heavier_pt/CP16_L8B_to_mistral_30rec.yaml 
+config/experiments/heavier_pt/CP16_L8B_to_mistral_5rec.yaml
+config/experiments/heavier_pt/CPtrue8memtoks_L3B_MLP2_M7B_20rec_v2.yaml
 )
 
 

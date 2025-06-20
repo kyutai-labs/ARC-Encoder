@@ -443,27 +443,28 @@ def _train(
                 pipeline.prepare_forward(batch)
             )
 
-            # print('embed seqlens', embed_seqlens)
+            # # print('embed seqlens', embed_seqlens)
             # if get_rank() == 0:
-            #     # to_gen = [
-            #     #     int(tok)
-            #     #     for tok in batch.x[:batch.sizes[0]]
-            #     # ]
-            #     ind_toks = 0
+            #     to_gen = [
+            #         int(tok)
+            #         for tok in batch.x[:batch.sizes[0]]
+            #     ]
+            #     print("To generate", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
+            #     # ind_toks = 0
             #     # print('Insert cat embedds', insert_cat_embedds)
-            #     for j, insert_idx in enumerate(insert_cat_embedds[0]):
-            #         print('TEXT',pipeline.llm_tokenizer.tokenizer.decode(x[ind_toks : ind_toks + insert_idx].tolist()))
-            #         print('CONTEXT',batch.to_embed[0]["text"][j])
-            #         ind_toks += insert_idx
-            #     print('TEXT',pipeline.llm_tokenizer.tokenizer.decode(x[ind_toks:seqlens[0]].tolist()))
+            #     # for j, insert_idx in enumerate(insert_cat_embedds[0]):
+            #     #     print('TEXT',pipeline.llm_tokenizer.tokenizer.decode(x[ind_toks : ind_toks + insert_idx].tolist()))
+            #     #     print('CONTEXT',batch.to_embed[0]["text"][j])
+            #     #     ind_toks += insert_idx
+            #     # print('TEXT',pipeline.llm_tokenizer.tokenizer.decode(x[ind_toks:seqlens[0]].tolist()))
             #     # # target = [int(tok) for tok in batch.y]
-            #     # embed = [int(tokens) for tokens in batch.to_embed[0]["tokens"]]
+            #     embed = [int(toks) for tokens in batch.to_embed[0]["tokens"] for toks in tokens]
             #     # # continuation = [
             #     # #     int(tok)
             #     # #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
             #     # # ]
             #     # print("Beginning", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
-            #     # print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
+            #     print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
             #     # # print('embedding tokens', batch.to_embed[13]["tokens"])
             #     # # print('embed', batch.to_embed[13]["text"])
             #     # # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))

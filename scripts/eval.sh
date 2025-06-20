@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=2-4
+#SBATCH --array=6
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
@@ -22,6 +22,10 @@ CPtrue16_L8B_MLP2_M7B_20rec
 CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad_interleaved_loss
 CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad_interleaved
 CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad_wDist_interleaved
+CPtrue16_L8B_L8B_5rec_ftsquad
+CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad
+CP16_L8B_to_mistral_10rec_Dist_ftsquad
+CP16_L8B_to_mistral_10rec_Dist_ftsquad_wDist
 )
 
 
@@ -49,7 +53,7 @@ echo "Starting at: $(date)"
 
 case $RUN_NAME in
 
-*interleaved*)
+*CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad*)
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
         --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.1-8B --llm_name mistral_7B  --n_icl_exs 2 --compressed_doc_in_icl
@@ -166,15 +170,15 @@ case $RUN_NAME in
 
 *_L8B_L8B*)
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
         --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --llm_name Llama3.1-8B --embed_name Llama3.1-8B --n_icl_exs 5
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
         --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --llm_name Llama3.1-8B --embed_name Llama3.1-8B --n_icl_exs 0
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
         --n_passages 500 --run_name $RUN_NAME --eval_trad   --llm_name Llama3.1-8B --embed_name Llama3.1-8B 
 
     ;;

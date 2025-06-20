@@ -586,6 +586,7 @@ def evaluate_trad(
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
     shorter_icl: bool = False,  # If True, use shorter ICL examples
+    compressed_doc_in_icl: bool = False,  # Not used for translation
 ):
     # Loading model
     llm_name = llm_path.split("/")[-1]
@@ -612,7 +613,6 @@ def evaluate_trad(
         bridge_ckpt=bridge_ckpt,
         llm_type="llama" if "llama" in llm_path.lower() else "mistral",
         embed_type="llama" if "llama" in embed_path.lower() else "mistral",
-        compressed_doc_in_icl=False,  # Not used for translation
     )
 
     if mistral:
