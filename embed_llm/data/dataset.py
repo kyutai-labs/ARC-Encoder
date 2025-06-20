@@ -154,7 +154,7 @@ def parse_data_sources(
         if weight <= 0:
             seen.add(path_)
             continue
-        else:   
+        else:
             sources.append(data)
             weights.append(weight)
             few_shots.append(few_shot)
@@ -194,7 +194,9 @@ def sequence_iterator(
     insert_embed_list: list[list[int]] = []
     mask_buffer: Mask = []
     sizes: list[int] = []
-    n_missing_cont = seq_len * 2 + n_times_sl_insertion * seq_len if n_interleaved <= 1 else seq_len
+    n_missing_cont = (
+        seq_len * 2 + n_times_sl_insertion * seq_len if n_interleaved <= 1 else seq_len
+    )
 
     x_buffer_cont: list[int] = []
     y_buffer_cont: list[int] = []
@@ -205,7 +207,11 @@ def sequence_iterator(
 
     few_shot_instruct = []
     cur_pos = 0
-    n_missing = seq_len // n_interleaved if continuation > 0 and n_interleaved > 1 else int(seq_len * rec_seq_len_factor) 
+    n_missing = (
+        seq_len // n_interleaved
+        if continuation > 0 and n_interleaved > 1
+        else int(seq_len * rec_seq_len_factor)
+    )
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
 
@@ -220,39 +226,43 @@ def sequence_iterator(
         if do_continuation:
             while True:
                 n_times_sl_insertion = n_times_sl_insertion if not is_finite else 0
-                
-                res = sequence_iterator_inserted_embed_continuation(
-                    sample=sample,
-                    x_buffer=x_buffer_cont,
-                    y_buffer=y_buffer_cont,
-                    mask_buffer=mask_buffer_cont,
-                    to_embed_buffer=to_embed_buffer_cont,
-                    insert_embed_list=insert_embed_cont_list,
-                    sizes=sizes_cont,
-                    seq_len=seq_len,
-                    llm_tokenizer=llm_tokenizer,
-                    embed_tokenizer=embed_tokenizer,
-                    n_missing=n_missing_cont,
-                    data_type="continuation",
-                    cur_pos=cur_pos,
-                    n_times_sl_insertion=n_times_sl_insertion,
-                    shorten_continuation=(rec_seq_len_factor > 1.0),
-                ) if n_interleaved <= 1 else sequence_iterator_interleaved_cont(
-                    sample=sample,
-                    x_buffer=x_buffer_cont,
-                    y_buffer=y_buffer_cont,
-                    mask_buffer=mask_buffer_cont,
-                    to_embed_buffer=to_embed_buffer_cont,
-                    insert_embed_list=insert_embed_cont_list,
-                    sizes=sizes_cont,
-                    seq_len=seq_len,
-                    llm_tokenizer=llm_tokenizer,
-                    embed_tokenizer=embed_tokenizer,
-                    n_missing=n_missing_cont,
-                    data_type="continuation",
-                    cur_pos=cur_pos,
-                    n_interleaved=n_interleaved,
-                    loss_last_cont_only=loss_last_cont_only,  
+
+                res = (
+                    sequence_iterator_inserted_embed_continuation(
+                        sample=sample,
+                        x_buffer=x_buffer_cont,
+                        y_buffer=y_buffer_cont,
+                        mask_buffer=mask_buffer_cont,
+                        to_embed_buffer=to_embed_buffer_cont,
+                        insert_embed_list=insert_embed_cont_list,
+                        sizes=sizes_cont,
+                        seq_len=seq_len,
+                        llm_tokenizer=llm_tokenizer,
+                        embed_tokenizer=embed_tokenizer,
+                        n_missing=n_missing_cont,
+                        data_type="continuation",
+                        cur_pos=cur_pos,
+                        n_times_sl_insertion=n_times_sl_insertion,
+                        shorten_continuation=(rec_seq_len_factor > 1.0),
+                    )
+                    if n_interleaved <= 1
+                    else sequence_iterator_interleaved_cont(
+                        sample=sample,
+                        x_buffer=x_buffer_cont,
+                        y_buffer=y_buffer_cont,
+                        mask_buffer=mask_buffer_cont,
+                        to_embed_buffer=to_embed_buffer_cont,
+                        insert_embed_list=insert_embed_cont_list,
+                        sizes=sizes_cont,
+                        seq_len=seq_len,
+                        llm_tokenizer=llm_tokenizer,
+                        embed_tokenizer=embed_tokenizer,
+                        n_missing=n_missing_cont,
+                        data_type="continuation",
+                        cur_pos=cur_pos,
+                        n_interleaved=n_interleaved,
+                        loss_last_cont_only=loss_last_cont_only,
+                    )
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -265,7 +275,9 @@ def sequence_iterator(
                     sizes_cont = []
                     n_missing_cont = (
                         seq_len * 2 + n_times_sl_insertion * seq_len
-                    if n_interleaved <= 1 else seq_len) # 2*seq_len for compressed tokens and contionuation, + the ones for text before compressed tokens
+                        if n_interleaved <= 1
+                        else seq_len
+                    )  # 2*seq_len for compressed tokens and contionuation, + the ones for text before compressed tokens
                     cur_pos = res[1]
                 else:
                     (
@@ -289,7 +301,11 @@ def sequence_iterator(
                     mask_buffer=mask_buffer,
                     to_embed_buffer=to_embed_buffer,
                     sizes=sizes,
-                    seq_len=int(seq_len * rec_seq_len_factor),
+                    seq_len=(
+                        seq_len // n_interleaved
+                        if continuation > 0 and n_interleaved > 1
+                        else int(seq_len * rec_seq_len_factor)
+                    ),
                     llm_tokenizer=llm_tokenizer,
                     embed_tokenizer=embed_tokenizer,
                     adapt_seq_len=adapt_seq_len,
@@ -310,7 +326,11 @@ def sequence_iterator(
                     to_embed_buffer = []
                     insert_embed_list = []
                     sizes = []
-                    n_missing = seq_len // n_interleaved if continuation > 0 and n_interleaved > 1 else int(seq_len * rec_seq_len_factor)
+                    n_missing = (
+                        seq_len // n_interleaved
+                        if continuation > 0 and n_interleaved > 1
+                        else int(seq_len * rec_seq_len_factor)
+                    )
                     cur_pos = res[1]
                 else:
                     (
@@ -398,7 +418,7 @@ def build_dataset(
             rec_seq_len_factor=args.rec_seq_len_factor,
             few_shot=max(args.few_shot, fs),
             n_interleaved=args.n_interleaved,
-            loss_last_cont_only=args.loss_last_cont_only,  
+            loss_last_cont_only=args.loss_last_cont_only,
         )
         for fs, it in zip(few_shots, dataset_iterators)
     ]

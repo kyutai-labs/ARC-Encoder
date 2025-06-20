@@ -90,13 +90,15 @@ def create_prompt_prefix(
                     if index == 0:
                         prompt_str.append("Document: ")
                         to_embed_str.append(doc.strip())
+                        prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: ")
                     elif index == max_examples - 1:
+                        to_embed_str.append(doc.strip())
                         prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\n")
                     else:
+                        to_embed_str.append(doc.strip())
                         prompt_str.append(
                             f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
                         )
-                        to_embed_str.append(doc.strip())
             else:
                 prompt_str.append(f"\nQuestion: {query}\nDocument: ")
                 to_embed_str.append(doc.strip())
@@ -245,9 +247,6 @@ def evaluate_QA(
     ):
         if benchmark == "SQUAD" and max_multi_passage > 1:
             benchmarks.remove(benchmark)
-            continue
-
-        if compressed_doc_in_icl and icl_examples == 0:
             continue
 
         # if benchmark == "HotpotQA":
@@ -613,6 +612,7 @@ def evaluate_trad(
         bridge_ckpt=bridge_ckpt,
         llm_type="llama" if "llama" in llm_path.lower() else "mistral",
         embed_type="llama" if "llama" in embed_path.lower() else "mistral",
+        compressed_doc_in_icl=False,  # Not used for translation
     )
 
     if mistral:
@@ -1098,6 +1098,7 @@ if __name__ == "__main__":
                 if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
                 else False,
                 shorter_icl=args.shorter_icl,
+                compressed_doc_in_icl=args.compressed_doc_in_icl,
             )
             torch.cuda.empty_cache()
         else:

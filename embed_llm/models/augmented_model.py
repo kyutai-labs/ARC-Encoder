@@ -61,20 +61,26 @@ class EmbedAugModel(nn.Module):
         if embeddings is not None:
             embeddings, embed_seqlens = self.embedder.forward_embedder(
                 input_ids=embeddings,
-                seqlens=sum(embed_seqlens,[]),
+                seqlens=sum(embed_seqlens, []),
             )
             embed_seqlens = group_embed_seqlens(
-                embed_seqlens, [len(l) for l in insert_cat_embedds]
+                embed_seqlens, [len(li) for li in insert_cat_embedds]
             )
-            if (self.embedder.rec_tok is not None and batch_type == "reconstruction") or (self.embedder.cont_tok is not None and batch_type == "continuation"):
-                special_tok = self.embedder.rec_tok(
-                    torch.tensor([0]).to(embeddings.device)
-                ) if self.embedder.rec_tok is not None and batch_type == "reconstruction" else self.embedder.cont_tok(
-                    torch.tensor([0]).to(embeddings.device)
+            if (
+                self.embedder.rec_tok is not None and batch_type == "reconstruction"
+            ) or (
+                self.embedder.cont_tok is not None
+                and (batch_type == "continuation" or batch_type == "instruct")
+            ):
+                special_tok = (
+                    self.embedder.rec_tok(torch.tensor([0]).to(embeddings.device))
+                    if self.embedder.rec_tok is not None
+                    and batch_type == "reconstruction"
+                    else self.embedder.cont_tok(torch.tensor([0]).to(embeddings.device))
                 )
                 new_embeddings = torch.zeros(
                     (
-                        len(sum(embed_seqlens,[])) + sum(sum(embed_seqlens,[])),
+                        len(sum(embed_seqlens, [])) + sum(sum(embed_seqlens, [])),
                         embeddings.shape[1],
                     ),
                     device=embeddings.device,
@@ -94,10 +100,12 @@ class EmbedAugModel(nn.Module):
 
                         ind_new += 1
 
-                embed_seqlens = [[size + 1 for size in embed_seqlen] for embed_seqlen in embed_seqlens]
+                embed_seqlens = [
+                    [size + 1 for size in embed_seqlen]
+                    for embed_seqlen in embed_seqlens
+                ]
                 embeddings = new_embeddings.clone()
 
-    
             # print('Grouped embed_seqlens:', embed_seqlens)
             if self.bridge_module is not None:
                 embeddings = self.bridge_module(embeddings)
@@ -148,13 +156,23 @@ class EmbedAugPipeline(nn.Module):
         embeddings = [to_embed["tokens"] for to_embed in batch.to_embed]
 
         embeddings = torch.from_numpy(
-            np.array([el for to_embed in batch.to_embed for seq_emb in to_embed["tokens"] for el in seq_emb], dtype=np.int64)  
+            np.array(
+                [
+                    el
+                    for to_embed in batch.to_embed
+                    for seq_emb in to_embed["tokens"]
+                    for el in seq_emb
+                ],
+                dtype=np.int64,
+            )
         ).cuda(non_blocking=True)
         embed_seqlens = []
         for to_embed in batch.to_embed:
             embed_seqlen = []
             for seq_emb in to_embed["tokens"]:
-                assert len(seq_emb) > 1, 'Embedding sequence length must be greater than 1'
+                assert len(seq_emb) > 1, (
+                    "Embedding sequence length must be greater than 1"
+                )
                 embed_seqlen.append(len(seq_emb))
             embed_seqlens.append(embed_seqlen)
         seqlens = batch.sizes
@@ -278,7 +296,8 @@ class EmbedAugPipeline(nn.Module):
             assert all(
                 [
                     k in llm_embedder.state_dict()
-                    for k in trained_layers_state_dict.keys() if 'rec_tok' not in k 
+                    for k in trained_layers_state_dict.keys()
+                    if "rec_tok" not in k
                 ]
             ), (
                 f"Ckpt state dict keys do not match model keys. Missing keys: {set(trained_layers_state_dict.keys()) - set(llm_embedder.state_dict().keys())}"
@@ -293,15 +312,16 @@ class EmbedAugPipeline(nn.Module):
                 ),
             )
 
-            if (
-                train_args.get("freeze_embedder", False)
-                and (pipeline_args.embedder_params.rec_tok or pipeline_args.embedder_params.cont_tok)
+            if train_args.get("freeze_embedder", False) and (
+                pipeline_args.embedder_params.rec_tok
+                or pipeline_args.embedder_params.cont_tok
             ):
                 embed_path = Path(ckpt_path + "/embedder")
                 supp_tok_state_dict = load_state_dict(embed_path, dtype=param_dtype)
-                assert "rec_tok.weight" in supp_tok_state_dict or 'cont_tok.weight' in supp_tok_state_dict, (
-                    f"no supp tok found in state dict {supp_tok_state_dict.keys()}"
-                )
+                assert (
+                    "rec_tok.weight" in supp_tok_state_dict
+                    or "cont_tok.weight" in supp_tok_state_dict
+                ), f"no supp tok found in state dict {supp_tok_state_dict.keys()}"
                 llm_embedder.load_state_dict(
                     supp_tok_state_dict, strict=False, assign=True
                 )
@@ -403,7 +423,6 @@ class EmbedAugPipeline(nn.Module):
         else:
             w_embeds = self.pipeline_args.w_embeds
         if w_embeds:
-            
             seqlens = []
             x = []
             for l_text in text_to_embed:
@@ -419,14 +438,13 @@ class EmbedAugPipeline(nn.Module):
                 x.append(x_l)
             x = sum(x, [])
 
-
-            n_context_tokens = sum(sum(seqlens,[]))
+            n_context_tokens = sum(sum(seqlens, []))
             x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
                 device
             )
 
             embeddings, embed_seqlens = self.model.embedder.forward_embedder(
-                input_ids=x, seqlens=sum(seqlens,[])
+                input_ids=x, seqlens=sum(seqlens, [])
             )
             embed_seqlens = group_embed_seqlens(
                 embed_seqlens, [len(l_text) for l_text in text_to_embed]
@@ -437,7 +455,7 @@ class EmbedAugPipeline(nn.Module):
                 )
                 new_embeddings = torch.zeros(
                     (
-                        len(sum(embed_seqlens,[])) + sum(sum(embed_seqlens,[])),
+                        len(sum(embed_seqlens, [])) + sum(sum(embed_seqlens, [])),
                         embeddings.shape[1],
                     ),
                     device=embeddings.device,
@@ -457,9 +475,12 @@ class EmbedAugPipeline(nn.Module):
 
                         ind_new += 1
 
-                embed_seqlens = [[size + 1  for size in embed_seqlen] for embed_seqlen in embed_seqlens]
+                embed_seqlens = [
+                    [size + 1 for size in embed_seqlen]
+                    for embed_seqlen in embed_seqlens
+                ]
                 embeddings = new_embeddings.clone()
- 
+
             if self.model.bridge_module is not None:
                 embeddings = self.model.bridge_module(embeddings)
 
@@ -515,8 +536,8 @@ class EmbedAugPipeline(nn.Module):
                 encoded_prompt.append(
                     [self.llm_tokenizer.tokenizer.encode(prompt, bos=True, eos=False)]
                 )
-
         eos_id = self.llm_tokenizer.tokenizer.eos_id
+
         generated_tokens = transformer_generate(
             prompt_tokens=encoded_prompt,
             insertion_lists=insertion_lists,

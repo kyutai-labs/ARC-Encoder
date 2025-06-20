@@ -1,25 +1,29 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=3
+#SBATCH --array=4-7
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
-#SBATCH --job-name=more_rec_heavy_pt
+#SBATCH --job-name=interleaved_heavy_pt
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s04dgx12,par2dc5-ai-prd-cl02s01dgx11
+
+
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
-
 
 CONFIG_FILES=(
 config/experiments/heavier_pt/CP8_L3B_MLP2_M7B_20rec.yaml 
 config/experiments/heavier_pt/CP8_L3B_MLP2_L8B_20rec.yaml
 config/experiments/heavier_pt/CP8_L3B_MLP16_L8B_20rec.yaml
 config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_50rec.yaml
+config/experiments/heavier_pt/CP8_L3B_MLP2_M7B_20rec_3interleaved.yaml 
+config/experiments/heavier_pt/CP8_L3B_MLP2_L8B_20rec_3interleaved.yaml 
+config/experiments/heavier_pt/CP4_L3B_MLP2_L8B_20rec_3interleaved.yaml 
+config/experiments/heavier_pt/CP4_L3B_MLP2_M7B_20rec_3interleaved.yaml
 )
 
 
@@ -157,6 +161,18 @@ case $RUN_NAME in
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
         --n_passages 500 --run_name $RUN_NAME --eval_trad   --llm_name Llama3.1-8B --embed_name Llama3.2-3B
+
+    ;;
+
+*L3B_MLP2_M7B*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.2-3B
+
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad   --embed_name Llama3.2-3B
 
     ;;
 
