@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=2
+#SBATCH --array=2-3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -9,43 +9,16 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=fine_tuning_models
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
-
+#SBATCH --dependency=afterany:773042_1
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 CONFIG_FILES=(
-# config/experiments/heavier_pt/ft/CP16_M7B_MLP2_L8B_20rec_ftsquad.yaml 
-# config/experiments/datasets/CP16_L3B_MLP2_M7B_20rec_ft_pwc.yaml 
-# config/experiments/datasets/CP16_L3B_MLP2_M7B_20rec_ft_peso_QA.yaml 
-# config/experiments/datasets/CP16_L3B_MLP2_M7B_20rec_ft_lowres_ts.yaml 
-# config/experiments/datasets/CP16_L3B_MLP2_L8B_20rec_ft_pwc.yaml
-# config/experiments/datasets/CP16_L3B_MLP2_L8B_20rec_ft_peso_QA.yaml 
-# config/experiments/datasets/CP16_L3B_MLP2_L8B_20rec_ft_lowres_ts.yaml
-# config/experiments/heavier_pt/ft/CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad.yaml
-# config/experiments/heavier_pt/ft/CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad_wDist.yaml
-# config/experiments/heavier_pt/ft/CP16_L8B_MLP2_M7B_20rec_ftsquad_wDist.yaml
-# config/experiments/heavier_pt/ft/CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad_wDist_fs.yaml
-# config/experiments/heavier_pt/ft/CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad_low_wDist.yaml
-# config/experiments/heavier_pt/ft/CP16_L8B_to_mistral_10rec_ftsquad.yaml
-# config/experiments/heavier_pt/ft/CP16_L8B_to_mistral_10rec_ftsquad_wDist.yaml
-# config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad.yaml 
-# config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad_25k.yaml 
-# config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad_20k.yaml 
-# config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_ftsquad_15k.yaml
-# config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_L8B_20rec_ftsquad.yaml
-# config/experiments/heavier_pt/ft/CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad_interleaved_loss.yaml 
-# config/experiments/heavier_pt/ft/CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad_interleaved.yaml 
-# config/experiments/heavier_pt/ft/CP16_L8B_MLP2_M7B_20rec_Dist_ftsquad_wDist_interleaved.yaml # Up to there
-# config/experiments/heavier_pt/ft/CP16_L8B_to_mistral_10rec_Dist_ftsquad.yaml 
-# config/experiments/heavier_pt/ft/CP16_L8B_to_mistral_10rec_Dist_ftsquad_wDist.yaml 
-# config/experiments/heavier_pt/ft/CPtrue16_L8B_MLP2_M7B_20rec_ftsquad.yaml
-# config/experiments/heavier_pt/ft/CPtrue16_L8B_L8B_5rec_ftsquad.yaml
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_L8B_20rec_ftsquad_interleaved.yaml 
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_L8B_20rec_ftsquad_interleaved_loss.yaml
-config/experiments/heavier_pt/ft/CPtrue8memtoks_L3B_MLP2_M7B_20rec_ftsquad.yaml
-config/experiments/heavier_pt/ft/CPtrue16_L8B_MLP2_M7B_20rec_Dist_ftsquad.yaml  # Still to do 
 config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_Dist_ftsquad.yaml 
+config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_Dist_ftsquad_wDist.yaml
+config/experiments/heavier_pt/ft/CPtrue16_L8B_MLP2_M7B_20rec_Dist_ftsquad.yaml 
+config/experiments/heavier_pt/ft/CPtrue16_L8B_MLP2_M7B_20rec_Dist_ftsquad_wDist.yaml 
 )
 
 

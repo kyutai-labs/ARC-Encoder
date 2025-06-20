@@ -16,8 +16,8 @@ log_freq: 1
 batch_size: 16
 ckpt_freq: 5000
 eval_freq: 50
-no_eval: true
-continuation: 0.95
+no_eval: false
+continuation: 0.2
 optim:
   final_lr: 1.0e-10
   initial_lr: 1.0e-20
@@ -29,7 +29,7 @@ pipeline:
   embedder_params:
     causal_embedder: true
     compress_rates:
-    - -16
+    - -8
     n_truncated_layers: 14
     pooling_module:
       pool_type: mean_sa
@@ -48,7 +48,7 @@ pipeline:
     hidden_dim: 2048
     out_dim: 4096
 num_ckpt_keep: 4
-exp_name: test_pretrain
+exp_name: test_pretrain2
 # wandb:
 #   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
 #   offline: false

@@ -483,7 +483,7 @@ def _train(
                 insert_cat_embedds=insert_cat_embedds,
                 batch_type=batch.data_type,
             )
-            
+
             mb_loss = compute_ce_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
@@ -521,21 +521,27 @@ def _train(
                     )
                 ).item()
                 batch_bpc += loss_in_bits / (
-                    len(
-                        pipeline.llm_tokenizer.tokenizer.decode(
-                            [int(tok) for tok in batch.y[ind : ind + size]]
-                        )
+                    max(
+                        len(
+                            pipeline.llm_tokenizer.tokenizer.decode(
+                                [int(tok) for tok in batch.y[ind : ind + size]]
+                            )
+                        ),
+                        1,
                     )
                     if y_mask is None
-                    else len(
-                        pipeline.llm_tokenizer.tokenizer.decode(
-                            [
-                                int(tok)
-                                for tok in batch.y[ind : ind + size][
-                                    batch.y_mask[ind : ind + size]
+                    else max(
+                        len(
+                            pipeline.llm_tokenizer.tokenizer.decode(
+                                [
+                                    int(tok)
+                                    for tok in batch.y[ind : ind + size][
+                                        batch.y_mask[ind : ind + size]
+                                    ]
                                 ]
-                            ]
-                        )
+                            )
+                        ),
+                        1,
                     )
                 )
                 ind += size
@@ -549,12 +555,14 @@ def _train(
 
                     seqlen = 0
                     for j, insert_idx in enumerate(insert_cat_embedds[i]):
-                        full_context_x.extend(x[ind_toks : ind_toks + insert_idx].tolist())
+                        full_context_x.extend(
+                            x[ind_toks : ind_toks + insert_idx].tolist()
+                        )
                         target_mask.extend(
                             [True] * len(x[ind_toks : ind_toks + insert_idx])
                             if y_mask is None
                             else y_mask[ind_toks : ind_toks + insert_idx]
-                        )                    
+                        )
                         seqlen += len(x[ind_toks : ind_toks + insert_idx].tolist())
                         ind_toks += insert_idx
                         context = pipeline.llm_tokenizer.tokenizer.encode(

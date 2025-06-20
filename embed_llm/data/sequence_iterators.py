@@ -456,7 +456,7 @@ def sequence_iterator_inserted_embed_continuation(
         if n_missing == 0:
             assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
             assert len(x_buffer) <= seq_len * (1 + n_times_sl_insertion), (
-                f"Buffer to long {len(x_buffer)} | {seq_len * 2}"
+                f"Buffer to long {len(x_buffer)} | {seq_len * (1 + n_times_sl_insertion)}"
             )
 
             assert len(to_embed_buffer) == len(sizes)

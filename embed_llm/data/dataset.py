@@ -188,6 +188,7 @@ def sequence_iterator(
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
     """
 
+    n_times_sl_insertion = n_times_sl_insertion if not is_finite else 0
     x_buffer: list[int] = []
     y_buffer: list[int] = []
     to_embed_buffer: list[dict[list[str], list[list[int]]]] = []
@@ -225,7 +226,6 @@ def sequence_iterator(
 
         if do_continuation:
             while True:
-                n_times_sl_insertion = n_times_sl_insertion if not is_finite else 0
 
                 res = (
                     sequence_iterator_inserted_embed_continuation(

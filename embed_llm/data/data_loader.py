@@ -24,7 +24,9 @@ class Batch:
         assert self.x.shape == self.y.shape
         assert self.x.dtype == np.int64
         assert self.y.dtype == np.int64
-        assert self.insert_embed_list is None or len(self.insert_embed_list) == len(self.sizes), f"{self.insert_embed_list}, {self.sizes}"
+        assert self.insert_embed_list is None or len(self.insert_embed_list) == len(
+            self.sizes
+        ), f"{self.insert_embed_list}, {self.sizes}"
         assert isinstance(self.sizes, list)
         assert isinstance(self.to_embed, list)
         assert sum(self.sizes) == self.x.size == self.y.size, (
@@ -172,8 +174,13 @@ def build_data_loader(
         assert all(s >= 0 for s in sample.sizes)
 
         # Avoid empty samples
-        if any([len(l_toks) <= 1 for embed in sample.to_embed for l_toks in embed["tokens"]]):
-            print("Skipping empty sample")
+        if any(
+            [
+                len(l_toks) <= 1
+                for embed in sample.to_embed
+                for l_toks in embed["tokens"]
+            ]
+        ) or any([s == 0 for s in sample.sizes]):
             continue
 
         if sample.data_type not in batch_list_dict:
