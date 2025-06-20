@@ -654,8 +654,9 @@ def _train(
                         if y_mask is None
                         else y_mask[ind_toks : ind_toks + insert_idx]
                     )
+                    seqlen += len(x[ind_toks : ind_toks + insert_idx].tolist())
                     ind_toks += insert_idx
-                    seqlen += len(x[ind_toks : ind_toks + insert_idx])
+                   
                     if llm_number == 2:
                         context = pipeline.llm_2_tokenizer.tokenizer.encode(
                             batch.to_embed[i]["text"], bos=False, eos=False
@@ -678,7 +679,7 @@ def _train(
                             if y_mask is None
                             else y_mask[ind_toks : ind_toks + left_toks]
                         )
-                        seqlen += left_toks
+                        seqlen += len(x[ind_toks : ind_toks + left_toks].tolist())
                         ind_toks += left_toks
                     new_seqlens.append(seqlen)
                 assert ind_toks == sum(seqlens[: i + 1]), (
