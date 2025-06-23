@@ -55,7 +55,6 @@ class CkptArgs(Serializable):
     decoder_path: str | None = None
     embedder_path: str | None = None
     bridge_path: str | None = None
-    llm_path: str | None = None
     supp_toks_path: str | None = None
 
 
@@ -101,8 +100,8 @@ class TrainArgs(Serializable):
     wandb: WandbArgs = field(default_factory=WandbArgs)
 
     # LoRA
-    lora_llm: LoraArgs = field(default_factory=LoraArgs)
     lora_embedder: LoraArgs = field(default_factory=LoraArgs)
+    
     # Pretrained embedder to use off the shelf
     pipeline: EmbedAugArgs = field(default_factory=EmbedAugArgs)
     loss_args: LossArgs = field(default_factory=LossArgs)
@@ -111,15 +110,16 @@ class TrainArgs(Serializable):
 
     # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
     continuation: float = 0.0
-    llm_path: str | None = (
+    llm_paths: list[str] | None = (
         None  # Path to the directory containing the LLM model or model id: "mistral-small"
     )
-    llm_path_2: str | None = None
+    llm_types: list[str] | None = (
+        None  # List of model types to use, either "mistral" or "llama"
+    )
     prob_forward: list[float] = field(
         default_factory=lambda: [0.5, 0.5]
     )  # Probability of forwarding the LLM and embedder, respectively. The sum must be 1.0.
-    llm_type: str = "mistral"  # Name of the model to use or llama
-    llm_2_type: str | None = None  # Name of the second model to use, if any
+
     embed_type: str = (
         "mistral"  # Type of the embedder to use, either "mistral" or "llama"
     )
@@ -137,8 +137,7 @@ class TrainArgs(Serializable):
 
         assert self.num_ckpt_keep is None or self.num_ckpt_keep >= 1
 
-        if self.llm_path is not None:
-            Path(self.llm_path).exists()
+
 
         if self.embedder_path is not None:
             Path(self.embedder_path).exists()
@@ -146,8 +145,10 @@ class TrainArgs(Serializable):
         if self.continuation < 1 and self.data.n_times_sl_insertion > 0:
             print("For reconstruction training, no text inserted before embeddings")
             
-        if self.llm_path_2 is not None:
-            if self.llm_type == "mistral":
-                assert self.llm_2_type == 'llama', (
-                    "If using two LLMs, llm_2_type must be the other one."
-                )
+        if len(self.llm_paths)>1:
+            assert len(self.llm_paths) == len(self.llm_types), (
+                "If multiple LLMs are used, the number of paths and types must match."
+            ) 
+            assert len(self.llm_paths) == len(self.prob_forward), (
+                "If multiple LLMs are used, the number of paths and prob_forward must match."
+            )

@@ -190,7 +190,7 @@ def evaluate_QA(
     compressed_doc_in_icl: bool = False,
     reversed_template: bool = False,
     comp_rate: int | None = None,
-    bridge_number: int = 1,
+    llm_number: int = 1,
     bridge_ckpt: bool
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
@@ -344,7 +344,7 @@ def evaluate_QA(
                         device=device,
                         device_generation=other_device,
                         give_n_tokens=True,
-                        bridge_number=bridge_number,
+                        llm_number=llm_number,
                     )
                     if w_embeds:
                         compress_ratio += (
@@ -575,7 +575,7 @@ def evaluate_trad(
     comp_rate: int | None = None,
     query_w_context: bool = False,
     fine_tuned: bool = False,
-    bridge_number: int = 1,
+    llm_number: int = 1,
     bridge_ckpt: bool
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
@@ -724,7 +724,7 @@ def evaluate_trad(
                         device=device,
                         device_generation=other_device,
                         give_n_tokens=True,
-                        bridge_number=bridge_number,
+                        llm_number=llm_number,
                     )
                     if w_embeds:
                         compress_ratio += (
@@ -901,7 +901,7 @@ def arg_parser():
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--query_w_context", action="store_true")
     parser.add_argument("--bridge_ckpt", type=str, default=None)
-    parser.add_argument("--bridge_number", type=int, default=1)
+    parser.add_argument("--llm_number", type=int, default=1)
 
     return parser.parse_args()
 
@@ -1069,7 +1069,7 @@ if __name__ == "__main__":
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],
                 bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
-                bridge_number=args.bridge_number,
+                llm_number=args.llm_number,
             )
             torch.cuda.empty_cache()
         else:
@@ -1095,7 +1095,7 @@ if __name__ == "__main__":
                 comp_rate=args.comp_rate,
                 query_w_context=args.query_w_context,
                 bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
-                bridge_number=args.bridge_number,
+                llm_number=args.llm_number,
             )
 
             for icl_ex in icl_tests[1:]:
@@ -1122,5 +1122,5 @@ if __name__ == "__main__":
                     comp_rate=args.comp_rate,
                     query_w_context=args.query_w_context,
                     bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
-                    bridge_number=args.bridge_number,
+                    llm_number=args.llm_number,
                 )

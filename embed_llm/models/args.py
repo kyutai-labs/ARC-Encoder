@@ -77,7 +77,6 @@ class EmbedderArgs(Serializable):
 class EmbedAugArgs(Serializable):
     param_dtype: torch.dtype = torch.float32
     embedder_params: EmbedderArgs = field(default_factory=EmbedderArgs)
-    trainable_llm: bool = False
     max_embeds: int = 1
     w_embeds: bool = True
     decoder_module: DecoderArgs = field(default_factory=DecoderArgs)
