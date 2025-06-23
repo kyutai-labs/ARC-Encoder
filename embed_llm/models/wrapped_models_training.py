@@ -35,39 +35,45 @@ from embed_llm.models.enhanced_transformer import load_model
 
 def load_training_model(
     train_args: TrainArgs,
-    llm_folder: Path,
+    llm_paths: list[str],
     embed_folder: Path,
-    lora_llm: LoraArgs,
     lora_embedder: LoraArgs,
     param_dtype: torch.dtype,
     checkpoint: bool = False,
     max_batch_size: int = 32,
-    llm_folder_2: Path | None = None,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
-    llm_args, pipeline_args = load_args(
-        llm_folder,
-        lora_llm,
-        max_batch_size=max_batch_size,
-        pipe_args=train_args.pipeline,
-        args_type=train_args.llm_type,
-    )
-    # Load pretrained params on rank 0 for LLM
-    if not pipeline_args.trainable_llm:
-        assert lora_llm is None or not lora_llm.enable, (
-            "LoRA is not supported for pretrained models"
+    
+    
+    llms = []
+    llm_tokenizers = []
+    for i, llm_path in enumerate(llm_paths):
+        llm_folder = Path(llm_path)
+        if not llm_folder.exists():
+            raise FileNotFoundError(f"LLM folder {llm_folder} does not exist")
+   
+        llm_args, pipeline_args = load_args(
+            llm_folder,
+            None,
+            max_batch_size=max_batch_size,
+            pipe_args=train_args.pipeline,
+            args_type=train_args.llm_types[i],
         )
 
-    llm, llm_tokenizer = load_model(
-        llm_args=llm_args,
-        pipeline_args=pipeline_args,
-        folder=llm_folder,
-        checkpoint=checkpoint,
-        param_dtype=param_dtype,
-        for_embedding=False,
-        llm_type=train_args.llm_type,
-        embed_type=train_args.embed_type,
-    )
 
+        llm, llm_tokenizer = load_model(
+            llm_args=llm_args,
+            pipeline_args=pipeline_args,
+            folder=llm_folder,
+            checkpoint=checkpoint,
+            param_dtype=param_dtype,
+            for_embedding=False,
+            llm_type=train_args.llm_types[i],
+            embed_type=train_args.embed_type,
+        )
+        
+        llms.append(llm)
+        llm_tokenizers.append(Tokenizer(tokenizer=llm_tokenizer, model_name=train_args.llm_types[i]))
+        
     main_logger_info("Loading embedder model ...")
     embed_args, _ = load_args(
         embed_folder,
@@ -85,54 +91,22 @@ def load_training_model(
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=True,
-        llm_type=train_args.llm_type,
         embed_type=train_args.embed_type,
+        number_of_llm = len(llms),
     )
-    if llm_folder_2 is not None:
-        llm_2_args, _ = load_args(
-            llm_folder_2,
-            lora_llm,
-            max_batch_size=max_batch_size,
-            pipe_args=train_args.pipeline,
-            args_type=train_args.llm_2_type,
-        )
-        llm_2, llm_2_tokenizer = load_model(
-            llm_args=llm_2_args,
-            pipeline_args=pipeline_args,
-            folder=llm_folder_2,
-            checkpoint=checkpoint,
-            param_dtype=param_dtype,
-            for_embedding=False,
-            llm_type=train_args.llm_2_type,
-            embed_type=train_args.embed_type,
-        )
-    else:
-        llm_2 = None
-        llm_2_tokenizer = None
-        
+
     # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
         pipeline_args=pipeline_args,
-        llm_tokenizer=Tokenizer(llm_tokenizer, model_name=train_args.llm_type),
+        llm_tokenizer=llm_tokenizers,
         embed_tokenizer=Tokenizer(embed_tokenizer, model_name=train_args.embed_type),
         embedding_model=llm_embedder,
-        llm_2_tokenizer= None if llm_2_tokenizer is None else Tokenizer(llm_2_tokenizer, model_name='mistral' if train_args.llm_type == 'llama' else 'llama')
     )
 
     with torch.device("meta"):
-        augmented_model = augmented_pipeline.get_model(llm=llm, llm_2=llm_2)
+        augmented_model = augmented_pipeline.get_model(llms=llms)
 
     if get_rank() == 0:
-        if pipeline_args.decoder_module.do:
-            main_logger_info("Initializing  layers for decoder ...")
-            initialize_decoder_layers_parameters(
-                augmented_model.llm, param_dtype, augmented_model.llm.decoder_args
-            )
-
-        if lora_llm.enable and pipeline_args.trainable_llm:
-            main_logger_info("Initializing lora layers  for LLM ...")
-            # initialize LoRA layers
-            initialize_lora_parameters(augmented_model.llm, param_dtype)
 
         if lora_embedder.enable:
             main_logger_info("Initializing lora layers for embedder ...")
@@ -140,13 +114,7 @@ def load_training_model(
 
         if pipeline_args.embedder_params.memory_tokens > 0:
             main_logger_info("Initializing memory tokens for embedder ...")
-            # augmented_model.embedder.mem_embeddings._parameters["weight"] = (
-            #     torch.nn.Parameter(
-            #         torch.mean(augmented_model.embedder.tok_embeddings.weight, dim=0)
-            #         .expand(pipeline_args.embedder_params.memory_tokens, -1)
-            #         .to(param_dtype)
-            #     )
-            # )
+
             augmented_model.embedder.mem_embeddings._parameters["weight"] = (
                 torch.nn.Parameter(
                     torch.empty_like(
@@ -200,51 +168,41 @@ def load_training_model(
         )
 
     ignored_states = []
-    if pipeline_args.embedder_params.rec_tok:
-        augmented_model.embedder.rec_tok.weight = torch.nn.Parameter(
-            torch.ones_like(
-                augmented_model.embedder.rec_tok.weight,
-                device="cuda",
-                dtype=param_dtype,
-            )
-        )
-        ignored_states.append(augmented_model.embedder.rec_tok.weight)
+    for j in range(len(llms)):
+        if pipeline_args.embedder_params.rec_tok:
+                augmented_model.embedder.rec_tok[j].weight = torch.nn.Parameter(
+                    torch.ones_like(
+                        augmented_model.embedder.rec_tok[j].weight,
+                        device="cuda",
+                        dtype=param_dtype,
+                    )
+                )
+                ignored_states.append(augmented_model.embedder.rec_tok[j].weight)
 
-    if pipeline_args.embedder_params.mixed_learned_method:
-        augmented_model.embedder.cl_mem_tokens.weight = torch.nn.Parameter(
-            torch.ones_like(
-                augmented_model.embedder.cl_mem_tokens.weight,
-                device="cuda",
-                dtype=param_dtype,
+        if pipeline_args.embedder_params.mixed_learned_method:
+            augmented_model.embedder.cl_mem_tokens[j].weight = torch.nn.Parameter(
+                torch.ones_like(
+                    augmented_model.embedder.cl_mem_tokens[j].weight,
+                    device="cuda",
+                    dtype=param_dtype,
+                )
             )
-        )
 
-        ignored_states.append(augmented_model.embedder.cl_mem_tokens.weight)
+            ignored_states.append(augmented_model.embedder.cl_mem_tokens[j].weight)
 
-    if pipeline_args.embedder_params.cont_tok:
-        augmented_model.embedder.cont_tok.weight = torch.nn.Parameter(
-            torch.ones_like(
-                augmented_model.embedder.cont_tok.weight,
-                device="cuda",
-                dtype=param_dtype,
+        if pipeline_args.embedder_params.cont_tok:
+            augmented_model.embedder.cont_tok[j].weight = torch.nn.Parameter(
+                torch.ones_like(
+                    augmented_model.embedder.cont_tok[j].weight,
+                    device="cuda",
+                    dtype=param_dtype,
+                )
             )
-        )
-        ignored_states.append(augmented_model.embedder.cont_tok.weight)
+            ignored_states.append(augmented_model.embedder.cont_tok[j].weight)
 
     torch.distributed.barrier()
 
-    # only finetune LoRA, MLP projector and pooling parameters and freeze before wrapping
-    for name, param in augmented_model.llm.named_parameters():
-        if lora_llm.enable and "lora" in name:
-            param.requires_grad = True
-        elif pipeline_args.trainable_llm and not lora_llm.enable:
-            param.requires_grad = True
-        elif "decoder_modules" in name and pipeline_args.decoder_module.do:
-            param.requires_grad = True
-        else:
-            param.requires_grad = False
-            
-    for name, param in augmented_model.llm_2.named_parameters():
+    for name, param in augmented_model.llms.named_parameters():
         param.requires_grad = False
         
     for name, param in augmented_model.embedder.named_parameters():
@@ -313,66 +271,48 @@ def load_training_model(
 
 def load_training_model_from_ckpt(
     train_args: TrainArgs,
-    llm_folder: Path | None,
+    llm_paths: Path | None,
     embed_folder: Path | None,
     bridge_folder: Path | None,
-    lora_llm: LoraArgs,
     lora_embedder: LoraArgs,
     param_dtype: torch.dtype,
-    decoder_path: Path | None = None,
     embedder_path: Path | None = None,
     supp_toks_path: Path | None = None,
     llm_path: Path | None = None,
     checkpoint: bool = False,
     max_batch_size: int = 32,
-    llm_folder_2: Path | None = None,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
-    llm_args, pipeline_args = load_args(
-        llm_folder,
-        lora_llm,
-        max_batch_size=max_batch_size,
-        pipe_args=train_args.pipeline,
-        args_type=train_args.llm_type,
-    )
-    # Load pretrained params on rank 0 for LLM
-    if not pipeline_args.trainable_llm:
-        assert lora_llm is None or not lora_llm.enable, (
-            "LoRA is not supported for pretrained models"
-        )
 
-    llm, llm_tokenizer = load_model(
-        llm_args=llm_args,
-        pipeline_args=pipeline_args,
-        folder=llm_folder,
-        checkpoint=checkpoint,
-        param_dtype=param_dtype,
-        for_embedding=False,
-        llm_type=train_args.llm_type,
-        embed_type=train_args.embed_type,
-    )
-    
-    if llm_folder_2 is not None:
-        llm_2_args, _ = load_args(
-            llm_folder_2,
-            lora_llm,
+    llms = []
+    llm_tokenizers = []
+    for i, llm_path in enumerate(llm_paths):
+        llm_folder = Path(llm_path)
+        if not llm_folder.exists():
+            raise FileNotFoundError(f"LLM folder {llm_folder} does not exist")
+   
+        llm_args, pipeline_args = load_args(
+            llm_folder,
+            None,
             max_batch_size=max_batch_size,
             pipe_args=train_args.pipeline,
-            args_type=train_args.llm_2_type,
+            args_type=train_args.llm_types[i],
         )
-        llm_2, llm_2_tokenizer = load_model(
-            llm_args=llm_2_args,
+
+
+        llm, llm_tokenizer = load_model(
+            llm_args=llm_args,
             pipeline_args=pipeline_args,
-            folder=llm_folder_2,
+            folder=llm_folder,
             checkpoint=checkpoint,
             param_dtype=param_dtype,
             for_embedding=False,
-            llm_type=train_args.llm_2_type,
+            llm_type=train_args.llm_types[i],
             embed_type=train_args.embed_type,
         )
-    else:
-        llm_2 = None
-        llm_2_tokenizer = None
-
+        
+        llms.append(llm)
+        llm_tokenizers.append(Tokenizer(tokenizer=llm_tokenizer, model_name=train_args.llm_types[i]))
+        
     main_logger_info("Loading embedder model ...")
     embed_args, _ = load_args(
         embed_folder,
@@ -390,46 +330,23 @@ def load_training_model_from_ckpt(
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=True,
-        llm_type=train_args.llm_type,
         embed_type=train_args.embed_type,
+        number_of_llm = len(llms),
     )
 
     # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
         pipeline_args=pipeline_args,
-        llm_tokenizer=Tokenizer(llm_tokenizer, model_name=train_args.llm_type),
+        llm_tokenizer=llm_tokenizers,
         embed_tokenizer=Tokenizer(embed_tokenizer, model_name=train_args.embed_type),
         embedding_model=llm_embedder,
-        llm_2_tokenizer= None if llm_2_tokenizer is None else Tokenizer(llm_2_tokenizer, model_name='mistral' if train_args.llm_type == 'llama' else 'llama')
     )
 
 
     with torch.device("meta"):
-        augmented_model = augmented_pipeline.get_model(llm=llm, llm_2=llm_2)
+        augmented_model = augmented_pipeline.get_model(llms=llms)
 
     if get_rank() == 0:
-        if pipeline_args.decoder_module.do:
-            assert decoder_path is not None, (
-                "Decoder path is required for decoder module"
-            )
-            main_logger_info("Loading layers for decoder ...")
-            state_dict = load_state_dict(Path(decoder_path), dtype=param_dtype)
-            state_dict = {
-                k.replace("decoder_modules.", ""): v for k, v in state_dict.items()
-            }
-            augmented_model.llm.decoder_modules.load_state_dict(
-                state_dict, assign=True, strict=True
-            )
-
-        if pipeline_args.trainable_llm and not lora_llm.enable:
-            assert llm_path is not None, "LLM path is required for training"
-            main_logger_info("Loading trained layers  for LLM ...")
-            state_dict = load_state_dict(Path(llm_path), dtype=param_dtype)
-            augmented_model.llm.load_state_dict(state_dict, assign=True, strict=False)
-        elif pipeline_args.trainable_llm and lora_llm.enable:
-            assert llm_path is not None, "LLM path is required for training"
-            main_logger_info("Loading LoRA layers  for LLM ...")
-            augmented_model.llm.load_lora(Path(llm_path), scaling=lora_llm.scaling)
 
         if lora_embedder.enable:
             assert embedder_path is not None, (
@@ -437,8 +354,7 @@ def load_training_model_from_ckpt(
             )
             main_logger_info("Loading lora layers for embedder ...")
             augmented_model.embedder.load_lora(
-                Path(embedder_path), scaling=lora_llm.scaling
-            )
+                Path(embedder_path), scaling=2.0)
         elif embedder_path is not None:
             main_logger_info("Loading trained layers for embedder ...")
             state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
@@ -511,7 +427,7 @@ def load_training_model_from_ckpt(
             strict=True,
             assign=True,
         )
-        ignored_states.append(augmented_model.embedder.rec_tok.weight)
+        ignored_states.extend([augmented_model.embedder.rec_tok[llm_number].weight for llm_number in range(len(llms))])
     if pipeline_args.embedder_params.mixed_learned_method:
         state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
         augmented_model.embedder.cl_mem_tokens.load_state_dict(
@@ -523,7 +439,7 @@ def load_training_model_from_ckpt(
             strict=True,
             assign=True,
         )
-        ignored_states.append(augmented_model.embedder.cl_mem_tokens.weight)
+        ignored_states.extend([augmented_model.embedder.cl_mem_tokens[llm_number].weight for llm_number in range(len(llms))])
 
     if pipeline_args.embedder_params.cont_tok:
         if not st_loaded:
@@ -541,22 +457,12 @@ def load_training_model_from_ckpt(
             strict=True,
             assign=True,
         )
-        ignored_states.append(augmented_model.embedder.cont_tok.weight)
+        ignored_states.extend([augmented_model.embedder.cont_tok[llm_number].weight for llm_number in range(len(llms))])
 
     torch.distributed.barrier()
 
     # only finetune LoRA, MLP projector and pooling parameters and freeze before wrapping
-    for name, param in augmented_model.llm.named_parameters():
-        if lora_llm.enable and "lora" in name:
-            param.requires_grad = True
-        elif pipeline_args.trainable_llm and not lora_llm.enable:
-            param.requires_grad = True
-        elif "decoder_modules" in name and pipeline_args.decoder_module.do:
-            param.requires_grad = True
-        else:
-            param.requires_grad = False
-            
-    for name, param in augmented_model.llm_2.named_parameters():
+    for name, param in augmented_model.llms.named_parameters():
         param.requires_grad = False
 
     for name, param in augmented_model.embedder.named_parameters():
@@ -606,39 +512,7 @@ def load_training_model_from_ckpt(
                 param.requires_grad = True
             
     log_train_params(augmented_model)
-    # ckpt_path = '/'.join(train_args.from_ckpt.bridge_path.split("/")[:-2]) if train_args.from_ckpt.bridge_path else None
-    # bridge_state_dict = safetensors.torch.load_file(
-    #     Path(ckpt_path + "/bridge_module/consolidated.safetensors")
-    # )
-    # if get_rank() == 0:
-    #     for name, param in bridge_state_dict.items():
-    #         if name in augmented_model.bridge_module.state_dict():
-    #             print(
-    #                 "Name:",
-    #                 name,
-    #                 "Param shape:",
-    #                 param.shape,
-    #                 torch.equal(
-    #                     param.to('cuda'), augmented_model.bridge_module.state_dict()[name].to('cuda')
-    #                 ), augmented_model.bridge_module.state_dict()[name].device
-    #             )
 
-    #     embedder_layer_state_dict = safetensors.torch.load_file(
-    #         Path(ckpt_path + "/embedder/consolidated.safetensors")
-    #     )
-
-    #     for name, param in embedder_layer_state_dict.items():
-    #         if name in augmented_model.embedder.state_dict():
-    #             name = name.replace('_checkpoint_wrapped_module.', '')
-    #             print(
-    #                 "Name:",
-    #                 name,
-    #                 "Param shape:",
-    #                 param.shape,
-    #                 torch.equal(
-    #                     param.to('cuda'), augmented_model.embedder.state_dict()[name].to('cuda')
-    #                 ), augmented_model.embedder.state_dict()[name].device
-    #             )
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")

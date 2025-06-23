@@ -73,6 +73,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         embedder_args: EmbedderArgs | None = None,
         decoder_args: DecoderArgs | None = None,
         checkpoint: bool = False,
+        number_of_llm: int = 1,
     ):
         super().__init__()
 
@@ -102,13 +103,13 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.mem_embeddings = (
                 None
                 if self.n_mem_tokens == 0
-                else torch.nn.Embedding(self.n_mem_tokens, args.dim)
+                else nn.ModuleList([torch.nn.Embedding(self.n_mem_tokens, args.dim) for _ in range(number_of_llm)])
             )
             self.rec_tok = (
-                torch.nn.Embedding(1, args.dim) if embedder_args.rec_tok else None
+                nn.ModuleList([torch.nn.Embedding(1, args.dim) for _ in range(number_of_llm)]) if embedder_args.rec_tok else None
             )
             self.cont_tok = (
-                torch.nn.Embedding(1, args.dim) if embedder_args.cont_tok else None
+                 nn.ModuleList([torch.nn.Embedding(1, args.dim) for _ in range(number_of_llm)])  if embedder_args.cont_tok else None
             )
             self.mixed_method = embedder_args.mixed_method
             if self.mixed_method:
@@ -121,7 +122,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self.cl_mem_tokens = (
                 None
                 if not embedder_args.mixed_learned_method
-                else torch.nn.Embedding(self.n_mem_tokens, 1)
+                else nn.ModuleList([torch.nn.Embedding(self.n_mem_tokens, 1)]*number_of_llm)
             )
         else:
             self.for_embedding = False
@@ -761,6 +762,7 @@ def load_model(
     parll: bool = True,
     llm_type: str = "mistral",
     embed_type: str = "mistral",
+    number_of_llm: int = 1,
 ) -> tuple[torch.nn.Module, int]:
     with torch.device("meta"):
         model = Transformer(
@@ -768,6 +770,7 @@ def load_model(
             checkpoint=checkpoint,
             embedder_args=pipeline_args.embedder_params if for_embedding else None,
             decoder_args=pipeline_args.decoder_module,
+            number_of_llm=number_of_llm,
         )
 
     if not parll or get_rank() == 0:

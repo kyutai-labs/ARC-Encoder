@@ -1,5 +1,5 @@
 templates_for_qa = [
-    "\nQuestion: {question}\nAnswer:",
+    "\nQuestion: {question}\nAnswer: ",
     #     "Question: {question}?\nAnswer:",
     #     "{question}?\n",
     #     "Answer the following question:\n\n{question}\n",

@@ -31,7 +31,7 @@ class Checkpointer:
         num_ckpt_keep: int | None = None,
         pipeline: object | None = None,
     ):
-        self.llm: nn.Module = model.llm
+        self.llm: nn.Module = model.llms
         self.bridge_module: nn.Module | None = model.bridge_module
         self.embedder: nn.Module | None = model.embedder
         self.pipeline = pipeline
@@ -258,7 +258,6 @@ class Checkpointer:
     def save_checkpoint(
         self,
         dtype: torch.dtype = torch.float16,
-        save_only_lora_4_llm: bool = False,
         save_only_lora_4_embedder: bool = False,
     ):
         llm_dst = self.dst_dir(type="llm")
@@ -289,16 +288,6 @@ class Checkpointer:
         barrier()
 
         if self.rank == 0:
-            # save checkpoint in tmp path
-            if self.pipeline.pipeline_args.trainable_llm:
-                safetensors.torch.save_file(
-                    llm_states,
-                    self.consolidated_path(
-                        tmp_llm_dst,
-                        use_safetensors=True,
-                        save_only_lora=save_only_lora_4_llm,
-                    ),  # always use safetensors for checkpointing
-                )
 
             safetensors.torch.save_file(
                 embedder_states,
@@ -308,16 +297,6 @@ class Checkpointer:
                     save_only_lora=save_only_lora_4_embedder,
                 ),  # always use safetensors for checkpointing
             )
-
-            if self.pipeline.pipeline_args.decoder_module.do:
-                safetensors.torch.save_file(
-                    decoder_states,
-                    self.consolidated_path(
-                        tmp_llm_dst / "decoder",
-                        use_safetensors=True,
-                        save_only_lora=False,
-                    ),  # always use safetensors for checkpointing
-                )
                 
             if self.bridge_module is not None:
                 safetensors.torch.save_file(

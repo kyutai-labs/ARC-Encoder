@@ -103,7 +103,7 @@ def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
     lora_params = sum(p.numel() for n, p in model.named_parameters() if "lora" in n)
     embedder_params = sum(p.numel() for n, p in model.embedder.named_parameters())
 
-    llm_params = sum(p.numel() for n, p in model.llm.named_parameters())
+    llm_params = sum(p.numel() for n, p in model.llms.named_parameters())
 
     main_logger_info(
         f"\n LLM params:  {llm_params:,.0f} ({llm_params / num_params * 100:.2f}%), \
