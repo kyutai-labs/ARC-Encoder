@@ -7,7 +7,6 @@ def compute_ce_loss_with_mask(
     target: torch.Tensor,
     target_mask: torch.Tensor | None,
 ):
-
     if target_mask is None:
         return F.cross_entropy(logits, target, reduction="mean")
 

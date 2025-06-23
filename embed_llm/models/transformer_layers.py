@@ -30,10 +30,7 @@ def insert_embeds(
     embeds: torch.Tensor,
     embed_seqlens: list[list[int]],
     seqlens: list[int] | None = None,
-    tok_embeddings: nn.Module | None = None,
     insert_cat_embedds: list[list[int]] | None = None,
-    tokenized_prompts: dict[str, list[dict[str, list[int]]]] | None = None,
-    batch_type: str | None = None,
 ) -> tuple[torch.Tensor, list[int], list[int]]:
     """
     Args:
@@ -44,7 +41,6 @@ def insert_embeds(
                         at generation we can have several embeddings in between full tokens
         seqlens: list of token lengths for each input sequence
         insert_cat_embedds: list of where to insert the embeddings (for generation)
-        tokenized_prompts: dictionary containing tokenized prompts (if prefix and suffix instruction)
         batch_type: type of batch (reconstruction, continuation, etc.)
     """
     num_supp_toks = embeds.shape[0]
@@ -59,21 +55,6 @@ def insert_embeds(
     if insert_cat_embedds is None:
         # Should not happen anymore
         insert_cat_embedds = [[0] for _ in embed_seqlens]
-
-    prefixes = []
-    suffixes = []
-    if tokenized_prompts is not None:
-        for _ in range(len(seqlens)):
-            if (
-                tokenized_prompts.get(batch_type, False)
-                and len(tokenized_prompts[batch_type]) > 0
-            ):
-                tokenized_prompt = random.choice(tokenized_prompts[batch_type])
-                prefixes.append(tokenized_prompt["prefix"])
-                suffixes.append(tokenized_prompt["suffix"])
-                num_supp_toks += len(tokenized_prompt["prefix"]) + len(
-                    tokenized_prompt["suffix"]
-                )
 
     new_h_states = torch.zeros(
         (num_supp_toks + len(h), h.shape[-1]),
@@ -94,14 +75,6 @@ def insert_embeds(
         assert size > 0
         decod_sub_mask = []
         # Used during training only
-        if len(prefixes) > 0:
-            tok_before_embed = tok_embeddings(
-                torch.tensor(prefixes[i], device=h.device)
-            )
-            new_h_states[ind_h : len(prefixes[i]) + ind_h, :] = tok_before_embed
-            ind_h += len(prefixes[i])
-            pos_to_keep.extend([False] * len(prefixes[i]))
-            decod_sub_mask.extend([True] * len(prefixes[i]))
 
         size_embed = sum(embed_seqlens[i])
         for sub_embed_size, insert_idx in zip(
@@ -136,14 +109,6 @@ def insert_embeds(
             ind_toks += left_toks
             ind_h += left_toks
 
-        if len(suffixes) > 0:
-            tok_after_embed = tok_embeddings(
-                torch.tensor(suffixes[i], device=h.device)
-            )
-            new_h_states[ind_h : ind_h + len(suffixes[i]), :] = tok_after_embed
-            ind_h += len(suffixes[i])
-            decod_sub_mask.extend([False] * len(suffixes[i]))
-            pos_to_keep.extend([False] * len(suffixes[i]))
 
         decod_mask.append(decod_sub_mask)
         new_seqlens.append(size + size_embed)

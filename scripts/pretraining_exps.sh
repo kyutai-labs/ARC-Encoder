@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=1
+#SBATCH --array=0-1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -18,7 +18,6 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 CONFIG_FILES=(
 config/experiments/multi_decoder_nodistill_CP4.yaml
 config/experiments/multi_decoder_distill_CP4.yaml
-config/experiments/multi_decoder_nodistill_CP4_v2.yaml
 )
 
 

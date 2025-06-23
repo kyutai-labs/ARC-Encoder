@@ -174,7 +174,8 @@ def build_data_loader(
         assert all(s >= 0 for s in sample.sizes)
 
         # Avoid empty samples
-        if any([len(embed["tokens"]) <= 1 for embed in sample.to_embed]):
+        if any([len(embed["tokens"]) <= 1 for embed in sample.to_embed]) or any(
+            [s==0 for s in sample.sizes]):
             print("Skipping empty sample")
             continue
 

@@ -40,7 +40,6 @@ class EmbedAugModel(nn.Module):
         self.llm = llm
         self.w_embeds = pipeline_args.w_embeds
         self.embedder = embedder
-        self.tokenized_prompts = {}
         self.bridge_module = None
         if pipeline_args.bridge_module.bridge_type is not None:
             if pipeline_args.bridge_module.bridge_type == "bimodule":
@@ -153,7 +152,6 @@ class EmbedAugModel(nn.Module):
                 seqlens=seqlens,
                 embed_seqlens=embed_seqlens,
                 cat_embeddings=embeddings,
-                tokenized_prompts=self.tokenized_prompts,
                 insert_cat_embedds=insert_cat_embedds,
             )
         elif llm_number == 2:
@@ -162,7 +160,6 @@ class EmbedAugModel(nn.Module):
                 seqlens=seqlens,
                 embed_seqlens=embed_seqlens,
                 cat_embeddings=embeddings,
-                tokenized_prompts=self.tokenized_prompts,
                 insert_cat_embedds=insert_cat_embedds,
             )
 

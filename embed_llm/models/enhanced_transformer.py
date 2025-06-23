@@ -471,7 +471,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self,
         input_ids: torch.Tensor,
         seqlens: list[int],
-        tokenized_prompts: dict = {},
         embed_seqlens: list[list[int]] | None = None,
         cat_embeddings: torch.Tensor | None = None,
         insert_cat_embedds: list[list[int]] | None = None,
@@ -488,8 +487,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 embed_seqlens=embed_seqlens,
                 seqlens=seqlens,
                 insert_cat_embedds=insert_cat_embedds,
-                tokenized_prompts=tokenized_prompts,
-                batch_type=batch_type,
             )
 
             self.pos_to_keep = torch.tensor(
