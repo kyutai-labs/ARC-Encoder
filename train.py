@@ -467,10 +467,10 @@ def _train(
                         )
                     elif (
                         pipeline.llm_tokenizer[0].model_name == "mistral"
-                        and pipeline.llm_tokenizer[1].model_name == "llama"
+                        and pipeline.llm_tokenizer[llm_number].model_name == "llama"
                     ):
-                        bos = pipeline.llm_tokenizer.tokenizer.bos_id in text
-                        eos = pipeline.llm_tokenizer.tokenizer.eos_id in text
+                        bos = pipeline.llm_tokenizer[llm_number].tokenizer.bos_id in text
+                        eos = pipeline.llm_tokenizer[llm_number].tokenizer.eos_id in text
                         toks = pipeline.llm_tokenizer[llm_number].tokenizer.encode(
                             text, bos=bos, eos=eos
                         )
@@ -491,7 +491,7 @@ def _train(
                         context_toks = pipeline.llm_tokenizer[
                             llm_number
                         ].tokenizer.encode(
-                            batch.to_embed[j]["text"], bos=False, eos=False
+                            "".join(batch.to_embed[j]["text"]), bos=False, eos=False
                         )
                         full_context_x.extend(context_toks)
                         target_mask.extend([False] * len(context_toks))
@@ -624,31 +624,41 @@ def _train(
                 y_mask = torch.tensor(new_mask).cuda(non_blocking=True)
 
             # if get_rank() == 0:
-            #     to_gen = [
-            #         int(tok)
-            #         for tok in x[:insert_cat_embedds[0][0]].cpu().numpy()
-            #     ]
-
-            #     # target = [int(tok) for tok in batch.y]
-            #     embed = [int(tokens) for tokens in embeddings[:embed_seqlens[0]].cpu().numpy()]
-            #     # continuation = [
-            #     #     int(tok)
-            #     #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
-            #     # ]
-            #     print('LLM NUMBER', llm_number)
-            #     print("Beginning", pipeline.llm_tokenizer[llm_number].tokenizer.decode(to_gen))
-            #     print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
-            #     print('Continuation', pipeline.llm_tokenizer[llm_number].tokenizer.decode([
-            #         int(tok)
-            #         for tok in x[insert_cat_embedds[0][0] : seqlens[0]].cpu().numpy()
-            #     ]))
-            #     # print('embedding tokens', batch.to_embed[13]["tokens"])
-            #     # print('embed', batch.to_embed[13]["text"])
-            #     # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))
-            #     # print('X len', len(batch.x))
-            #     # print("Sizes", batch.sizes)
-            #     # print("Embed seqlens", embed_seqlens)
-            #     # print('Insert cat embedds', insert_cat_embedds[0])
+            #     # to_gen = [int(tok) for tok in batch.x[: batch.sizes[0]]]
+            #     # print("To generate", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
+            #     print("Batch data type", batch.data_type)
+            #     ind_toks = sum(seqlens[:2])
+            #     print("Insert cat embedds", insert_cat_embedds)
+            #     for j, insert_idx in enumerate(insert_cat_embedds[2]):
+            #         print(
+            #             "TEXT",
+            #             pipeline.llm_tokenizer.tokenizer.decode(
+            #                 x[ind_toks : ind_toks + insert_idx].tolist()
+            #             ),
+            #         )
+            #         print("CONTEXT", batch.to_embed[2]["text"][j])
+            #         ind_toks += insert_idx
+            #     print(
+            #         "TEXT",
+            #         pipeline.llm_tokenizer.tokenizer.decode(
+            #             x[ind_toks : sum(seqlens[:3])].tolist()
+            #         ),
+            #     )
+            #     # # target = [int(tok) for tok in batch.y]
+            #     # embed = [int(toks) for tokens in batch.to_embed[0]["tokens"] for toks in tokens]
+            #     # # continuation = [
+            #     # #     int(tok)
+            #     # #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
+            #     # # ]
+            #     # print("Beginning", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
+            #     # print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
+            #     # # print('embedding tokens', batch.to_embed[13]["tokens"])
+            #     # # print('embed', batch.to_embed[13]["text"])
+            #     # # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))
+            #     # # print('X len', len(batch.x))
+            #     # # print("Sizes", batch.sizes)
+            #     # # print("Embed seqlens", embed_seqlens)
+            #     # print('Insert cat embedds', insert_cat_embedds)
 
             output = model.forward(
                 x=x,
@@ -659,6 +669,7 @@ def _train(
                 batch_type=batch.data_type,
                 llm_number=llm_number,
             )
+
             mb_loss = compute_ce_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
@@ -666,57 +677,93 @@ def _train(
 
             batch_bpc = 0
             ind = 0
-
-            for _, size in enumerate(batch.sizes):
-                if (
-                    len(
-                        pipeline.llm_tokenizer[0].tokenizer.decode(
-                            [int(tok) for tok in batch.y[ind : ind + size]]
-                        )
-                    )
-                    if batch.y_mask is None
-                    else len(
-                        pipeline.llm_tokenizer[0].tokenizer.decode(
-                            [
-                                int(tok)
-                                for tok in batch.y[ind : ind + size][
-                                    batch.y_mask[ind : ind + size]
-                                ]
-                            ]
-                        )
-                    )
-                    == 0
+            for i, size in enumerate(batch.sizes):
+                if len(y[ind : ind + size]) > 0 and (
+                    y_mask is None or torch.sum(y_mask[ind : ind + size]) > 0
                 ):
-                    continue
-                loss_in_bits = torch.sum(
-                    compute_bpt_loss(
-                        output[ind : ind + size, ...],
-                        y[ind : ind + size],
-                        None if y_mask is None else y_mask[ind : ind + size],
-                    )
-                ).item()
-                batch_bpc += loss_in_bits / (
-                    len(
-                        pipeline.llm_tokenizer[0].tokenizer.decode(
-                            [int(tok) for tok in batch.y[ind : ind + size]]
+                    loss_in_bits = torch.sum(
+                        compute_bpt_loss(
+                            output[ind : ind + size, ...],
+                            y[ind : ind + size],
+                            None if y_mask is None else y_mask[ind : ind + size],
                         )
-                    )
-                    if y_mask is None
-                    else len(
-                        pipeline.llm_tokenizer[0].tokenizer.decode(
-                            [
-                                int(tok)
-                                for tok in batch.y[ind : ind + size][
-                                    batch.y_mask[ind : ind + size]
-                                ]
-                            ]
+                    ).item()
+                    if y_mask is None:
+                        batch_bpc += loss_in_bits / (
+                            max(
+                                len(
+                                    pipeline.llm_tokenizer.tokenizer.decode(
+                                        [
+                                            int(tok)
+                                            for tok in y[ind : ind + size]
+                                        ]
+                                    )
+                                ),
+                                1,
+                            )
                         )
-                    )
-                )
-                ind += size
+                    else:
+                        batch_bpc += loss_in_bits / (
+                            max(
+                                len(
+                                    pipeline.llm_tokenizer.tokenizer.decode(
+                                        [
+                                            int(tok)
+                                            for ind_y, tok in enumerate(y[ind : ind + size]) if y_mask[ind + ind_y]
+                                        ]
+                                    )
+                                ),
+                                1,
+                            )
+                        )
+                    ind += size
             if args.loss_args.kl:
+                new_seqlens = []
+                ind_toks = 0
+                full_context_x = []
+                target_mask = []
+                for i, size in enumerate(seqlens):
+                    assert size > 0
+
+                    seqlen = 0
+                    for j, insert_idx in enumerate(insert_cat_embedds[i]):
+                        full_context_x.extend(
+                            x[ind_toks : ind_toks + insert_idx].tolist()
+                        )
+                        target_mask.extend(
+                            [True] * len(x[ind_toks : ind_toks + insert_idx])
+                            if y_mask is None
+                            else y_mask[ind_toks : ind_toks + insert_idx]
+                        )
+                        seqlen += len(x[ind_toks : ind_toks + insert_idx].tolist())
+                        ind_toks += insert_idx
+                        context = pipeline.llm_tokenizer.tokenizer.encode(
+                            batch.to_embed[i]["text"][j], bos=False, eos=False
+                        )
+                        full_context_x.extend(context)
+                        seqlen += len(context)
+                        target_mask.extend([False] * len(context))
+
+                    if ind_toks < sum(seqlens[: i + 1]):
+                        left_toks = sum(seqlens[: i + 1]) - ind_toks
+                        full_context_x.extend(
+                            x[ind_toks : ind_toks + left_toks].tolist()
+                        )
+                        target_mask.extend(
+                            [True] * len(x[ind_toks : ind_toks + left_toks])
+                            if y_mask is None
+                            else y_mask[ind_toks : ind_toks + left_toks]
+                        )
+                        seqlen += len(x[ind_toks : ind_toks + left_toks].tolist())
+                        ind_toks += len(x[ind_toks : ind_toks + left_toks].tolist())
+                    new_seqlens.append(seqlen)
+
+                assert ind_toks == sum(seqlens[: i + 1]), (
+                    f"Ind toks {ind_toks} != sum seqlens {sum(seqlens[: i + 1])}"
+                )
                 full_context_x = torch.tensor(full_context_x).cuda(non_blocking=True)
                 target_mask = torch.tensor(target_mask).cuda(non_blocking=True)
+
                 with torch.no_grad():
                     model.eval()
                     full_context_output = model.llms[llm_number].forward(
@@ -739,6 +786,7 @@ def _train(
                 mb_loss = mb_loss + args.loss_args.kl_weight * kl_loss_distill
                 kl_loss += kl_loss_distill.item()
             bpc += batch_bpc / len(batch.sizes)
+            print("DATA TYPE", batch.data_type, "BPC", batch_bpc / len(batch.sizes))
             loss += mb_loss.item()
             mb_loss.backward()
             if y_mask is None:

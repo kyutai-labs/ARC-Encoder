@@ -31,6 +31,9 @@ optim:
   max_lr: 1.0e-05
   max_lr_projector: 5.0e-05
   warm_up_steps: 1000
+  max_lr: 1.0e-05
+  max_lr_projector: 5.0e-05
+  warm_up_steps: 1000
   weight_decay: 0.1
 
 

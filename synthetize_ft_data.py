@@ -7,12 +7,14 @@
 #     "setuptools",
 #     "vllm",
 #     "numpy",
+#     "transformers",
 # ]
 # ///
 import argparse
 import json
 from pathlib import Path
 from vllm import LLM, SamplingParams  # type: ignore
+from transformers import AutoTokenizer
 from dataclasses import dataclass
 import numpy as np
 import random
@@ -20,6 +22,7 @@ import re  # noqa: F401
 
 
 ATLAS_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl"
+PESO_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Pes2O/train.jsonl"
 
 # HOTPOT_EXAMPLE = 'Document: For Against is an American post-punk/dream pop band from Lincoln, Nebraska, United States. Despite numerous lineup shuffles and some periods of dormancy, the band has produced material steadily since 1984. \n Local H is an American rock band originally formed by guitarist and vocalist Scott Lucas, bassist Matt Garcia, drummer Joe Daniels, and lead guitarist John Sparkman in Zion, Illinois in 1990. \nQuestion: Are Local H and For Against both from the United States?\nAnswer: yes\n\nDocument: The Androscoggin Bank Colis\u00e9e (formerly Central Maine Youth Center, Central Maine Civic Center and Lewiston Colisee) is a 4,000 capacity (3,677 seated) multi-purpose arena, in Lewiston, Maine, that opened in 1958. The Androscoggin Bank Colis\u00e9e was built to replace St. Dominics Regional High School Arena, and initially constructed and operated by the Catholic parish of SS. Peter and Paul. Currently, it is the home of the Maine Nordiques of the North American Hockey League. The Colisee is also used for concerts, conventions and trade shows. There is 17,000 square feet (1600 m2) of exhibit space. For conventions, the Colisee can accommodate up to 4,800 patrons. \nQuestion: The arena where the Lewiston Maineiacs played their home games can seat how many people?\nAnswer: 3,677 seated\n\nDocument: Thinking Fellers Union Local 282 were an American experimental indie rock group, which was formed in 1986 in San Francisco, California, United States, though half of its members are from Iowa. Their albums combine lo-fi noise rock and ambient sounds (referred to as "Feller filler") with tightly constructed rock and pop songs. The band has a small but intensely loyal cult following. Band members are Brian Hageman, Mark Davies, Anne Eickelberg, Hugh Swarts and Jay Paget. Hageman was also a member of the Iowa City based group, Horny Genius. The band achieved their greatest critical and commercial success in the mid-1990s, when they signed with the indie rock label Matador Records. It was during this time that Thinking Fellers produced their most prominent albums. \nDig is an American alternative rock band from Los Angeles, California. Formed in 1991, they achieved success with their 1993 album Dig, which featured the charting single "Believe".\nQuestion: Were both of the following rock groups formed in California: Dig and Thinking Fellers Union Local 282?\nAnswer: yes\n\n'  # noqa: E501
 # NQ_EXAMPLE = 'Document: The South Lawn at the White House in Washington, D.C., is directly south of the house and is bordered on the east by East Executive Drive and the Treasury Building, on the west by West Executive Drive and the Old Executive Office Building, and along its curved southern perimeter by South Executive Drive and a large circular public lawn called The Ellipse. Since the address of the White House is 1600 Pennsylvania Avenue NW, and the North Lawn faces Pennsylvania Avenue, the South Lawn is sometimes described as the back lawn of the White House.\nQuestion: Which side of the white house is the front?\nAnswer: North\n\nDocument: Dame Flora Louise Shaw, Lady Lugard (born 19 December 1852 \u2013 25 January 1929), was a British journalist and writer. She is credited with having coined the name "Nigeria".\nQuestion: nigeria was given it\'s name by who?\nAnswer: Flora Louise Shaw\n\nDocument: Anglo-American Peace Centenary (1814\u20131914) was in 1914 to celebrate the lasting peace between Britain and the United States. They last fought in the War of 1812, and those hostilities were ended formally on December 24, 1814, with the signing of the Treaty of Ghent.\nQuestion: when did the united states and britain sign a peace treaty\nAnswer: 1814\n\n'  # noqa: E501
@@ -40,21 +43,21 @@ ATLAS_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwik
 # ]
 
 instruction_prompts = {
-    "QA1": "Generate a question and its answer based solely on the content of the document above.",
-    "QA2": "Using the information in the document, create a factual QA pair.",
-    "QA3": "Write one question that can be answered from the previous passage, and provide the correct answer.",
-    "QA4": "Ask questions concerning the preceding passage and provide a short answer.",
-    "QA5": "Formulate a factual question. The question should require a short answer. Then, provide the answer.",
+    # "QA1": "Generate a question and its answer based solely on the content of the document above.",
+    # "QA2": "Using the information in the document, create a factual QA pair.",
+    # "QA3": "Write one question that can be answered from the previous passage, and provide the correct answer.",
+    # "QA4": "Ask questions concerning the preceding passage and provide a short answer.",
+    # "QA5": "Formulate a factual question. The question should require a short answer. Then, provide the answer.",
     # "S1": "Summarize the key points of the document in 2 to 3 sentences.",
     # "S2": "Provide a concise summary that captures the essence of the text above.",
     # "S3": "Write a short summary of the previous document, focusing on its main message.",
     # "T1": "Translate the previous document into Spanish.",
     # "T2": "Render the document into fluent German while preserving its meaning.",
     # "T3": "Provide a French translation of the text above.",
-    # "P1": "Paraphrase the document using clearer and simpler wording.",
-    # "P2": "Rewrite the passage based on its content without directly copying any phrasing.",
-    # "P3": "Rephrase the document in a style suitable for a younger audience.",
-    # "P4": "Reword the passage to make it more accessible while keeping the original meaning.",
+    "P1": "Paraphrase the document using clearer and simpler wording.",
+    "P2": "Rewrite the passage based on its content without directly copying any phrasing.",
+    "P3": "Rephrase the document in a style suitable for a younger audience.",
+    "P4": "Reword the passage to make it more accessible while keeping the original meaning.",
     # "R1": "Reconstruct perfectly the passage.",
 }
 
@@ -66,7 +69,7 @@ leading_prompts = [
     # 'Try AS MUCH AS POSSIBLE to give a question USING "why" as the question word !',
     # 'Try AS MUCH AS POSSIBLE to give a question USING "how" as the question word !',
     # 'Try AS MUCH AS POSSIBLE to give a question USING "which" as the question word !',
-    "Try AS MUCH AS POSSIBLE to NOT USE the question words 'why', 'how', 'where', 'when', 'who', 'what' or 'which' !",
+    # "Try AS MUCH AS POSSIBLE to NOT USE the question words 'why', 'how', 'where', 'when', 'who', 'what' or 'which' !",
     # "Try AS MUCH AS POSSIBLE to give a question ANSWERED BY a yes or no !",
     # "Try AS MUCH AS POSSIBLE to give a QUIZZ LIKE question !",
 ]
@@ -103,6 +106,16 @@ translate_prompts = [
 ]
 
 LANGUAGES = ["Spanish", "French", "German", "Danish"]
+LOW_RESSOURCE_LANGUAGES = [
+    "Hindi",
+    "Russian",
+    "Swahili",
+    "Arabic",
+    "Turkish",
+    "Japanese",
+    "Finnish",
+    "Chinese (simplified)",
+]
 
 
 def mixture_dataset(
@@ -156,6 +169,8 @@ def dataset_from_file(
     file_path,
     n_passages: int = 1,
     every: int = 1,
+    precise_size: int = None,
+    tokenizer: object = None,
 ):
     sample = []
     n_sample = random.randint(1, n_passages)
@@ -163,11 +178,29 @@ def dataset_from_file(
         with open(file_path, "r") as f:
             lines = f.readlines()
             for idx, line in enumerate(reversed(lines)):
-                if idx % 10 != every:
-                    continue
                 data = json.loads(line)
                 if passage_filter(data["text"]):
-                    sample.append(data["text"].strip())
+                    if precise_size is not None and tokenizer is not None:
+                        # Step 1: Split by double newlines
+                        paragraphs = data["text"].strip().split("\n\n")
+
+                        # Step 2: For each paragraph, split by single newlines
+                        lines = [para.split("\n") for para in paragraphs]
+                        lines = sum(lines, [])  # Flatten the list of lists
+                        text = []
+                        count = 0
+                        for line in lines:
+                            if count >= precise_size:
+                                break
+                            if len(line.strip()) > 0:
+                                text.append(line.strip())
+                                count += len(
+                                    tokenizer.encode(line.strip())
+                                )
+                        text = "\n".join(text)
+                    else:
+                        text = data["text"].strip()
+                    sample.append(text)
                 if len(sample) == n_sample:
                     yield ("\n".join(sample))[:15000]
                     n_sample = random.randint(1, n_passages)
@@ -181,8 +214,16 @@ def dataloader_from_file(
     translate: bool = False,
     every: int = 1,
     pwc: bool = False,
+    precise_size: int = None,
+    tokenizer: object = None,
 ):
-    dataset = dataset_from_file(file_path, n_passages, every=every)
+    dataset = dataset_from_file(
+        file_path,
+        n_passages,
+        every=every,
+        precise_size=precise_size,
+        tokenizer=tokenizer,
+    )
     if not pwc:
         probs = []
         for key in list(instruction_prompts.keys()):
@@ -194,15 +235,15 @@ def dataloader_from_file(
         batch_list = []
         while True:
             if translate:
-                language = random.choice(LANGUAGES)
+                language = random.choice(LOW_RESSOURCE_LANGUAGES)
                 prompt = random.choice(translate_prompts).format(language=language)
                 prompt_key = language
             else:
                 prompt_key = np.random.choice(list(instruction_prompts.keys()), p=probs)
                 prompt = instruction_prompts[prompt_key]
-            if "qa" in str(prompt_key).lower():
-                leading_prompt = random.choice(leading_prompts)
-                prompt = f"{prompt}\n{leading_prompt}"
+            # if "qa" in str(prompt_key).lower():
+            #     leading_prompt = random.choice(leading_prompts)
+            #     prompt = f"{prompt}\n{leading_prompt}"
 
             passage = next(dataset)
             batch_list.append(
@@ -261,6 +302,7 @@ def synthesize_data(
     n_passages: int = 1,
     every: int = 1,
     pwc: bool = False,
+    precise_size: int = None,
 ):
     if not Path(output_path).exists():
         Path(output_path).mkdir(parents=True, exist_ok=True)
@@ -273,7 +315,14 @@ def synthesize_data(
         max_tokens=1024,
     )
     dataloader = dataloader_from_file(
-        data_path, batch_size, n_passages, translate, every, pwc
+        data_path,
+        batch_size,
+        n_passages,
+        translate,
+        every,
+        pwc,
+        precise_size,
+        tokenizer=AutoTokenizer.from_pretrained(model_folder_path),
     )
     output_buffer = []
     n_samples = 0
@@ -413,6 +462,11 @@ def arg_parser():
         action="store_true",
         help="Use PWC prompts",
     )
+    parser.add_argument(
+        "--precise_size",
+        type=int,
+        default=None,
+    )
 
     return parser.parse_args()
 
@@ -433,4 +487,5 @@ if __name__ == "__main__":
         n_passages=args.n_passages,
         every=args.every,
         pwc=args.pwc,
+        precise_size=args.precise_size,
     )

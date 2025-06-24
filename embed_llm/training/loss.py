@@ -21,7 +21,6 @@ def compute_bpt_loss(logits, targets, target_mask: torch.Tensor | None):
     loss = F.cross_entropy(logits, targets, reduction="none")
     # Convert the loss from nats to bits
     loss_in_bits = loss / torch.log(torch.tensor(2.0))
-
     loss_in_bits = loss_in_bits if target_mask is None else loss_in_bits * target_mask
 
     return loss_in_bits

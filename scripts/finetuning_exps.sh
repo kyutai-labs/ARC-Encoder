@@ -11,10 +11,8 @@
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
 
 
-
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
-
 
 CONFIG_FILES=(
 config/experiments/multi_decoder_nodist_CP8_ft.yaml
