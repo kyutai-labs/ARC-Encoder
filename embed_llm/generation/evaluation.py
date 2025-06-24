@@ -106,9 +106,7 @@ def create_prompt_prefix(
             for query, answer, doc, _ in zip(
                 queries, answers, docs, range(max_examples)
             ):
-                prompt += (
-                    f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
-                )
+                prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
 
             to_embed_str = None
             prompt_str.append(prompt)
@@ -180,7 +178,6 @@ def evaluate_QA(
     max_multi_passage: int = 1,
     seed: float = 0.42,
     compressed_doc_in_icl: bool = False,
-    reversed_template: bool = False,
     comp_rate: int | None = None,
     bridge_ckpt: bool
     | str
@@ -285,7 +282,6 @@ def evaluate_QA(
             docs=None if not icl_w_document else context,
             max_examples=icl_examples,
             compressed_doc_in_icl=compressed_doc_in_icl,
-            reversed_template=reversed_template,
             shorter_icl=shorter_icl,
         )
 
@@ -318,7 +314,6 @@ def evaluate_QA(
                         w_embeds=w_embeds,
                         query=query,
                         wdoc=query_w_context,
-                        reversed_template=reversed_template,
                     )
 
                     batch_list_prompts.append(batch_list_prompt)
@@ -562,7 +557,6 @@ def evaluate_trad(
     mistral: bool = False,
     seed: float = 0.42,
     comp_rate: int | None = None,
-    query_w_context: bool = False,
     fine_tuned: bool = False,
     bridge_ckpt: bool
     | str
@@ -634,24 +628,41 @@ def evaluate_trad(
         # fixed_random.shuffle(c)
         random.shuffle(c, random=lambda: seed)
         text, traduction = zip(*c)
-
+        embed_prompt = []
         if shorter_icl:
             generate_exs = list(zip(text, traduction, range(5)))
             generate_exs.sort(key=lambda arg: len(arg[0]), reverse=True)
 
-            prompt_prefix = "\n\n".join(
-                [
-                    f"Document: {doc}\nTranslation: {answ}"
-                    for doc, answ, _ in generate_exs
-                ]
+            text_prompt_prefix = [
+                "\n\n".join(
+                    [
+                        f"Document: {doc}\nTranslation: {answ}"
+                        for doc, answ, _ in generate_exs
+                    ]
+                )
+            ]
+
+        elif compressed_doc_in_icl:
+            text_prompt_prefix = ["Document: "]
+            for doc, answ, _ in zip(text, traduction, range(4)):
+                embed_prompt.append(doc.strip())
+                text_prompt_prefix.append(
+                    f"\nTranslation: {answ.strip()}\n\nDocument: "
+                )
+            embed_prompt.append(text[4].strip())
+            text_prompt_prefix.append(
+                f"\nTranslation: {traduction[4].strip()}\n\nDocument: "
             )
+
         else:
-            prompt_prefix = "\n\n".join(
-                [
-                    f"Document: {doc}\nTranslation: {answ}"
-                    for doc, answ, _ in zip(text, traduction, range(5))
-                ]
-            )
+            text_prompt_prefix = [
+                "\n\n".join(
+                    [
+                        f"Document: {doc}\nTranslation: {answ}"
+                        for doc, answ, _ in zip(text, traduction, range(5))
+                    ]
+                )
+            ]
 
         if shorter_icl:
             pass
@@ -672,53 +683,14 @@ def evaluate_trad(
                 texts_to_embed = []
                 batch_list_prompts = []
                 bs = min(max_bs, n_samples - i)
-                if fine_tuned:
-                    if benchmark == "Spanish":
-                        batch_list_prompts = [
-                            [
-                                "Document: ",
-                                "\nTranslate the previous document into Spanish.",
-                            ]
-                            for _ in range(bs)
-                        ]
-                    elif benchmark == "French":
-                        batch_list_prompts = [
-                            [
-                                "Document: ",
-                                "\nTranslate the previous document into French.",
-                            ]
-                            for _ in range(bs)
-                        ]
-                    elif benchmark == "German":
-                        batch_list_prompts = [
-                            [
-                                "Document: ",
-                                "\nTranslate the previous document into German.",
-                            ]
-                            for _ in range(bs)
-                        ]
-                    elif benchmark == "Danish":
-                        batch_list_prompts = [
-                            [
-                                "Document: ",
-                                "\nTranslate the previous document into Danish.",
-                            ]
-                            for _ in range(bs)
-                        ]
-                    else:
-                        raise ValueError("Invalid benchmark")
-                else:
-                    batch_list_prompts = [
-                        [
-                            prompt_prefix + "\n\nDocument: ",
-                            "\nTranslation:",
-                        ]
-                        for _ in range(bs)
-                    ]
 
-                texts_to_embed = [[seq] for seq in text[i : i + bs]]
+                batch_list_prompts = [
+                    text_prompt_prefix + ["\nTranslation:"] for _ in range(bs)
+                ]
 
-                if not query_w_context:
+                texts_to_embed = [embed_prompt + [seq] for seq in text[i : i + bs]]
+
+                if not mistral:
                     generated_sequence, embed_tokens, embeds = pipeline.generate(
                         text_to_embed=texts_to_embed if w_embeds else None,
                         batch_list_prompts=batch_list_prompts,
@@ -744,44 +716,10 @@ def evaluate_trad(
                             final_seq.append(seq.strip())
                     generated_sequences.extend(final_seq)
                 else:
-                    if fine_tuned:
-                        if benchmark == "Danish":
-                            prompts = [
-                                "Document: "
-                                + seq
-                                + "\nTranslate the previous document into Spanish."
-                                for seq in text[i : i + bs]
-                            ]
-                        elif benchmark == "French":
-                            prompts = [
-                                "Document: "
-                                + seq
-                                + "\nTranslate the previous document into French."
-                                for seq in text[i : i + bs]
-                            ]
-
-                        elif benchmark == "German":
-                            prompts = [
-                                "Document: "
-                                + seq
-                                + "\nTranslate the previous document into German."
-                                for seq in text[i : i + bs]
-                            ]
-                        elif benchmark == "Danish":
-                            prompts = [
-                                "Document: "
-                                + seq
-                                + "\nTranslate the previous document into Danish."
-                                for seq in text[i : i + bs]
-                            ]
-
-                        else:
-                            raise ValueError("Invalid benchmark")
-                    else:
-                        prompts = [
-                            prompt_prefix + "\n\nDocument: " + seq + "\nTranslation:"
-                            for seq in text[i : i + bs]
-                        ]
+                    prompts = [
+                        "".join(text_prompt_prefix) + seq + "\nTranslation:"
+                        for seq in text[i : i + bs]
+                    ]
 
                     prompt_tokens = [
                         mistral_tokenizer.encode(prompt, bos=True, eos=False)
@@ -1067,7 +1005,6 @@ if __name__ == "__main__":
                 seed=args.seed,
                 comp_rate=args.comp_rate,
                 fine_tuned=args.fine_tuned,
-                query_w_context=args.query_w_context,
                 benchmarks=benchmarks
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],

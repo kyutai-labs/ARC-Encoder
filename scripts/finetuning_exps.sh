@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=5-7
+#SBATCH --array=8-9
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -15,19 +15,13 @@
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 CONFIG_FILES=(
-config/experiments/heavier_pt/ft/CPtrue16_L8B_MLP2_M7B_20rec_v2_ftsquad.yaml 
 # config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_Dist_v2_ftsquad.yaml 
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_M7B_20rec_interleaved_ftsquad_fullloss.yaml 
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_M7B_20rec_interleaved_ftsquad.yaml 
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_L8B_20rec_interleaved_ftsquad.yaml 
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_L8B_20rec_interleaved_ftsquad_fullloss.yaml
-config/experiments/heavier_pt/ft/CP8_L3B_MLP2_L8B_20rec_ftsquad.yaml
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_v2_ftsquad_cp8.yaml 
-config/experiments/heavier_pt/ft/CPtrue16_L8B_MLP2_M7B_20rec_v2_ftsquad_cp8.yaml 
-config/experiments/heavier_pt/ft/CP8_L3B_MLP2_M7B_20rec_ftsquad_cp16.yaml
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_v2_ftsquad_v4.yaml 
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_v2_ftsquad_v3.yaml 
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_20rec_v2_ftsquad_v2.yaml
+config/experiments/heavier_pt/ft/CP8_L3B_MLP2_M7B_20rec_ftsquad_interleaved.yaml 
+config/experiments/heavier_pt/ft/CP8_L3B_MLP2_M7B_20rec_ftsquad_interleaved_fulloss.yaml
 )
 
 
