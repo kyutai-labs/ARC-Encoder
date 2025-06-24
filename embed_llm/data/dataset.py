@@ -209,7 +209,7 @@ def sequence_iterator(
     few_shot_instruct = []
     cur_pos = 0
     n_missing = (
-        seq_len // n_interleaved
+        seq_len // (2 * n_interleaved + 1)
         if continuation > 0 and n_interleaved > 1
         else int(seq_len * rec_seq_len_factor)
     )
@@ -226,7 +226,6 @@ def sequence_iterator(
 
         if do_continuation:
             while True:
-
                 res = (
                     sequence_iterator_inserted_embed_continuation(
                         sample=sample,
@@ -302,7 +301,7 @@ def sequence_iterator(
                     to_embed_buffer=to_embed_buffer,
                     sizes=sizes,
                     seq_len=(
-                        seq_len // n_interleaved
+                        seq_len // (2 * n_interleaved + 1)
                         if continuation > 0 and n_interleaved > 1
                         else int(seq_len * rec_seq_len_factor)
                     ),
@@ -327,7 +326,7 @@ def sequence_iterator(
                     insert_embed_list = []
                     sizes = []
                     n_missing = (
-                        seq_len // n_interleaved
+                        seq_len // (2 * n_interleaved + 1)
                         if continuation > 0 and n_interleaved > 1
                         else int(seq_len * rec_seq_len_factor)
                     )

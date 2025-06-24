@@ -83,7 +83,7 @@ def sequence_iterator_reconstruction(
             continue
 
         # If instruct data type do not split the passage into smaller embeddings
-        if data_type == "reconstruction" and len(embed_tokens) == 1:
+        if data_type == "reconstruction":
             new_embed = tokens[cur_pos : cur_pos + n_missing]
             if (
                 llm_tokenizer.model_name == "llama"
@@ -131,6 +131,9 @@ def sequence_iterator_reconstruction(
 
         else:
             assert adapt_seq_len
+            seq_len = (
+                seq_len * (2 * n_interleaved + 1) if n_interleaved > 1 else seq_len
+            )
             # If we can use more embeddings and that one passage reaches the limit \
             # we split it in two embeddings and so on
 

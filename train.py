@@ -445,26 +445,34 @@ def _train(
 
             # # print('embed seqlens', embed_seqlens)
             # if get_rank() == 0:
-            #     to_gen = [
-            #         int(tok)
-            #         for tok in batch.x[:batch.sizes[0]]
-            #     ]
-            #     print("To generate", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
-            #     # ind_toks = 0
-            #     # print('Insert cat embedds', insert_cat_embedds)
-            #     # for j, insert_idx in enumerate(insert_cat_embedds[0]):
-            #     #     print('TEXT',pipeline.llm_tokenizer.tokenizer.decode(x[ind_toks : ind_toks + insert_idx].tolist()))
-            #     #     print('CONTEXT',batch.to_embed[0]["text"][j])
-            #     #     ind_toks += insert_idx
-            #     # print('TEXT',pipeline.llm_tokenizer.tokenizer.decode(x[ind_toks:seqlens[0]].tolist()))
+            #     # to_gen = [int(tok) for tok in batch.x[: batch.sizes[0]]]
+            #     # print("To generate", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
+            #     print("Batch data type", batch.data_type)
+            #     ind_toks = sum(seqlens[:2])
+            #     print("Insert cat embedds", insert_cat_embedds)
+            #     for j, insert_idx in enumerate(insert_cat_embedds[2]):
+            #         print(
+            #             "TEXT",
+            #             pipeline.llm_tokenizer.tokenizer.decode(
+            #                 x[ind_toks : ind_toks + insert_idx].tolist()
+            #             ),
+            #         )
+            #         print("CONTEXT", batch.to_embed[2]["text"][j])
+            #         ind_toks += insert_idx
+            #     print(
+            #         "TEXT",
+            #         pipeline.llm_tokenizer.tokenizer.decode(
+            #             x[ind_toks : sum(seqlens[:3])].tolist()
+            #         ),
+            #     )
             #     # # target = [int(tok) for tok in batch.y]
-            #     embed = [int(toks) for tokens in batch.to_embed[0]["tokens"] for toks in tokens]
+            #     # embed = [int(toks) for tokens in batch.to_embed[0]["tokens"] for toks in tokens]
             #     # # continuation = [
             #     # #     int(tok)
             #     # #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
             #     # # ]
             #     # print("Beginning", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
-            #     print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
+            #     # print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
             #     # # print('embedding tokens', batch.to_embed[13]["tokens"])
             #     # # print('embed', batch.to_embed[13]["text"])
             #     # # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))
@@ -491,60 +499,46 @@ def _train(
 
             batch_bpc = 0
             ind = 0
-
             for i, size in enumerate(batch.sizes):
-                if (
-                    len(
-                        pipeline.llm_tokenizer.tokenizer.decode(
-                            [int(tok) for tok in batch.y[ind : ind + size]]
-                        )
-                    )
-                    if batch.y_mask is None
-                    else len(
-                        pipeline.llm_tokenizer.tokenizer.decode(
-                            [
-                                int(tok)
-                                for tok in batch.y[ind : ind + size][
-                                    batch.y_mask[ind : ind + size]
-                                ]
-                            ]
-                        )
-                    )
-                    == 0
+                if len(y[ind : ind + size]) > 0 and (
+                    y_mask is None or torch.sum(y_mask[ind : ind + size]) > 0
                 ):
-                    continue
-                loss_in_bits = torch.sum(
-                    compute_bpt_loss(
-                        output[ind : ind + size, ...],
-                        y[ind : ind + size],
-                        None if y_mask is None else y_mask[ind : ind + size],
-                    )
-                ).item()
-                batch_bpc += loss_in_bits / (
-                    max(
-                        len(
-                            pipeline.llm_tokenizer.tokenizer.decode(
-                                [int(tok) for tok in batch.y[ind : ind + size]]
+                    loss_in_bits = torch.sum(
+                        compute_bpt_loss(
+                            output[ind : ind + size, ...],
+                            y[ind : ind + size],
+                            None if y_mask is None else y_mask[ind : ind + size],
+                        )
+                    ).item()
+                    if y_mask is None:
+                        batch_bpc += loss_in_bits / (
+                            max(
+                                len(
+                                    pipeline.llm_tokenizer.tokenizer.decode(
+                                        [
+                                            int(tok)
+                                            for tok in y[ind : ind + size]
+                                        ]
+                                    )
+                                ),
+                                1,
                             )
-                        ),
-                        1,
-                    )
-                    if y_mask is None
-                    else max(
-                        len(
-                            pipeline.llm_tokenizer.tokenizer.decode(
-                                [
-                                    int(tok)
-                                    for tok in batch.y[ind : ind + size][
-                                        batch.y_mask[ind : ind + size]
-                                    ]
-                                ]
+                        )
+                    else:
+                        batch_bpc += loss_in_bits / (
+                            max(
+                                len(
+                                    pipeline.llm_tokenizer.tokenizer.decode(
+                                        [
+                                            int(tok)
+                                            for ind_y, tok in enumerate(y[ind : ind + size]) if y_mask[ind + ind_y]
+                                        ]
+                                    )
+                                ),
+                                1,
                             )
-                        ),
-                        1,
-                    )
-                )
-                ind += size
+                        )
+                    ind += size
             if args.loss_args.kl:
                 new_seqlens = []
                 ind_toks = 0
@@ -614,6 +608,7 @@ def _train(
                 mb_loss = mb_loss + args.loss_args.kl_weight * kl_loss_distill
                 kl_loss += kl_loss_distill.item()
             bpc += batch_bpc / len(batch.sizes)
+            print("DATA TYPE", batch.data_type, "BPC", batch_bpc / len(batch.sizes))
             loss += mb_loss.item()
             mb_loss.backward()
             if y_mask is None:

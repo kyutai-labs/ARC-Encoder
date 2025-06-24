@@ -12,7 +12,7 @@ from mistral_inference.transformer import Transformer
 from tqdm import tqdm, trange
 import sys
 
-sys.path.insert(0, '/home/hippolytepilchen/code/insert_multi_training')
+sys.path.insert(0, "/home/hippolytepilchen/code/insert_multi_training")
 from embed_llm.generation.metrics import (  # noqa: E402
     get_approx_em,
     get_bleu_score,
@@ -65,7 +65,6 @@ def create_prompt_prefix(
     docs: list[str] | None = None,
     max_examples: int | None = None,
     compressed_doc_in_icl: bool = False,
-    reversed_template: bool = False,
     shorter_icl: bool = False,
 ) -> tuple[list[str], list[str] | None]:
     max_examples = max_examples if max_examples is not None else len(queries)
@@ -83,26 +82,23 @@ def create_prompt_prefix(
         )
     if docs is not None:
         if compressed_doc_in_icl:
-            if not reversed_template:
-                for query, answer, doc, index in zip(
-                    queries, answers, docs, range(max_examples)
-                ):
-                    if index == 0:
-                        prompt_str.append("Document: ")
-                        to_embed_str.append(doc.strip())
-                        prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: ")
-                    elif index == max_examples - 1:
-                        to_embed_str.append(doc.strip())
-                        prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\n")
-                    else:
-                        to_embed_str.append(doc.strip())
-                        prompt_str.append(
-                            f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
-                        )
-            else:
-                prompt_str.append(f"\nQuestion: {query}\nDocument: ")
-                to_embed_str.append(doc.strip())
-                prompt_str.append(f"\nAnswer: {answer}\n\n")
+            for query, answer, doc, index in zip(
+                queries, answers, docs, range(max_examples)
+            ):
+                if index == 0:
+                    prompt_str.append("Document: ")
+                    to_embed_str.append(doc.strip())
+                    prompt_str.append(
+                        f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
+                    )
+                elif index == max_examples - 1:
+                    to_embed_str.append(doc.strip())
+                    prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\n")
+                else:
+                    to_embed_str.append(doc.strip())
+                    prompt_str.append(
+                        f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
+                    )
 
             if max_examples == 0:
                 prompt_str.append("")
@@ -110,14 +106,9 @@ def create_prompt_prefix(
             for query, answer, doc, _ in zip(
                 queries, answers, docs, range(max_examples)
             ):
-                if reversed_template:
-                    prompt += (
-                        f"Question: {query}\nDocument: {doc}\nAnswer: {answer}\n\n"
-                    )
-                else:
-                    prompt += (
-                        f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
-                    )
+                prompt += (
+                    f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
+                )
 
             to_embed_str = None
             prompt_str.append(prompt)
@@ -139,7 +130,6 @@ def create_prompt(
     query: str,
     wdoc: bool = True,
     w_embeds: bool = True,
-    reversed_template: bool = False,
 ) -> tuple[list[str], list[str] | None]:
     list_prompt = prefix_prompt.copy()
 
@@ -159,18 +149,10 @@ def create_prompt(
         return list_prompt, list_embed
     else:
         if w_embeds:
-            if not reversed_template:
-                last_prompt = list_prompt[-1]
-                list_prompt[-1] = "".join([last_prompt, "Document: "])
-                list_embed.append(doc.strip())
-                list_prompt.append(f"\nQuestion: {query}\nAnswer:")
-            else:
-                last_prompt = list_prompt[-1]
-                list_prompt[-1] = "".join(
-                    [last_prompt, f"\nQuestion: {query}\nDocument: "]
-                )
-                list_embed.append(doc.strip())
-                list_prompt.append("\nAnswer:")
+            last_prompt = list_prompt[-1]
+            list_prompt[-1] = "".join([last_prompt, "Document: "])
+            list_embed.append(doc.strip())
+            list_prompt.append(f"\nQuestion: {query}\nAnswer:")
         else:
             list_embed = None
             list_prompt.append(f"\nQuestion: {query}\nAnswer:")
@@ -916,7 +898,6 @@ def arg_parser():
         type=str,
         default="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/",
     )
-    parser.add_argument("--reversed_template", action="store_true")
     parser.add_argument("--fine_tuned", action="store_true")
     parser.add_argument("--llm_name", type=str, default="mistral_7B")
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
@@ -938,7 +919,7 @@ if __name__ == "__main__":
         benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "HotpotQA"]
     else:
         benchmarks = [args.benchmarks]
-    icl_tests = [0, 2, 5] if args.n_icl_exs is None else [args.n_icl_exs]
+    icl_tests = [0, 5] if args.n_icl_exs is None else [args.n_icl_exs]
     ensure_reproducibility(29)
 
     output_file = (
@@ -1000,7 +981,6 @@ if __name__ == "__main__":
                 icl_w_document=True,
                 query_w_context=False,
                 w_embeds=False,
-                reversed_template=args.reversed_template,
                 shorter_icl=args.shorter_icl,
             )
             torch.cuda.empty_cache()
@@ -1021,7 +1001,6 @@ if __name__ == "__main__":
             w_embeds=False,
             max_multi_passage=args.multi_passages,
             seed=args.seed,
-            reversed_template=args.reversed_template,
             shorter_icl=args.shorter_icl,
         )
         torch.cuda.empty_cache()
@@ -1044,7 +1023,6 @@ if __name__ == "__main__":
                     query_w_context=False,
                     w_embeds=False,
                     pipeline=mistral_model,
-                    reversed_template=args.reversed_template,
                     shorter_icl=args.shorter_icl,
                 )
                 torch.cuda.empty_cache()
@@ -1066,7 +1044,6 @@ if __name__ == "__main__":
                 pipeline=mistral_model,
                 max_multi_passage=args.multi_passages,
                 seed=args.seed,
-                reversed_template=args.reversed_template,
                 shorter_icl=args.shorter_icl,
             )
             torch.cuda.empty_cache()
@@ -1120,7 +1097,6 @@ if __name__ == "__main__":
                 max_multi_passage=args.multi_passages,
                 seed=args.seed,
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
-                reversed_template=args.reversed_template,
                 comp_rate=args.comp_rate,
                 query_w_context=args.query_w_context,
                 bridge_ckpt=args.bridge_ckpt
@@ -1149,7 +1125,6 @@ if __name__ == "__main__":
                     max_multi_passage=args.multi_passages,
                     seed=args.seed,
                     compressed_doc_in_icl=args.compressed_doc_in_icl,
-                    reversed_template=args.reversed_template,
                     comp_rate=args.comp_rate,
                     query_w_context=args.query_w_context,
                     bridge_ckpt=args.bridge_ckpt
