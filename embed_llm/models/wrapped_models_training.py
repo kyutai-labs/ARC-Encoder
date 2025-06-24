@@ -114,18 +114,19 @@ def load_training_model(
 
         if pipeline_args.embedder_params.memory_tokens > 0:
             main_logger_info("Initializing memory tokens for embedder ...")
+            for i in range(len(llms)):
 
-            augmented_model.embedder.mem_embeddings._parameters["weight"] = (
-                torch.nn.Parameter(
-                    torch.empty_like(
-                        augmented_model.embedder.mem_embeddings.weight,
-                        device="cpu",
-                        dtype=param_dtype,
+                augmented_model.embedder.mem_embeddings[i]._parameters["weight"] = (
+                    torch.nn.Parameter(
+                        torch.empty_like(
+                             augmented_model.embedder.mem_embeddings[i]._parameters["weight"],
+                            device="cpu",
+                            dtype=param_dtype,
+                        )
                     )
                 )
-            )
 
-            torch.nn.init.ones_(augmented_model.embedder.mem_embeddings.weight)
+                torch.nn.init.ones_(augmented_model.embedder.mem_embeddings[i].weight)
         if pipeline_args.bridge_module.bridge_type is not None:
             main_logger_info("Initializing bridge module for embedder ...")
             for name, module in augmented_model.named_modules():
@@ -246,6 +247,7 @@ def load_training_model(
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
+
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
@@ -486,7 +488,6 @@ def load_training_model_from_ckpt(
         elif (
             pipeline_args.embedder_params.memory_tokens > 0
             and "mem_embeddings" in name
-            and not train_args.freeze_embedder
         ):
             param.requires_grad = True
         elif (

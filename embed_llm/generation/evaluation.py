@@ -12,7 +12,7 @@ from mistral_inference.transformer import Transformer
 from tqdm import tqdm, trange
 import sys
 
-sys.path.insert(0, '/home/hippolytepilchen/code/mix_decoder_training')
+sys.path.insert(0, "/home/hippolytepilchen/code/mix_decoder_training")
 from embed_llm.generation.metrics import (  # noqa: E402
     get_approx_em,
     get_bleu_score,
@@ -917,7 +917,7 @@ if __name__ == "__main__":
         benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "HotpotQA"]
     else:
         benchmarks = [args.benchmarks]
-    icl_tests = [0, 2, 5] if args.n_icl_exs is None else [args.n_icl_exs]
+    icl_tests = [0, 5] if args.n_icl_exs is None else [args.n_icl_exs]
     ensure_reproducibility(29)
 
     output_file = (
@@ -1068,7 +1068,9 @@ if __name__ == "__main__":
                 benchmarks=benchmarks
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],
-                bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
+                bridge_ckpt=args.bridge_ckpt
+                if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
+                else False,
                 llm_number=args.llm_number,
             )
             torch.cuda.empty_cache()
@@ -1094,7 +1096,9 @@ if __name__ == "__main__":
                 reversed_template=args.reversed_template,
                 comp_rate=args.comp_rate,
                 query_w_context=args.query_w_context,
-                bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
+                bridge_ckpt=args.bridge_ckpt
+                if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
+                else False,
                 llm_number=args.llm_number,
             )
 
@@ -1121,6 +1125,9 @@ if __name__ == "__main__":
                     reversed_template=args.reversed_template,
                     comp_rate=args.comp_rate,
                     query_w_context=args.query_w_context,
-                    bridge_ckpt=args.bridge_ckpt if args.bridge_ckpt is None or 'false' not in args.bridge_ckpt.lower() else False,
+                    bridge_ckpt=args.bridge_ckpt
+                    if args.bridge_ckpt is None
+                    or "false" not in args.bridge_ckpt.lower()
+                    else False,
                     llm_number=args.llm_number,
                 )

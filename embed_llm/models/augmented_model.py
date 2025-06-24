@@ -76,6 +76,7 @@ class EmbedAugModel(nn.Module):
             embeddings, embed_seqlens = self.embedder.forward_embedder(
                 input_ids=embeddings,
                 seqlens=embed_seqlens,
+                llm_number=llm_number,
             )
             if self.embedder.rec_tok is not None and batch_type == "reconstruction":
                 sp_rec_tok = self.embedder.rec_tok[llm_number](
@@ -311,7 +312,7 @@ class EmbedAugPipeline(nn.Module):
             trained_layers_state_dict = {
                 k: v
                 for k, v in trained_layers_state_dict.items()
-                if 'rec_tok' not in k and 'cont_tok' not in k
+                if 'rec_tok' not in k and 'cont_tok' not in k and 'mem_embeddings' not in k
             }
             
             trained_layers_state_dict = {
@@ -332,13 +333,13 @@ class EmbedAugPipeline(nn.Module):
 
             if (
                 train_args.get("freeze_embedder", False)
-                and (pipeline_args.embedder_params.rec_tok or pipeline_args.embedder_params.cont_tok)
+                and (pipeline_args.embedder_params.rec_tok or pipeline_args.embedder_params.cont_tok or pipeline_args.embedder_params.memory_tokens > 0)
             ):
                 embed_path = Path(ckpt_path + "/embedder")
                 supp_tok_state_dict = load_state_dict(embed_path, dtype=param_dtype)
                 supp_tok_state_dict = {
                 k.replace(str(llm_number), "0"): v
-                for k, v in supp_tok_state_dict.items() if llm_number in k and ('rec_tok' in k or 'cont_tok' in k)
+                for k, v in supp_tok_state_dict.items() if llm_number in k and ('rec_tok' in k or 'cont_tok' in k or 'mem_embeddings' in k)
             }
                 llm_embedder.load_state_dict(
                     supp_tok_state_dict, strict=False, assign=True
@@ -456,7 +457,7 @@ class EmbedAugPipeline(nn.Module):
             )
 
             embeddings, embed_seqlens = self.model.embedder.forward_embedder(
-                input_ids=x, seqlens=seqlens
+                input_ids=x, seqlens=seqlens,llm_number=llm_number,
             )
             if self.model.embedder.cont_tok is not None:
                 sp_cont_tok = self.model.embedder.cont_tok[0](

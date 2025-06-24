@@ -37,16 +37,15 @@ optim:
 pipeline:
   embedder_params:
     causal_embedder: true
-    compress_rates:
-    - -8
     n_truncated_layers: 14
     pooling_module:
-      pool_type: mean_sa
-      where: before
+      pool_type: mean
+      where: between
     trained_layers: 14
     rec_tok: true
     cont_tok: true
     train_embedding_mtx: true 
+    memory_tokens: 8
   max_embeds: 1
   trainable_llm: false
   w_embeds: true
