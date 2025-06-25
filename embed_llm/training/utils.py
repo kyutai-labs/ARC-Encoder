@@ -92,3 +92,24 @@ def logged_closing(thing: Closable, name: str):
 
 def now_as_str() -> str:
     return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+
+def print_w_mask(
+    input_ids: list[int],  tokenizer, mask: torch.Tensor | None = None
+) -> None:
+    if mask is None:
+        print(tokenizer.decode(input_ids))
+    else:
+        mask_val = bool(mask[0].item())
+        to_print=[]
+        for i, input_id in enumerate(input_ids):
+            if bool(mask[i].item()) == mask_val:
+                to_print.append(input_id)
+            else:
+                print(f" Mask value {mask_val}\n")
+                print(tokenizer.decode(to_print))
+                to_print = [input_id]
+                mask_val = bool(mask[i].item())
+                
+        print(f" Mask value {mask_val}\n")
+        print(tokenizer.decode(to_print))

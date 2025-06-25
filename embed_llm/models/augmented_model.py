@@ -73,51 +73,55 @@ class EmbedAugModel(nn.Module):
         llm_number: int = 0,
     ) -> torch.Tensor:
         if embeddings is not None:
+
             embeddings, embed_seqlens = self.embedder.forward_embedder(
                 input_ids=embeddings,
                 seqlens=sum(embed_seqlens, []),
                 llm_number=llm_number,
             )
+            embed_seqlens = group_embed_seqlens(
+                embed_seqlens, [len(li) for li in insert_cat_embedds]
+            )
             if (
-                        self.embedder.rec_tok is not None and batch_type == "reconstruction"
-                    ) or (
-                        self.embedder.cont_tok is not None
-                        and (batch_type == "continuation" or batch_type == "instruct")
-                    ):
-                        special_tok = (
-                            self.embedder.rec_tok[llm_number](torch.tensor([0]).to(embeddings.device))
-                            if self.embedder.rec_tok is not None
-                            and batch_type == "reconstruction"
-                            else self.embedder.cont_tok[llm_number](torch.tensor([0]).to(embeddings.device))
-                        )
-                        new_embeddings = torch.zeros(
-                            (
-                                len(sum(embed_seqlens, [])) + sum(sum(embed_seqlens, [])),
-                                embeddings.shape[1],
-                            ),
-                            device=embeddings.device,
-                            dtype=embeddings.dtype,
-                        )
+                self.embedder.rec_tok is not None and batch_type == "reconstruction"
+            ) or (
+                self.embedder.cont_tok is not None
+                and (batch_type == "continuation" or batch_type == "instruct")
+            ):
+                special_tok = (
+                    self.embedder.rec_tok[llm_number](torch.tensor([0]).to(embeddings.device))
+                    if self.embedder.rec_tok is not None
+                    and batch_type == "reconstruction"
+                    else self.embedder.cont_tok[llm_number](torch.tensor([0]).to(embeddings.device))
+                )
+                new_embeddings = torch.zeros(
+                    (
+                        len(sum(embed_seqlens, [])) + sum(sum(embed_seqlens, [])),
+                        embeddings.shape[1],
+                    ),
+                    device=embeddings.device,
+                    dtype=embeddings.dtype,
+                )
 
-                        ind = 0
-                        ind_new = 0
-                        for embed_seqlen in embed_seqlens:
-                            for size in embed_seqlen:
-                                new_embeddings[ind_new : ind_new + size] = embeddings[
-                                    ind : ind + size
-                                ]
-                                ind_new += size
-                                ind += size
-
-                                new_embeddings[ind_new : ind_new + 1] = special_tok.clone()
-
-                                ind_new += 1
-
-                        embed_seqlens = [
-                            [size + 1 for size in embed_seqlen]
-                            for embed_seqlen in embed_seqlens
+                ind = 0
+                ind_new = 0
+                for embed_seqlen in embed_seqlens:
+                    for size in embed_seqlen:
+                        new_embeddings[ind_new : ind_new + size] = embeddings[
+                            ind : ind + size
                         ]
-                        embeddings = new_embeddings.clone()
+                        ind_new += size
+                        ind += size
+
+                        new_embeddings[ind_new : ind_new + 1] = special_tok.clone()
+
+                        ind_new += 1
+
+                embed_seqlens = [
+                    [size + 1 for size in embed_seqlen]
+                    for embed_seqlen in embed_seqlens
+                ]
+                embeddings = new_embeddings.clone()
 
             if self.bridge_module is not None:
                 if isinstance(
@@ -126,7 +130,7 @@ class EmbedAugModel(nn.Module):
                     embeddings = self.bridge_module[llm_number](embeddings)
                 else:
                     embeddings = self.bridge_module(embeddings)
-            
+        
         return self.llms[llm_number].forward(
             input_ids=x,
             seqlens=seqlens,

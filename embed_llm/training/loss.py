@@ -45,7 +45,9 @@ def compute_kl_loss_with_mask(
         )
 
     assert torch.sum(target_mask.int()) == torch.sum(pred_mask.int()), (
-        "Mask should be the same for both logits."
+        f"Mask should be the same for both logits: "
+        f"target_mask={torch.sum(target_mask.int())}, "
+        f"pred_mask={torch.sum(pred_mask.int())}."
     )
 
     assert target_logits.size(-1) == pred_logits.size(-1), (
