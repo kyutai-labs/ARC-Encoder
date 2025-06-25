@@ -18,9 +18,9 @@ exp_name: test_ft # multi_decoder_nodist_CP8_ft
 continuation: 0.0
 num_microbatches: 1
 seed: 0
-max_steps: 2000
+max_steps: 1000
 seq_len: 1024
-log_freq: 10
+log_freq: 1
 batch_size: 16
 ckpt_freq: 100
 eval_freq: 50

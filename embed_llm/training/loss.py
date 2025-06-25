@@ -21,7 +21,6 @@ def compute_bpt_loss(logits, targets, target_mask: torch.Tensor | None):
     loss = F.cross_entropy(logits, targets, reduction="none")
     # Convert the loss from nats to bits
     loss_in_bits = loss / torch.log(torch.tensor(2.0))
-
     loss_in_bits = loss_in_bits if target_mask is None else loss_in_bits * target_mask
 
     return loss_in_bits
@@ -46,7 +45,9 @@ def compute_kl_loss_with_mask(
         )
 
     assert torch.sum(target_mask.int()) == torch.sum(pred_mask.int()), (
-        "Mask should be the same for both logits."
+        f"Mask should be the same for both logits: "
+        f"target_mask={torch.sum(target_mask.int())}, "
+        f"pred_mask={torch.sum(pred_mask.int())}."
     )
 
     assert target_logits.size(-1) == pred_logits.size(-1), (

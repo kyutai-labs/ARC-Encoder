@@ -19,15 +19,21 @@ seed: 0
 max_steps: 30000
 seq_len: 256
 log_freq: 1
-batch_size: 16
+batch_size: 8
 ckpt_freq: 5
 eval_freq: 50
 no_eval: true
 continuation: 0.8
 
+loss_args:
+  kl: true
+
 optim:
   final_lr: 1.0e-10
   initial_lr: 1.0e-20
+  max_lr: 1.0e-05
+  max_lr_projector: 5.0e-05
+  warm_up_steps: 1000
   max_lr: 1.0e-05
   max_lr_projector: 5.0e-05
   warm_up_steps: 1000
@@ -57,12 +63,18 @@ pipeline:
     out_dim: 4096
 
 
-data:
-  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
-  shuffle: false
-  train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
-  n_times_sl_insertion: 1
+# data:
+#   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/crawl/eval_en_00_of_18.jsonl
+#   shuffle: false
+#   train_data: /lustre/scwpod02/client/kyutai-interns/datasets/crawl_2/train_en_00_of_18.jsonl
+#   n_interleaved: 2
 
+
+data:
+  adapt_seq_len: true
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
+  shuffle: false
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl
 
 
 

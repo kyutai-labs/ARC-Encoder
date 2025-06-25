@@ -10,9 +10,7 @@ from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 from mistral_inference.generate import generate
 from mistral_inference.transformer import Transformer
 from tqdm import tqdm, trange
-import sys
 
-sys.path.insert(0, "/home/hippolytepilchen/code/mix_decoder_training")
 from embed_llm.generation.metrics import (  # noqa: E402
     get_approx_em,
     get_bleu_score,
@@ -65,34 +63,40 @@ def create_prompt_prefix(
     docs: list[str] | None = None,
     max_examples: int | None = None,
     compressed_doc_in_icl: bool = False,
-    reversed_template: bool = False,
+    shorter_icl: bool = False,
 ) -> tuple[list[str], list[str] | None]:
     max_examples = max_examples if max_examples is not None else len(queries)
     prompt_str = []
     to_embed_str = []
 
     prompt = ""
-
+    if shorter_icl:
+        generate_exs = list(zip(queries, answers, docs))
+        generate_exs.sort(key=lambda arg: len(arg[-1]), reverse=True)
+        queries, answers, docs = (
+            [ex[0] for ex in generate_exs],
+            [ex[1] for ex in generate_exs],
+            [ex[2] for ex in generate_exs],
+        )
     if docs is not None:
         if compressed_doc_in_icl:
-            if not reversed_template:
-                for query, answer, doc, index in zip(
-                    queries, answers, docs, range(max_examples)
-                ):
-                    if index == 0:
-                        prompt_str.append("Document: ")
-                        to_embed_str.append(doc.strip())
-                    elif index == max_examples - 1:
-                        prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\n")
-                    else:
-                        prompt_str.append(
-                            f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
-                        )
-                        to_embed_str.append(doc.strip())
-            else:
-                prompt_str.append(f"\nQuestion: {query}\nDocument: ")
-                to_embed_str.append(doc.strip())
-                prompt_str.append(f"\nAnswer: {answer}\n\n")
+            for query, answer, doc, index in zip(
+                queries, answers, docs, range(max_examples)
+            ):
+                if index == 0:
+                    prompt_str.append("Document: ")
+                    to_embed_str.append(doc.strip())
+                    prompt_str.append(
+                        f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
+                    )
+                elif index == max_examples - 1:
+                    to_embed_str.append(doc.strip())
+                    prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\n")
+                else:
+                    to_embed_str.append(doc.strip())
+                    prompt_str.append(
+                        f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
+                    )
 
             if max_examples == 0:
                 prompt_str.append("")
@@ -100,14 +104,7 @@ def create_prompt_prefix(
             for query, answer, doc, _ in zip(
                 queries, answers, docs, range(max_examples)
             ):
-                if reversed_template:
-                    prompt += (
-                        f"Question: {query}\nDocument: {doc}\nAnswer: {answer}\n\n"
-                    )
-                else:
-                    prompt += (
-                        f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
-                    )
+                prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
 
             to_embed_str = None
             prompt_str.append(prompt)
@@ -129,7 +126,6 @@ def create_prompt(
     query: str,
     wdoc: bool = True,
     w_embeds: bool = True,
-    reversed_template: bool = False,
 ) -> tuple[list[str], list[str] | None]:
     list_prompt = prefix_prompt.copy()
 
@@ -149,18 +145,10 @@ def create_prompt(
         return list_prompt, list_embed
     else:
         if w_embeds:
-            if not reversed_template:
-                last_prompt = list_prompt[-1]
-                list_prompt[-1] = "".join([last_prompt, "Document: "])
-                list_embed.append(doc.strip())
-                list_prompt.append(f"\nQuestion: {query}\nAnswer:")
-            else:
-                last_prompt = list_prompt[-1]
-                list_prompt[-1] = "".join(
-                    [last_prompt, f"\nQuestion: {query}\nDocument: "]
-                )
-                list_embed.append(doc.strip())
-                list_prompt.append("\nAnswer:")
+            last_prompt = list_prompt[-1]
+            list_prompt[-1] = "".join([last_prompt, "Document: "])
+            list_embed.append(doc.strip())
+            list_prompt.append(f"\nQuestion: {query}\nAnswer:")
         else:
             list_embed = None
             list_prompt.append(f"\nQuestion: {query}\nAnswer:")
@@ -188,12 +176,12 @@ def evaluate_QA(
     max_multi_passage: int = 1,
     seed: float = 0.42,
     compressed_doc_in_icl: bool = False,
-    reversed_template: bool = False,
     comp_rate: int | None = None,
     llm_number: int = 1,
     bridge_ckpt: bool
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
+    shorter_icl: bool = False,  # If True, use shorter ICL examples
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
     llm_name = llm_path.split("/")[-1]
@@ -237,9 +225,6 @@ def evaluate_QA(
     ):
         if benchmark == "SQUAD" and max_multi_passage > 1:
             benchmarks.remove(benchmark)
-            continue
-
-        if compressed_doc_in_icl and icl_examples == 0:
             continue
 
         # if benchmark == "HotpotQA":
@@ -296,7 +281,7 @@ def evaluate_QA(
             docs=None if not icl_w_document else context,
             max_examples=icl_examples,
             compressed_doc_in_icl=compressed_doc_in_icl,
-            reversed_template=reversed_template,
+            shorter_icl=shorter_icl,
         )
 
         new_context, new_questions, new_answers = (
@@ -328,7 +313,6 @@ def evaluate_QA(
                         w_embeds=w_embeds,
                         query=query,
                         wdoc=query_w_context,
-                        reversed_template=reversed_template,
                     )
 
                     batch_list_prompts.append(batch_list_prompt)
@@ -573,12 +557,12 @@ def evaluate_trad(
     mistral: bool = False,
     seed: float = 0.42,
     comp_rate: int | None = None,
-    query_w_context: bool = False,
-    fine_tuned: bool = False,
     llm_number: int = 1,
     bridge_ckpt: bool
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
+    shorter_icl: bool = False,  # If True, use shorter ICL examples
+    compressed_doc_in_icl: bool = False,  # Not used for translation
 ):
     # Loading model
     llm_name = llm_path.split("/")[-1]
@@ -644,13 +628,44 @@ def evaluate_trad(
         # fixed_random.shuffle(c)
         random.shuffle(c, random=lambda: seed)
         text, traduction = zip(*c)
+        embed_prompt = []
+        if shorter_icl:
+            generate_exs = list(zip(text, traduction, range(5)))
+            generate_exs.sort(key=lambda arg: len(arg[0]), reverse=True)
 
-        prompt_prefix = "\n\n".join(
-            [
-                f"Document: {doc}\nTranslation: {answ}"
-                for doc, answ, _ in zip(text, traduction, range(5))
+            text_prompt_prefix = [
+                "\n\n".join(
+                    [
+                        f"Document: {doc}\nTranslation: {answ}"
+                        for doc, answ, _ in generate_exs
+                    ]
+                )
             ]
-        )
+
+        elif compressed_doc_in_icl:
+            text_prompt_prefix = ["Document: "]
+            for doc, answ, _ in zip(text, traduction, range(4)):
+                embed_prompt.append(doc.strip())
+                text_prompt_prefix.append(
+                    f"\nTranslation: {answ.strip()}\n\nDocument: "
+                )
+            embed_prompt.append(text[4].strip())
+            text_prompt_prefix.append(
+                f"\nTranslation: {traduction[4].strip()}\n\nDocument: "
+            )
+
+        else:
+            text_prompt_prefix = [
+                "\n\n".join(
+                    [
+                        f"Document: {doc}\nTranslation: {answ}"
+                        for doc, answ, _ in zip(text, traduction, range(5))
+                    ]
+                )
+            ]
+
+        if shorter_icl:
+            pass
         new_text, new_trad = (
             list(text[5:]),
             list(traduction[5:]),
@@ -668,53 +683,14 @@ def evaluate_trad(
                 texts_to_embed = []
                 batch_list_prompts = []
                 bs = min(max_bs, n_samples - i)
-                if fine_tuned:
-                    if benchmark == "Spanish":
-                        batch_list_prompts = [
-                            [
-                                "Document: ",
-                                "\nTranslate the previous document into Spanish.",
-                            ]
-                            for _ in range(bs)
-                        ]
-                    elif benchmark == "French":
-                        batch_list_prompts = [
-                            [
-                                "Document: ",
-                                "\nTranslate the previous document into French.",
-                            ]
-                            for _ in range(bs)
-                        ]
-                    elif benchmark == "German":
-                        batch_list_prompts = [
-                            [
-                                "Document: ",
-                                "\nTranslate the previous document into German.",
-                            ]
-                            for _ in range(bs)
-                        ]
-                    elif benchmark == "Danish":
-                        batch_list_prompts = [
-                            [
-                                "Document: ",
-                                "\nTranslate the previous document into Danish.",
-                            ]
-                            for _ in range(bs)
-                        ]
-                    else:
-                        raise ValueError("Invalid benchmark")
-                else:
-                    batch_list_prompts = [
-                        [
-                            prompt_prefix + "\n\nDocument: ",
-                            "\nTranslation:",
-                        ]
-                        for _ in range(bs)
-                    ]
 
-                texts_to_embed = [[seq] for seq in text[i : i + bs]]
+                batch_list_prompts = [
+                    text_prompt_prefix + ["\nTranslation:"] for _ in range(bs)
+                ]
 
-                if not query_w_context:
+                texts_to_embed = [embed_prompt + [seq] for seq in text[i : i + bs]]
+
+                if not mistral:
                     generated_sequence, embed_tokens, embeds = pipeline.generate(
                         text_to_embed=texts_to_embed if w_embeds else None,
                         batch_list_prompts=batch_list_prompts,
@@ -741,44 +717,10 @@ def evaluate_trad(
                             final_seq.append(seq.strip())
                     generated_sequences.extend(final_seq)
                 else:
-                    if fine_tuned:
-                        if benchmark == "Danish":
-                            prompts = [
-                                "Document: "
-                                + seq
-                                + "\nTranslate the previous document into Spanish."
-                                for seq in text[i : i + bs]
-                            ]
-                        elif benchmark == "French":
-                            prompts = [
-                                "Document: "
-                                + seq
-                                + "\nTranslate the previous document into French."
-                                for seq in text[i : i + bs]
-                            ]
-
-                        elif benchmark == "German":
-                            prompts = [
-                                "Document: "
-                                + seq
-                                + "\nTranslate the previous document into German."
-                                for seq in text[i : i + bs]
-                            ]
-                        elif benchmark == "Danish":
-                            prompts = [
-                                "Document: "
-                                + seq
-                                + "\nTranslate the previous document into Danish."
-                                for seq in text[i : i + bs]
-                            ]
-
-                        else:
-                            raise ValueError("Invalid benchmark")
-                    else:
-                        prompts = [
-                            prompt_prefix + "\n\nDocument: " + seq + "\nTranslation:"
-                            for seq in text[i : i + bs]
-                        ]
+                    prompts = [
+                        "".join(text_prompt_prefix) + seq + "\nTranslation:"
+                        for seq in text[i : i + bs]
+                    ]
 
                     prompt_tokens = [
                         mistral_tokenizer.encode(prompt, bos=True, eos=False)
@@ -814,7 +756,6 @@ def evaluate_trad(
                 "Metric": bleu_score,
                 "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                 "language": benchmark,
-                "fine_tuned": fine_tuned,
                 "llm_name": llm_name,
             }
 
@@ -895,12 +836,11 @@ def arg_parser():
         type=str,
         default="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/",
     )
-    parser.add_argument("--reversed_template", action="store_true")
-    parser.add_argument("--fine_tuned", action="store_true")
     parser.add_argument("--llm_name", type=str, default="mistral_7B")
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--query_w_context", action="store_true")
     parser.add_argument("--bridge_ckpt", type=str, default=None)
+    parser.add_argument("--shorter_icl", action="store_true")
     parser.add_argument("--llm_number", type=int, default=1)
 
     return parser.parse_args()
@@ -955,10 +895,10 @@ if __name__ == "__main__":
                 mistral=True,
                 seed=args.seed,
                 comp_rate=args.comp_rate,
-                fine_tuned=args.fine_tuned,
                 benchmarks=benchmarks
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],
+                shorter_icl=args.shorter_icl,
             )
             torch.cuda.empty_cache()
 
@@ -978,7 +918,7 @@ if __name__ == "__main__":
                 icl_w_document=True,
                 query_w_context=False,
                 w_embeds=False,
-                reversed_template=args.reversed_template,
+                shorter_icl=args.shorter_icl,
             )
             torch.cuda.empty_cache()
         eval_logger_info(logger, "EVALUATING WITH CONTEXT")
@@ -998,7 +938,7 @@ if __name__ == "__main__":
             w_embeds=False,
             max_multi_passage=args.multi_passages,
             seed=args.seed,
-            reversed_template=args.reversed_template,
+            shorter_icl=args.shorter_icl,
         )
         torch.cuda.empty_cache()
 
@@ -1020,7 +960,7 @@ if __name__ == "__main__":
                     query_w_context=False,
                     w_embeds=False,
                     pipeline=mistral_model,
-                    reversed_template=args.reversed_template,
+                    shorter_icl=args.shorter_icl,
                 )
                 torch.cuda.empty_cache()
             eval_logger_info(logger, "EVALUATING WITH CONTEXT")
@@ -1041,7 +981,7 @@ if __name__ == "__main__":
                 pipeline=mistral_model,
                 max_multi_passage=args.multi_passages,
                 seed=args.seed,
-                reversed_template=args.reversed_template,
+                shorter_icl=args.shorter_icl,
             )
             torch.cuda.empty_cache()
 
@@ -1063,8 +1003,6 @@ if __name__ == "__main__":
                 mistral=False,
                 seed=args.seed,
                 comp_rate=args.comp_rate,
-                fine_tuned=args.fine_tuned,
-                query_w_context=args.query_w_context,
                 benchmarks=benchmarks
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],
@@ -1072,6 +1010,8 @@ if __name__ == "__main__":
                 if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
                 else False,
                 llm_number=args.llm_number,
+                shorter_icl=args.shorter_icl,
+                compressed_doc_in_icl=args.compressed_doc_in_icl,
             )
             torch.cuda.empty_cache()
         else:
@@ -1093,13 +1033,13 @@ if __name__ == "__main__":
                 max_multi_passage=args.multi_passages,
                 seed=args.seed,
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
-                reversed_template=args.reversed_template,
                 comp_rate=args.comp_rate,
                 query_w_context=args.query_w_context,
                 bridge_ckpt=args.bridge_ckpt
                 if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
                 else False,
                 llm_number=args.llm_number,
+                shorter_icl=args.shorter_icl,
             )
 
             for icl_ex in icl_tests[1:]:
@@ -1122,7 +1062,6 @@ if __name__ == "__main__":
                     max_multi_passage=args.multi_passages,
                     seed=args.seed,
                     compressed_doc_in_icl=args.compressed_doc_in_icl,
-                    reversed_template=args.reversed_template,
                     comp_rate=args.comp_rate,
                     query_w_context=args.query_w_context,
                     bridge_ckpt=args.bridge_ckpt
@@ -1130,4 +1069,5 @@ if __name__ == "__main__":
                     or "false" not in args.bridge_ckpt.lower()
                     else False,
                     llm_number=args.llm_number,
+                    shorter_icl=args.shorter_icl,
                 )
