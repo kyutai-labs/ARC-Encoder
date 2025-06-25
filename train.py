@@ -608,7 +608,6 @@ def _train(
                 mb_loss = mb_loss + args.loss_args.kl_weight * kl_loss_distill
                 kl_loss += kl_loss_distill.item()
             bpc += batch_bpc / len(batch.sizes)
-            print("DATA TYPE", batch.data_type, "BPC", batch_bpc / len(batch.sizes))
             loss += mb_loss.item()
             mb_loss.backward()
             if y_mask is None:

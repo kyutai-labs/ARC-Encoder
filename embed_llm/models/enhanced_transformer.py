@@ -259,9 +259,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
         token_embeds = self.tok_embeddings(input_ids)
         merge_based_on = None
         h = token_embeds
-        # print('input shape', h.shape, seqlens)
         if self.mem_embeddings is not None:
-            # print('should not be here')
             mem_embeddings = self.mem_embeddings(
                 torch.arange(
                     self.n_mem_tokens, device=h.device, dtype=input_ids.dtype

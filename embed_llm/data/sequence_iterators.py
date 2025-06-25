@@ -87,7 +87,6 @@ def sequence_iterator_reconstruction(
             new_embed = tokens[cur_pos : cur_pos + n_missing]
             if (
                 llm_tokenizer.model_name == "llama"
-                and embed_tokenizer.model_name == "mistral"
             ):
                 new_text = llm_tokenizer.tokenizer.decode(new_embed)
                 bos = "<|begin_of_text|>" in new_text
@@ -105,7 +104,6 @@ def sequence_iterator_reconstruction(
 
             elif (
                 llm_tokenizer.model_name == "mistral"
-                and embed_tokenizer.model_name == "llama"
             ):
                 bos = llm_tokenizer.tokenizer.bos_id in new_embed
                 eos = llm_tokenizer.tokenizer.eos_id in new_embed
@@ -119,16 +117,14 @@ def sequence_iterator_reconstruction(
                     }
                 )
             else:
-                to_embed_buffer.append(
-                    {
-                        "text": [llm_tokenizer.tokenizer.decode(new_embed)],
-                        "tokens": [new_embed],
-                    }
+                raise NotImplementedError(
+                    f"Model {llm_tokenizer.model_name} not supported for reconstruction."
                 )
 
             # Each sample consists in: Embeddings + text (no text before the embeddings)
             insert_embed_list.append([0])
-
+            x_buffer.extend(x[cur_pos : cur_pos + n_missing])
+            y_buffer.extend(y[cur_pos : cur_pos + n_missing])
         else:
             assert adapt_seq_len
             seq_len = (
@@ -176,7 +172,7 @@ def sequence_iterator_reconstruction(
                     )
                     ins_list.append(len(doc_tokens))
                     x_buffer.extend(doc_tokens)
-                    y_buffer.extend(doc_tokens)
+                    y_buffer.extend(doc_tokens[1:])
                     for i, split in enumerate(splits):
                         split = split.replace("Document: ", "").strip()
                         if split == "":
@@ -221,7 +217,7 @@ def sequence_iterator_reconstruction(
                     )
                     insert_embed_list.append([len(doc_tokens)])
                     x_buffer.extend(doc_tokens)
-                    y_buffer.extend(doc_tokens)
+                    y_buffer.extend(doc_tokens[1:])
                     added_prefix = len(doc_tokens)
                     to_embed_buffer.append(
                         {"text": [new_embed_text], "tokens": [new_embed_tokens]}
@@ -260,9 +256,10 @@ def sequence_iterator_reconstruction(
                     curr_mask = [True] * added_prefix + curr_mask
                 size = added_prefix + size
                 seq_len += added_prefix
-
-        x_buffer.extend(x[cur_pos : cur_pos + n_missing])
-        y_buffer.extend(y[cur_pos : cur_pos + n_missing])
+                
+            x_buffer.extend(x[cur_pos : cur_pos + n_missing])
+            y_buffer.extend([x[cur_pos]] + y[cur_pos: cur_pos + n_missing])
+                
         mask_buffer.extend(curr_mask)
         if not adapt_seq_len:
             n_missing -= size
