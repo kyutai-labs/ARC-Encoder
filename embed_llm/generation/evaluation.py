@@ -29,6 +29,7 @@ EVAL_DATA_PATH = {
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",
     "HotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl",
     "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",
+    "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",
 }
 
 METRIC_EVALUATION = {
@@ -36,6 +37,7 @@ METRIC_EVALUATION = {
     "TRIVIAQA": get_em,
     "HotpotQA": get_em,
     "SQUAD": get_em,
+    "FullWikiHotpotQA": get_em,  
 }
 
 
@@ -45,6 +47,13 @@ TRAD_DATA_PATH = {
     "French": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/fra_Latn.jsonl",
     "German": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/deu_Latn.jsonl",
     "Danish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/dan_Latn.jsonl",
+}
+
+EUROPARL_TRAD_DATA_PATH = {
+    "Spanish": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_es.jsonl",
+    "French": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_fr.jsonl",
+    "German": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_de.jsonl",
+    "Danish": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_da.jsonl",
 }
 
 logger = logging.getLogger(__name__)
@@ -562,6 +571,7 @@ def evaluate_trad(
     shorter_icl: bool = False,  # If True, use shorter ICL examples
     compressed_doc_in_icl: bool = False,  # Not used for translation
     new_template: bool = True,  # If True, use the old template for translation (without "Document:" prefix)
+    europarl: bool = False,  # If True, use Europarl dataset instead of Flores
 ):
     # Loading model
     llm_name = llm_path.split("/")[-1]
@@ -605,21 +615,34 @@ def evaluate_trad(
         benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
     ):
         metrics[benchmark] = {}
-        eval_data = TRAD_DATA_PATH[benchmark]
+        if not europarl:
+            eval_data = TRAD_DATA_PATH[benchmark]
 
-        text = []
-        traduction = []
+            text = []
+            traduction = []
 
-        with open(TRAD_DATA_PATH["English"], "r") as f:
-            for line in f:
-                data = json.loads(line)
-                text.append(data["text"].strip())
-                # Take the first ranked retrieved passage
-        with open(eval_data, "r") as f:
-            for line in f:
-                data = json.loads(line)
-                traduction.append(data["text"].strip())
-                # Take the first ranked retrieved passage
+            with open(TRAD_DATA_PATH["English"], "r") as f:
+                for line in f:
+                    data = json.loads(line)
+                    text.append(data["text"].strip())
+
+            with open(eval_data, "r") as f:
+                for line in f:
+                    data = json.loads(line)
+                    traduction.append(data["text"].strip())
+
+        else:
+            eval_data = EUROPARL_TRAD_DATA_PATH[benchmark]
+
+            text = []
+            traduction = []
+
+            with open(eval_data, "r") as f:
+                for line in f:
+                    data = json.loads(line)
+                    traduction.append(data["answer"].strip())
+                    text.append(data["passage"].strip())
+
         c = list(zip(text, traduction))
 
         # fixed_random = random.Random()
@@ -671,7 +694,7 @@ def evaluate_trad(
                 text_prompt_prefix = [
                     "\n\n".join(
                         [
-                            f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}\nAnswer: {answ}"
+                            f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ}"
                             for doc, answ, _ in generate_exs
                         ]
                     )
@@ -682,18 +705,18 @@ def evaluate_trad(
                 for doc, answ, _ in zip(text, traduction, range(4)):
                     embed_prompt.append(doc.strip())
                     text_prompt_prefix.append(
-                        f"\nQuestion: Translate the previous document into {benchmark}\nAnswer: {answ.strip()}\n\nDocument: "
+                        f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}\n\nDocument: "
                     )
                 embed_prompt.append(text[4].strip())
                 text_prompt_prefix.append(
-                    f"\nQuestion: Translate the previous document into {benchmark}\nAnswer: {traduction[4].strip()}\n\nDocument: "
+                    f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {traduction[4].strip()}\n\nDocument: "
                 )
 
             else:
                 text_prompt_prefix = [
                     "\n\n".join(
                         [
-                            f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}\nAnswer: {answ.strip()}"
+                            f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}"
                             for doc, answ, _ in zip(text, traduction, range(5))
                         ]
                     )
@@ -725,7 +748,7 @@ def evaluate_trad(
                 else:
                     batch_list_prompts = [
                         text_prompt_prefix + [
-                            f"\nQuestion: Translate the previous document into {benchmark}\nAnswer:"
+                            f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer:"
                         ]
                         for _ in range(bs)
                     ]
@@ -766,7 +789,7 @@ def evaluate_trad(
                     else:
                         prompts = [
                             "".join(text_prompt_prefix)
-                            + f"\nQuestion: Translate this document in {benchmark}\nAnswer: {seq}"
+                            + f"\nQuestion: Translate this document in {benchmark}.\nAnswer: {seq}"
                             for seq in text[i : i + bs]
                         ]
 
@@ -804,7 +827,8 @@ def evaluate_trad(
                 "Metric": bleu_score,
                 "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                 "language": benchmark,
-                "fine_tuned": fine_tuned,
+                "new_template": new_template,
+                "compressed_icl": compressed_doc_in_icl,
                 "llm_name": llm_name,
             }
 
@@ -892,6 +916,7 @@ def arg_parser():
     parser.add_argument("--bridge_ckpt", type=str, default=None)
     parser.add_argument("--shorter_icl", action="store_true")
     parser.add_argument("--new_template", action="store_true")
+    parser.add_argument("--europarl", action="store_true")
 
     return parser.parse_args()
 
@@ -951,6 +976,7 @@ if __name__ == "__main__":
                 else ["Danish", "French", "Spanish", "German"],
                 shorter_icl=args.shorter_icl,
                 new_template=args.new_template,
+                europarl=args.europarl,
             )
             torch.cuda.empty_cache()
 
@@ -1065,6 +1091,7 @@ if __name__ == "__main__":
                 shorter_icl=args.shorter_icl,
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
                 new_template=args.new_template,
+                europarl=args.europarl,
             )
             torch.cuda.empty_cache()
         else:

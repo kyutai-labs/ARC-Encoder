@@ -121,9 +121,8 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                             "Metric": result["Metric"],
                                             "n_samples": result["n_samples"],
                                             "language": result["language"],
-                                            "fine_tuned": result.get(
-                                                "fine_tuned", True
-                                            ),
+                                            "new_template": result.get("new_template", False),
+                                            "compressed_icl": result.get("compressed_icl", False),
                                             "compress_ratio": result.get(
                                                 "compress_ratio", None
                                             ),
@@ -141,7 +140,8 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                             "temp",
                             "n_samples",
                             "language",
-                            "fine_tuned",
+                            "new_template",
+                            "compressed_icl",
                             "compress_ratio",
                             "llm_name",
                         ]

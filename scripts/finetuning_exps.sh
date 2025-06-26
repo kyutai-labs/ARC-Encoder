@@ -1,13 +1,13 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0
+#SBATCH --array=0-2
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
-#SBATCH --job-name=fine_tuning_models
+#SBATCH --job-name=ft_synth_data
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
 
 
@@ -15,11 +15,13 @@
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 CONFIG_FILES=(
+config/experiments/datasets/CP4_L3B_MLP2_M7B_20rec_ft_interleaved_mixts.yaml 
+config/experiments/datasets/CP4_L3B_MLP2_M7B_20rec_ft_interleaved_mixtQA.yaml 
+config/experiments/datasets/CP4_L3B_MLP2_M7B_20rec_ft_interleaved_mixall.yaml
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_M7B_20rec_interleaved_ftsquad_fullloss.yaml 
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_M7B_20rec_interleaved_ftsquad.yaml 
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_L8B_20rec_interleaved_ftsquad.yaml 
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_L8B_20rec_interleaved_ftsquad_fullloss.yaml
-config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_5rec_ftsquad.yaml 
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_M7B_20rec_notcausal_ftsquad.yaml
 )
 
@@ -63,7 +65,15 @@ case $RUN_NAME in
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad    --llm_name mistral_7B --embed_name Llama3.2-3B 
+        --n_passages 500 --run_name $RUN_NAME --eval_trad    --llm_name mistral_7B --embed_name Llama3.2-3B --compressed_doc_in_icl --new_template
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad    --llm_name mistral_7B --embed_name Llama3.2-3B --compressed_doc_in_icl --benchmark "French" 
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad    --llm_name mistral_7B --embed_name Llama3.2-3B --benchmark "French" 
     ;;
 
 *MLP2_L8B_*_interleaved*)
