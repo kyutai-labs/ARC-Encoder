@@ -92,8 +92,9 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "language",
             "Bleu",
             "compress_ratio",
-            "fine_tuned",
-            "llm_name"
+            "new_template",
+            "llm_name",
+            "compressed_icl",
         ]
     else:
         raise ValueError("Invalid benchmark")
