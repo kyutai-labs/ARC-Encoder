@@ -652,7 +652,7 @@ def load_pipeline(
                 else (bridge_ckpt if isinstance(bridge_ckpt, str) else None),
                 llm_type=llm_type,
                 embed_type=embed_type,
-                llm_number=0,
+                llm_number=llm_number,
             )
 
             ckpt = int(last_ckpt.split("_")[-1])

@@ -10,6 +10,8 @@ from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 from mistral_inference.generate import generate
 from mistral_inference.transformer import Transformer
 from tqdm import tqdm, trange
+import sys
+sys.path.insert(0, "/home/hippolytepilchen/code/mix_decoder_training")
 
 from embed_llm.generation.metrics import (  # noqa: E402
     get_approx_em,
@@ -208,6 +210,7 @@ def evaluate_QA(
         bridge_ckpt=bridge_ckpt,
         llm_type="llama" if "llama" in llm_path.lower() else "mistral",
         embed_type="llama" if "llama" in embed_path.lower() else "mistral",
+        llm_number=llm_number,
     )
     if mistral:
         mistral_tokenizer = MistralTokenizer.from_file(
@@ -589,6 +592,7 @@ def evaluate_trad(
         bridge_ckpt=bridge_ckpt,
         llm_type="llama" if "llama" in llm_path.lower() else "mistral",
         embed_type="llama" if "llama" in embed_path.lower() else "mistral",
+        llm_number=llm_number,
     )
 
     if mistral:
@@ -1009,7 +1013,7 @@ if __name__ == "__main__":
                 bridge_ckpt=args.bridge_ckpt
                 if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
                 else False,
-                llm_number=args.llm_number,
+                llm_number=args.llm_number - 1,
                 shorter_icl=args.shorter_icl,
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
             )
@@ -1038,7 +1042,7 @@ if __name__ == "__main__":
                 bridge_ckpt=args.bridge_ckpt
                 if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
                 else False,
-                llm_number=args.llm_number,
+                llm_number=args.llm_number - 1,
                 shorter_icl=args.shorter_icl,
             )
 
@@ -1068,6 +1072,6 @@ if __name__ == "__main__":
                     if args.bridge_ckpt is None
                     or "false" not in args.bridge_ckpt.lower()
                     else False,
-                    llm_number=args.llm_number,
+                    llm_number=args.llm_number - 1,
                     shorter_icl=args.shorter_icl,
                 )

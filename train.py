@@ -593,47 +593,47 @@ def _train(
                 y = torch.tensor(new_y).cuda(non_blocking=True)
                 y_mask = torch.tensor(new_mask).cuda(non_blocking=True)
 
-            if get_rank() == 0:
-                # to_gen = [int(tok) for tok in batch.x[: batch.sizes[0]]]
-                # print("To generate", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
-                print("Batch data type", batch.data_type, 'LLM number', llm_number)
-                ind_toks = sum(seqlens[:2])
-                print("Insert cat embedds", insert_cat_embedds)
-                # for j, insert_idx in enumerate(insert_cat_embedds[2]):
-                #     print(
-                #         "TEXT",
-                #         pipeline.llm_tokenizer[llm_number].tokenizer.decode(
-                #             x[ind_toks : ind_toks + insert_idx].tolist()
-                #         ),
-                #     )
-                #     print("CONTEXT", batch.to_embed[2]["text"][j])
-                #     ind_toks += insert_idx
-                # print(
-                #     "TEXT",
-                #     pipeline.llm_tokenizer[llm_number].tokenizer.decode(
-                #         x[ind_toks : sum(seqlens[:3])].tolist()
-                #     ),
-                # )
+            # if get_rank() == 0:
+            #     # to_gen = [int(tok) for tok in batch.x[: batch.sizes[0]]]
+            #     # print("To generate", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
+            #     print("Batch data type", batch.data_type, 'LLM number', llm_number)
+            #     ind_toks = sum(seqlens[:2])
+            #     print("Insert cat embedds", insert_cat_embedds)
+            #     # for j, insert_idx in enumerate(insert_cat_embedds[2]):
+            #     #     print(
+            #     #         "TEXT",
+            #     #         pipeline.llm_tokenizer[llm_number].tokenizer.decode(
+            #     #             x[ind_toks : ind_toks + insert_idx].tolist()
+            #     #         ),
+            #     #     )
+            #     #     print("CONTEXT", batch.to_embed[2]["text"][j])
+            #     #     ind_toks += insert_idx
+            #     # print(
+            #     #     "TEXT",
+            #     #     pipeline.llm_tokenizer[llm_number].tokenizer.decode(
+            #     #         x[ind_toks : sum(seqlens[:3])].tolist()
+            #     #     ),
+            #     # )
                 
-                # print('With Mask')
-                # print_w_mask(input_ids=x[sum(seqlens[:2]) : sum(seqlens[:3])].tolist(),
-                #                 tokenizer=pipeline.llm_tokenizer[llm_number].tokenizer,
-                #                 mask=None if y_mask is None else y_mask[sum(seqlens[:2]) : sum(seqlens[:3])])
-                # # # target = [int(tok) for tok in batch.y]
-                # # embed = [int(toks) for tokens in batch.to_embed[0]["tokens"] for toks in tokens]
-                # # # continuation = [
-                # # #     int(tok)
-                # # #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
-                # # # ]
-                # # print("Beginning", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
-                # # print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
-                # # # print('embedding tokens', batch.to_embed[13]["tokens"])
-                # # # print('embed', batch.to_embed[13]["text"])
-                # # # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))
-                # # # print('X len', len(batch.x))
-                # # # print("Sizes", batch.sizes)
-                # # # print("Embed seqlens", embed_seqlens)
-                # print('Insert cat embedds', insert_cat_embedds)
+            #     # print('With Mask')
+            #     # print_w_mask(input_ids=x[sum(seqlens[:2]) : sum(seqlens[:3])].tolist(),
+            #     #                 tokenizer=pipeline.llm_tokenizer[llm_number].tokenizer,
+            #     #                 mask=None if y_mask is None else y_mask[sum(seqlens[:2]) : sum(seqlens[:3])])
+            #     # # # target = [int(tok) for tok in batch.y]
+            #     # # embed = [int(toks) for tokens in batch.to_embed[0]["tokens"] for toks in tokens]
+            #     # # # continuation = [
+            #     # # #     int(tok)
+            #     # # #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
+            #     # # # ]
+            #     # # print("Beginning", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
+            #     # # print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
+            #     # # # print('embedding tokens', batch.to_embed[13]["tokens"])
+            #     # # # print('embed', batch.to_embed[13]["text"])
+            #     # # # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))
+            #     # # # print('X len', len(batch.x))
+            #     # # # print("Sizes", batch.sizes)
+            #     # # # print("Embed seqlens", embed_seqlens)
+            #     # print('Insert cat embedds', insert_cat_embedds)
 
             output = model.forward(
                 x=x,
