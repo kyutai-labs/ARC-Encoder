@@ -29,9 +29,8 @@ config/experiments/heavier_pt/CP16_L8B_to_mistral_5rec.yaml
 config/experiments/heavier_pt/CPtrue8memtoks_L3B_MLP2_M7B_20rec_v2.yaml
 config/experiments/heavier_pt/CPtrue16_L8B_MLP2_M7B_20rec_v2.yaml
 config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_5rec.yaml
-config/experiments/heavier_pt/CP8_L3B_MLP2_M7B_20rec_notcausal.yaml
+config/experiments/heavier_pt/CP8_L3B_MLP2_M7B_20rec_notcausal_cont.yaml
 )
-
 
 
 # Get the specific config file for this array task

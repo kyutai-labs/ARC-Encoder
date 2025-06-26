@@ -561,6 +561,7 @@ def evaluate_trad(
     | None = None,  # Path to the bridge checkpoint if using a bridge model
     shorter_icl: bool = False,  # If True, use shorter ICL examples
     compressed_doc_in_icl: bool = False,  # Not used for translation
+    new_template: bool = True,  # If True, use the old template for translation (without "Document:" prefix)
 ):
     # Loading model
     llm_name = llm_path.split("/")[-1]
@@ -627,41 +628,76 @@ def evaluate_trad(
         random.shuffle(c, random=lambda: seed)
         text, traduction = zip(*c)
         embed_prompt = []
-        if shorter_icl:
-            generate_exs = list(zip(text, traduction, range(5)))
-            generate_exs.sort(key=lambda arg: len(arg[0]), reverse=True)
+        if not new_template:
+            if shorter_icl:
+                generate_exs = list(zip(text, traduction, range(5)))
+                generate_exs.sort(key=lambda arg: len(arg[0]), reverse=True)
 
-            text_prompt_prefix = [
-                "\n\n".join(
-                    [
-                        f"Document: {doc}\nTranslation: {answ}"
-                        for doc, answ, _ in generate_exs
-                    ]
-                )
-            ]
+                text_prompt_prefix = [
+                    "\n\n".join(
+                        [
+                            f"Document: {doc}\nTranslation: {answ}"
+                            for doc, answ, _ in generate_exs
+                        ]
+                    )
+                ]
 
-        elif compressed_doc_in_icl:
-            text_prompt_prefix = ["Document: "]
-            for doc, answ, _ in zip(text, traduction, range(4)):
-                embed_prompt.append(doc.strip())
+            elif compressed_doc_in_icl:
+                text_prompt_prefix = ["Document: "]
+                for doc, answ, _ in zip(text, traduction, range(4)):
+                    embed_prompt.append(doc.strip())
+                    text_prompt_prefix.append(
+                        f"\nTranslation: {answ.strip()}\n\nDocument: "
+                    )
+                embed_prompt.append(text[4].strip())
                 text_prompt_prefix.append(
-                    f"\nTranslation: {answ.strip()}\n\nDocument: "
+                    f"\nTranslation: {traduction[4].strip()}\n\nDocument: "
                 )
-            embed_prompt.append(text[4].strip())
-            text_prompt_prefix.append(
-                f"\nTranslation: {traduction[4].strip()}\n\nDocument: "
-            )
 
+            else:
+                text_prompt_prefix = [
+                    "\n\n".join(
+                        [
+                            f"Document: {doc}\nTranslation: {answ}"
+                            for doc, answ, _ in zip(text, traduction, range(5))
+                        ]
+                    )
+                ]
         else:
-            text_prompt_prefix = [
-                "\n\n".join(
-                    [
-                        f"Document: {doc}\nTranslation: {answ}"
-                        for doc, answ, _ in zip(text, traduction, range(5))
-                    ]
-                )
-            ]
+            if shorter_icl:
+                generate_exs = list(zip(text, traduction, range(5)))
+                generate_exs.sort(key=lambda arg: len(arg[0]), reverse=True)
 
+                text_prompt_prefix = [
+                    "\n\n".join(
+                        [
+                            f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}\nAnswer: {answ}"
+                            for doc, answ, _ in generate_exs
+                        ]
+                    )
+                ]
+
+            elif compressed_doc_in_icl:
+                text_prompt_prefix = ["Document: "]
+                for doc, answ, _ in zip(text, traduction, range(4)):
+                    embed_prompt.append(doc.strip())
+                    text_prompt_prefix.append(
+                        f"\nQuestion: Translate the previous document into {benchmark}\nAnswer: {answ.strip()}\n\nDocument: "
+                    )
+                embed_prompt.append(text[4].strip())
+                text_prompt_prefix.append(
+                    f"\nQuestion: Translate the previous document into {benchmark}\nAnswer: {traduction[4].strip()}\n\nDocument: "
+                )
+
+            else:
+                text_prompt_prefix = [
+                    "\n\n".join(
+                        [
+                            f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}\nAnswer: {answ.strip()}"
+                            for doc, answ, _ in zip(text, traduction, range(5))
+                        ]
+                    )
+                ]
         if shorter_icl:
             pass
         new_text, new_trad = (
@@ -682,9 +718,17 @@ def evaluate_trad(
                 batch_list_prompts = []
                 bs = min(max_bs, n_samples - i)
 
-                batch_list_prompts = [
-                    text_prompt_prefix + ["\nTranslation:"] for _ in range(bs)
-                ]
+                if not new_template:
+                    batch_list_prompts = [
+                        text_prompt_prefix + ["\nTranslation:"] for _ in range(bs)
+                    ]
+                else:
+                    batch_list_prompts = [
+                        text_prompt_prefix + [
+                            f"\nQuestion: Translate the previous document into {benchmark}\nAnswer:"
+                        ]
+                        for _ in range(bs)
+                    ]
 
                 texts_to_embed = [embed_prompt + [seq] for seq in text[i : i + bs]]
 
@@ -714,10 +758,17 @@ def evaluate_trad(
                             final_seq.append(seq.strip())
                     generated_sequences.extend(final_seq)
                 else:
-                    prompts = [
-                        "".join(text_prompt_prefix) + seq + "\nTranslation:"
-                        for seq in text[i : i + bs]
-                    ]
+                    if not new_template:
+                        prompts = [
+                            "".join(text_prompt_prefix) + seq + "\nTranslation:"
+                            for seq in text[i : i + bs]
+                        ]
+                    else:
+                        prompts = [
+                            "".join(text_prompt_prefix)
+                            + f"\nQuestion: Translate this document in {benchmark}\nAnswer: {seq}"
+                            for seq in text[i : i + bs]
+                        ]
 
                     prompt_tokens = [
                         mistral_tokenizer.encode(prompt, bos=True, eos=False)
@@ -840,6 +891,7 @@ def arg_parser():
     parser.add_argument("--query_w_context", action="store_true")
     parser.add_argument("--bridge_ckpt", type=str, default=None)
     parser.add_argument("--shorter_icl", action="store_true")
+    parser.add_argument("--new_template", action="store_true")
 
     return parser.parse_args()
 
@@ -898,6 +950,7 @@ if __name__ == "__main__":
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],
                 shorter_icl=args.shorter_icl,
+                new_template=args.new_template,
             )
             torch.cuda.empty_cache()
 
@@ -1011,6 +1064,7 @@ if __name__ == "__main__":
                 else False,
                 shorter_icl=args.shorter_icl,
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
+                new_template=args.new_template,
             )
             torch.cuda.empty_cache()
         else:

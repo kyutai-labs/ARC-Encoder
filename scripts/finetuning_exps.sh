@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=1
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -19,7 +19,7 @@ CONFIG_FILES=(
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_M7B_20rec_interleaved_ftsquad.yaml 
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_L8B_20rec_interleaved_ftsquad.yaml 
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_L8B_20rec_interleaved_ftsquad_fullloss.yaml
-# config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_5rec_ftsquad.yaml 
+config/experiments/heavier_pt/ft/CPtrue16_L3B_MLP2_M7B_5rec_ftsquad.yaml 
 # config/experiments/heavier_pt/ft/CP8_L3B_MLP2_M7B_20rec_notcausal_ftsquad.yaml
 )
 
