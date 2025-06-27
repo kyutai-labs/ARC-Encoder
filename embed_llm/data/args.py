@@ -33,6 +33,7 @@ class DataArgs(Serializable):
     rec_seq_len_factor: float = 1.0  # If > 1.0, the seqlen will be increased for reconstruction and it will shorten continuation (fixed seqlen for embedding but shorter text to continue)
     few_shot: int = 0
     prefix: str | None = None  # If set, the prefix will be prepended to each datapath.
+    sep_passages: bool = False  # If True, passages will be separated by a special token in the input sequence.
 
     def __post_init__(self) -> None:
         if self.prefix is not None:

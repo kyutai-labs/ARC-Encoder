@@ -52,6 +52,8 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
         or benchmark.lower() == "triviaqa"
         or benchmark.lower() == "hotpotqa"
         or benchmark.lower() == "squad"
+        or benchmark.lower() == "narrativeqa"
+        or benchmark.lower() == "fullwikihotpotqa"
     ):
         key_list = [
             "run_name",
@@ -68,7 +70,8 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "compress_ratio",
             "EM approx_Metric",
             "xRAG metric",
-            "llm_name"
+            "llm_name",
+            'together_mps',
         ]
     elif benchmark.lower() == "factkg":
         key_list = [
@@ -156,6 +159,8 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                 or benchmark.lower() == "triviaqa"
                 or benchmark.lower() == "hotpotqa"
                 or benchmark.lower() == "squad"
+                or benchmark.lower() == "narrativeqa"
+                or benchmark.lower() == "fullwikihotpotqa"
             ):
                 for metric in ["EM", "F1"]:
                     if benchmark not in results[run_name][ckpt].keys():
@@ -200,6 +205,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                     "approx_Metric", None
                                                 ),
                                                 "llm_name": res.get("llm_name", 'mistral_7B'),
+                                                "together_mps": res.get("together_mps", False),
                                             },
                                             index=[0],
                                         ),
@@ -232,6 +238,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                         ),
                                         "n_passages": res.get("n_passages", 1),
                                         "llm_name": res.get("llm_name", 'mistral_7B'),
+                                        "together_mps": res.get("together_mps", False),
                                     },
                                     index=[0],
                                 )
@@ -269,6 +276,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                 "compressed_icl",
                                 "compress_ratio",
                                 "llm_name",
+                                "together_mps",
                             ]
                         )
                         .first()

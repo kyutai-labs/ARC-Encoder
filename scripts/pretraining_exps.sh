@@ -7,7 +7,7 @@
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
-#SBATCH --job-name=rec_heavy_pt
+#SBATCH --job-name=expl_heavy_pt
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
 
 

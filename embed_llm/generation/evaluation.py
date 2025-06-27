@@ -30,6 +30,7 @@ EVAL_DATA_PATH = {
     "HotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl",
     "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",
     "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",
+    "NarrativeQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test.jsonl",
 }
 
 METRIC_EVALUATION = {
@@ -38,6 +39,7 @@ METRIC_EVALUATION = {
     "HotpotQA": get_em,
     "SQUAD": get_em,
     "FullWikiHotpotQA": get_em,  
+    "NarrativeQA": get_em,
 }
 
 
@@ -448,6 +450,7 @@ def evaluate_QA(
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                     "compressed_icl": compressed_doc_in_icl,
                     "llm_name": llm_name,
+                    "together_mp": together_multi_passages,
                 }
                 value_f1 = (
                     sum(
@@ -469,6 +472,7 @@ def evaluate_QA(
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                     "compressed_icl": compressed_doc_in_icl,
                     "llm_name": llm_name,
+                    "together_mp": together_multi_passages,
                 }
 
                 eval_logger_info(
@@ -481,41 +485,10 @@ def evaluate_QA(
                     f"Temperature: {temp}, bench: {benchmark},  EM {value_em}, Approx EM {value_approx}, F1 {value_f1}",
                 )
             else:
-                value = (
-                    sum(
-                        [
-                            metric_max_over_ground_truths(
-                                METRIC_EVALUATION[benchmark], pred, gts
-                            )
-                            for pred, gts in zip(generated_sequences, new_answers)
-                        ]
-                    )
-                    / n_samples
+                raise NotImplementedError(
+                    f"Metric {METRIC_EVALUATION[benchmark]} is not implemented for benchmark {benchmark}"
                 )
-                n_answer_in_context = (
-                    sum(
-                        [
-                            metric_max_over_ground_truths(get_approx_em, cont, gts)
-                            for cont, gts in zip(
-                                list(new_context), new_answers[:n_samples]
-                            )
-                        ]
-                    )
-                    / n_samples
-                )
-                eval_logger_info(logger, f"Temperature: {temp} {benchmark}  {value}")
-
-                metrics[benchmark][str(temp)] = {
-                    "n_samples": n_samples,
-                    "icl_examples": icl_examples,
-                    "Metric": value,
-                    "w_context_in_examples": icl_w_document,
-                    "n_passages": max_multi_passage,
-                    "prop context containing the answer": n_answer_in_context,
-                    "compressed_icl": compressed_doc_in_icl,
-                    "llm_name": llm_name,
-                }
-
+                
     if not is_torchrun() or torch.distributed.get_rank() == 0:
         if run_name is not None:
             with open(
@@ -594,7 +567,6 @@ def evaluate_trad(
     mistral: bool = False,
     seed: float = 0.42,
     comp_rate: int | None = None,
-    fine_tuned: bool = False,
     bridge_ckpt: bool
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
@@ -912,7 +884,6 @@ def arg_parser():
         type=str,
         default="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/",
     )
-    parser.add_argument("--fine_tuned", action="store_true")
     parser.add_argument("--llm_name", type=str, default="mistral_7B")
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--query_w_context", action="store_true")
@@ -972,7 +943,6 @@ if __name__ == "__main__":
                 mistral=True,
                 seed=args.seed,
                 comp_rate=args.comp_rate,
-                fine_tuned=args.fine_tuned,
                 benchmarks=benchmarks
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],
@@ -1078,7 +1048,6 @@ if __name__ == "__main__":
                 mistral=False,
                 seed=args.seed,
                 comp_rate=args.comp_rate,
-                fine_tuned=args.fine_tuned,
                 benchmarks=benchmarks
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],

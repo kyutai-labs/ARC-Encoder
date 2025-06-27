@@ -1,14 +1,14 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-38%8 # Array of jobs, adjust the range based on your config files
+#SBATCH --array=0-28%6 # Array of jobs, adjust the range based on your config files
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
 #SBATCH --job-name=rec_heavy_pt
-#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/pretraining/embed_llm_%A_%a.out
+#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/ablations/embed_llm_%A_%a.out
 
 
 
@@ -17,45 +17,35 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/ablations/ablations_encoder/CP4_L3B_MLP2_M7B_allckpts.yaml
-config/experiments/ablations/ablations_encoder/CP4_L3B_MLP2_M7B_nospecialtoks.yaml
-config/experiments/ablations/ablations_encoder/CP4_L3B_MLP2_M7B_notcausal.yaml
-config/experiments/ablations/ablations_encoder/CP4_L3B_MLP2_M7B_poolmiddle.yaml
-config/experiments/ablations/ablations_encoder/CP4_L3B_MLP2_M7B_poolsecondtolast.yaml
-config/experiments/ablations/ablations_encoder/CP4_L3B_MLP2_M7B_train50.yaml
-config/experiments/ablations/ablations_encoder/CP4_L3B_MLP2_M7B_train75.yaml
-config/experiments/ablations/ablations_encoder/CP4_L3B_MLP2_M7B_trunc1.yaml
-config/experiments/ablations/ablations_encoder/CP4_L3B_MLP2_M7B_trunc21.yaml
-config/experiments/ablations/ablations_pairs/CP4_L3B_MLP2_L8B.yaml
-config/experiments/ablations/ablations_pairs/CP4_L8B_L8B.yaml
-config/experiments/ablations/ablations_pairs/CP4_L8B_MLP2_L8B.yaml
-config/experiments/ablations/ablations_pairs/CP4_L8B_M7B.yaml
-config/experiments/ablations/ablations_pairs/CP4_L8B_MLP2_M7B.yaml
-config/experiments/ablations/ablations_pairs/CP4_M7B_L8B.yaml
-config/experiments/ablations/ablations_pairs/CP4_M7B_M7B.yaml
-config/experiments/ablations/ablations_pairs/CP4_M7B_MLP2_L8B.yaml
-config/experiments/ablations/ablations_pairs/CP4_M7B_MLP2_M7B.yaml
-config/experiments/ablations/ablations_pooling/CP4_L3B_MLP2_M7B_before.yaml
-config/experiments/ablations/ablations_pooling/CP4_L3B_MLP2_M7B_between.yaml
-config/experiments/ablations/ablations_pooling/CP4_L3B_MLP2_M7B_fusion.yaml
-config/experiments/ablations/ablations_pooling/CP4_L3B_MLP2_M7B_kmeans.yaml
-config/experiments/ablations/ablations_pooling/CP4_L3B_MLP2_M7B_last.yaml
-config/experiments/ablations/ablations_pooling/CP4_L3B_MLP2_M7B_memtoks.yaml
-config/experiments/ablations/ablations_pt/CP4_L3B_MLP2_M7B_contonly.yaml
-config/experiments/ablations/ablations_pt/CP4_L3B_MLP2_M7B_reconly.yaml
-config/experiments/ablations/ablations_pt/CP4_L3B_MLP2_M7B_halfcont.yaml
-config/experiments/ablations/ablations_reconstruction/CP8_L3B_MLP2_M7B_20perc.yaml
-config/experiments/ablations/ablations_reconstruction/CP8_L3B_MLP2_M7B_contonly.yaml
-config/experiments/ablations/ablations_reconstruction/CP8_L3B_MLP2_M7B_halfcont.yaml
-config/experiments/ablations/ablations_reconstruction/CP8_L3B_MLP2_M7B_reconly.yaml
-config/experiments/ablations/ablations_reconstruction/CP16_L3B_MLP2_M7B_20perc.yaml
-config/experiments/ablations/ablations_reconstruction/CP16_L3B_MLP2_M7B_contonly.yaml
-config/experiments/ablations/ablations_reconstruction/CP16_L3B_MLP2_M7B_halfcont.yaml
-config/experiments/ablations/ablations_reconstruction/CP16_L3B_MLP2_M7B_reconly.yaml
-config/experiments/ablations/ablations_reconstruction/CP32_L3B_MLP2_M7B_contonly.yaml
-config/experiments/ablations/ablations_reconstruction/CP32_L3B_MLP2_M7B_20perc.yaml
-config/experiments/ablations/ablations_reconstruction/CP32_L3B_MLP2_M7B_halfcont.yaml
-config/experiments/ablations/ablations_reconstruction/CP32_L3B_MLP2_M7B_reconly.yaml
+config/experiments/ablations/CP16_L3B_MLP2_M7B_allckpts_very_long.yaml
+config/experiments/ablations/ablations_mlp/CP8_L3B_MLP32_M7B.yaml 
+config/experiments/ablations/ablations_mlp/CP8_L3B_MLP16_M7B.yaml 
+config/experiments/ablations/ablations_mlp/CP8_L3B_MLP8_M7B.yaml 
+config/experiments/ablations/ablations_mlp/CP8_L3B_MLP4_M7B.yaml
+config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_allckpts.yaml 
+config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_nospecialtoks.yaml 
+config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_notcausal.yaml 
+config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_poolevery1.yaml 
+config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_poolevery2.yaml 
+config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_trunc1.yaml 
+config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_trunc21.yaml
+config/experiments/ablations/ablations_pooling/CP8_L3B_MLP2_M7B_kmeans.yaml 
+config/experiments/ablations/ablations_pooling/CP8_L3B_MLP2_M7B_last.yaml 
+config/experiments/ablations/ablations_pooling/CP8_L3B_MLP2_M7B_memtoks.yaml 
+config/experiments/ablations/ablations_pooling/CP8_L3B_MLP2_M7B_fusion.yaml
+config/experiments/ablations/ablations_pairs/CP8_L3B_MLP2_L8B.yaml 
+config/experiments/ablations/ablations_pairs/CP8_L8B_L8B.yaml 
+config/experiments/ablations/ablations_pairs/CP8_L8B_M7B.yaml 
+config/experiments/ablations/ablations_pairs/CP8_L3B_MLP2_M7B.yaml
+config/experiments/ablations/ablations_reconstruction_cp/CP2_L3B_MLP2_M7B_20perc.yaml 
+config/experiments/ablations/ablations_reconstruction_cp/CP4_L3B_MLP2_M7B_20perc.yaml 
+config/experiments/ablations/ablations_reconstruction_cp/CP8_L3B_MLP2_M7B_contonly.yaml 
+config/experiments/ablations/ablations_reconstruction_cp/CP8_L3B_MLP2_M7B_halfcont.yaml 
+config/experiments/ablations/ablations_reconstruction_cp/CP8_L3B_MLP2_M7B_reconly.yaml 
+config/experiments/ablations/ablations_reconstruction_cp/CP16_L3B_MLP2_M7B_20perc.yaml 
+config/experiments/ablations/ablations_reconstruction_cp/CP32_L3B_MLP2_M7B_20perc.yaml
+config/experiments/ablations/ablations_pairs/CP8_M7B_L8B.yaml 
+config/experiments/ablations/ablations_pairs/CP8_M7B_M7B.yaml
 )
 
 
