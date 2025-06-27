@@ -15,7 +15,7 @@ class OptimArgs(Serializable):
     initial_lr: float = 0
     final_lr: float = 1e-5
     max_lr_projector: float | None = None
-    
+
     def __post_init__(self) -> None:
         if self.max_lr_projector is None:
             self.max_lr_projector = self.max_lr
@@ -101,7 +101,7 @@ class TrainArgs(Serializable):
 
     # LoRA
     lora_embedder: LoraArgs = field(default_factory=LoraArgs)
-    
+
     # Pretrained embedder to use off the shelf
     pipeline: EmbedAugArgs = field(default_factory=EmbedAugArgs)
     loss_args: LossArgs = field(default_factory=LossArgs)
@@ -137,18 +137,16 @@ class TrainArgs(Serializable):
 
         assert self.num_ckpt_keep is None or self.num_ckpt_keep >= 1
 
-
-
         if self.embedder_path is not None:
             Path(self.embedder_path).exists()
 
         if self.continuation < 1 and self.data.n_times_sl_insertion > 0:
             print("For reconstruction training, no text inserted before embeddings")
-            
-        if len(self.llm_paths)>1:
+
+        if len(self.llm_paths) > 1:
             assert len(self.llm_paths) == len(self.llm_types), (
                 "If multiple LLMs are used, the number of paths and types must match."
-            ) 
+            )
             assert len(self.llm_paths) == len(self.prob_forward), (
                 "If multiple LLMs are used, the number of paths and prob_forward must match."
             )

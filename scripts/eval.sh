@@ -57,6 +57,13 @@ case $RUN_NAME in
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_debug_ft.json  \
         --n_passages 500  --eval_trad --run_name $RUN_NAME   --embed_name Llama3.2-3B   --llm_number 2
 
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_debug_ft.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 1 --llm_name Llama3.1-8B
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_debug_ft.json  \
+        --n_passages 500  --eval_trad --run_name $RUN_NAME   --embed_name Llama3.2-3B   --llm_number 1 --llm_name Llama3.1-8B
     ;;
 
 

@@ -49,7 +49,7 @@ class EmbedAugModel(nn.Module):
                             in_dim=pipeline_args.bridge_module.in_dim,
                             out_dim=pipeline_args.bridge_module.out_dim,
                             hidden_dim=pipeline_args.bridge_module.hidden_dim,
-                            type='mlp',
+                            type="mlp",
                         )
                         for _ in range(len(llms))
                     ]
@@ -73,7 +73,6 @@ class EmbedAugModel(nn.Module):
         llm_number: int = 0,
     ) -> torch.Tensor:
         if embeddings is not None:
-
             embeddings, embed_seqlens = self.embedder.forward_embedder(
                 input_ids=embeddings,
                 seqlens=sum(embed_seqlens, []),
@@ -89,10 +88,14 @@ class EmbedAugModel(nn.Module):
                 and (batch_type == "continuation" or batch_type == "instruct")
             ):
                 special_tok = (
-                    self.embedder.rec_tok[llm_number](torch.tensor([0]).to(embeddings.device))
+                    self.embedder.rec_tok[llm_number](
+                        torch.tensor([0]).to(embeddings.device)
+                    )
                     if self.embedder.rec_tok is not None
                     and batch_type == "reconstruction"
-                    else self.embedder.cont_tok[llm_number](torch.tensor([0]).to(embeddings.device))
+                    else self.embedder.cont_tok[llm_number](
+                        torch.tensor([0]).to(embeddings.device)
+                    )
                 )
                 new_embeddings = torch.zeros(
                     (
@@ -124,13 +127,11 @@ class EmbedAugModel(nn.Module):
                 embeddings = new_embeddings.clone()
 
             if self.bridge_module is not None:
-                if isinstance(
-                    self.bridge_module, ModuleList
-                ):
+                if isinstance(self.bridge_module, ModuleList):
                     embeddings = self.bridge_module[llm_number](embeddings)
                 else:
                     embeddings = self.bridge_module(embeddings)
-        
+
         return self.llms[llm_number].forward(
             input_ids=x,
             seqlens=seqlens,
@@ -138,7 +139,6 @@ class EmbedAugModel(nn.Module):
             cat_embeddings=embeddings,
             insert_cat_embedds=insert_cat_embedds,
         )
-
 
 
 class EmbedAugPipeline(nn.Module):
@@ -235,7 +235,6 @@ class EmbedAugPipeline(nn.Module):
             args_type=llm_type,
         )
 
-
         llm, llm_tokenizer = load_model(
             llm_args=llm_args,
             pipeline_args=pipeline_args,
@@ -245,12 +244,12 @@ class EmbedAugPipeline(nn.Module):
             parll=is_torchrun(),
             llm_type=llm_type,
             embed_type=embed_type,
+            number_of_llm=1,
         )
         logger.info("Loading LLM from")
-  
+
         llm = llm.to(device)
         llm.eval()
-
 
         llm_args.lora = lora_embedder
 
@@ -298,30 +297,35 @@ class EmbedAugPipeline(nn.Module):
                 else Path(train_args["from_ckpt"]["embedder_path"])
             )
             logger.info("Loading embedder trained layers")
-            trained_layers_state_dict = load_state_dict(embed_path, dtype=param_dtype)
+            embed_layers_state_dict = load_state_dict(embed_path, dtype=param_dtype)
             assert all(
                 [
                     k in llm_embedder.state_dict()
-                    for k in trained_layers_state_dict.keys()
+                    for k in embed_layers_state_dict.keys()
                     if "rec_tok" not in k
+                    and "cont_tok" not in k
+                    and "mem_embeddings" not in k
                 ]
             ), (
-                f"Ckpt state dict keys do not match model keys. Missing keys: {set(trained_layers_state_dict.keys()) - set(llm_embedder.state_dict().keys())}"
+                f"Ckpt state dict keys do not match model keys. Missing keys: {set(embed_layers_state_dict.keys()) - set(llm_embedder.state_dict().keys())}"
             )
             trained_layers_state_dict = {
                 k: v
-                for k, v in trained_layers_state_dict.items()
-                if 'rec_tok' not in k and 'cont_tok' not in k and 'mem_embeddings' not in k
+                for k, v in embed_layers_state_dict.items()
+                if "rec_tok" not in k
+                and "cont_tok" not in k
+                and "mem_embeddings" not in k
             }
-            
-            trained_layers_state_dict = {
+
+            supp_toks_layers_state_dict = {
                 k.replace(str(llm_number), "0"): v
-                for k, v in trained_layers_state_dict.items() if llm_number in k and ('rec_tok' in k or 'cont_tok' in k)
-            } | trained_layers_state_dict
-            
-            
+                for k, v in embed_layers_state_dict.items()
+                if str(llm_number) in k
+                and ("rec_tok" in k or "cont_tok" in k or "mem_embeddings" in k)
+            }
+
             llm_embedder.load_state_dict(
-                trained_layers_state_dict,
+                trained_layers_state_dict | supp_toks_layers_state_dict,
                 strict=False,
                 assign=(
                     pipeline_args.embedder_params.memory_tokens > 0
@@ -330,16 +334,19 @@ class EmbedAugPipeline(nn.Module):
                 ),
             )
 
-            if (
-                train_args.get("freeze_embedder", False)
-                and (pipeline_args.embedder_params.rec_tok or pipeline_args.embedder_params.cont_tok or pipeline_args.embedder_params.memory_tokens > 0)
+            if train_args.get("freeze_embedder", False) and (
+                pipeline_args.embedder_params.rec_tok
+                or pipeline_args.embedder_params.cont_tok
+                or pipeline_args.embedder_params.memory_tokens > 0
             ):
                 embed_path = Path(ckpt_path + "/embedder")
                 supp_tok_state_dict = load_state_dict(embed_path, dtype=param_dtype)
                 supp_tok_state_dict = {
-                k.replace(str(llm_number), "0"): v
-                for k, v in supp_tok_state_dict.items() if llm_number in k and ('rec_tok' in k or 'cont_tok' in k or 'mem_embeddings' in k)
-            }
+                    k.replace(str(llm_number), "0"): v
+                    for k, v in supp_tok_state_dict.items()
+                    if str(llm_number) in k
+                    and ("rec_tok" in k or "cont_tok" in k or "mem_embeddings" in k)
+                }
                 llm_embedder.load_state_dict(
                     supp_tok_state_dict, strict=False, assign=True
                 )
@@ -357,10 +364,9 @@ class EmbedAugPipeline(nn.Module):
             embedding_model=llm_embedder,
             llm_tokenizer=[Tokenizer(tokenizer=llm_tokenizer, model_name=llm_type)],
             embed_tokenizer=Tokenizer(tokenizer=embed_tokenizer, model_name=embed_type),
-            ) 
+        )
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llms=[llm]))
-
         if (
             pipeline_args.bridge_module.bridge_type is not None
             and bridge_ckpt_path is not None
@@ -369,8 +375,17 @@ class EmbedAugPipeline(nn.Module):
                 f"Loading bridge module from {bridge_ckpt_path} with dtype {param_dtype}"
             )
             state_dict = load_state_dict(Path(bridge_ckpt_path), dtype=param_dtype)
-
-            augmented_pipeline.model.bridge_module.load_state_dict(state_dict)
+            state_dict = {
+                "0." + ".".join(k.split(".")[1:]): v
+                for k, v in state_dict.items()
+                if str(llm_number) in k.split(".")[0]
+            }
+            augmented_pipeline.model.bridge_module.load_state_dict(
+                state_dict, strict=False
+            )
+            augmented_pipeline.model.bridge_module = (
+                augmented_pipeline.model.bridge_module.to(device)
+            )
         else:
             logger.info(
                 "No bridge module or no checkpoint provided, skipping loading bridge module"
@@ -396,7 +411,6 @@ class EmbedAugPipeline(nn.Module):
         truncate_line: bool = False,
         device_generation: str | None = None,
         give_n_tokens: bool = False,
-        llm_number: int = 0,
         **kwargs,
     ):
         """
@@ -463,7 +477,7 @@ class EmbedAugPipeline(nn.Module):
             )
 
             embeddings, embed_seqlens = self.model.embedder.forward_embedder(
-                input_ids=x, seqlens=sum(seqlens, []), llm_number=llm_number
+                input_ids=x, seqlens=sum(seqlens, []), llm_number=0
             )
             embed_seqlens = group_embed_seqlens(
                 embed_seqlens, [len(l_text) for l_text in text_to_embed]
@@ -501,13 +515,10 @@ class EmbedAugPipeline(nn.Module):
                 embeddings = new_embeddings.clone()
 
             if self.model.bridge_module is not None:
-                if isinstance(
-                    self.model.bridge_module, nn.ModuleList
-                ):
-                    embeddings = self.model.bridge_module[llm_number](embeddings)
+                if isinstance(self.model.bridge_module, nn.ModuleList):
+                    embeddings = self.model.bridge_module[0](embeddings)
                 else:
                     embeddings = self.model.bridge_module(embeddings)
-
 
         else:
             embeddings = None
@@ -559,9 +570,13 @@ class EmbedAugPipeline(nn.Module):
             else:
                 prompt = "".join(l_prompts)
                 encoded_prompt.append(
-                    [self.llm_tokenizer[0].tokenizer.encode(prompt, bos=True, eos=False)]
+                    [
+                        self.llm_tokenizer[0].tokenizer.encode(
+                            prompt, bos=True, eos=False
+                        )
+                    ]
                 )
-        eos_id = self.llm_tokenizer.tokenizer.eos_id
+        eos_id = self.llm_tokenizer[0].tokenizer.eos_id
 
         generated_tokens = transformer_generate(
             prompt_tokens=encoded_prompt,

@@ -50,7 +50,6 @@ from embed_llm.training.utils import (
     TrainState,
     logged_closing,
     set_random_seed,
-    print_w_mask,
 )
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
@@ -425,22 +424,24 @@ def _train(
                 new_mask = []
                 new_seqlens = []
                 new_insert_cat_embedds = []
- 
+
                 for j, size in enumerate(seqlens):
-                    
-                    this_seq_toks = (x[sum(seqlens[:j]) : 
-                        sum(seqlens[:j+1])].tolist() 
-                                     + [(y[sum(seqlens[:j]) : 
-                        sum(seqlens[:j+1])][-1]).item()])
+                    this_seq_toks = x[
+                        sum(seqlens[:j]) : sum(seqlens[: j + 1])
+                    ].tolist() + [
+                        (y[sum(seqlens[:j]) : sum(seqlens[: j + 1])][-1]).item()
+                    ]
                     this_seq_new_toks = []
                     this_seq_new_mask = []
                     this_seq_new_insert_ids = []
-                    
+
                     ind = 0
                     sl = 0
 
                     for k, insert_idx in enumerate(insert_cat_embedds[j]):
-                        text = pipeline.llm_tokenizer[0].tokenizer.decode(this_seq_toks[ind : ind + insert_idx])
+                        text = pipeline.llm_tokenizer[0].tokenizer.decode(
+                            this_seq_toks[ind : ind + insert_idx]
+                        )
                         ind += insert_idx
                         if (
                             pipeline.llm_tokenizer[0].model_name == "llama"
@@ -456,9 +457,7 @@ def _train(
                                 new_text = new_text.replace(sp_tok, "")
                             splitted_text = new_text.split("Answer:")
                             if batch.data_type == "instruct" and len(splitted_text) > 1:
-                                q_text = (
-                                    "\n" + splitted_text[0].strip() + "\nAnswer:"
-                                )
+                                q_text = "\n" + splitted_text[0].strip() + "\nAnswer:"
                                 a_text = splitted_text[1].strip()
                                 q_toks = pipeline.llm_tokenizer[
                                     llm_number
@@ -467,10 +466,8 @@ def _train(
                                     llm_number
                                 ].tokenizer.encode(a_text, bos=False, eos=False)
                                 toks = q_toks + a_toks
-                                mask = [False] * len(q_toks) + [True] * len(
-                                    a_toks
-                                )
-                 
+                                mask = [False] * len(q_toks) + [True] * len(a_toks)
+
                             else:
                                 toks = pipeline.llm_tokenizer[
                                     llm_number
@@ -494,9 +491,7 @@ def _train(
                                     llm_number
                                 ].tokenizer.encode(a_text, bos=False, eos=False)
                                 toks = q_toks + a_toks
-                                mask = [False] * len(q_toks) + [True] * len(
-                                    a_toks
-                                )
+                                mask = [False] * len(q_toks) + [True] * len(a_toks)
                             else:
                                 toks = pipeline.llm_tokenizer[
                                     llm_number
@@ -508,9 +503,11 @@ def _train(
                             this_seq_new_toks.extend(toks)
                             this_seq_new_insert_ids.append(len(toks))
                             this_seq_new_mask.extend(mask)
-                            
+
                     if ind < size:
-                        text = pipeline.llm_tokenizer[0].tokenizer.decode(this_seq_toks[ind:])
+                        text = pipeline.llm_tokenizer[0].tokenizer.decode(
+                            this_seq_toks[ind:]
+                        )
                         if (
                             pipeline.llm_tokenizer[0].model_name == "llama"
                             and pipeline.llm_tokenizer[llm_number].model_name
@@ -525,10 +522,7 @@ def _train(
                                 new_text = new_text.replace(sp_tok, "")
                             splitted_text = new_text.split("Answer:")
                             if batch.data_type == "instruct" and len(splitted_text) > 1:
-                            
-                                q_text = (
-                                    "\n" + splitted_text[0].strip() + "\nAnswer:"
-                                )
+                                q_text = "\n" + splitted_text[0].strip() + "\nAnswer:"
                                 a_text = splitted_text[1].strip()
                                 q_toks = pipeline.llm_tokenizer[
                                     llm_number
@@ -537,15 +531,12 @@ def _train(
                                     llm_number
                                 ].tokenizer.encode(a_text, bos=False, eos=True)
                                 toks = q_toks + a_toks
-                                mask = [False] * len(q_toks) + [True] * len(
-                                    a_toks
-                                )
+                                mask = [False] * len(q_toks) + [True] * len(a_toks)
                             else:
                                 toks = pipeline.llm_tokenizer[
                                     llm_number
                                 ].tokenizer.encode(new_text, bos=bos, eos=eos)
                                 mask = [True] * len(toks)
-
 
                         elif (
                             pipeline.llm_tokenizer[0].model_name == "mistral"
@@ -564,20 +555,17 @@ def _train(
                                     llm_number
                                 ].tokenizer.encode(a_text, bos=False, eos=True)
                                 toks = q_toks + a_toks
-                                mask = [False] * len(q_toks) + [True] * len(
-                                    a_toks
-                                )
+                                mask = [False] * len(q_toks) + [True] * len(a_toks)
                             else:
                                 toks = pipeline.llm_tokenizer[
                                     llm_number
                                 ].tokenizer.encode(text, bos=bos, eos=eos)
                                 mask = [True] * len(toks)
-        
-                        sl += len(toks)  
-                        this_seq_new_toks.extend(toks) 
+
+                        sl += len(toks)
+                        this_seq_new_toks.extend(toks)
                         this_seq_new_mask.extend(mask)
 
-                      
                     sl -= 1
                     new_seqlens.append(sl)
                     new_x.extend(this_seq_new_toks[:-1])
@@ -599,26 +587,25 @@ def _train(
             #     print("Batch data type", batch.data_type, 'LLM number', llm_number)
             #     ind_toks = sum(seqlens[:2])
             #     print("Insert cat embedds", insert_cat_embedds)
-            #     # for j, insert_idx in enumerate(insert_cat_embedds[2]):
-            #     #     print(
-            #     #         "TEXT",
-            #     #         pipeline.llm_tokenizer[llm_number].tokenizer.decode(
-            #     #             x[ind_toks : ind_toks + insert_idx].tolist()
-            #     #         ),
-            #     #     )
-            #     #     print("CONTEXT", batch.to_embed[2]["text"][j])
-            #     #     ind_toks += insert_idx
-            #     # print(
-            #     #     "TEXT",
-            #     #     pipeline.llm_tokenizer[llm_number].tokenizer.decode(
-            #     #         x[ind_toks : sum(seqlens[:3])].tolist()
-            #     #     ),
-            #     # )
-                
-            #     # print('With Mask')
-            #     # print_w_mask(input_ids=x[sum(seqlens[:2]) : sum(seqlens[:3])].tolist(),
-            #     #                 tokenizer=pipeline.llm_tokenizer[llm_number].tokenizer,
-            #     #                 mask=None if y_mask is None else y_mask[sum(seqlens[:2]) : sum(seqlens[:3])])
+            #     print('First token value',x[ind_toks])
+            #     for j, insert_idx in enumerate(insert_cat_embedds[2]):
+            #         print(
+            #             "TEXT",
+            #             pipeline.llm_tokenizer[llm_number].tokenizer.decode(
+            #                 x[ind_toks : ind_toks + insert_idx].tolist()
+            #             ),"CONTEXT", batch.to_embed[2]["text"][j])
+
+            #         ind_toks += insert_idx
+            #     print(
+            #         "TEXT",pipeline.llm_tokenizer[llm_number].tokenizer.decode(
+            #             x[ind_toks : sum(seqlens[:3])].tolist()
+            #         ),
+            #     )
+
+            #     print('With Mask')
+            #     print_w_mask(input_ids=x[sum(seqlens[:2]) : sum(seqlens[:3])].tolist(),
+            #                     tokenizer=pipeline.llm_tokenizer[llm_number].tokenizer,
+            #                     mask=None if y_mask is None else y_mask[sum(seqlens[:2]) : sum(seqlens[:3])])
             #     # # # target = [int(tok) for tok in batch.y]
             #     # # embed = [int(toks) for tokens in batch.to_embed[0]["tokens"] for toks in tokens]
             #     # # # continuation = [
@@ -668,10 +655,7 @@ def _train(
                             max(
                                 len(
                                     pipeline.llm_tokenizer[llm_number].tokenizer.decode(
-                                        [
-                                            int(tok)
-                                            for tok in y[ind : ind + size]
-                                        ]
+                                        [int(tok) for tok in y[ind : ind + size]]
                                     )
                                 ),
                                 1,
@@ -684,7 +668,10 @@ def _train(
                                     pipeline.llm_tokenizer[llm_number].tokenizer.decode(
                                         [
                                             int(tok)
-                                            for ind_y, tok in enumerate(y[ind : ind + size]) if y_mask[ind + ind_y]
+                                            for ind_y, tok in enumerate(
+                                                y[ind : ind + size]
+                                            )
+                                            if y_mask[ind + ind_y]
                                         ]
                                     )
                                 ),
@@ -704,12 +691,14 @@ def _train(
                     y_new_mask = y_mask.clone()
                 for j, size in enumerate(seqlens):
                     this_seq_toks = x[sum(seqlens[:j]) : sum(seqlens[: j + 1])].tolist()
-                    this_seq_mask = y_new_mask[sum(seqlens[:j]) : sum(seqlens[: j + 1])].tolist() 
-                    
+                    this_seq_mask = y_new_mask[
+                        sum(seqlens[:j]) : sum(seqlens[: j + 1])
+                    ].tolist()
+
                     this_seq_new_toks = []
                     this_seq_new_mask = []
                     this_seq_new_insert_ids = []
-                    
+
                     ind = 0
                     sl = 0
 
@@ -728,26 +717,19 @@ def _train(
                                 0
                             ].tokenizer.special_tokens.keys():
                                 new_text = new_text.replace(sp_tok, "")
-                                
+
                         context_toks = pipeline.llm_tokenizer[
                             llm_number
-                        ].tokenizer.encode(
-                            new_text, bos=False, eos=False
-                        )
-                        
-                        
+                        ].tokenizer.encode(new_text, bos=False, eos=False)
+
                         full_context_x.extend(context_toks)
                         target_mask.extend([False] * len(context_toks))
                         sl += len(context_toks)
-                            
-                    if ind < size:
-                        full_context_x.extend(this_seq_toks[ind:]
-                        )
-                        target_mask.extend(
-                            this_seq_mask[ind:]
-                        )
-                        kl_seqlens.append(sl+len(this_seq_toks[ind:]))
 
+                    if ind < size:
+                        full_context_x.extend(this_seq_toks[ind:])
+                        target_mask.extend(this_seq_mask[ind:])
+                        kl_seqlens.append(sl + len(this_seq_toks[ind:]))
 
                 full_context_x = torch.tensor(full_context_x).cuda(non_blocking=True)
                 target_mask = torch.tensor(target_mask).cuda(non_blocking=True)

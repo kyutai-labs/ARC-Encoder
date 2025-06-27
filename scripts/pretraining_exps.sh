@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=2-4
+#SBATCH --array=0-2
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -17,6 +17,9 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
+config/experiments/ablations/multi_decoder_L8.yaml 
+config/experiments/ablations/multi_decoder_L8_MLP.yaml 
+config/experiments/ablations/multi_decoder_L3_MLP.yaml
 config/experiments/multi_decoder_nodist_nobridge_CP8.yaml 
 config/experiments/multi_decoder_nodist_8memtoks.yaml
 config/experiments/multi_decoder_nodist_nobridge_CP8_v2.yaml 
@@ -53,6 +56,44 @@ echo "Starting evaluation of run $RUN_NAME"
 
 
 case $RUN_NAME in
+
+*multi_decoder_L3*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pt_ablations.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 1
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pt_ablations.json  \
+        --n_passages 500  --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.2-3B   --llm_number 1
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pt_ablations.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 2
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pt_ablations.json  \
+        --n_passages 500  --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 2
+    ;;
+
+*multi_decoder_L8*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pt_ablations.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.1-8B  --llm_number 1
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pt_ablations.json  \
+        --n_passages 500  --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.1-8B   --llm_number 1
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pt_ablations.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.1-8B  --llm_number 2
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pt_ablations.json  \
+        --n_passages 500  --eval_trad --run_name $RUN_NAME --embed_name Llama3.1-8B  --llm_number 2
+    ;;
+
+
 *nobridge*)
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \

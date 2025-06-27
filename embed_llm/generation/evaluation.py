@@ -331,7 +331,6 @@ def evaluate_QA(
                         device=device,
                         device_generation=other_device,
                         give_n_tokens=True,
-                        llm_number=llm_number,
                     )
                     if w_embeds:
                         compress_ratio += (
@@ -704,7 +703,6 @@ def evaluate_trad(
                         device=device,
                         device_generation=other_device,
                         give_n_tokens=True,
-                        llm_number=llm_number,
                     )
                     if w_embeds:
                         compress_ratio += (
