@@ -278,7 +278,7 @@ if __name__ == "__main__":
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/factkg/factkg_train.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Hotpot_qa_test.jsonl"
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Pisco_train_dataset.jsonl"
-        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/popqa_test.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Pisco_train_dataset.json",
     ]
 
     output_path = [
@@ -299,8 +299,8 @@ if __name__ == "__main__":
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_dev.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_train.jsonl"
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl"
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/premixed_datasets/Pisco_train_dataset.jsonl"
-        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/popqa_test.jsonl",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/popqa_test.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/true_128_kilt_pisco_train_dataset.jsonl"
     ]
 
     set_logger(logging.INFO)
