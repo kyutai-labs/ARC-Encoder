@@ -223,7 +223,11 @@ def evaluate_QA(
     together_multi_passages: bool = False,  # If True, use together multi-passage retrieval
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
-    llm_name = llm_path.split("/")[-1]
+    if llm_path is not None:
+        llm_name = llm_path.split("/")[-1]
+    else:
+        llm_name = None
+        
     # Loading model
     if not is_torchrun():
         device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
@@ -245,8 +249,8 @@ def evaluate_QA(
         ckpt=ckpt,
         comp_rate=comp_rate,
         bridge_ckpt=bridge_ckpt,
-        llm_type="llama" if "llama" in llm_path.lower() else "mistral",
-        embed_type="llama" if "llama" in embed_path.lower() else "mistral",
+        llm_type="llama" if llm_path is not None and "llama" in llm_path.lower() else "mistral",
+        embed_type="llama" if embed_path is not None and "llama" in embed_path.lower() else "mistral",
     )
     if mistral:
         mistral_tokenizer = MistralTokenizer.from_file(
@@ -259,8 +263,9 @@ def evaluate_QA(
     # Creating dataset
     metrics = {}
 
+    total_benchmarks = len(benchmarks)
     for benchmark in tqdm(
-        benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
+        benchmarks, desc="Evaluating benchmarks", total=total_benchmarks
     ):
         if benchmark == "SQUAD" and max_multi_passage > 1:
             benchmarks.remove(benchmark)
@@ -296,7 +301,6 @@ def evaluate_QA(
                     context.append(
                         list((data["passages"][:max_multi_passage]))
                     )
-
         c = list(zip(questions, context, answers))
 
         # fixed_random = random.Random()
@@ -379,7 +383,7 @@ def evaluate_QA(
                 else:
                     tokens = [
                         mistral_tokenizer.encode(prompt[0], bos=True, eos=False)
-                        for prompt in texts_to_embed
+                        for prompt in batch_list_prompts
                     ]
 
                     compress_ratio += 1
@@ -449,7 +453,7 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                     "compressed_icl": compressed_doc_in_icl,
-                    "llm_name": llm_name,
+                    "llm_name": 'mistral' if llm_name is None else llm_name,
                     "together_mp": together_multi_passages,
                 }
                 value_f1 = (
@@ -471,7 +475,7 @@ def evaluate_QA(
                     "n_passages": max_multi_passage,
                     "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                     "compressed_icl": compressed_doc_in_icl,
-                    "llm_name": llm_name,
+                    "llm_name": 'mistral' if llm_name is None else llm_name,
                     "together_mp": together_multi_passages,
                 }
 
@@ -490,15 +494,17 @@ def evaluate_QA(
                 )
                 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
-        if run_name is not None:
-            with open(
-                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/"
-                + run_name
-                + "/results_generation.json",
-                "a",
-            ) as f:
-                json.dump(results, f)
-
+        try:
+            if run_name is not None:
+                with open(
+                    tmp_path
+                    + run_name
+                    + "/results_generation.json",
+                    "a",
+                ) as f:
+                    json.dump(results, f)
+        except FileNotFoundError:
+            print('No result generation file found, creating a new one.')
         with open(
             output_file,
             "r",
@@ -807,14 +813,17 @@ def evaluate_trad(
             }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
-        if run_name is not None:
-            with open(
-                "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/"
-                + run_name
-                + "/results_generation.json",
-                "a",
-            ) as f:
-                json.dump(results, f)
+        try:
+            if run_name is not None:
+                with open(
+                    tmp_path
+                    + run_name
+                    + "/results_generation.json",
+                    "a",
+                ) as f:
+                    json.dump(results, f)
+        except FileNotFoundError:
+            print('No result generation file found, creating a new one.')
 
         with open(
             output_file,
@@ -880,9 +889,9 @@ def arg_parser():
     )  # can enable to fix number of memory tokens if > 0
     parser.add_argument("--eval_trad", action="store_true")
     parser.add_argument(
-        "--tmp_path",
+        "--tmp_folder",
         type=str,
-        default="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/",
+        default="hp_v2/",
     )
     parser.add_argument("--llm_name", type=str, default="mistral_7B")
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
@@ -900,7 +909,7 @@ if __name__ == "__main__":
     temp_tests = [0]
 
     args = arg_parser()
-
+    tmp_path = '/lustre/scwpod02/client/kyutai-interns/hippop/tmp/' + args.tmp_folder
     if args.benchmarks == "all":
         benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "HotpotQA"]
     else:
@@ -913,7 +922,6 @@ if __name__ == "__main__":
         if args.out_file is None
         else args.out_file
     )
-    tmp_path = args.tmp_path
 
     if not os.path.exists(output_file):
         with open(output_file, "w") as f:

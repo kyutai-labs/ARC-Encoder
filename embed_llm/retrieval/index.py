@@ -18,7 +18,6 @@ logger = logging.getLogger()
 
 
 class Indexer(object):
-
     def __init__(self, vector_sz, n_subquantizers=0, n_bits=8):
         if n_subquantizers > 0:
             self.index = faiss.IndexPQ(
@@ -65,7 +64,8 @@ class Indexer(object):
         meta_file = dir_path / "index_meta.dpr"
         logger.info(f"Serializing index to {index_file}, meta data to {meta_file}")
         faiss.write_index(
-            faiss.index_gpu_to_cpu(self.index), Path(index_file).as_posix()
+            self.index,
+            Path(index_file).as_posix(),  # pip install faiss-gpu
         )
         with open(meta_file, mode="wb") as f:
             pickle.dump(self.index_id_to_db_id, f)
@@ -83,9 +83,9 @@ class Indexer(object):
 
         with open(meta_file, "rb") as reader:
             self.index_id_to_db_id = pickle.load(reader)
-        assert (
-            len(self.index_id_to_db_id) == self.index.ntotal
-        ), "Deserialized index_id_to_db_id should match faiss index size"
+        assert len(self.index_id_to_db_id) == self.index.ntotal, (
+            "Deserialized index_id_to_db_id should match faiss index size"
+        )
 
     def _update_id_mapping(self, db_ids: list):
         new_ids = np.array(db_ids, dtype=np.int64)

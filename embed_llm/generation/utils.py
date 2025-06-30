@@ -68,10 +68,11 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "Prop_a_in_cont",
             "n_passages",
             "compress_ratio",
+            "compressed_icl",
             "EM approx_Metric",
             "xRAG metric",
             "llm_name",
-            'together_mps',
+            'together_mp',
         ]
     elif benchmark.lower() == "factkg":
         key_list = [
@@ -205,7 +206,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                     "approx_Metric", None
                                                 ),
                                                 "llm_name": res.get("llm_name", 'mistral_7B'),
-                                                "together_mps": res.get("together_mps", False),
+                                                "together_mp": res.get("together_mp", False),
                                             },
                                             index=[0],
                                         ),
@@ -238,7 +239,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                         ),
                                         "n_passages": res.get("n_passages", 1),
                                         "llm_name": res.get("llm_name", 'mistral_7B'),
-                                        "together_mps": res.get("together_mps", False),
+                                        "together_mp": res.get("together_mp", False),
                                     },
                                     index=[0],
                                 )
@@ -276,7 +277,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                 "compressed_icl",
                                 "compress_ratio",
                                 "llm_name",
-                                "together_mps",
+                                "together_mp",
                             ]
                         )
                         .first()

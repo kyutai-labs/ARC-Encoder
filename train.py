@@ -443,7 +443,7 @@ def _train(
                 pipeline.prepare_forward(batch)
             )
 
-            # # print('embed seqlens', embed_seqlens)
+            # print('embed seqlens', embed_seqlens)
             # if get_rank() == 0:
             #     # to_gen = [int(tok) for tok in batch.x[: batch.sizes[0]]]
             #     # print("To generate", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
@@ -457,7 +457,7 @@ def _train(
             #                 x[ind_toks : ind_toks + insert_idx].tolist()
             #             ),
             #         )
-            #         print("CONTEXT", batch.to_embed[2]["text"][j])
+            #         print("CONTEXT", pipeline.embed_tokenizer.tokenizer.decode(batch.to_embed[2]["tokens"][j]))
             #         ind_toks += insert_idx
             #     print(
             #         "TEXT",

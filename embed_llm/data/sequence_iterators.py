@@ -72,6 +72,7 @@ def sequence_iterator_reconstruction(
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     embed_tokens = sample.passages.tokens
+
     data_type = sample.data_type
 
     while cur_pos < len(x):
@@ -154,7 +155,8 @@ def sequence_iterator_reconstruction(
                 if embed_tokenizer.model_name == "llama":
                     for text in embed_text:
                         for sp_tok in embed_tokenizer.tokenizer.special_tokens.keys():
-                            new_embed_text.append(text.replace(sp_tok, ""))
+                            text = text.replace(sp_tok, "")
+                        new_embed_text.append(text.replace(sp_tok, ""))
                 new_embed_tokens = [toks[:seq_len] for toks in new_embed]
 
             if data_type == "instruct":
@@ -212,7 +214,7 @@ def sequence_iterator_reconstruction(
                             ins_list.append(len(doc_tokens))
                             x_buffer.extend(doc_tokens)
                             y_buffer.extend(doc_tokens)
-                            
+
                     if not sep_passages:
                         insert_embed_list.append(ins_list)
                         embed_toks.append(new_embed_tokens)
@@ -224,7 +226,7 @@ def sequence_iterator_reconstruction(
                             ins_list.append(0)
                         ins_list = ins_list[:-1]
                         insert_embed_list.append(ins_list)
-                        
+
                     added_prefix = sum(ins_list)
                     if any([len(toks) <= 1 for toks in embed_toks]):
                         print("Embed text small", embed_text)
@@ -250,6 +252,7 @@ def sequence_iterator_reconstruction(
                             embed_toks.append(emb_toks)
                             embed_text.append(emb_text)
                             ins_list.append(0)
+                        # print('Embed text:', embed_text)
                         ins_list = ins_list[:-1]
                         insert_embed_list.append(ins_list)
                         to_embed_buffer.append(
@@ -279,7 +282,7 @@ def sequence_iterator_reconstruction(
                         new_ex = "Document: " + new_embed_text + question + answer
                     else:
                         new_ex = "Document: " + new_embed_text[0] + question + answer
-                        
+
                     if len(few_shot_instruct) < few_shot:
                         few_shot_instruct.append(new_ex)
                     else:

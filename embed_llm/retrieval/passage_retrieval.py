@@ -3,21 +3,54 @@
 #
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
-import logging
-import torch
-import glob
-from pathlib import Path
-import numpy as np
-from embed_llm.retrieval.index import Indexer
-from embed_llm.retrieval.embeddings import get_pretrained_embedder, encode_text
-from embed_llm.monitoring.utils import set_logger
-import time
-import json
-import torch.nn.functional as F
-from tqdm import tqdm
 import argparse
+import datetime
+import glob
+import json
+import logging
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+from embeddings import encode_text, get_pretrained_embedder
+from index import Indexer
+from tqdm import tqdm
+
+
+class DeltaTimeFormatter(logging.Formatter):
+    def format(self, record):
+        delta = datetime.timedelta(
+            seconds=int(record.relativeCreated / 1000)
+        )  # no milliseconds
+        record.delta = delta
+        return super().format(record)
+
 
 logger = logging.getLogger(__name__)
+
+
+def set_logger(level: int = logging.INFO):
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.setLevel(level)
+    tz, *_ = time.tzname
+
+    LOGFORMAT = "%(asctime)s - %(delta)s - %(name)s - %(levelname)s - %(message)s"
+    TIMEFORMAT = f"%Y-%m-%d %H:%M:%S ({tz})"
+    formatter = DeltaTimeFormatter(LOGFORMAT, TIMEFORMAT)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(level)
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
+
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(logging.WARNING)
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
 
 
 def index_encoded_data(index, embedding_files, indexing_batch_size):
@@ -84,7 +117,6 @@ def retrieved_passage_4QA(
     split: str = "train",
     batch_size: int = 16,
 ):
-
     if isinstance(output_path, str):
         output_path = [output_path]
 
@@ -111,7 +143,7 @@ def retrieved_passage_4QA(
                 json.dump(passage_id, fout)
                 fout.write("\n")
 
-        logger.info(f"Indexing time: {time.time()-start_time_indexing:.1f} s.")
+        logger.info(f"Indexing time: {time.time() - start_time_indexing:.1f} s.")
         if save_or_load_index:
             index.serialize(embeddings_dir / Path(split))
 
@@ -127,7 +159,6 @@ def retrieved_passage_4QA(
         all_passages = {k: v for line in fin for k, v in json.loads(line).items()}
 
     for qa_path, out_path in zip(path_QA, output_path):
-
         logger.info(f"Embedding questions from {qa_path}")
 
         # Embed questions
@@ -150,7 +181,6 @@ def retrieved_passage_4QA(
                 answers.append(data["answer"])
 
                 if (i + 1) % batch_size == 0:
-
                     embeds = encode_text(
                         batch_query,
                         model_name=model_name,
@@ -188,7 +218,7 @@ def retrieved_passage_4QA(
             top_docs=n_retrieved_doc,
             index_batch_size=indexing_batch_size,
         )
-        logger.info(f"Search time: {time.time()-start_time_retrieval:.1f} s.")
+        logger.info(f"Search time: {time.time() - start_time_retrieval:.1f} s.")
 
         paired_passages = []
         for results_and_scores, query, answer in tqdm(
@@ -269,7 +299,7 @@ if __name__ == "__main__":
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa_good_answer.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/yahoo_qa.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/train.jsonl", # Only one not done or not in process
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/train.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/msmarco_qa.jsonl",
@@ -278,7 +308,7 @@ if __name__ == "__main__":
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/factkg/factkg_train.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Hotpot_qa_test.jsonl"
         # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Pisco_train_dataset.jsonl"
-        "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Pisco_train_dataset.json",
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Pisco_train_dataset.jsonl",
     ]
 
     output_path = [
@@ -291,7 +321,7 @@ if __name__ == "__main__":
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa_good_answer.jsonl  ",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa.jsonl  ",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/yahoo_qa.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl",
+        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_data_old.jsonl", # Only one not done or not in process
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/triviaqa_data.jsonl",
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/msmarco_qa.jsonl ",
@@ -300,7 +330,7 @@ if __name__ == "__main__":
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_train.jsonl"
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl"
         # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/popqa_test.jsonl",
-        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/true_128_kilt_pisco_train_dataset.jsonl"
+        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/true_128_kilt_pisco_train_dataset.jsonl"
     ]
 
     set_logger(logging.INFO)

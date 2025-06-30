@@ -1,27 +1,25 @@
 data:
   adapt_seq_len: true
-  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
+  eval_data: eval_ReadComp/squad_test.jsonl
   shuffle: false
-  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl:1.0:3
-  n_interleaved: 3
+  prefix: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/
+  train_data: instruct_data/QA_w_retrieved_passages_NVEmbed/msmarco_qa.jsonl:1.0:2
+  sep_passages: true
+  n_interleaved: 2
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
-llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B
-embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
-llm_type: mistral
+embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.2-3B
+llm_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
+llm_type: llama
 embed_type: llama
 num_microbatches: 1
 seed: 0
 max_steps: 1000
-seq_len: 1024
-log_freq: 1
+seq_len: 512
+log_freq: 10
 batch_size: 16
 ckpt_freq: 50
 eval_freq: 50
-no_eval: false
-loss_args:
-  kl: true
-  kl_weight: 3.0
-  top_k: 0.001
+no_eval: true
 optim:
   final_lr: 1.0e-10
   initial_lr: 1.0e-20
@@ -34,29 +32,25 @@ pipeline:
     causal_embedder: true
     compress_rates:
     - -4
-    n_truncated_layers: 16
+    n_truncated_layers: 14
     pooling_module:
       pool_type: mean_sa
       where: before
-    trained_layers: 16
+    trained_layers: 14
     train_embedding_mtx: true
     rec_tok: true
-  max_embeds: 1
+  max_embeds: -2
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
   bridge_module:
     bridge_type: mlp
-    in_dim: 4096
+    in_dim: 3072
     hidden_dim: 2048
     out_dim: 4096
 from_ckpt:
   do: true
-  bridge_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/CP16_L8B_MLP2_M7B_20rec_Dist/checkpoints/checkpoint_030000/bridge_module/
-  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/CP16_L8B_MLP2_M7B_20rec_Dist/checkpoints/checkpoint_030000/embedder/
+  bridge_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/CP16_L3B_MLP2_L8B_20rec/checkpoints/checkpoint_030000/bridge_module/
+  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/CP16_L3B_MLP2_L8B_20rec/checkpoints/checkpoint_030000/embedder/
 exp_name: test_ft
-# wandb:
-#   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
-#   offline: false
-#   project: embed_llm
-#   run_name: Pool4_to_llama_mlp_squad
+
