@@ -4,13 +4,13 @@ import logging
 import os
 import random
 import subprocess as sp
-
+from llmlingua import PromptCompressor
 import torch
-from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-from mistral_inference.generate import generate
-from mistral_inference.transformer import Transformer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm, trange
-
+from embed_llm.models.utils.utils import is_torchrun  # noqa: E402
+from embed_llm.generation.utils import ensure_reproducibility, eval_logger_info  # noqa: E402
+from embed_llm.monitoring.utils import set_logger  # noqa: E402
 from embed_llm.generation.metrics import (  # noqa: E402
     get_approx_em,
     get_bleu_score,
@@ -19,11 +19,8 @@ from embed_llm.generation.metrics import (  # noqa: E402
     get_substring_match_score,
     metric_max_over_ground_truths,
 )
-from embed_llm.generation.utils import ensure_reproducibility, eval_logger_info  # noqa: E402
-from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline  # noqa: E402
-from embed_llm.models.utils.utils import is_torchrun  # noqa: E402
-from embed_llm.monitoring.utils import set_logger  # noqa: E402
 
+logger = logging.getLogger(__name__)
 EVAL_DATA_PATH = {
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",  # unfiltered.nocontext /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl
@@ -66,6 +63,12 @@ def get_gpu_memory():
     command = "nvidia-smi"
     memory_free_info = sp.check_output(command.split()).decode("ascii")
     return memory_free_info
+
+
+class Pipeline:
+    def __init__(self, model, tokenizer):
+        self.model = model
+        self.tokenizer = tokenizer
 
 
 def create_prompt_prefix(
@@ -197,78 +200,49 @@ def create_prompt(
 
 
 def evaluate_QA(
-    run_name: str,
     benchmarks: list[str],
-    llm_path: str | None = None,
-    embed_path: str | None = None,
-    ckpt: int | None = None,
+    prompt_compressor_name: str | None,
+    llm_name: str,  # mistralai/Mistral-7B-v0.3 "meta-llama/Meta-Llama-3-8B"
     max_seq_len: int = 256,
+    pipeline: Pipeline | None = None,
     temps: list[float] = [0, 0.5, 0.7, 1],
     max_bs: int = 4,
     output_file: str = None,
     n_samples: int | None = 1000,
     tmp_path: str = None,
     icl_examples: int = 0,
-    pipeline: EmbedAugPipeline | Transformer | None = None,
     w_embeds: bool = True,  # To test baseline LLM
     query_w_context: bool = False,
     icl_w_document: bool = True,
-    mistral: bool = False,
     max_multi_passage: int = 1,
     seed: float = 0.42,
     compressed_doc_in_icl: bool = False,
     comp_rate: int | None = None,
-    bridge_ckpt: bool
-    | str
-    | None = None,  # Path to the bridge checkpoint if using a bridge model
+    use_llmlingua2: bool = False,  # If True, use llmlingua2 for prompt compression
     together_multi_passages: bool = False,  # If True, use together multi-passage retrieval
     max_sample: bool = False,  # If True, use all the samples in the dataset
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
-    if llm_path is not None:
-        llm_name = llm_path.split("/")[-1]
-    else:
-        llm_name = None
-
-    # Loading model
-    if not is_torchrun():
-        device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
-        device_count = torch.cuda.device_count()
-        other_device = torch.device("cuda:1") if device_count > 1 else device
-    else:
-        device = "cuda"
-        other_device = None
-
-    pipeline, ckpt = load_pipeline(
-        run_name=run_name,
-        tmp_path=tmp_path,
-        llm_path=llm_path,
-        embedder_path=embed_path,
-        device=device,
-        max_bs=max_bs,
-        pipeline=pipeline,
-        mistral=mistral,
-        ckpt=ckpt,
-        comp_rate=comp_rate,
-        bridge_ckpt=bridge_ckpt,
-        llm_type="llama"
-        if llm_path is not None and "llama" in llm_path.lower()
-        else "mistral",
-        embed_type="llama"
-        if embed_path is not None and "llama" in embed_path.lower()
-        else "mistral",
-    )
-    if mistral:
-        mistral_tokenizer = MistralTokenizer.from_file(
-            "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3"
-        ).instruct_tokenizer.tokenizer
-        mistral_model = pipeline
 
     results = {benchmark: {} for benchmark in benchmarks}
+    if pipeline is None:
+        tokenizer = AutoTokenizer.from_pretrained(llm_name)
+        model = AutoModelForCausalLM.from_pretrained(llm_name)
+        pipeline = Pipeline(
+            model=model,
+            tokenizer=tokenizer,
+        )
+    else:
+        pipeline = pipeline
 
     # Creating dataset
     metrics = {}
-
+    if prompt_compressor_name is None:
+        llm_lingua = None
+    else:
+        llm_lingua = PromptCompressor(
+            model_name=prompt_compressor_name, use_llmlingua2=use_llmlingua2
+        )
     total_benchmarks = len(benchmarks)
     for benchmark in tqdm(
         benchmarks, desc="Evaluating benchmarks", total=total_benchmarks
@@ -368,46 +342,53 @@ def evaluate_QA(
                     batch_list_prompts.append(batch_list_prompt)
                     texts_to_embed.append(text_to_embed)
 
-                if not mistral:
-                    generated_sequence, embed_tokens, embeds = pipeline.generate(
-                        text_to_embed=texts_to_embed if w_embeds else None,
-                        batch_list_prompts=batch_list_prompts,
+                compressed_texts = []
+                for to_embed_text in texts_to_embed:
+                    compressed_text = []
+                    for text in to_embed_text:
+                        if not use_llmlingua2:
+                            compressed_text.append(
+                                llm_lingua.compress(
+                                    text,
+                                    instruction="",
+                                    question="",
+                                    target_token=len(text) // int(abs(comp_rate)),
+                                )
+                            )
+                        else:
+                            compressed_text.append(
+                                llm_lingua.compress(
+                                    text,
+                                    instruction="",
+                                    question="",
+                                    rate=1 / abs(comp_rate),
+                                )
+                            )
+                    compressed_texts.append(compressed_text)
+                for batch_list_prompt, compressed_text in zip(
+                    batch_list_prompts, compressed_texts
+                ):
+                    prompt = ""
+
+                    for full_text, comp_text in zip(batch_list_prompt, compressed_text):
+                        prompt += full_text + comp_text
+
+                    inputs = pipeline.tokenizer(
+                        prompt,
+                        return_tensors="pt",
+                        padding=True,
+                        truncation=True,
+                    )
+                    outputs = pipeline.model.generate(
+                        **inputs,
+                        max_new_tokens=max_seq_len,
                         temperature=temp,
-                        max_tokens=max_seq_len,
-                        truncate_line=True,
-                        device=device,
-                        device_generation=other_device,
-                        give_n_tokens=True,
+                        do_sample=True,
                     )
-                    if w_embeds:
-                        compress_ratio += (
-                            embed_tokens / embeds
-                        )  # N tokens to be compressed / final number of tokens after compression
-                    else:
-                        compress_ratio += 1
-                    generated_sequences.extend(generated_sequence)
-                else:
-                    tokens = [
-                        mistral_tokenizer.encode(prompt[0], bos=True, eos=False)
-                        for prompt in batch_list_prompts
-                    ]
-
-                    compress_ratio += 1
-                    generated_sequence, logprobs = generate(
-                        model=mistral_model,
-                        encoded_prompts=tokens,
-                        max_tokens=max_seq_len,
-                        temperature=temp,
-                        eos_id=mistral_tokenizer.eos_id,
+                    generated_text = tokenizer.decode(
+                        outputs[0], skip_special_tokens=True
                     )
-
-                    generated_sequences.extend(
-                        [
-                            mistral_tokenizer.decode(gen).split("\n")[0]
-                            for gen in generated_sequence
-                        ]
-                    )
-
+                    generated_sequences.append(generated_text.split("\n")[0])
             if METRIC_EVALUATION[benchmark] == get_em:
                 value_em = sum(
                     [
@@ -461,6 +442,7 @@ def evaluate_QA(
                     "compressed_icl": compressed_doc_in_icl,
                     "llm_name": "mistral" if llm_name is None else llm_name,
                     "together_mp": together_multi_passages,
+                    "prompt_compressor_name": prompt_compressor_name,
                 }
                 value_f1 = (
                     sum(
@@ -483,6 +465,7 @@ def evaluate_QA(
                     "compressed_icl": compressed_doc_in_icl,
                     "llm_name": "mistral" if llm_name is None else llm_name,
                     "together_mp": together_multi_passages,
+                    "prompt_compressor_name": prompt_compressor_name,
                 }
 
                 eval_logger_info(
@@ -500,6 +483,11 @@ def evaluate_QA(
                 )
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
+        if w_embeds:
+            run_name = prompt_compressor_name.split("/")[-1] + llm_name.split("/")[-1]
+        else:
+            run_name = "baseline_" + llm_name.split("/")[-1]
+        ckpt = 0
         try:
             if run_name is not None:
                 with open(
@@ -514,13 +502,6 @@ def evaluate_QA(
             "r",
         ) as f:
             overall_results = json.load(f)
-
-        if mistral and query_w_context:
-            run_name = "Mistral_RAG"
-            ckpt = 0
-        elif mistral and not query_w_context:
-            run_name = "Mistral_no_RAG"
-            ckpt = 0
 
         if run_name not in overall_results.keys():
             overall_results[run_name] = {}
@@ -554,77 +535,52 @@ def evaluate_QA(
         ) as f:
             json.dump(overall_results, f, indent=4)
 
-    if mistral:
-        return mistral_model
-
-    return pipeline, ckpt
+    return pipeline
 
 
 def evaluate_trad(
-    run_name: str,
-    llm_path: str | None = None,
-    embed_path: str | None = None,
-    ckpt: int | None = None,
+    prompt_compressor_name: str | None,
+    llm_name: str,  # mistralai/Mistral-7B-v0.3 "meta-llama/Meta-Llama-3-8B"
     max_seq_len: int = 512,
+    use_llmlingua2: bool = False,  # If True, use llmlingua2 for prompt compression
     temps: list[float] = [0, 0.5, 0.7, 1],
     benchmarks: list[str] = ["Danish", "French", "Spanish", "German"],
     max_bs: int = 4,
     output_file: str = None,
     n_samples: int | None = 1000,
     tmp_path: str = None,
-    pipeline: EmbedAugPipeline | Transformer | None = None,
+    pipeline: Pipeline | None = None,
     w_embeds: bool = True,  # To test baseline LLM
-    mistral: bool = False,
     seed: float = 0.42,
     comp_rate: int | None = None,
-    bridge_ckpt: bool
-    | str
-    | None = None,  # Path to the bridge checkpoint if using a bridge model
     compressed_doc_in_icl: bool = False,  # Not used for translation
     new_template: bool = True,  # If True, use the old template for translation (without "Document:" prefix)
     europarl: bool = False,  # If True, use Europarl dataset instead of Flores
     max_sample: bool = False,  # If True, use all the samples in the dataset
 ):
-    # Loading model
-    llm_name = llm_path.split("/")[-1]
-
-    if not is_torchrun():
-        device = torch.device("cuda", 0) if torch.cuda.is_available() else "cpu"
-        device_count = torch.cuda.device_count()
-        other_device = torch.device("cuda:1") if device_count > 1 else device
-    else:
-        device = "cuda"
-        other_device = None
-
-    pipeline, ckpt = load_pipeline(
-        run_name=run_name,
-        tmp_path=tmp_path,
-        embedder_path=embed_path,
-        llm_path=llm_path,
-        device=device,
-        max_bs=max_bs,
-        pipeline=pipeline,
-        mistral=mistral,
-        ckpt=ckpt,
-        comp_rate=comp_rate,
-        bridge_ckpt=bridge_ckpt,
-        llm_type="llama" if "llama" in llm_path.lower() else "mistral",
-        embed_type="llama" if "llama" in embed_path.lower() else "mistral",
-    )
-
-    if mistral:
-        mistral_tokenizer = MistralTokenizer.from_file(
-            "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/tokenizer.model.v3"
-        ).instruct_tokenizer.tokenizer
-        mistral_model = pipeline
-
     results = {benchmark: {} for benchmark in benchmarks}
+    if pipeline is None:
+        tokenizer = AutoTokenizer.from_pretrained(llm_name)
+        model = AutoModelForCausalLM.from_pretrained(llm_name)
+        pipeline = Pipeline(
+            model=model,
+            tokenizer=tokenizer,
+        )
+    else:
+        pipeline = pipeline
 
     # Creating dataset
     metrics = {}
+    if prompt_compressor_name is None:
+        llm_lingua = None
+    else:
+        llm_lingua = PromptCompressor(
+            model_name=prompt_compressor_name, use_llmlingua2=use_llmlingua2
+        )
+    total_benchmarks = len(benchmarks)
 
     for benchmark in tqdm(
-        benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
+        benchmarks, desc="Evaluating benchmarks", total=total_benchmarks
     ):
         metrics[benchmark] = {}
         if not europarl:
@@ -715,7 +671,7 @@ def evaluate_trad(
 
         text, traduction = new_text, new_trad
 
-        eval_logger_info(logger, f"Evaluation dataset loaded for {benchmark}")
+        print(f"Evaluation dataset loaded for {benchmark}")
         metrics[benchmark]["BLEU"] = {}
         for temp in temps:
             compress_ratio = 0
@@ -726,83 +682,83 @@ def evaluate_trad(
                 batch_list_prompts = []
                 bs = min(max_bs, n_samples - i)
 
-                if not new_template:
-                    batch_list_prompts = [
-                        text_prompt_prefix + ["\nTranslation:"] for _ in range(bs)
-                    ]
-                else:
-                    batch_list_prompts = [
-                        text_prompt_prefix
-                        + [
-                            f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer:"
-                        ]
-                        for _ in range(bs)
-                    ]
-
-                texts_to_embed = [embed_prompt + [seq] for seq in text[i : i + bs]]
-
-                if not mistral:
-                    generated_sequence, embed_tokens, embeds = pipeline.generate(
-                        text_to_embed=texts_to_embed if w_embeds else None,
-                        batch_list_prompts=batch_list_prompts,
-                        temperature=temp,
-                        max_tokens=max_seq_len,
-                        truncate_line=False,
-                        device=device,
-                        device_generation=other_device,
-                        give_n_tokens=True,
-                    )
-                    if w_embeds:
-                        compress_ratio += (
-                            embed_tokens / embeds
-                        )  # N tokens to be compressed / final number of tokens after compression
-                    else:
-                        compress_ratio += 1
-
-                    final_seq = []
-                    for seq in generated_sequence:
-                        if len(seq.split("\n\n")[0]) > 1:
-                            final_seq.append(seq.split("\n\n")[0].strip())
-                        else:
-                            final_seq.append(seq.strip())
-                    generated_sequences.extend(final_seq)
-                else:
+                if not w_embeds:
+                    texts_to_embed = [[""] for _ in range(bs)]
                     if not new_template:
-                        prompts = [
+                        batch_list_prompts = [
                             "".join(text_prompt_prefix) + seq + "\nTranslation:"
                             for seq in text[i : i + bs]
                         ]
                     else:
-                        prompts = [
+                        batch_list_prompts = [
                             "".join(text_prompt_prefix)
-                            + f"\nQuestion: Translate this document in {benchmark}.\nAnswer: {seq}"
+                            + seq
+                            + f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: "
                             for seq in text[i : i + bs]
                         ]
+                else:
+                    if not new_template:
+                        batch_list_prompts = [
+                            text_prompt_prefix + ["\nTranslation:"] for _ in range(bs)
+                        ]
+                    else:
+                        batch_list_prompts = [
+                            text_prompt_prefix
+                            + [
+                                f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer:"
+                            ]
+                            for _ in range(bs)
+                        ]
 
-                    prompt_tokens = [
-                        mistral_tokenizer.encode(prompt, bos=True, eos=False)
-                        for prompt in prompts
-                    ]
+                    texts_to_embed = [embed_prompt + [seq] for seq in text[i : i + bs]]
 
-                    compress_ratio += 1
-                    generated_sequence, logprobs = generate(
-                        model=mistral_model,
-                        encoded_prompts=prompt_tokens,
-                        max_tokens=max_seq_len,
-                        temperature=temp,
-                        eos_id=mistral_tokenizer.eos_id,
-                    )
-
-                    final_seq = []
-                    for gen in generated_sequence:
-                        seq = mistral_tokenizer.decode(gen).strip()
-                        if len(seq.split("\n\n")[0]) > 1:
-                            final_seq.append(seq.split("\n\n")[0].strip())
-                        elif "\nTranslation:" in seq.split("\n\n")[-1]:
-                            final_seq.append(seq.split("\nTranslation:")[1].strip())
+                compressed_texts = []
+                for to_embed_text in texts_to_embed:
+                    compressed_text = []
+                    for text in to_embed_text:
+                        if not use_llmlingua2:
+                            compressed_text.append(
+                                llm_lingua.compress(
+                                    text,
+                                    instruction="",
+                                    question="",
+                                    target_token=len(text) // int(abs(comp_rate)),
+                                )
+                            )
                         else:
-                            final_seq.append(seq.strip())
-                    generated_sequences.extend(final_seq)
+                            compressed_text.append(
+                                llm_lingua.compress(
+                                    text,
+                                    instruction="",
+                                    question="",
+                                    rate=1 / abs(comp_rate),
+                                )
+                            )
+                    compressed_texts.append(compressed_text)
+                for batch_list_prompt, compressed_text in zip(
+                    batch_list_prompts, compressed_texts
+                ):
+                    prompt = ""
+
+                    for full_text, comp_text in zip(batch_list_prompt, compressed_text):
+                        prompt += full_text + comp_text
+
+                    inputs = pipeline.tokenizer(
+                        prompt,
+                        return_tensors="pt",
+                        padding=True,
+                        truncation=True,
+                    )
+                    outputs = pipeline.model.generate(
+                        **inputs,
+                        max_new_tokens=max_seq_len,
+                        temperature=temp,
+                        do_sample=True,
+                    )
+                    generated_text = tokenizer.decode(
+                        outputs[0], skip_special_tokens=True
+                    )
+                    generated_sequences.append(generated_text.split("\n")[0])
 
             bleu_score = get_bleu_score(
                 traduction[: len(generated_sequences)], generated_sequences
@@ -816,9 +772,17 @@ def evaluate_trad(
                 "new_template": new_template,
                 "compressed_icl": compressed_doc_in_icl,
                 "llm_name": llm_name,
+                "prompt_compressor_name": prompt_compressor_name,
+                "llmlingua2": use_llmlingua2,
             }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
+        if w_embeds:
+            run_name = prompt_compressor_name.split("/")[-1] + llm_name.split("/")[-1]
+        else:
+            run_name = "baseline_" + llm_name.split("/")[-1]
+
+        ckpt = 0
         try:
             if run_name is not None:
                 with open(
@@ -828,32 +792,37 @@ def evaluate_trad(
                     json.dump(results, f)
         except FileNotFoundError:
             print("No result generation file found, creating a new one.")
-
         with open(
             output_file,
             "r",
         ) as f:
             overall_results = json.load(f)
 
-        if mistral:
-            run_name = "Mistral_RAG"
-            ckpt = 0
-
         if run_name not in overall_results.keys():
             overall_results[run_name] = {}
         if str(ckpt) not in overall_results[run_name].keys():
             overall_results[run_name][str(ckpt)] = {}
+        for benchmark in benchmarks:
+            if benchmark not in overall_results[run_name][str(ckpt)].keys():
+                overall_results[run_name][str(ckpt)][benchmark] = {}
 
         for benchmark in metrics.keys():
             for metric in metrics[benchmark].keys():
-                if metric not in overall_results[run_name][str(ckpt)].keys():
-                    overall_results[run_name][str(ckpt)][metric] = {}
+                if metric not in overall_results[run_name][str(ckpt)][benchmark].keys():
+                    overall_results[run_name][str(ckpt)][benchmark][metric] = {}
                 for temp in metrics[benchmark][metric].keys():
-                    if temp not in overall_results[run_name][str(ckpt)][metric].keys():
-                        overall_results[run_name][str(ckpt)][metric][temp] = []
-                    overall_results[run_name][str(ckpt)][metric][temp].append(
-                        metrics[benchmark][metric][temp]
-                    )
+                    if (
+                        temp
+                        not in overall_results[run_name][str(ckpt)][benchmark][
+                            metric
+                        ].keys()
+                    ):
+                        overall_results[run_name][str(ckpt)][benchmark][metric][
+                            temp
+                        ] = []
+                    overall_results[run_name][str(ckpt)][benchmark][metric][
+                        temp
+                    ].append(metrics[benchmark][metric][temp])
 
         with open(
             output_file,
@@ -861,25 +830,15 @@ def evaluate_trad(
         ) as f:
             json.dump(overall_results, f, indent=4)
 
-    if mistral:
-        return mistral_model
-
-    return pipeline, ckpt
+    return pipeline
 
 
 def arg_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--run_name",
-        type=str,
-        default=None,
-    )
-    parser.add_argument("--ckpt", type=int, default=None)
     parser.add_argument("--out_file", type=str, default=None)
     parser.add_argument("--n_passages", type=int, default=500)
     parser.add_argument("--max_seq_len", type=int, default=64)
     parser.add_argument("--bs", type=int, default=4)
-    parser.add_argument("--mistral", action="store_true")
     parser.add_argument("--wo_embeds", action="store_false")
     parser.add_argument("--multi_passages", type=int, default=1)
     parser.add_argument(
@@ -895,15 +854,14 @@ def arg_parser():
         "--comp_rate", type=int, default=None
     )  # can enable to fix number of memory tokens if > 0
     parser.add_argument("--eval_trad", action="store_true")
+
     parser.add_argument(
-        "--tmp_folder",
+        "--llm_name",
         type=str,
-        default="hp_v2/",
+        choices=["mistralai/Mistral-7B-v0.3", "meta-llama/Meta-Llama-3-8B"],
+        default="mistralai/Mistral-7B-v0.3",
     )
-    parser.add_argument("--llm_name", type=str, default="mistral_7B")
-    parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--query_w_context", action="store_true")
-    parser.add_argument("--bridge_ckpt", type=str, default=None)
     parser.add_argument("--new_template", action="store_true")
     parser.add_argument("--europarl", action="store_true")
     parser.add_argument(
@@ -911,24 +869,32 @@ def arg_parser():
         action="store_true",
         help="If True, use the maximum number of samples for each benchmark",
     )
+    parser.add_argument(
+        "--compressor_name",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--use_llmlingua2",
+        action="store_true",
+        help="If True, use llmlingua2 for prompt compression",
+    )
 
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     set_logger(logging.INFO)
-
     temp_tests = [0]
 
     args = arg_parser()
-    tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/" + args.tmp_folder
+
     if args.benchmarks == "all":
         benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "HotpotQA"]
     else:
         benchmarks = [args.benchmarks]
     icl_tests = [0, 5] if args.n_icl_exs is None else [args.n_icl_exs]
     ensure_reproducibility(29)
-
     output_file = (
         "/home/hippolytepilchen/code/hp_v2/results/NVEmbed/mistral/eval_mistral_translate.json"
         if args.out_file is None
@@ -938,167 +904,68 @@ if __name__ == "__main__":
     if not os.path.exists(output_file):
         with open(output_file, "w") as f:
             json.dump({}, f)
-
     max_seq_len = args.max_seq_len
     n_passages = args.n_passages
-    llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/" + args.llm_name
-    embed_path = (
-        "/lustre/scwpod02/client/kyutai-interns/hippop/models/" + args.embed_name
-    )
-    if args.run_name is not None:
-        print("Evuating run:", args.run_name)
-    # Evaluate Mistral using their code
-    if args.mistral:
-        if args.eval_trad:
-            print("EVALUATING TRANSLATION")
-            mistral_model = evaluate_trad(
-                args.run_name,
-                max_seq_len=max_seq_len,
-                temps=temp_tests,
-                max_bs=args.bs,
-                output_file=output_file,
-                n_samples=n_passages,
-                tmp_path=tmp_path,
-                pipeline=None,
-                mistral=True,
-                seed=args.seed,
-                comp_rate=args.comp_rate,
-                benchmarks=benchmarks
-                if args.benchmarks != "all"
-                else ["Danish", "French", "Spanish", "German"],
-                new_template=args.new_template,
-                europarl=args.europarl,
-                max_samples=args.max_samples,
-            )
-            torch.cuda.empty_cache()
 
-        if args.multi_passages == 1:
-            print("EVALUATING WITHOUT CONTEXT")
-            mistral_model = evaluate_QA(
-                "",
-                benchmarks,
-                temps=temp_tests,
-                max_bs=args.bs,
-                output_file=output_file,
-                n_samples=n_passages,
-                max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
-                icl_examples=icl_tests[0],
-                mistral=True,
-                icl_w_document=True,
-                query_w_context=False,
-                w_embeds=False,
-                max_samples=args.max_samples,
-            )
-            torch.cuda.empty_cache()
-        eval_logger_info(logger, "EVALUATING WITH CONTEXT")
-        mistral_model = evaluate_QA(
-            "",
+    if args.eval_trad:
+        eval_logger_info(logger, "EVALUATING Translation")
+        pipeline = evaluate_trad(
+            max_seq_len=max_seq_len,
+            temps=temp_tests,
+            max_bs=args.bs,
+            output_file=output_file,
+            n_samples=n_passages,
+            w_embeds=args.wo_embeds,
+            pipeline=None,
+            seed=args.seed,
+            comp_rate=args.comp_rate,
+            benchmarks=benchmarks
+            if args.benchmarks != "all"
+            else ["Danish", "French", "Spanish", "German"],
+            compressed_doc_in_icl=args.compressed_doc_in_icl,
+            new_template=args.new_template,
+            europarl=args.europarl,
+            max_samples=args.max_samples,
+            prompt_compressor_name=args.compressor_name,
+            llm_name=args.llm_name,
+            use_llmlingua2=args.use_llmlingua2,
+        )
+        torch.cuda.empty_cache()
+    else:
+        eval_logger_info(logger, "EVALUATING QA")
+        pipeline = evaluate_QA(
             benchmarks,
             temps=temp_tests,
             max_bs=args.bs,
             output_file=output_file,
             n_samples=n_passages,
             max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
             icl_examples=icl_tests[0],
-            mistral=True,
-            icl_w_document=True,
-            query_w_context=True,
-            w_embeds=False,
+            pipeline=None,
+            w_embeds=args.wo_embeds,
+            icl_w_document=args.icl_w_document,
             max_multi_passage=args.multi_passages,
             seed=args.seed,
+            compressed_doc_in_icl=args.compressed_doc_in_icl,
+            comp_rate=args.comp_rate,
+            query_w_context=args.query_w_context,
+            together_multi_passages=args.together_multi_passages,
             max_samples=args.max_samples,
+            prompt_compressor_name=args.compressor_name,
+            llm_name=args.llm_name,
+            use_llmlingua2=args.use_llmlingua2,
         )
-        torch.cuda.empty_cache()
 
         for icl_ex in icl_tests[1:]:
-            if args.multi_passages == 1:
-                print("EVALUATING WITHOUT CONTEXT")
-                mistral_model = evaluate_QA(
-                    "",
-                    benchmarks,
-                    temps=temp_tests,
-                    max_bs=args.bs,
-                    output_file=output_file,
-                    n_samples=n_passages,
-                    max_seq_len=max_seq_len,
-                    tmp_path=tmp_path,
-                    icl_examples=icl_ex,
-                    mistral=True,
-                    icl_w_document=False,
-                    query_w_context=False,
-                    w_embeds=False,
-                    pipeline=mistral_model,
-                    max_samples=args.max_samples,
-                )
-                torch.cuda.empty_cache()
-            eval_logger_info(logger, "EVALUATING WITH CONTEXT")
-            mistral_model = evaluate_QA(
-                "",
+            pipeline = evaluate_QA(
                 benchmarks,
                 temps=temp_tests,
                 max_bs=args.bs,
                 output_file=output_file,
                 n_samples=n_passages,
                 max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
-                icl_examples=icl_ex,
-                mistral=True,
-                icl_w_document=True,
-                query_w_context=True,
-                w_embeds=False,
-                pipeline=mistral_model,
-                max_multi_passage=args.multi_passages,
-                seed=args.seed,
-                max_samples=args.max_samples,
-            )
-            torch.cuda.empty_cache()
-
-    else:
-        if args.eval_trad:
-            print("EVALUATING TRANSLATION")
-            pipeline, ckpt = evaluate_trad(
-                args.run_name,
-                max_seq_len=max_seq_len,
-                temps=temp_tests,
-                llm_path=llm_path,
-                embed_path=embed_path,
-                max_bs=args.bs,
-                output_file=output_file,
-                n_samples=n_passages,
-                tmp_path=tmp_path,
-                w_embeds=args.wo_embeds,
-                pipeline=None,
-                mistral=False,
-                seed=args.seed,
-                comp_rate=args.comp_rate,
-                benchmarks=benchmarks
-                if args.benchmarks != "all"
-                else ["Danish", "French", "Spanish", "German"],
-                bridge_ckpt=args.bridge_ckpt
-                if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
-                else False,
-                compressed_doc_in_icl=args.compressed_doc_in_icl,
-                new_template=args.new_template,
-                europarl=args.europarl,
-                max_samples=args.max_samples,
-            )
-            torch.cuda.empty_cache()
-        else:
-            pipeline, ckpt = evaluate_QA(
-                args.run_name,
-                benchmarks,
-                ckpt=args.ckpt,
-                temps=temp_tests,
-                llm_path=llm_path,
-                embed_path=embed_path,
-                max_bs=args.bs,
-                output_file=output_file,
-                n_samples=n_passages,
-                max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
                 icl_examples=icl_tests[0],
+                pipeline=pipeline,
                 w_embeds=args.wo_embeds,
                 icl_w_document=args.icl_w_document,
                 max_multi_passage=args.multi_passages,
@@ -1106,39 +973,9 @@ if __name__ == "__main__":
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
                 comp_rate=args.comp_rate,
                 query_w_context=args.query_w_context,
-                bridge_ckpt=args.bridge_ckpt
-                if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
-                else False,
                 together_multi_passages=args.together_multi_passages,
                 max_samples=args.max_samples,
+                prompt_compressor_name=args.compressor_name,
+                llm_name=args.llm_name,
+                use_llmlingua2=args.use_llmlingua2,
             )
-
-            for icl_ex in icl_tests[1:]:
-                pipeline, ckpt = evaluate_QA(
-                    args.run_name,
-                    benchmarks,
-                    temps=temp_tests,
-                    llm_path=llm_path,
-                    embed_path=embed_path,
-                    max_bs=args.bs,
-                    output_file=output_file,
-                    n_samples=n_passages,
-                    max_seq_len=max_seq_len,
-                    tmp_path=tmp_path,
-                    icl_examples=icl_ex,
-                    w_embeds=args.wo_embeds,
-                    icl_w_document=args.icl_w_document,
-                    pipeline=pipeline,
-                    ckpt=ckpt,
-                    max_multi_passage=args.multi_passages,
-                    seed=args.seed,
-                    compressed_doc_in_icl=args.compressed_doc_in_icl,
-                    comp_rate=args.comp_rate,
-                    query_w_context=args.query_w_context,
-                    bridge_ckpt=args.bridge_ckpt
-                    if args.bridge_ckpt is None
-                    or "false" not in args.bridge_ckpt.lower()
-                    else False,
-                    together_multi_passages=args.together_multi_passages,
-                    max_samples=args.max_samples,
-                )

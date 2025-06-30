@@ -582,11 +582,119 @@
                             "compressed_icl": false,
                             "llm_name": "mistral",
                             "together_mp": false
+                        },
+                        {
+                            "n_samples": 50,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.0,
+                            "approx_Metric": 0.0,
+                            "Prop context containing the answer": 0.54,
+                            "xRAG metric": 0.0,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
+                        },
+                        {
+                            "n_samples": 50,
+                            "icl_examples": 5,
+                            "w_context_in_examples": false,
+                            "w_context_w_query": false,
+                            "Metric": 0.0,
+                            "approx_Metric": 0.0,
+                            "Prop context containing the answer": 0.54,
+                            "xRAG metric": 0.0,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
+                        },
+                        {
+                            "n_samples": 500,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.0,
+                            "approx_Metric": 0.0,
+                            "Prop context containing the answer": 0.39,
+                            "xRAG metric": 0.0,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
+                        },
+                        {
+                            "n_samples": 500,
+                            "icl_examples": 5,
+                            "w_context_in_examples": false,
+                            "w_context_w_query": false,
+                            "Metric": 0.0,
+                            "approx_Metric": 0.0,
+                            "Prop context containing the answer": 0.39,
+                            "xRAG metric": 0.0,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
                         }
                     ]
                 },
                 "F1": {
                     "0": [
+                        {
+                            "n_samples": 500,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.0360712702624696,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
+                        },
+                        {
+                            "n_samples": 500,
+                            "icl_examples": 5,
+                            "w_context_in_examples": false,
+                            "w_context_w_query": false,
+                            "Metric": 0.034955067396670536,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
+                        },
+                        {
+                            "n_samples": 50,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": false,
+                            "Metric": 0.038856778309409895,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
+                        },
+                        {
+                            "n_samples": 50,
+                            "icl_examples": 5,
+                            "w_context_in_examples": false,
+                            "w_context_w_query": false,
+                            "Metric": 0.02288102073365231,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
+                        },
                         {
                             "n_samples": 500,
                             "icl_examples": 0,
@@ -2000,11 +2108,65 @@
                             "compressed_icl": false,
                             "llm_name": "mistral",
                             "together_mp": false
+                        },
+                        {
+                            "n_samples": 50,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": true,
+                            "Metric": 0.0,
+                            "approx_Metric": 0.0,
+                            "Prop context containing the answer": 0.54,
+                            "xRAG metric": 0.0,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
+                        },
+                        {
+                            "n_samples": 500,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": true,
+                            "Metric": 0.0,
+                            "approx_Metric": 0.0,
+                            "Prop context containing the answer": 0.39,
+                            "xRAG metric": 0.0,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
                         }
                     ]
                 },
                 "F1": {
                     "0": [
+                        {
+                            "n_samples": 500,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": true,
+                            "Metric": 0.0360712702624696,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
+                        },
+                        {
+                            "n_samples": 50,
+                            "icl_examples": 0,
+                            "w_context_in_examples": true,
+                            "w_context_w_query": true,
+                            "Metric": 0.038856778309409895,
+                            "n_passages": 1,
+                            "compress_ratio": 1.0,
+                            "compressed_icl": false,
+                            "llm_name": "mistral",
+                            "together_mp": false
+                        },
                         {
                             "n_samples": 500,
                             "icl_examples": 0,

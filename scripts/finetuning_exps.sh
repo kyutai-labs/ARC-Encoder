@@ -17,7 +17,7 @@
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
 
 CONFIG_FILES=(
-config/experiments/heavier_pt/ft/CP16_L3B_MLP2_L8B_20rec_ftsquad_parll.yaml
+config/experiments/heavier_pt/ft/CP16_L3B_MLP2_L8B_20rec_ftsquad_parll_v1.yaml
 )
 
 
