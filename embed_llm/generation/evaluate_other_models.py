@@ -23,7 +23,7 @@ from embed_llm.generation.metrics import (  # noqa: E402
 logger = logging.getLogger(__name__)
 EVAL_DATA_PATH = {
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
-    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",  # unfiltered.nocontext /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl
+    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl",  # unfiltered.nocontext
     "HotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl",
     "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",  # Dev set of the SQuAD v1 dataset
     "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",  # Dev set of the FullWiki HotpotQA dataset
@@ -165,7 +165,7 @@ def create_prompt(
     if prefix_embed is None and w_embeds:
         list_embed = []
     elif not w_embeds:
-        list_embed = None
+        list_embed = []
     else:
         list_embed = prefix_embed.copy()
 
@@ -209,7 +209,6 @@ def evaluate_QA(
     max_bs: int = 4,
     output_file: str = None,
     n_samples: int | None = 1000,
-    tmp_path: str = None,
     icl_examples: int = 0,
     w_embeds: bool = True,  # To test baseline LLM
     query_w_context: bool = False,
@@ -217,17 +216,17 @@ def evaluate_QA(
     max_multi_passage: int = 1,
     seed: float = 0.42,
     compressed_doc_in_icl: bool = False,
-    comp_rate: int | None = None,
+    comp_rate: float | None = None,
     use_llmlingua2: bool = False,  # If True, use llmlingua2 for prompt compression
     together_multi_passages: bool = False,  # If True, use together multi-passage retrieval
-    max_sample: bool = False,  # If True, use all the samples in the dataset
+    max_samples: bool = False,  # If True, use all the samples in the dataset
+    max_doc_len: int | None = None,  # Maximum length of documents
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
 
-    results = {benchmark: {} for benchmark in benchmarks}
     if pipeline is None:
         tokenizer = AutoTokenizer.from_pretrained(llm_name)
-        model = AutoModelForCausalLM.from_pretrained(llm_name)
+        model = AutoModelForCausalLM.from_pretrained(llm_name, device_map="auto")
         pipeline = Pipeline(
             model=model,
             tokenizer=tokenizer,
@@ -243,6 +242,7 @@ def evaluate_QA(
         llm_lingua = PromptCompressor(
             model_name=prompt_compressor_name, use_llmlingua2=use_llmlingua2
         )
+
     total_benchmarks = len(benchmarks)
     for benchmark in tqdm(
         benchmarks, desc="Evaluating benchmarks", total=total_benchmarks
@@ -250,9 +250,6 @@ def evaluate_QA(
         if benchmark == "SQUAD" and max_multi_passage > 1:
             benchmarks.remove(benchmark)
             continue
-
-        # if benchmark == "HotpotQA":
-        #     max_multi_passage = 2
 
         metrics[benchmark] = {}
         eval_data = EVAL_DATA_PATH[benchmark]
@@ -275,10 +272,15 @@ def evaluate_QA(
                 # Take the first ranked retrieved passage
 
                 if max_multi_passage <= 1:
-                    context.append([data["passages"][0].strip()])
+                    if max_doc_len is not None:
+                        # There is around 3 chars per tokens
+                        context.append([data["passages"][0].strip()[: max_doc_len * 3]])
+                    else:
+                        context.append([data["passages"][0].strip()])
 
                 else:
                     context.append(list((data["passages"][:max_multi_passage])))
+
         c = list(zip(questions, context, answers))
 
         # fixed_random = random.Random()
@@ -310,7 +312,6 @@ def evaluate_QA(
             list(questions[icl_examples:]),
             list(answers[icl_examples:]),
         )
-
         new_context.reverse()
         new_questions.reverse()
         new_answers.reverse()
@@ -319,7 +320,7 @@ def evaluate_QA(
             compress_ratio = 0
             generated_sequences = []
             n_samples = (
-                len(new_questions) if n_samples is None or max_sample else n_samples
+                len(new_questions) if n_samples is None or max_samples else n_samples
             )
             for i in trange(0, n_samples, max_bs):
                 texts_to_embed = []
@@ -343,51 +344,68 @@ def evaluate_QA(
                     texts_to_embed.append(text_to_embed)
 
                 compressed_texts = []
+                sum_comp_ratio = 0
+
                 for to_embed_text in texts_to_embed:
                     compressed_text = []
-                    for text in to_embed_text:
+                    for k, text in enumerate(to_embed_text):
                         if not use_llmlingua2:
                             compressed_text.append(
-                                llm_lingua.compress(
+                                llm_lingua.compress_prompt(
                                     text,
                                     instruction="",
                                     question="",
-                                    target_token=len(text) // int(abs(comp_rate)),
-                                )
+                                    target_token=comp_rate,
+                                )["compressed_prompt"]
                             )
                         else:
                             compressed_text.append(
-                                llm_lingua.compress(
+                                llm_lingua.compress_prompt(
                                     text,
                                     instruction="",
                                     question="",
-                                    rate=1 / abs(comp_rate),
-                                )
+                                    rate=comp_rate,
+                                )["compressed_prompt"]
                             )
+                        if k == len(to_embed_text) - 1:
+                            sum_comp_ratio += len(
+                                pipeline.tokenizer.encode(text)
+                            ) / len(pipeline.tokenizer.encode(compressed_text[-1]))
+                    if len(compressed_text) == 0:
+                        compressed_text.append("")
                     compressed_texts.append(compressed_text)
+                if w_embeds:
+                    compress_ratio += sum_comp_ratio  # N tokens to be compressed / final number of tokens after compression
+                else:
+                    compress_ratio += len(
+                        batch_list_prompts
+                    )  # N tokens to be compressed / final number of tokens after compression
+
                 for batch_list_prompt, compressed_text in zip(
                     batch_list_prompts, compressed_texts
                 ):
                     prompt = ""
 
+                    while len(compressed_text) < len(batch_list_prompt):
+                        compressed_text.append("")
+
                     for full_text, comp_text in zip(batch_list_prompt, compressed_text):
                         prompt += full_text + comp_text
-
                     inputs = pipeline.tokenizer(
                         prompt,
                         return_tensors="pt",
-                        padding=True,
-                        truncation=True,
-                    )
+                    ).to(pipeline.model.device)
                     outputs = pipeline.model.generate(
                         **inputs,
                         max_new_tokens=max_seq_len,
-                        temperature=temp,
-                        do_sample=True,
+                        pad_token_id=pipeline.tokenizer.eos_token_id,
                     )
-                    generated_text = tokenizer.decode(
-                        outputs[0], skip_special_tokens=True
+
+                    generated_text = pipeline.tokenizer.decode(
+                        outputs[0, inputs["input_ids"].shape[-1] :],
+                        skip_special_tokens=True,
                     )
+
                     generated_sequences.append(generated_text.split("\n")[0])
             if METRIC_EVALUATION[benchmark] == get_em:
                 value_em = sum(
@@ -438,11 +456,13 @@ def evaluate_QA(
                     "Prop context containing the answer": n_answer_in_context,
                     "xRAG metric": value_xrag,
                     "n_passages": max_multi_passage,
-                    "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
+                    "compress_ratio": compress_ratio / n_samples,
                     "compressed_icl": compressed_doc_in_icl,
                     "llm_name": "mistral" if llm_name is None else llm_name,
                     "together_mp": together_multi_passages,
                     "prompt_compressor_name": prompt_compressor_name,
+                    "max_doc_len": max_doc_len,
+                    "llmlingua2": use_llmlingua2,
                 }
                 value_f1 = (
                     sum(
@@ -461,13 +481,15 @@ def evaluate_QA(
                     "w_context_w_query": query_w_context,
                     "Metric": value_f1,
                     "n_passages": max_multi_passage,
-                    "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
+                    "compress_ratio": compress_ratio / n_samples,
                     "compressed_icl": compressed_doc_in_icl,
                     "llm_name": "mistral" if llm_name is None else llm_name,
                     "together_mp": together_multi_passages,
                     "prompt_compressor_name": prompt_compressor_name,
+                    "max_doc_len": max_doc_len,
+                    "llmlingua2": use_llmlingua2,
                 }
-
+                eval_logger_info(logger, f"Prompt: {prompt[:1024]}\n\n")
                 eval_logger_info(
                     logger,
                     f"Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
@@ -488,15 +510,7 @@ def evaluate_QA(
         else:
             run_name = "baseline_" + llm_name.split("/")[-1]
         ckpt = 0
-        try:
-            if run_name is not None:
-                with open(
-                    tmp_path + run_name + "/results_generation.json",
-                    "a",
-                ) as f:
-                    json.dump(results, f)
-        except FileNotFoundError:
-            print("No result generation file found, creating a new one.")
+
         with open(
             output_file,
             "r",
@@ -541,27 +555,25 @@ def evaluate_QA(
 def evaluate_trad(
     prompt_compressor_name: str | None,
     llm_name: str,  # mistralai/Mistral-7B-v0.3 "meta-llama/Meta-Llama-3-8B"
-    max_seq_len: int = 512,
+    max_seq_len: int = 2048,
     use_llmlingua2: bool = False,  # If True, use llmlingua2 for prompt compression
     temps: list[float] = [0, 0.5, 0.7, 1],
     benchmarks: list[str] = ["Danish", "French", "Spanish", "German"],
     max_bs: int = 4,
     output_file: str = None,
     n_samples: int | None = 1000,
-    tmp_path: str = None,
     pipeline: Pipeline | None = None,
     w_embeds: bool = True,  # To test baseline LLM
     seed: float = 0.42,
-    comp_rate: int | None = None,
+    comp_rate: float | None = None,
     compressed_doc_in_icl: bool = False,  # Not used for translation
     new_template: bool = True,  # If True, use the old template for translation (without "Document:" prefix)
     europarl: bool = False,  # If True, use Europarl dataset instead of Flores
-    max_sample: bool = False,  # If True, use all the samples in the dataset
+    max_samples: bool = False,  # If True, use all the samples in the dataset
 ):
-    results = {benchmark: {} for benchmark in benchmarks}
     if pipeline is None:
         tokenizer = AutoTokenizer.from_pretrained(llm_name)
-        model = AutoModelForCausalLM.from_pretrained(llm_name)
+        model = AutoModelForCausalLM.from_pretrained(llm_name, device_map="auto")
         pipeline = Pipeline(
             model=model,
             tokenizer=tokenizer,
@@ -640,6 +652,7 @@ def evaluate_trad(
                             for doc, answ, _ in zip(text, traduction, range(5))
                         ]
                     )
+                    + "\n\nDocument: "
                 ]
         else:
             if compressed_doc_in_icl:
@@ -662,6 +675,7 @@ def evaluate_trad(
                             for doc, answ, _ in zip(text, traduction, range(5))
                         ]
                     )
+                    + "\n\nDocument: "
                 ]
 
         new_text, new_trad = (
@@ -676,7 +690,9 @@ def evaluate_trad(
         for temp in temps:
             compress_ratio = 0
             generated_sequences = []
-            n_samples = len(text) if n_samples is None or max_sample else n_samples
+            n_samples = len(text) if n_samples is None or max_samples else n_samples
+            if europarl:
+                n_samples = 1000 if n_samples is None or max_samples else n_samples
             for i in trange(0, n_samples, max_bs):
                 texts_to_embed = []
                 batch_list_prompts = []
@@ -713,53 +729,68 @@ def evaluate_trad(
                     texts_to_embed = [embed_prompt + [seq] for seq in text[i : i + bs]]
 
                 compressed_texts = []
+                sum_comp_ratio = 0
                 for to_embed_text in texts_to_embed:
                     compressed_text = []
-                    for text in to_embed_text:
-                        if not use_llmlingua2:
-                            compressed_text.append(
-                                llm_lingua.compress(
-                                    text,
-                                    instruction="",
-                                    question="",
-                                    target_token=len(text) // int(abs(comp_rate)),
+                    for k, text in enumerate(to_embed_text):
+                        if llm_lingua is not None:
+                            if not use_llmlingua2:
+                                compressed_text.append(
+                                    llm_lingua.compress_prompt(
+                                        text,
+                                        instruction="",
+                                        question="",
+                                        target_token=comp_rate,
+                                    )["compressed_prompt"]
                                 )
-                            )
-                        else:
-                            compressed_text.append(
-                                llm_lingua.compress(
-                                    text,
-                                    instruction="",
-                                    question="",
-                                    rate=1 / abs(comp_rate),
+                            else:
+                                compressed_text.append(
+                                    llm_lingua.compress_prompt(
+                                        text,
+                                        instruction="",
+                                        question="",
+                                        rate=comp_rate,
+                                    )["compressed_prompt"]
                                 )
-                            )
+                            if k == len(to_embed_text) - 1:
+                                sum_comp_ratio += len(
+                                    pipeline.tokenizer.encode(text)
+                                ) / len(pipeline.tokenizer.encode(compressed_text[-1]))
+
+                    if len(compressed_text) == 0:
+                        compressed_text.append("")
                     compressed_texts.append(compressed_text)
+                if w_embeds:
+                    compress_ratio += sum_comp_ratio  # N tokens to be compressed / final number of tokens after compression
+                else:
+                    compress_ratio += len(
+                        batch_list_prompts
+                    )  # N tokens to be compressed / final number of tokens after compression
+
                 for batch_list_prompt, compressed_text in zip(
                     batch_list_prompts, compressed_texts
                 ):
                     prompt = ""
 
+                    while len(compressed_text) < len(batch_list_prompt):
+                        compressed_text.append("")
                     for full_text, comp_text in zip(batch_list_prompt, compressed_text):
                         prompt += full_text + comp_text
-
                     inputs = pipeline.tokenizer(
                         prompt,
                         return_tensors="pt",
-                        padding=True,
-                        truncation=True,
-                    )
+                    ).to(pipeline.model.device)
                     outputs = pipeline.model.generate(
                         **inputs,
                         max_new_tokens=max_seq_len,
-                        temperature=temp,
-                        do_sample=True,
+                        pad_token_id=pipeline.tokenizer.eos_token_id,
                     )
-                    generated_text = tokenizer.decode(
-                        outputs[0], skip_special_tokens=True
-                    )
-                    generated_sequences.append(generated_text.split("\n")[0])
 
+                    generated_text = pipeline.tokenizer.decode(
+                        outputs[0, inputs["input_ids"].shape[-1] :],
+                        skip_special_tokens=True,
+                    )
+                    generated_sequences.append(generated_text.split("\n\n")[0])
             bleu_score = get_bleu_score(
                 traduction[: len(generated_sequences)], generated_sequences
             )
@@ -767,7 +798,7 @@ def evaluate_trad(
             metrics[benchmark]["BLEU"][str(temp)] = {
                 "n_samples": n_samples,
                 "Metric": bleu_score,
-                "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
+                "compress_ratio": compress_ratio / n_samples,
                 "language": benchmark,
                 "new_template": new_template,
                 "compressed_icl": compressed_doc_in_icl,
@@ -783,15 +814,7 @@ def evaluate_trad(
             run_name = "baseline_" + llm_name.split("/")[-1]
 
         ckpt = 0
-        try:
-            if run_name is not None:
-                with open(
-                    tmp_path + run_name + "/results_generation.json",
-                    "a",
-                ) as f:
-                    json.dump(results, f)
-        except FileNotFoundError:
-            print("No result generation file found, creating a new one.")
+
         with open(
             output_file,
             "r",
@@ -851,14 +874,14 @@ def arg_parser():
     parser.add_argument("--icl_w_document", action="store_true")
     parser.add_argument("--compressed_doc_in_icl", action="store_true")
     parser.add_argument(
-        "--comp_rate", type=int, default=None
+        "--comp_rate", type=float, default=None
     )  # can enable to fix number of memory tokens if > 0
     parser.add_argument("--eval_trad", action="store_true")
 
     parser.add_argument(
         "--llm_name",
         type=str,
-        choices=["mistralai/Mistral-7B-v0.3", "meta-llama/Meta-Llama-3-8B"],
+        choices=["mistralai/Mistral-7B-v0.3", "meta-llama/Llama-3.1-8B"],
         default="mistralai/Mistral-7B-v0.3",
     )
     parser.add_argument("--query_w_context", action="store_true")
@@ -878,6 +901,11 @@ def arg_parser():
         "--use_llmlingua2",
         action="store_true",
         help="If True, use llmlingua2 for prompt compression",
+    )
+    parser.add_argument(
+        "--max_doc_len",
+        type=int,
+        default=None,
     )
 
     return parser.parse_args()
@@ -910,7 +938,6 @@ if __name__ == "__main__":
     if args.eval_trad:
         eval_logger_info(logger, "EVALUATING Translation")
         pipeline = evaluate_trad(
-            max_seq_len=max_seq_len,
             temps=temp_tests,
             max_bs=args.bs,
             output_file=output_file,
@@ -954,6 +981,7 @@ if __name__ == "__main__":
             prompt_compressor_name=args.compressor_name,
             llm_name=args.llm_name,
             use_llmlingua2=args.use_llmlingua2,
+            max_doc_len=args.max_doc_len,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -964,7 +992,7 @@ if __name__ == "__main__":
                 output_file=output_file,
                 n_samples=n_passages,
                 max_seq_len=max_seq_len,
-                icl_examples=icl_tests[0],
+                icl_examples=icl_ex,
                 pipeline=pipeline,
                 w_embeds=args.wo_embeds,
                 icl_w_document=args.icl_w_document,
@@ -978,4 +1006,5 @@ if __name__ == "__main__":
                 prompt_compressor_name=args.compressor_name,
                 llm_name=args.llm_name,
                 use_llmlingua2=args.use_llmlingua2,
+                max_doc_len=args.max_doc_len,
             )

@@ -438,7 +438,7 @@ class EmbedAugPipeline(nn.Module):
                 x.append(x_l)
             x = sum(x, [])
 
-            n_context_tokens = sum(sum(seqlens, []))
+            n_context_tokens_before = [seql[-1] for seql in seqlens]
             x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
                 device
             )
@@ -449,6 +449,7 @@ class EmbedAugPipeline(nn.Module):
             embed_seqlens = group_embed_seqlens(
                 embed_seqlens, [len(l_text) for l_text in text_to_embed]
             )
+            n_context_tokens_after = [seql[-1] for seql in embed_seqlens]
             if self.model.embedder.cont_tok is not None:
                 sp_cont_tok = self.model.embedder.cont_tok(
                     torch.tensor([0]).to(embeddings.device)
@@ -487,7 +488,8 @@ class EmbedAugPipeline(nn.Module):
         else:
             embeddings = None
             embed_seqlens = None
-            n_context_tokens = 0
+            n_context_tokens_before = [1] * len(batch_list_prompts)
+            n_context_tokens_after = [1] * len(batch_list_prompts)
 
         embeddings = (
             embeddings
@@ -569,8 +571,14 @@ class EmbedAugPipeline(nn.Module):
         else:
             return (
                 final_texts,
-                n_context_tokens,
-                None if embed_seqlens is None else sum(sum(embed_seqlens, [])),
+                sum(
+                    [
+                        before / after
+                        for after, before in zip(
+                            n_context_tokens_after, n_context_tokens_before
+                        )
+                    ]
+                ),  # noqa: E501
             )
 
 

@@ -57,7 +57,7 @@ config/experiments/ablations/ablations_reconstruction_cp/CP32_L3B_MLP2_M7B_20per
 config/experiments/ablations/CP16_L3B_MLP2_M7B_allckpts_very_long_nc.yaml
 config/experiments/ablations/ablations_pairs/CP8_M7B_L8B.yaml 
 config/experiments/ablations/ablations_pairs/CP8_M7B_M7B.yaml
-config/experiments/ablations/ablations_mlp/CP8_L3B_MLP8_M7B_cont.yaml
+config/experiments/ablations/ablations_mlp/CP8_L3B_MLP8_M7B_cont_2.yaml
 )
 
         

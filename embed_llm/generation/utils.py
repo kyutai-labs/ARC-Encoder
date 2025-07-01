@@ -46,7 +46,7 @@ def eval_logger_info(logger, message: str) -> None:
         logger.info(message)
 
 
-def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.DataFrame:
+def format_results(results: dict, benchmark: str) -> pd.DataFrame:
     if (
         benchmark.lower() == "nq"
         or benchmark.lower() == "triviaqa"
@@ -73,6 +73,9 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "xRAG metric",
             "llm_name",
             'together_mp',
+            "max_doc_len",
+            "prompt_compressor_name",
+            "llmlingua2",
         ]
     elif benchmark.lower() == "factkg":
         key_list = [
@@ -99,6 +102,8 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "new_template",
             "llm_name",
             "compressed_icl",
+            "llmlingua2",
+            "prompt_compressor_name",
         ]
     else:
         raise ValueError("Invalid benchmark")
@@ -132,6 +137,10 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                 "compress_ratio", None
                                             ),
                                             "llm_name": result.get("llm_name", 'mistral_7B'),
+                                            "llmlingua2": result.get("llmlingua2", False),
+                                            "prompt_compressor_name": result.get(
+                                                "prompt_compressor_name", None
+                                            ),
                                         },
                                         index=[0],
                                     ),
@@ -149,6 +158,8 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                             "compressed_icl",
                             "compress_ratio",
                             "llm_name",
+                            "llmlingua2",
+                            "prompt_compressor_name",
                         ]
                     )
                     .first()
@@ -207,6 +218,13 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                 ),
                                                 "llm_name": res.get("llm_name", 'mistral_7B'),
                                                 "together_mp": res.get("together_mp", False),
+                                                "max_doc_len": res.get("max_doc_len", None),
+                                                "prompt_compressor_name": res.get(
+                                                    "prompt_compressor_name", None
+                                                ),
+                                                "llmlingua2": res.get(
+                                                    "llmlingua2", False
+                                                ),
                                             },
                                             index=[0],
                                         ),
@@ -240,49 +258,41 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                         "n_passages": res.get("n_passages", 1),
                                         "llm_name": res.get("llm_name", 'mistral_7B'),
                                         "together_mp": res.get("together_mp", False),
+                                        "llmlingua2": res.get(
+                                            "llmlingua2", False
+                                        ),
+                                        "prompt_compressor_name": res.get(
+                                            "prompt_compressor_name", None
+                                        ),
+                                        "max_doc_len": res.get("max_doc_len", None),
                                     },
                                     index=[0],
                                 )
 
                                 formated_results = pd.concat([formated_results, df_res])
 
-                if icae:
-                    formated_results = (
-                        formated_results.groupby(
-                            [
-                                "run_name",
-                                "ckpt",
-                                "temp",
-                                "n_samples",
-                                "icl_examples",
-                                "context_in_examples",
-                                "n_passages",
-                                "compress_ratio",
-                            ]
-                        )
-                        .first()
-                        .reset_index(allow_duplicates=True)
+                formated_results = (
+                    formated_results.groupby(
+                        [
+                            "run_name",
+                            "ckpt",
+                            "temp",
+                            "n_samples",
+                            "icl_examples",
+                            "context_in_examples",
+                            "n_passages",
+                            "compressed_icl",
+                            "compress_ratio",
+                            "llm_name",
+                            "together_mp",
+                            "llmlingua2",
+                            "prompt_compressor_name",
+                            "max_doc_len",
+                        ]
                     )
-                else:
-                    formated_results = (
-                        formated_results.groupby(
-                            [
-                                "run_name",
-                                "ckpt",
-                                "temp",
-                                "n_samples",
-                                "icl_examples",
-                                "context_in_examples",
-                                "n_passages",
-                                "compressed_icl",
-                                "compress_ratio",
-                                "llm_name",
-                                "together_mp",
-                            ]
-                        )
-                        .first()
-                        .reset_index(allow_duplicates=True)
-                    )
+                    .first()
+                    .reset_index(allow_duplicates=True)
+                )
 
     return formated_results
 
