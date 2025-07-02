@@ -33,7 +33,9 @@ def dataset_from_file(
 ):
     with open(file_path, "r") as f:
         lines = f.readlines()
-        for _, line in enumerate(lines):
+        for i, line in enumerate(lines):
+            if i <= 452992:
+                continue
             data = json.loads(line)
             yield data
 
@@ -81,10 +83,19 @@ def synthesize_data(
         data_path,
         batch_size,
     )
+
     output_buffer = []
     n_samples = 0
-    for step in range(len(dataloader)):
-        batch = next(dataloader)
+    step = 0
+    while True:
+        step += 1
+        try:
+            batch = next(dataloader, None)
+        except StopIteration:
+            batch = None
+        if batch is None:
+            print("No more batches to process.")
+            break
         n_samples += len(batch)
 
         messages = [
@@ -145,7 +156,7 @@ def arg_parser():
         "-bs",
         "--batch_size",
         type=int,
-        default=64,
+        default=1,
     )
 
     parser.add_argument(
@@ -162,7 +173,7 @@ def arg_parser():
     parser.add_argument(
         "--download_freq",
         type=int,
-        default=100,
+        default=1,
     )
 
     return parser.parse_args()

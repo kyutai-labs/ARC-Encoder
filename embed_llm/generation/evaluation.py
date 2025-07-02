@@ -780,7 +780,7 @@ def arg_parser():
     parser.add_argument("--out_file", type=str, default=None)
     parser.add_argument("--n_passages", type=int, default=500)
     parser.add_argument("--max_seq_len", type=int, default=64)
-    parser.add_argument("--bs", type=int, default=4)
+    parser.add_argument("--bs", type=int, default=32)
     parser.add_argument("--wo_embeds", action="store_false")
     parser.add_argument("--multi_passages", type=int, default=1)
     parser.add_argument(

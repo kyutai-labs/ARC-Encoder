@@ -1,15 +1,15 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=40 #12-39%8 # Array of jobs, adjust the range based on your config files
+#SBATCH --array=43 #12-39%8 # Array of jobs, adjust the range based on your config files
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
-#SBATCH --job-name=rec_heavy_pt
+#SBATCH --job-name=trunc_explor_pt
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/ablations/embed_llm_%A_%a.out
-
+#SBATCH --dependency=afterany:804793_0
 
 
 # Set up environment
@@ -58,6 +58,9 @@ config/experiments/ablations/CP16_L3B_MLP2_M7B_allckpts_very_long_nc.yaml
 config/experiments/ablations/ablations_pairs/CP8_M7B_L8B.yaml 
 config/experiments/ablations/ablations_pairs/CP8_M7B_M7B.yaml
 config/experiments/ablations/ablations_mlp/CP8_L3B_MLP8_M7B_cont_2.yaml
+config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_trunc4_nc.yaml 
+config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_trunc2_nc.yaml
+config/experiments/ablations/ablations_encoder/CP8_L3B_MLP8_M7B_trunc1_nc.yaml
 )
 
         
