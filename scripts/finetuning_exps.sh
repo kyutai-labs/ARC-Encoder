@@ -9,10 +9,14 @@
 #SBATCH --chdir=/home/hippolytepilchen/code/mix_decoder_training
 #SBATCH --job-name=fine_tuning_multi_decoder
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
+#SBATCH --dependency=afterany:810981_45
 
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
+
+
+
 
 CONFIG_FILES=(
 # config/experiments/ablations/multi_decoder_L3_MLP_nc_ft.yaml 

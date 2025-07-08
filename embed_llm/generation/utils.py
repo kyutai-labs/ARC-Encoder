@@ -46,12 +46,15 @@ def eval_logger_info(logger, message: str) -> None:
         logger.info(message)
 
 
-def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.DataFrame:
+def format_results(results: dict, benchmark: str) -> pd.DataFrame:
     if (
         benchmark.lower() == "nq"
         or benchmark.lower() == "triviaqa"
         or benchmark.lower() == "hotpotqa"
         or benchmark.lower() == "squad"
+        or benchmark.lower() == "narrativeqa"
+        or benchmark.lower() == "narrativeqa_split"
+        or benchmark.lower() == "fullwikihotpotqa"
     ):
         key_list = [
             "run_name",
@@ -66,9 +69,14 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "Prop_a_in_cont",
             "n_passages",
             "compress_ratio",
+            "compressed_icl",
             "EM approx_Metric",
             "xRAG metric",
-            "llm_name"
+            "llm_name",
+            'together_mp',
+            "llmlingua2",
+            "prompt_compressor_name",
+            "max_doc_len",
         ]
     elif benchmark.lower() == "factkg":
         key_list = [
@@ -92,8 +100,12 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
             "language",
             "Bleu",
             "compress_ratio",
-            "fine_tuned",
-            "llm_name"
+            "new_template",
+            "llm_name",
+            "compressed_icl",
+            "llmlingua2",
+            "prompt_compressor_name",
+            "europarl",
         ]
     else:
         raise ValueError("Invalid benchmark")
@@ -121,18 +133,23 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                             "Metric": result["Metric"],
                                             "n_samples": result["n_samples"],
                                             "language": result["language"],
-                                            "fine_tuned": result.get(
-                                                "fine_tuned", True
-                                            ),
+                                            "new_template": result.get("new_template", False),
+                                            "compressed_icl": result.get("compressed_icl", False),
                                             "compress_ratio": result.get(
                                                 "compress_ratio", None
                                             ),
                                             "llm_name": result.get("llm_name", 'mistral_7B'),
+                                            "llmlingua2": result.get("llmlingua2", False),
+                                            "prompt_compressor_name": result.get(
+                                                "prompt_compressor_name", "no"
+                                            ),
+                                            "europarl": result.get("europarl", False),
                                         },
                                         index=[0],
                                     ),
                                 ]
                             )
+                formated_results["prompt_compressor_name"] = formated_results["prompt_compressor_name"].fillna("None")
                 formated_results = (
                     formated_results.groupby(
                         [
@@ -141,9 +158,13 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                             "temp",
                             "n_samples",
                             "language",
-                            "fine_tuned",
+                            "new_template",
+                            "compressed_icl",
                             "compress_ratio",
                             "llm_name",
+                            "llmlingua2",
+                            "prompt_compressor_name",
+                            "europarl",
                         ]
                     )
                     .first()
@@ -155,6 +176,9 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                 or benchmark.lower() == "triviaqa"
                 or benchmark.lower() == "hotpotqa"
                 or benchmark.lower() == "squad"
+                or benchmark.lower() == "narrativeqa"
+                or benchmark.lower() == "fullwikihotpotqa"
+                or benchmark.lower() == "narrativeqa_split"
             ):
                 for metric in ["EM", "F1"]:
                     if benchmark not in results[run_name][ckpt].keys():
@@ -164,6 +188,7 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                     for temp in results[run_name][ckpt][benchmark][metric].keys():
                         for res in results[run_name][ckpt][benchmark][metric][temp]:
                             if metric == "EM":
+     
                                 formated_results = pd.concat(
                                     [
                                         formated_results,
@@ -199,6 +224,14 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                                     "approx_Metric", None
                                                 ),
                                                 "llm_name": res.get("llm_name", 'mistral_7B'),
+                                                "together_mp": res.get("together_mp", False),
+                                                "max_doc_len": res.get("max_doc_len", "maximum"),
+                                                "prompt_compressor_name": res.get(
+                                                    "prompt_compressor_name", 'no'
+                                                ),
+                                                "llmlingua2": res.get(
+                                                    "llmlingua2", False
+                                                ),
                                             },
                                             index=[0],
                                         ),
@@ -231,48 +264,45 @@ def format_results(results: dict, benchmark: str, icae: bool = False) -> pd.Data
                                         ),
                                         "n_passages": res.get("n_passages", 1),
                                         "llm_name": res.get("llm_name", 'mistral_7B'),
+                                        "together_mp": res.get("together_mp", False),
+                                        "llmlingua2": res.get(
+                                            "llmlingua2", False
+                                        ),
+                                        "prompt_compressor_name": res.get(
+                                            "prompt_compressor_name", 'none'
+                                        ),
+                                        "max_doc_len": res.get("max_doc_len", "maximum"),
                                     },
                                     index=[0],
                                 )
 
                                 formated_results = pd.concat([formated_results, df_res])
 
-                if icae:
-                    formated_results = (
-                        formated_results.groupby(
-                            [
-                                "run_name",
-                                "ckpt",
-                                "temp",
-                                "n_samples",
-                                "icl_examples",
-                                "context_in_examples",
-                                "n_passages",
-                                "compress_ratio",
-                            ]
-                        )
-                        .first()
-                        .reset_index(allow_duplicates=True)
+                formated_results["prompt_compressor_name"] = formated_results["prompt_compressor_name"].fillna("None")
+                formated_results["max_doc_len"] = formated_results["max_doc_len"].fillna("None")
+                formated_results = (
+                    formated_results.groupby(
+                        [
+                            "run_name",
+                            "ckpt",
+                            "temp",
+                            "n_samples",
+                            "icl_examples",
+                            "context_in_examples",
+                            "context_w_query",
+                            "n_passages",
+                            "compressed_icl",
+                            "compress_ratio",
+                            "llm_name",
+                            "together_mp",
+                            "llmlingua2",
+                            # "prompt_compressor_name",
+                            "max_doc_len",
+                        ]
                     )
-                else:
-                    formated_results = (
-                        formated_results.groupby(
-                            [
-                                "run_name",
-                                "ckpt",
-                                "temp",
-                                "n_samples",
-                                "icl_examples",
-                                "context_in_examples",
-                                "n_passages",
-                                "compressed_icl",
-                                "compress_ratio",
-                                "llm_name",
-                            ]
-                        )
-                        .first()
-                        .reset_index(allow_duplicates=True)
-                    )
+                    .first()
+                    .reset_index(allow_duplicates=True)
+                )
 
     return formated_results
 

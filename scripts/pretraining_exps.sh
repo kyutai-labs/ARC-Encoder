@@ -21,7 +21,6 @@ config/experiments/ablations/multi_decoder_L3_MLP_nc_v2.yaml
 )
 
 
-
 # Get the specific config file for this array task
 CONFIG=${CONFIG_FILES[$SLURM_ARRAY_TASK_ID]}
 

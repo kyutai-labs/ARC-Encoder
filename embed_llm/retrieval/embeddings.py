@@ -1,6 +1,6 @@
 from gritlm import GritLM
 from transformers import AutoTokenizer, AutoModel
-from embed_llm.retrieval.nvembed.modeling_nvembed import custom_encode
+from nvembed.modeling_nvembed import custom_encode
 import os
 import torch.nn.functional as F
 import torch
@@ -143,15 +143,16 @@ def generate_embeddings(
         elif i >= end_partition:
             break
         else:
-            for passage in row["text"]:  # All passages must be useful
-                # Truncate passages on the char level to 1024
-                used_texts.append(passage[:1024])
+            # for passage in row["text"]:  # All passages must be useful
+            #     # Truncate passages on the char level to 1024
+            #     used_texts.append(passage[:1024])
             # All passages must be useful, atlas should already be preprocessed
             # if len(row["text"]) < 20:
             #     continue
             # Truncate passages on the char level to 2048
             # used_texts.append(row["text"][:2048].strip())
-            used_texts.append({"id": row["id"], "text": row["text"].strip()})
+            # used_texts.append({"id": row["id"], "text": row["text"].strip()})
+            used_texts.append(row["text"][:2048].strip())
     count = 0
     embeddings_array = []
     text_passages = []
@@ -240,7 +241,7 @@ def arg_parser():
         "-bs",
         "--batch_size",
         type=int,
-        default=32,
+        default=64,
         help="Batch size for embedding generation",
     )
     parser.add_argument(
@@ -267,8 +268,8 @@ if __name__ == "__main__":
     output_path = args.save_output_path
     data_path = args.data_name_to_load
     bs = args.batch_size
-    output_path = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings_2/"
-    data_path = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl"
+    output_path = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/pisco_kilt_128_embeddings/"
+    data_path = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/KILT/pisco_kilt_128.jsonl"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     generate_embeddings(
         "NVEmbed",

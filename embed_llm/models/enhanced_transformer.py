@@ -261,7 +261,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
         token_embeds = self.tok_embeddings(input_ids)
         merge_based_on = None
         h = token_embeds
-        # print('input shape', h.shape, seqlens)
         if self.mem_embeddings is not None:
             # print('should not be here')
             mem_embeddings = self.mem_embeddings[llm_number](
@@ -295,7 +294,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
             self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
         else:
             self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
-
+    
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
         compress_index = 0
@@ -366,7 +365,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             self_att_mask = BlockDiagonalCausalMask.from_seqlens(
                                 q_seqlen=new_seqlens, kv_seqlen=seqlens
                             )
-
                         h, _, merge_based_on = self.layers[str(i)](
                             x=pooled_h,
                             other_kv=h,
@@ -429,28 +427,12 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 seqlens = new_seqlens
                 compress_index += 1
             else:
-                # print('not compressing')
                 h, _, merge_based_on = self.layers[str(i)](
                     x=h,
                     freqs_cis=freqs_cis,
                     mask=self_att_mask,
                     based_on=self.pooling_args.based_on,
                 )
-
-            # if get_rank() == 0:
-            #     filename = (
-            #         "/home/hippolytepilchen/code/hp_v2/results/analysis/mistral7B_embeds_layer_"
-            #         + str(i)
-            #         + ".pkl"
-            #     )
-            #     if os.path.exists(filename):
-            #         with open(filename, "rb") as f:
-            #             data = pickle.load(f)
-            #     else:
-            #         data = []
-            #     data.append(h.detach().clone().cpu().numpy())
-            #     with open(filename, "wb") as f:
-            #         pickle.dump(data, f)
 
         if self.n_mem_tokens > 0 and not self.mixed_method:
             new_h = torch.zeros(
