@@ -28,6 +28,7 @@ EVAL_DATA_PATH = {
     "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",  # Dev set of the SQuAD v1 dataset
     "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",  # Dev set of the FullWiki HotpotQA dataset
     "NarrativeQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test.jsonl",
+    "NarrativeQA_split": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test_split.jsonl',
 }
 
 METRIC_EVALUATION = {
@@ -37,6 +38,7 @@ METRIC_EVALUATION = {
     "SQUAD": get_em,
     "FullWikiHotpotQA": get_em,
     "NarrativeQA": get_em,
+    'NarrativeQA_split': get_em,
 }
 
 
@@ -360,8 +362,6 @@ def evaluate_QA(
 
                     batch_list_prompts.append(batch_list_prompt)
                     texts_to_embed.append(text_to_embed)
-                print('Text to embed:', texts_to_embed)
-                print('Batch list prompts:', batch_list_prompts)
                 generated_sequence, sum_comp_ratio = pipeline.generate(
                     text_to_embed=texts_to_embed if w_embeds else None,
                     batch_list_prompts=batch_list_prompts,
@@ -372,7 +372,6 @@ def evaluate_QA(
                     device_generation=other_device,
                     give_n_tokens=True,
                 )
-                print('Generated sequence:', generated_sequence)
                 compress_ratio += sum_comp_ratio  # N tokens to be compressed / final number of tokens after compression
 
                 generated_sequences.extend(generated_sequence)
