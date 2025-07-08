@@ -31,6 +31,7 @@ EVAL_DATA_PATH = {
     "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",
     "HotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl",
     "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",
+    "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",
 }
 
 METRIC_EVALUATION = {
@@ -38,6 +39,7 @@ METRIC_EVALUATION = {
     "TRIVIAQA": get_em,
     "HotpotQA": get_em,
     "SQUAD": get_em,
+    "FullWikiHotpotQA": get_em,  
 }
 
 
@@ -49,6 +51,12 @@ TRAD_DATA_PATH = {
     "Danish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/dan_Latn.jsonl",
 }
 
+EUROPARL_TRAD_DATA_PATH = {
+    "Spanish": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_es.jsonl",
+    "French": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_fr.jsonl",
+    "German": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_de.jsonl",
+    "Danish": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_da.jsonl",
+}
 logger = logging.getLogger(__name__)
 
 
@@ -62,40 +70,58 @@ def get_gpu_memory():
 def create_prompt_prefix(
     queries: list[str],
     answers: list[str],
-    docs: list[str] | None = None,
+    docs: list[list[str]] | None = None,
     max_examples: int | None = None,
     compressed_doc_in_icl: bool = False,
-    shorter_icl: bool = False,
+    together_multi_passages: bool = False,
 ) -> tuple[list[str], list[str] | None]:
     max_examples = max_examples if max_examples is not None else len(queries)
     prompt_str = []
     to_embed_str = []
 
     prompt = ""
-    if shorter_icl:
-        generate_exs = list(zip(queries, answers, docs))
-        generate_exs.sort(key=lambda arg: len(arg[-1]), reverse=True)
-        queries, answers, docs = (
-            [ex[0] for ex in generate_exs],
-            [ex[1] for ex in generate_exs],
-            [ex[2] for ex in generate_exs],
-        )
     if docs is not None:
         if compressed_doc_in_icl:
             for query, answer, doc, index in zip(
                 queries, answers, docs, range(max_examples)
             ):
+                
+                if len(doc) == 1:
+                    doc = doc[0]
+                elif len(doc) > 1 and not together_multi_passages:
+                    doc = "\n".join(doc)
+   
                 if index == 0:
                     prompt_str.append("Document: ")
-                    to_embed_str.append(doc.strip())
+                    
+                    if isinstance(doc, list):
+                        for d in doc:
+                            to_embed_str.append(d.strip())
+                            prompt_str.append('')
+                        prompt_str = prompt_str[:-1]  # Remove the last empty string
+                    else:
+                        to_embed_str.append(doc.strip())
+                        
                     prompt_str.append(
                         f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
                     )
                 elif index == max_examples - 1:
-                    to_embed_str.append(doc.strip())
+                    if isinstance(doc, list):
+                        for d in doc:
+                            to_embed_str.append(d.strip())
+                            prompt_str.append('')
+                        prompt_str = prompt_str[:-1]  # Remove the last empty string
+                    else:
+                        to_embed_str.append(doc.strip())
                     prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\n")
                 else:
-                    to_embed_str.append(doc.strip())
+                    if isinstance(doc, list):
+                        for d in doc:
+                            to_embed_str.append(d.strip())
+                            prompt_str.append('')
+                        prompt_str = prompt_str[:-1]  # Remove the last empty string
+                    else:
+                        to_embed_str.append(doc.strip())
                     prompt_str.append(
                         f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
                     )
@@ -106,6 +132,7 @@ def create_prompt_prefix(
             for query, answer, doc, _ in zip(
                 queries, answers, docs, range(max_examples)
             ):
+                doc = '\n'.join(doc)
                 prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
 
             to_embed_str = None
@@ -124,10 +151,11 @@ def create_prompt_prefix(
 def create_prompt(
     prefix_prompt: list[str],
     prefix_embed: list[str] | None,
-    doc: str,
+    doc: list[str],
     query: str,
     wdoc: bool = True,
     w_embeds: bool = True,
+    together_multi_passages: bool = False,
 ) -> tuple[list[str], list[str] | None]:
     list_prompt = prefix_prompt.copy()
 
@@ -143,18 +171,28 @@ def create_prompt(
     )
 
     if wdoc:
+        doc = '\n'.join(doc)
         list_prompt.append(f"Document: {doc.strip()}\nQuestion: {query}\nAnswer:")
         return list_prompt, list_embed
     else:
         if w_embeds:
             last_prompt = list_prompt[-1]
             list_prompt[-1] = "".join([last_prompt, "Document: "])
-            list_embed.append(doc.strip())
+            
+            if len(doc) == 1 or together_multi_passages: 
+                doc = '\n'.join(doc)
+                list_embed.append(doc.strip())
+            else:
+                for d in doc:
+                    list_embed.append(d.strip())
+                    list_prompt.append('')  # Add an empty string to separate passages so that there are embedded separately
+                list_prompt = list_prompt[:-1]  # Remove the last empty string
             list_prompt.append(f"\nQuestion: {query}\nAnswer:")
         else:
             list_embed = None
             list_prompt.append(f"\nQuestion: {query}\nAnswer:")
         return list_prompt, list_embed
+
 
 
 def evaluate_QA(
@@ -183,7 +221,7 @@ def evaluate_QA(
     bridge_ckpt: bool
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
-    shorter_icl: bool = False,  # If True, use shorter ICL examples
+    together_multi_passages: bool = False,  # If True, use together multi-passage retrieval
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
     llm_name = llm_path.split("/")[-1]
@@ -229,6 +267,9 @@ def evaluate_QA(
         if benchmark == "SQUAD" and max_multi_passage > 1:
             benchmarks.remove(benchmark)
             continue
+        
+        if compressed_doc_in_icl and icl_examples == 0:
+            continue
 
         # if benchmark == "HotpotQA":
         #     max_multi_passage = 2
@@ -254,11 +295,11 @@ def evaluate_QA(
                 # Take the first ranked retrieved passage
 
                 if max_multi_passage <= 1:
-                    context.append(data["passages"][0].strip())
+                    context.append([data["passages"][0].strip()])
 
                 else:
                     context.append(
-                        "\n".join(list((data["passages"][:max_multi_passage])))
+                        list((data["passages"][:max_multi_passage]))
                     )
 
         c = list(zip(questions, context, answers))
@@ -284,7 +325,7 @@ def evaluate_QA(
             docs=None if not icl_w_document else context,
             max_examples=icl_examples,
             compressed_doc_in_icl=compressed_doc_in_icl,
-            shorter_icl=shorter_icl,
+            together_multi_passages=together_multi_passages,
         )
 
         new_context, new_questions, new_answers = (
@@ -316,6 +357,7 @@ def evaluate_QA(
                         w_embeds=w_embeds,
                         query=query,
                         wdoc=query_w_context,
+                        together_multi_passages=together_multi_passages,
                     )
 
                     batch_list_prompts.append(batch_list_prompt)
@@ -563,8 +605,9 @@ def evaluate_trad(
     bridge_ckpt: bool
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
-    shorter_icl: bool = False,  # If True, use shorter ICL examples
     compressed_doc_in_icl: bool = False,  # Not used for translation
+    new_template: bool = True,  # If True, use the old template for translation (without "Document:" prefix)
+    europarl: bool = False,  # If True, use Europarl dataset instead of Flores
 ):
     # Loading model
     llm_name = llm_path.split("/")[-1]
@@ -632,43 +675,52 @@ def evaluate_trad(
         random.shuffle(c, random=lambda: seed)
         text, traduction = zip(*c)
         embed_prompt = []
-        if shorter_icl:
-            generate_exs = list(zip(text, traduction, range(5)))
-            generate_exs.sort(key=lambda arg: len(arg[0]), reverse=True)
-
-            text_prompt_prefix = [
-                "\n\n".join(
-                    [
-                        f"Document: {doc}\nTranslation: {answ}"
-                        for doc, answ, _ in generate_exs
-                    ]
-                )
-            ]
-
-        elif compressed_doc_in_icl:
-            text_prompt_prefix = ["Document: "]
-            for doc, answ, _ in zip(text, traduction, range(4)):
-                embed_prompt.append(doc.strip())
+      
+        if not new_template:
+            if compressed_doc_in_icl:
+                text_prompt_prefix = ["Document: "]
+                for doc, answ, _ in zip(text, traduction, range(4)):
+                    embed_prompt.append(doc.strip())
+                    text_prompt_prefix.append(
+                        f"\nTranslation: {answ.strip()}\n\nDocument: "
+                    )
+                embed_prompt.append(text[4].strip())
                 text_prompt_prefix.append(
-                    f"\nTranslation: {answ.strip()}\n\nDocument: "
+                    f"\nTranslation: {traduction[4].strip()}\n\nDocument: "
                 )
-            embed_prompt.append(text[4].strip())
-            text_prompt_prefix.append(
-                f"\nTranslation: {traduction[4].strip()}\n\nDocument: "
-            )
 
+            else:
+                text_prompt_prefix = [
+                    "\n\n".join(
+                        [
+                            f"Document: {doc}\nTranslation: {answ}"
+                            for doc, answ, _ in zip(text, traduction, range(5))
+                        ]
+                    )
+                ]
         else:
-            text_prompt_prefix = [
-                "\n\n".join(
-                    [
-                        f"Document: {doc}\nTranslation: {answ}"
-                        for doc, answ, _ in zip(text, traduction, range(5))
-                    ]
+            if compressed_doc_in_icl:
+                text_prompt_prefix = ["Document: "]
+                for doc, answ, _ in zip(text, traduction, range(4)):
+                    embed_prompt.append(doc.strip())
+                    text_prompt_prefix.append(
+                        f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}\n\nDocument: "
+                    )
+                embed_prompt.append(text[4].strip())
+                text_prompt_prefix.append(
+                    f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {traduction[4].strip()}\n\nDocument: "
                 )
-            ]
 
-        if shorter_icl:
-            pass
+            else:
+                text_prompt_prefix = [
+                    "\n\n".join(
+                        [
+                            f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}"
+                            for doc, answ, _ in zip(text, traduction, range(5))
+                        ]
+                    )
+                ]
+
         new_text, new_trad = (
             list(text[5:]),
             list(traduction[5:]),
@@ -687,9 +739,17 @@ def evaluate_trad(
                 batch_list_prompts = []
                 bs = min(max_bs, n_samples - i)
 
-                batch_list_prompts = [
-                    text_prompt_prefix + ["\nTranslation:"] for _ in range(bs)
-                ]
+                if not new_template:
+                    batch_list_prompts = [
+                        text_prompt_prefix + ["\nTranslation:"] for _ in range(bs)
+                    ]
+                else:
+                    batch_list_prompts = [
+                        text_prompt_prefix + [
+                            f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer:"
+                        ]
+                        for _ in range(bs)
+                    ]
 
                 texts_to_embed = [embed_prompt + [seq] for seq in text[i : i + bs]]
 
@@ -719,10 +779,17 @@ def evaluate_trad(
                             final_seq.append(seq.strip())
                     generated_sequences.extend(final_seq)
                 else:
-                    prompts = [
-                        "".join(text_prompt_prefix) + seq + "\nTranslation:"
-                        for seq in text[i : i + bs]
-                    ]
+                    if not new_template:
+                        prompts = [
+                            "".join(text_prompt_prefix) + seq + "\nTranslation:"
+                            for seq in text[i : i + bs]
+                        ]
+                    else:
+                        prompts = [
+                            "".join(text_prompt_prefix)
+                            + f"\nQuestion: Translate this document in {benchmark}.\nAnswer: {seq}"
+                            for seq in text[i : i + bs]
+                        ]
 
                     prompt_tokens = [
                         mistral_tokenizer.encode(prompt, bos=True, eos=False)
@@ -758,6 +825,8 @@ def evaluate_trad(
                 "Metric": bleu_score,
                 "compress_ratio": compress_ratio / len(range(0, n_samples, max_bs)),
                 "language": benchmark,
+                "new_template": new_template,
+                "compressed_icl": compressed_doc_in_icl,
                 "llm_name": llm_name,
             }
 
@@ -838,11 +907,18 @@ def arg_parser():
         type=str,
         default="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/",
     )
+    parser.add_argument(
+        "--max_samples",
+        action="store_true",
+        help="If True, use the maximum number of samples for each benchmark",
+    )
     parser.add_argument("--llm_name", type=str, default="mistral_7B")
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--query_w_context", action="store_true")
     parser.add_argument("--bridge_ckpt", type=str, default=None)
-    parser.add_argument("--shorter_icl", action="store_true")
+    parser.add_argument("--new_template", action="store_true")
+    parser.add_argument('--together_multi_passages', action='store_true',)
+    parser.add_argument("--europarl", action="store_true")
     parser.add_argument("--llm_number", type=int, default=1)
 
     return parser.parse_args()
@@ -900,7 +976,8 @@ if __name__ == "__main__":
                 benchmarks=benchmarks
                 if args.benchmarks != "all"
                 else ["Danish", "French", "Spanish", "German"],
-                shorter_icl=args.shorter_icl,
+                new_template=args.new_template,
+                europarl=args.europarl,
             )
             torch.cuda.empty_cache()
 
@@ -920,7 +997,6 @@ if __name__ == "__main__":
                 icl_w_document=True,
                 query_w_context=False,
                 w_embeds=False,
-                shorter_icl=args.shorter_icl,
             )
             torch.cuda.empty_cache()
         eval_logger_info(logger, "EVALUATING WITH CONTEXT")
@@ -940,7 +1016,6 @@ if __name__ == "__main__":
             w_embeds=False,
             max_multi_passage=args.multi_passages,
             seed=args.seed,
-            shorter_icl=args.shorter_icl,
         )
         torch.cuda.empty_cache()
 
@@ -962,7 +1037,6 @@ if __name__ == "__main__":
                     query_w_context=False,
                     w_embeds=False,
                     pipeline=mistral_model,
-                    shorter_icl=args.shorter_icl,
                 )
                 torch.cuda.empty_cache()
             eval_logger_info(logger, "EVALUATING WITH CONTEXT")
@@ -983,7 +1057,6 @@ if __name__ == "__main__":
                 pipeline=mistral_model,
                 max_multi_passage=args.multi_passages,
                 seed=args.seed,
-                shorter_icl=args.shorter_icl,
             )
             torch.cuda.empty_cache()
 
@@ -1012,8 +1085,9 @@ if __name__ == "__main__":
                 if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
                 else False,
                 llm_number=args.llm_number - 1,
-                shorter_icl=args.shorter_icl,
                 compressed_doc_in_icl=args.compressed_doc_in_icl,
+                new_template=args.new_template,
+                europarl=args.europarl,
             )
             torch.cuda.empty_cache()
         else:
@@ -1041,8 +1115,8 @@ if __name__ == "__main__":
                 if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
                 else False,
                 llm_number=args.llm_number - 1,
-                shorter_icl=args.shorter_icl,
-            )
+                together_multi_passages=args.together_multi_passages
+                )
 
             for icl_ex in icl_tests[1:]:
                 pipeline, ckpt = evaluate_QA(
@@ -1071,5 +1145,5 @@ if __name__ == "__main__":
                     or "false" not in args.bridge_ckpt.lower()
                     else False,
                     llm_number=args.llm_number - 1,
-                    shorter_icl=args.shorter_icl,
+                    together_multi_passages=args.together_multi_passages,
                 )
