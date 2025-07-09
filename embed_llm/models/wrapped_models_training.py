@@ -16,7 +16,6 @@ from embed_llm.data.tokenize import Tokenizer
 from embed_llm.models.utils.utils import (
     get_fsdp_policy,
     initialize_lora_parameters,
-    initialize_decoder_layers_parameters,
     log_train_params,
     main_logger_info,
 )
@@ -76,6 +75,7 @@ def load_training_model(
     )
     embed_args.lora = lora_embedder
     # Load pretrained params on rank 0
+    print('embed_args', embed_args.lora)
     llm_embedder, embed_tokenizer = load_model(
         llm_args=embed_args,
         pipeline_args=pipeline_args,
@@ -103,11 +103,6 @@ def load_training_model(
         augmented_model = augmented_pipeline.get_model(llm=llm)
 
     if get_rank() == 0:
-        if pipeline_args.decoder_module.do:
-            main_logger_info("Initializing  layers for decoder ...")
-            initialize_decoder_layers_parameters(
-                augmented_model.llm, param_dtype, augmented_model.llm.decoder_args
-            )
 
         if lora_llm.enable and pipeline_args.trainable_llm:
             main_logger_info("Initializing lora layers  for LLM ...")
@@ -219,13 +214,11 @@ def load_training_model(
             param.requires_grad = True
         elif pipeline_args.trainable_llm and not lora_llm.enable:
             param.requires_grad = True
-        elif "decoder_modules" in name and pipeline_args.decoder_module.do:
-            param.requires_grad = True
         else:
             param.requires_grad = False
 
     for name, param in augmented_model.embedder.named_parameters():
-        if (lora_embedder.enable or pipeline_args.embedder_params) and "lora" in name:
+        if lora_embedder.enable and "lora" in name:
             param.requires_grad = True
         elif (
             any(
@@ -267,7 +260,11 @@ def load_training_model(
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
-
+    for name, param in augmented_model.named_parameters():
+        if param.requires_grad:
+            main_logger_info(f"Parameter {name} is trainable")
+        else:
+            main_logger_info(f"Parameter {name} is frozen")
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
@@ -296,7 +293,6 @@ def load_training_model_from_ckpt(
     lora_llm: LoraArgs,
     lora_embedder: LoraArgs,
     param_dtype: torch.dtype,
-    decoder_path: Path | None = None,
     embedder_path: Path | None = None,
     supp_toks_path: Path | None = None,
     llm_path: Path | None = None,
@@ -364,19 +360,6 @@ def load_training_model_from_ckpt(
         augmented_model = augmented_pipeline.get_model(llm=llm)
 
     if get_rank() == 0:
-        if pipeline_args.decoder_module.do:
-            assert decoder_path is not None, (
-                "Decoder path is required for decoder module"
-            )
-            main_logger_info("Loading layers for decoder ...")
-            state_dict = load_state_dict(Path(decoder_path), dtype=param_dtype)
-            state_dict = {
-                k.replace("decoder_modules.", ""): v for k, v in state_dict.items()
-            }
-            augmented_model.llm.decoder_modules.load_state_dict(
-                state_dict, assign=True, strict=True
-            )
-
         if pipeline_args.trainable_llm and not lora_llm.enable:
             assert llm_path is not None, "LLM path is required for training"
             main_logger_info("Loading trained layers  for LLM ...")
@@ -507,8 +490,6 @@ def load_training_model_from_ckpt(
             param.requires_grad = True
         elif pipeline_args.trainable_llm and not lora_llm.enable:
             param.requires_grad = True
-        elif "decoder_modules" in name and pipeline_args.decoder_module.do:
-            param.requires_grad = True
         else:
             param.requires_grad = False
 
@@ -558,39 +539,7 @@ def load_training_model_from_ckpt(
         if pipeline_args.bridge_module.bridge_type is not None and "bridge" in name:
             param.requires_grad = True
     log_train_params(augmented_model)
-    # ckpt_path = '/'.join(train_args.from_ckpt.bridge_path.split("/")[:-2]) if train_args.from_ckpt.bridge_path else None
-    # bridge_state_dict = safetensors.torch.load_file(
-    #     Path(ckpt_path + "/bridge_module/consolidated.safetensors")
-    # )
-    # if get_rank() == 0:
-    #     for name, param in bridge_state_dict.items():
-    #         if name in augmented_model.bridge_module.state_dict():
-    #             print(
-    #                 "Name:",
-    #                 name,
-    #                 "Param shape:",
-    #                 param.shape,
-    #                 torch.equal(
-    #                     param.to('cuda'), augmented_model.bridge_module.state_dict()[name].to('cuda')
-    #                 ), augmented_model.bridge_module.state_dict()[name].device
-    #             )
 
-    #     embedder_layer_state_dict = safetensors.torch.load_file(
-    #         Path(ckpt_path + "/embedder/consolidated.safetensors")
-    #     )
-
-    #     for name, param in embedder_layer_state_dict.items():
-    #         if name in augmented_model.embedder.state_dict():
-    #             name = name.replace('_checkpoint_wrapped_module.', '')
-    #             print(
-    #                 "Name:",
-    #                 name,
-    #                 "Param shape:",
-    #                 param.shape,
-    #                 torch.equal(
-    #                     param.to('cuda'), augmented_model.embedder.state_dict()[name].to('cuda')
-    #                 ), augmented_model.embedder.state_dict()[name].device
-    #             )
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")

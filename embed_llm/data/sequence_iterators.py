@@ -228,8 +228,8 @@ def sequence_iterator_reconstruction(
                         insert_embed_list.append(ins_list)
 
                     added_prefix = sum(ins_list)
-                    if any([len(toks) <= 1 for toks in embed_toks]):
-                        print("Embed text small", embed_text)
+                    # if any([len(toks) <= 1 for toks in embed_toks]):
+                    #     print("Embed text small", embed_text)
 
                     to_embed_buffer.append({"text": embed_text, "tokens": embed_toks})
                 else:

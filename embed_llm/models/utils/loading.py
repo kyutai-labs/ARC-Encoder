@@ -14,7 +14,6 @@ from embed_llm.models.args import (
     ModelArgs,
     EmbedderArgs,
     PoolingArgs,
-    DecoderArgs,
     BridgeArgs,
 )
 
@@ -71,13 +70,6 @@ def load_args(
 
         pipeline_args.embedder_params.pooling_module = pooling_args
 
-        if isinstance(pipeline_args.decoder_module, dict):
-            pipeline_args.decoder_module = DecoderArgs(
-                do=pipeline_args.decoder_module["do"],
-                n_layers=pipeline_args.decoder_module["n_layers"],
-                insert_at=pipeline_args.decoder_module["insert_at"],
-                take_all_toks=pipeline_args.decoder_module.get("take_all_toks", False),
-            )
         if isinstance(pipeline_args.bridge_module, dict):
             pipeline_args.bridge_module = BridgeArgs(**pipeline_args.bridge_module)
     else:

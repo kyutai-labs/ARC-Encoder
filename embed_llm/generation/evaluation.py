@@ -360,8 +360,6 @@ def evaluate_QA(
 
                     batch_list_prompts.append(batch_list_prompt)
                     texts_to_embed.append(text_to_embed)
-                print('Text to embed:', texts_to_embed)
-                print('Batch list prompts:', batch_list_prompts)
                 generated_sequence, sum_comp_ratio = pipeline.generate(
                     text_to_embed=texts_to_embed if w_embeds else None,
                     batch_list_prompts=batch_list_prompts,
@@ -372,7 +370,6 @@ def evaluate_QA(
                     device_generation=other_device,
                     give_n_tokens=True,
                 )
-                print('Generated sequence:', generated_sequence)
                 compress_ratio += sum_comp_ratio  # N tokens to be compressed / final number of tokens after compression
 
                 generated_sequences.extend(generated_sequence)
@@ -541,7 +538,6 @@ def evaluate_trad(
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
     compressed_doc_in_icl: bool = False,  # Not used for translation
-    new_template: bool = True,  # If True, use the old template for translation (without "Document:" prefix)
     europarl: bool = False,  # If True, use Europarl dataset instead of Flores
     max_samples: bool = False,  # If True, use all the samples in the dataset
 ):
@@ -615,50 +611,28 @@ def evaluate_trad(
         random.shuffle(c, random=lambda: seed)
         text, traduction = zip(*c)
         embed_prompt = []
-        if not new_template:
-            if compressed_doc_in_icl:
-                text_prompt_prefix = ["Document: "]
-                for doc, answ, _ in zip(text, traduction, range(4)):
-                    embed_prompt.append(doc.strip())
-                    text_prompt_prefix.append(
-                        f"\nTranslation: {answ.strip()}\n\nDocument: "
-                    )
-                embed_prompt.append(text[4].strip())
-                text_prompt_prefix.append(
-                    f"\nTranslation: {traduction[4].strip()}\n\nDocument: "
-                )
 
-            else:
-                text_prompt_prefix = [
-                    "\n\n".join(
-                        [
-                            f"Document: {doc}\nTranslation: {answ}"
-                            for doc, answ, _ in zip(text, traduction, range(5))
-                        ]
-                    ) + '\n\nDocument: '
-                ]
+        if compressed_doc_in_icl:
+            text_prompt_prefix = ["Document: "]
+            for doc, answ, _ in zip(text, traduction, range(4)):
+                embed_prompt.append(doc.strip())
+                text_prompt_prefix.append(
+                    f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}\n\nDocument: "
+                )
+            embed_prompt.append(text[4].strip())
+            text_prompt_prefix.append(
+                f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {traduction[4].strip()}\n\nDocument: "
+            )
+
         else:
-            if compressed_doc_in_icl:
-                text_prompt_prefix = ["Document: "]
-                for doc, answ, _ in zip(text, traduction, range(4)):
-                    embed_prompt.append(doc.strip())
-                    text_prompt_prefix.append(
-                        f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}\n\nDocument: "
-                    )
-                embed_prompt.append(text[4].strip())
-                text_prompt_prefix.append(
-                    f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {traduction[4].strip()}\n\nDocument: "
-                )
-
-            else:
-                text_prompt_prefix = [
-                    "\n\n".join(
-                        [
-                            f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}"
-                            for doc, answ, _ in zip(text, traduction, range(5))
-                        ]
-                    ) + '\n\nDocument: '
-                ]
+            text_prompt_prefix = [
+                "\n\n".join(
+                    [
+                        f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}"
+                        for doc, answ, _ in zip(text, traduction, range(5))
+                    ]
+                ) + '\n\nDocument: '
+            ]
         new_text, new_trad = (
             list(text[5:]),
             list(traduction[5:]),
@@ -677,18 +651,13 @@ def evaluate_trad(
                 batch_list_prompts = []
                 bs = min(max_bs, n_samples - i)
 
-                if not new_template:
-                    batch_list_prompts = [
-                        text_prompt_prefix + ["\nTranslation:"] for _ in range(bs)
+                batch_list_prompts = [
+                    text_prompt_prefix
+                    + [
+                        f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer:"
                     ]
-                else:
-                    batch_list_prompts = [
-                        text_prompt_prefix
-                        + [
-                            f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer:"
-                        ]
-                        for _ in range(bs)
-                    ]
+                    for _ in range(bs)
+                ]
 
                 texts_to_embed = [embed_prompt + [seq] for seq in text[i : i + bs]]
 
@@ -722,7 +691,7 @@ def evaluate_trad(
                 "Metric": bleu_score,
                 "compress_ratio": compress_ratio / n_samples,
                 "language": benchmark,
-                "new_template": new_template,
+                "new_template": True,
                 "compressed_icl": compressed_doc_in_icl,
                 "llm_name": llm_name,
             }
@@ -805,8 +774,8 @@ def arg_parser():
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--query_w_context", action="store_true")
     parser.add_argument("--bridge_ckpt", type=str, default=None)
-    parser.add_argument("--new_template", action="store_true")
     parser.add_argument("--europarl", action="store_true")
+    parser.add_argument('--pisco_eval', action='store_true')
     parser.add_argument(
         "--max_samples",
         action="store_true",
@@ -825,11 +794,17 @@ if __name__ == "__main__":
     set_logger(logging.INFO)
 
     temp_tests = [0]
-
+        
     args = arg_parser()
+    
+    if args.pisco_eval:
+        args.multi_passages = 5
+        
+        
+        
     tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/" + args.tmp_folder
     if args.benchmarks == "all":
-        benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "HotpotQA"]
+        benchmarks = ["NQ", "TRIVIAQA", "SQUAD"]
     else:
         benchmarks = [args.benchmarks]
     icl_tests = [0, 5] if args.n_icl_exs is None else [args.n_icl_exs]
@@ -877,7 +852,6 @@ if __name__ == "__main__":
             if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
             else False,
             compressed_doc_in_icl=args.compressed_doc_in_icl,
-            new_template=args.new_template,
             europarl=args.europarl,
             max_samples=args.max_samples,
         )
