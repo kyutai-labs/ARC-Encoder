@@ -492,6 +492,8 @@ class EmbedAugPipeline(nn.Module):
                 embeddings = new_embeddings.clone()
 
             if self.model.bridge_module is not None:
+                # embeddings = embeddings.to(torch.float8_e4m3fn)
+                # embeddings = embeddings.to(torch.float32)
                 embeddings = self.model.bridge_module(embeddings)
 
         else:

@@ -270,6 +270,7 @@ def create_QA_dataset(
 
         for full_text, comp_text in zip(list_prompt, compressed_text):
             prompt += full_text + comp_text
+
         dataset.append({"prompt": prompt, "answers": new_answer})
     return dataset, compress_ratio / n_samples
 
@@ -291,9 +292,8 @@ def create_ts_dataset(
     overall_list_prompts = []
     compress_ratio = 0
     for i in trange(0, n_samples):
-        compressed_text = []
         if not w_embeds:
-            compressed_text = []
+            to_compress_text = []
             if not new_template:
                 overall_list_prompts.append(
                     "".join(text_prompt_prefix) + eng_text[i] + "\nTranslation:"
@@ -314,9 +314,10 @@ def create_ts_dataset(
                         f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer:"
                     ]
                 )
-            compressed_text = embed_prompt + eng_text[i]
+            to_compress_text = embed_prompt + [eng_text[i]]
+        compressed_text = []
 
-        for k, text in enumerate(compressed_text):
+        for k, text in enumerate(to_compress_text):
             try:
                 compressed_text.append(
                     llm_lingua.compress_prompt(
@@ -331,14 +332,13 @@ def create_ts_dataset(
                     f"Error compressing text: {text} with error: {e}. Using original text."
                 )
                 compressed_text.append(text)
-            if k == len(compressed_text) - 1:
+
+            if k == len(to_compress_text) - 1:
                 compress_ratio += len(
                     pipeline.tokenizer.encode(text, padding=False)
                 ) / len(pipeline.tokenizer.encode(compressed_text[-1], padding=False))
-
             if len(compressed_text) == 0:
                 compressed_text.append("")
-
         overall_compressed_texts.append(compressed_text)
 
         if not w_embeds:
@@ -560,7 +560,7 @@ def evaluate_QA(
                 )
 
                 value_xrag, _ = get_substring_match_score(
-                    generated_sequences, new_answers[:n_samples]
+                    generated_sequences, references
                 )
 
                 metrics[benchmark]["EM"]["0"] = {
@@ -631,7 +631,6 @@ def evaluate_QA(
             "r",
         ) as f:
             overall_results = json.load(f)
-
         if run_name not in overall_results.keys():
             overall_results[run_name] = {}
         if str(ckpt) not in overall_results[run_name].keys():
@@ -654,7 +653,6 @@ def evaluate_QA(
                 overall_results[run_name][str(ckpt)][benchmark][metric]["0"].append(
                     metrics[benchmark][metric]["0"]
                 )
-
         with open(
             output_file,
             "w",
@@ -723,8 +721,8 @@ def evaluate_trad(
             with open(eval_data, "r") as f:
                 for line in f:
                     data = json.loads(line)
-                    traduction.append(data["answer"].strip())
-                    text.append(data["passage"].strip())
+                    traduction.append(data["answer"].strip().replace("\n", " "))
+                    text.append(data["passage"].strip().replace("\n", " "))
 
         c = list(zip(text, traduction))
 
@@ -799,7 +797,7 @@ def evaluate_trad(
         n_samples = len(text) if n_samples is None or max_samples else n_samples
         if europarl:
             n_samples = 1000 if n_samples is None or max_samples else n_samples
-
+            max_seq_len = 2048
         dataset, compress_ratio = create_ts_dataset(
             n_samples=n_samples,
             w_embeds=w_embeds,
@@ -845,9 +843,7 @@ def evaluate_trad(
                 )
 
         if accelerator.is_main_process:
-            bleu_score = get_bleu_score(
-                traduction[: len(generated_sequences)], generated_sequences
-            )
+            bleu_score = get_bleu_score(references, generated_sequences)
             print("BLEU score:", bleu_score)
             metrics[benchmark]["BLEU"]["0"] = {
                 "n_samples": n_samples,
@@ -859,13 +855,22 @@ def evaluate_trad(
                 "llm_name": llm_name,
                 "prompt_compressor_name": prompt_compressor_name,
                 "llmlingua2": use_llmlingua2,
+                "europarl": europarl,
             }
 
     if accelerator.is_main_process:
         if w_embeds:
-            run_name = prompt_compressor_name.split("/")[-1] + llm_name.split("/")[-1]
+            run_name = (
+                prompt_compressor_name.split("/")[-1]
+                + llm_name.split("/")[-1]
+                + ("europarl" if europarl else "flores")
+            )
         else:
-            run_name = "baseline_" + llm_name.split("/")[-1]
+            run_name = (
+                "baseline_"
+                + llm_name.split("/")[-1]
+                + ("europarl" if europarl else "flores")
+            )
 
         ckpt = 0
 
@@ -874,30 +879,20 @@ def evaluate_trad(
             "r",
         ) as f:
             overall_results = json.load(f)
-
         if run_name not in overall_results.keys():
             overall_results[run_name] = {}
         if str(ckpt) not in overall_results[run_name].keys():
             overall_results[run_name][str(ckpt)] = {}
-        for benchmark in benchmarks:
-            if benchmark not in overall_results[run_name][str(ckpt)].keys():
-                overall_results[run_name][str(ckpt)][benchmark] = {}
 
         for benchmark in metrics.keys():
             for metric in metrics[benchmark].keys():
-                if metric not in overall_results[run_name][str(ckpt)][benchmark].keys():
-                    overall_results[run_name][str(ckpt)][benchmark][metric] = {}
-                if (
-                    "0"
-                    not in overall_results[run_name][str(ckpt)][benchmark][
-                        metric
-                    ].keys()
-                ):
-                    overall_results[run_name][str(ckpt)][benchmark][metric]["0"] = []
-                overall_results[run_name][str(ckpt)][benchmark][metric]["0"].append(
+                if metric not in overall_results[run_name][str(ckpt)].keys():
+                    overall_results[run_name][str(ckpt)][metric] = {}
+                if "0" not in overall_results[run_name][str(ckpt)][metric].keys():
+                    overall_results[run_name][str(ckpt)][metric]["0"] = []
+                overall_results[run_name][str(ckpt)][metric]["0"].append(
                     metrics[benchmark][metric]["0"]
                 )
-
         with open(
             output_file,
             "w",
@@ -979,7 +974,7 @@ if __name__ == "__main__":
     )
 
     if args.benchmarks == "all":
-        benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "HotpotQA"]
+        benchmarks = ["NQ", "TRIVIAQA", "SQUAD"]
     else:
         benchmarks = [args.benchmarks]
     icl_tests = [0, 5] if args.n_icl_exs is None else [args.n_icl_exs]
@@ -997,9 +992,14 @@ if __name__ == "__main__":
 
     max_seq_len = args.max_seq_len
     n_passages = args.n_passages
-
+    eval_logger_info(
+        logger, f"Evaluating with {n_passages} passages the model {args.llm_name}"
+    )
     if args.eval_trad:
-        eval_logger_info(logger, "EVALUATING Translation")
+        eval_logger_info(
+            logger,
+            f"EVALUATING Translation with {'Flores' if not args.europarl else 'Europarl'} dataset",
+        )
         pipeline = evaluate_trad(
             max_bs=args.bs,
             output_file=output_file,
@@ -1019,10 +1019,14 @@ if __name__ == "__main__":
             llm_name=args.llm_name,
             use_llmlingua2=args.use_llmlingua2,
             accelerator=accelerator,
+            max_seq_len=max_seq_len,
         )
         torch.cuda.empty_cache()
     else:
-        eval_logger_info(logger, "EVALUATING QA")
+        eval_logger_info(
+            logger,
+            f"EVALUATING QA with {args.multi_passages} passages and {icl_tests[0]} ICL examples",
+        )
         pipeline = evaluate_QA(
             benchmarks,
             max_bs=args.bs,
@@ -1048,6 +1052,10 @@ if __name__ == "__main__":
         )
 
         for icl_ex in icl_tests[1:]:
+            eval_logger_info(
+                logger,
+                f"EVALUATING QA with {args.multi_passages} passages and {icl_ex} ICL examples",
+            )
             pipeline = evaluate_QA(
                 benchmarks,
                 max_bs=args.bs,
