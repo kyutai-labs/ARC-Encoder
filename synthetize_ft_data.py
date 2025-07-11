@@ -194,9 +194,7 @@ def dataset_from_file(
                                 break
                             if len(line.strip()) > 0:
                                 text.append(line.strip())
-                                count += len(
-                                    tokenizer.encode(line.strip())
-                                )
+                                count += len(tokenizer.encode(line.strip()))
                         text = "\n".join(text)
                     else:
                         text = data["text"].strip()

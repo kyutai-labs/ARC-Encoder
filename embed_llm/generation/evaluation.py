@@ -23,12 +23,13 @@ from embed_llm.monitoring.utils import set_logger  # noqa: E402
 
 EVAL_DATA_PATH = {
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
-    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl",  # unfiltered.nocontext 
+    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl",  # unfiltered.nocontext
     "HotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl",
     "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",  # Dev set of the SQuAD v1 dataset
     "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",  # Dev set of the FullWiki HotpotQA dataset
     "NarrativeQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test.jsonl",
-    "NarrativeQA_split": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test_split.jsonl',
+    "NarrativeQA_split": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test_split.jsonl",
+    "DistractorHotpotQA": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl'
 }
 
 METRIC_EVALUATION = {
@@ -38,7 +39,8 @@ METRIC_EVALUATION = {
     "SQUAD": get_em,
     "FullWikiHotpotQA": get_em,
     "NarrativeQA": get_em,
-    'NarrativeQA_split': get_em,
+    "NarrativeQA_split": get_em,
+    "DistractorHotpotQA": get_em,  # Added for the Distractor HotpotQA dataset
 }
 
 
@@ -269,9 +271,6 @@ def evaluate_QA(
         if benchmark == "SQUAD" and max_multi_passage > 1:
             benchmarks.remove(benchmark)
             continue
-
-        # if benchmark == "HotpotQA":
-        #     max_multi_passage = 2
 
         metrics[benchmark] = {}
         eval_data = EVAL_DATA_PATH[benchmark]
@@ -525,7 +524,7 @@ def evaluate_trad(
     llm_path: str | None = None,
     embed_path: str | None = None,
     ckpt: int | None = None,
-    max_seq_len: int = 512,
+    max_seq_len: int = 2048,
     temps: list[float] = [0, 0.5, 0.7, 1],
     benchmarks: list[str] = ["Danish", "French", "Spanish", "German"],
     max_bs: int = 4,
@@ -593,7 +592,7 @@ def evaluate_trad(
                 for line in f:
                     data = json.loads(line)
                     traduction.append(data["text"].strip())
-
+            max_seq_len = 128
         else:
             eval_data = EUROPARL_TRAD_DATA_PATH[benchmark]
 
@@ -603,8 +602,8 @@ def evaluate_trad(
             with open(eval_data, "r") as f:
                 for line in f:
                     data = json.loads(line)
-                    traduction.append(data["answer"].strip())
-                    text.append(data["passage"].strip())
+                    traduction.append(data["answer"].strip().replace("\n", " "))
+                    text.append(data["passage"].strip().replace("\n", " "))
 
         c = list(zip(text, traduction))
 
@@ -634,7 +633,8 @@ def evaluate_trad(
                             f"Document: {doc}\nTranslation: {answ}"
                             for doc, answ, _ in zip(text, traduction, range(5))
                         ]
-                    ) + '\n\nDocument: '
+                    )
+                    + "\n\nDocument: "
                 ]
         else:
             if compressed_doc_in_icl:
@@ -656,7 +656,8 @@ def evaluate_trad(
                             f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}"
                             for doc, answ, _ in zip(text, traduction, range(5))
                         ]
-                    ) + '\n\nDocument: '
+                    )
+                    + "\n\nDocument: "
                 ]
         new_text, new_trad = (
             list(text[5:]),
@@ -671,6 +672,8 @@ def evaluate_trad(
             compress_ratio = 0
             generated_sequences = []
             n_samples = len(text) if n_samples is None or max_samples else n_samples
+            if europarl and max_samples:
+                n_samples = 1000
             for i in trange(0, n_samples, max_bs):
                 texts_to_embed = []
                 batch_list_prompts = []

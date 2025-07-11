@@ -55,6 +55,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
         or benchmark.lower() == "narrativeqa"
         or benchmark.lower() == "narrativeqa_split"
         or benchmark.lower() == "fullwikihotpotqa"
+        or benchmark.lower() == "distractorhotpotqa"
     ):
         key_list = [
             "run_name",
@@ -179,6 +180,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                 or benchmark.lower() == "narrativeqa"
                 or benchmark.lower() == "fullwikihotpotqa"
                 or benchmark.lower() == "narrativeqa_split"
+                or benchmark.lower() == "distractorhotpotqa"
             ):
                 for metric in ["EM", "F1"]:
                     if benchmark not in results[run_name][ckpt].keys():

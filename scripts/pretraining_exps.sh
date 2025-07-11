@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=12
+#SBATCH --array=0-4%3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -17,19 +17,11 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/heavier_pt/CP8_L3B_MLP2_M7B_20rec.yaml 
-config/experiments/heavier_pt/CP8_L3B_MLP2_L8B_20rec.yaml
-config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_50rec.yaml
-config/experiments/heavier_pt/CP8_L3B_MLP2_M7B_20rec_3interleaved.yaml
-config/experiments/heavier_pt/CP8_L3B_MLP2_L8B_20rec_3interleaved.yaml 
-config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_20rec_Dist_v2.yaml
-config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_20rec_v2.yaml
-config/experiments/heavier_pt/CP16_L8B_to_mistral_30rec.yaml 
-config/experiments/heavier_pt/CP16_L8B_to_mistral_5rec.yaml
-config/experiments/heavier_pt/CPtrue8memtoks_L3B_MLP2_M7B_20rec_v2.yaml
-config/experiments/heavier_pt/CPtrue16_L8B_MLP2_M7B_20rec_v2.yaml
-config/experiments/heavier_pt/CPtrue16_L3B_MLP2_M7B_5rec.yaml
-config/experiments/heavier_pt/CP8_L3B_MLP2_M7B_20rec_notcausal_cont.yaml
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_10k.yaml 
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_10k_noinsert.yaml 
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_10k_higher_lr.yaml
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_40k.yaml 
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_20k.yaml 
 )
 
 
