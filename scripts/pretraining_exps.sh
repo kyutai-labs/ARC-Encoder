@@ -1,15 +1,15 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=12
+#SBATCH --array=0-3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/baselines 
 #SBATCH --job-name=icae_pt
-#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/baselines/icae/_%A_%a.out
-
+#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/baselines/icae/icae_pt_%A_%a.out
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx01,par2dc5-ai-prd-cl02s04dgx03,par2dc5-ai-prd-cl02s01dgx21,par2dc5-ai-prd-cl02s01dgx05,par2dc5-ai-prd-cl02s01dgx17
 
 
 # Set up environment
@@ -18,13 +18,13 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 CONFIG_FILES=(
 config/icae/icae_64memtoks_mistral.yaml 
-config/icae/icae_64memtoks_llama.yaml 
+# config/icae/icae_64memtoks_llama.yaml 
 config/icae/icae_32memtoks_mistral.yaml 
 config/icae/icae_16memtoks_mistral.yaml 
-config/icae/icae_32memtoks_llama.yaml 
-config/icae/icae_16memtoks_llama.yaml 
+# config/icae/icae_32memtoks_llama.yaml 
+# config/icae/icae_16memtoks_llama.yaml 
 config/icae/icae_8memtoks_mistral.yaml 
-config/icae/icae_8memtoks_llama.yaml
+# config/icae/icae_8memtoks_llama.yaml
 )
 
 

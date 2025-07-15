@@ -229,6 +229,9 @@ class EmbedAugPipeline(nn.Module):
         )
         logger.info("Loading LLM from")
         if pipeline_args.trainable_llm and lora_llm.enable:
+            logger.info(
+                f"Loading LLM LoRA from {ckpt_path + '/llm/lora.safetensors'} with dtype {param_dtype}"
+            )
             llm.load_lora(Path(ckpt_path + "/llm/lora.safetensors"))
         elif pipeline_args.trainable_llm:
             llm_state_dict = load_state_dict(
@@ -269,6 +272,9 @@ class EmbedAugPipeline(nn.Module):
                 else Path(train_args["from_ckpt"]["embedder_path"])
             )
             assert (embed_path / "lora.safetensors").exists()
+            logger.info(
+                f"Loading embedder LoRA from {embed_path / 'lora.safetensors'} with dtype {param_dtype}"
+            )
             llm_embedder.load_lora(
                 embed_path / "lora.safetensors",
             )
@@ -283,6 +289,7 @@ class EmbedAugPipeline(nn.Module):
                     or "cont_tok.weight" in supp_tok_state_dict
                     or "mem_embeddings.weight" in supp_tok_state_dict
                 ), f"no supp tok found in state dict {supp_tok_state_dict.keys()}"
+                logger.info(f'Loading additional tokens for embedder {supp_tok_state_dict.keys()}')
                 supp_tok_state_dict = {
                     k: v.to(param_dtype) for k, v in supp_tok_state_dict.items() if any([(mod in k)  for mod in ["rec_tok", "cont_tok", "mem_embeddings"]])
                 }

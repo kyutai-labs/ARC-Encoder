@@ -1,14 +1,14 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-1
+#SBATCH --array=0-5%2
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/baselines
 #SBATCH --job-name=pisco_ft
-#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/baselines/pisco_ft_%A_%a.out
+#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/baselines/pisco/pisco_ft_%A_%a.out
 
 
 
@@ -20,8 +20,14 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/pisco/Pisco_8memtoks_mistral.yaml 
-config/pisco/Pisco_8memtoks_llama.yaml 
+# config/pisco/Pisco_8memtoks_mistral.yaml 
+# config/pisco/Pisco_8memtoks_llama.yaml 
+config/pisco/Pisco_32memtoks_mistral_v2.yaml 
+config/pisco/Pisco_32memtoks_llama_v2.yaml 
+config/pisco/Pisco_16memtoks_mistral_v2.yaml 
+config/pisco/Pisco_16memtoks_llama_v2.yaml 
+config/pisco/Pisco_8memtoks_mistral_v2.yaml 
+config/pisco/Pisco_8memtoks_llama_v2.yaml
 config/icae/ft/icae_64memtoks_mistral_ft.yaml 
 config/icae/ft/icae_64memtoks_llama_ft.yaml 
 config/icae/ft/icae_32memtoks_mistral_ft.yaml 
@@ -112,7 +118,8 @@ icae*mistral*)
     ;;
 
 
-pisco*llama*)
+
+Pisco*llama)
 
 
     srun --gpus=$N_GPU  \
@@ -142,7 +149,7 @@ pisco*llama*)
 
     ;;
 
-pisco*mistral*)
+Pisco*mistral)
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
         --max_samples --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B --embed_name mistral_7B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --n_icl_exs 5  --bs 16

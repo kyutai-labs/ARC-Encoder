@@ -41,7 +41,7 @@ pipeline:
     pooling_module:
       pool_type: mean
       where: between
-    trained_layers: 0
+    trained_layers: 32
     train_embedding_mtx: false
     memory_tokens: 16
     rec_tok: true

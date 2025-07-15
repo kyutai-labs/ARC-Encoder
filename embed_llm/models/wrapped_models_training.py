@@ -75,7 +75,6 @@ def load_training_model(
     )
     embed_args.lora = lora_embedder
     # Load pretrained params on rank 0
-    print('embed_args', embed_args.lora)
     llm_embedder, embed_tokenizer = load_model(
         llm_args=embed_args,
         pipeline_args=pipeline_args,
@@ -260,11 +259,7 @@ def load_training_model(
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
-    for name, param in augmented_model.named_parameters():
-        if param.requires_grad:
-            main_logger_info(f"Parameter {name} is trainable")
-        else:
-            main_logger_info(f"Parameter {name} is frozen")
+
     wrapped_model = FullyShardedDataParallel(
         augmented_model,
         sharding_strategy=ShardingStrategy.FULL_SHARD,  # Gradients, activations, and parameters are sharded
