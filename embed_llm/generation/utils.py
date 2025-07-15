@@ -379,45 +379,8 @@ def DARE_merging(
         / "consolidated.safetensors",
     )
 
-    if Path(pretrain_path + "/llm/decoder").exists():
-        pretrain_state_dict = load_state_dict(
-            Path(pretrain_path) / "llm/decoder", dtype=torch.float32
-        )
 
-        fine_tune_state_dicts = [
-            load_state_dict(Path(path) / "llm/decoder", dtype=torch.float32)
-            for path in fine_tune_paths
-        ]
-
-        if not Path(
-            output_path + "checkpoints/checkpoint_000000/llm/decoder/"
-        ).exists():
-            Path(output_path + "checkpoints/checkpoint_000000/llm/decoder/").mkdir(
-                parents=True, exist_ok=True
-            )
-        new_state_dict = {}
-        for k, v in pretrain_state_dict.items():
-            delta = torch.zeros_like(v)
-            for ft_state_dict in fine_tune_state_dicts:
-                m = torch.bernoulli(
-                    torch.ones_like(v) * drop_rate, generator=generator
-                ).to(v.device)
-                delta_param = (1 - m) * (ft_state_dict[k] - v) / (1 - drop_rate)
-                delta = delta + delta_param
-                if k in ft_state_dict.keys():
-                    delta = delta + ft_state_dict[k] - v
-                else:
-                    raise ValueError(
-                        f"Key {k} not found in fine-tuned state dicts. Ensure all fine-tuned models have the same architecture."
-                    )
-            new_state_dict[k] = pretrain_state_dict[k] + coeff * delta
-
-        safetensors.torch.save_file(
-            new_state_dict,
-            Path(output_path + "checkpoints/checkpoint_000000/llm/decoder/")
-            / "consolidated.safetensors",
-        )
-    elif Path(pretrain_path + "/llm/consolidated.safetensors").exists():
+    if Path(pretrain_path + "/llm/consolidated.safetensors").exists():
         pretrain_state_dict = load_state_dict(
             Path(pretrain_path) / "llm/", dtype=torch.float32
         )

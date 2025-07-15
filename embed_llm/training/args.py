@@ -14,6 +14,7 @@ class OptimArgs(Serializable):
     warm_up_steps: int = 2000
     initial_lr: float = 0
     final_lr: float = 1e-5
+    type: str = "cycle"  # Type of the optimizer, either "linear" or "cosine"
     max_lr_projector: float | None = None
     
     def __post_init__(self) -> None:
@@ -52,7 +53,6 @@ class WandbArgs(Serializable):
 @dataclass
 class CkptArgs(Serializable):
     do: bool = False
-    decoder_path: str | None = None
     embedder_path: str | None = None
     bridge_path: str | None = None
     llm_path: str | None = None

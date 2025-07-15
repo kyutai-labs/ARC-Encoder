@@ -21,19 +21,6 @@ class BridgeArgs(Serializable):
     hidden_dim: int | None = None
 
 
-@dataclass
-class DecoderArgs(Serializable):
-    do: bool = False
-    n_layers: int = 0
-    insert_at: int | list[int] = 16
-    take_all_toks: bool = False
-
-    def __post_init__(self) -> None:
-        if isinstance(self.insert_at, int):
-            self.insert_at = [self.insert_at] * self.n_layers
-        assert all(isinstance(i, int) for i in self.insert_at), self.insert_at
-        assert all(i >= 0 for i in self.insert_at), self.insert_at
-        assert len(self.insert_at) == self.n_layers
 
 
 @dataclass
@@ -78,10 +65,8 @@ class EmbedAugArgs(Serializable):
     param_dtype: torch.dtype = torch.float32
     embedder_params: EmbedderArgs = field(default_factory=EmbedderArgs)
     trainable_llm: bool = False
-    w_prefix_prompt: bool = False
     max_embeds: int = 1
     w_embeds: bool = True
-    decoder_module: DecoderArgs = field(default_factory=DecoderArgs)
     comp_rate_curriculum: dict | None = None
     bridge_module: BridgeArgs = field(default_factory=BridgeArgs)
 

@@ -173,7 +173,6 @@ def _train(
             checkpoint=args.checkpoint if hasattr(args, "checkpoint") else False,
             param_dtype=param_dtype,
             max_batch_size=args.batch_size,
-            decoder_path=args.from_ckpt.decoder_path,
             embedder_path=args.from_ckpt.embedder_path,
             llm_path=args.from_ckpt.llm_path,
             supp_toks_path=args.from_ckpt.supp_toks_path,
@@ -231,7 +230,11 @@ def _train(
 
         eval_batches = []
         while len(eval_batches) < 40:
-            batch = next(eval_data_loader_4rec)
+            try:
+                batch = next(eval_data_loader_4rec)
+            except StopIteration:
+                main_logger_info("No more batches in eval data loader")
+                break
 
             if len(batch.sizes) > 70:
                 print("Too many embeddings to do, skipping batch")
@@ -259,10 +262,14 @@ def _train(
             # pre-load all eval batches, 40 batches * n_gpus * batch_size // n_gpus
             eval_batches_4cont = []
             while len(eval_batches_4cont) < 40:
-                batch = next(eval_data_loader_4cont)
-                if len(batch.sizes) > 70:
-                    print("Too many embeddings to do, skipping batch")
-                    continue
+                try:
+                    batch = next(eval_data_loader_4cont)
+                except StopIteration:
+                    main_logger_info("No more batches in eval data loader")
+                    break
+                # if len(batch.sizes) > 70:
+                #     print("Too many embeddings to do, skipping batch")
+                #     continue
                 else:
                     eval_batches_4cont.append(batch)
         else:
@@ -299,10 +306,10 @@ def _train(
         else [args.optim.max_lr, args.optim.max_lr, args.optim.max_lr_projector],
         total_steps=args.max_steps,
         pct_start=float(args.optim.warm_up_steps) / args.max_steps,
-        anneal_strategy="cos",
+        anneal_strategy="linear" if args.optim.type == "linear" else "cos" ,
         div_factor=args.optim.max_lr / args.optim.initial_lr,
         final_div_factor=args.optim.max_lr / args.optim.final_lr,
-    )
+    ) 
 
     state = TrainState(args.max_steps)
 
@@ -316,32 +323,6 @@ def _train(
         pipeline=pipeline,
     )
 
-    if args.pipeline.w_prefix_prompt:
-        model.tokenize_prompts = {}
-        main_logger_info("Using paraphrase prompt")
-        model.tokenized_prompts["reconstruction"] = []
-        for prompt in PARAPHRASE_PROMPT:
-            prefix = pipeline.llm_tokenizer.tokenizer.encode(
-                prompt["prefix"], bos=True, eos=False
-            )
-            suffix = pipeline.llm_tokenizer.tokenizer.encode(
-                prompt["suffix"], bos=False, eos=False
-            )
-            model.tokenized_prompts["reconstruction"].append(
-                {"prefix": prefix, "suffix": suffix}
-            )
-
-        model.tokenize_prompts["continuation"] = []
-        for prompt in CONTINUATION_PROMPT:
-            prefix = pipeline.llm_tokenizer.tokenizer.encode(
-                prompt["prefix"], bos=False, eos=False
-            )
-            suffix = pipeline.llm_tokenizer.tokenizer.encode(
-                prompt["suffix"], bos=False, eos=False
-            )
-            model.tokenize_prompts["continuation"].append(
-                {"prefix": prefix, "suffix": suffix}
-            )
 
     main_logger_info("Start training")
     model.train()
@@ -431,9 +412,9 @@ def _train(
         for i in range(args.num_microbatches):
             batch = next(train_data_loader)
             # Avoid OOM due to too many embeddings for the same batch
-            while len(batch.sizes) > 100:
-                batch = next(train_data_loader)
-                print("Too many embeddings to do, skipping batch")
+            # while len(batch.sizes) > 100:
+            #     batch = next(train_data_loader)
+            #     print("Too many embeddings to do, skipping batch")
 
             """ Training loop for basic reconstruction"""
 
@@ -593,7 +574,6 @@ def _train(
                         seqlens=new_seqlens,
                         embed_seqlens=None,
                         insert_cat_embedds=None,
-                        tokenized_prompts=None,
                         cat_embeddings=None,
                     )
                     model.train()

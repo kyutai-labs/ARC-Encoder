@@ -39,7 +39,6 @@ class EmbedAugModel(nn.Module):
         self.llm = llm
         self.w_embeds = pipeline_args.w_embeds
         self.embedder = embedder
-        self.tokenized_prompts = {}
         self.bridge_module = None
         if pipeline_args.bridge_module.bridge_type is not None:
             self.bridge_module = EmbProjector(
@@ -115,7 +114,6 @@ class EmbedAugModel(nn.Module):
             seqlens=seqlens,
             embed_seqlens=embed_seqlens,
             cat_embeddings=embeddings,
-            tokenized_prompts=self.tokenized_prompts,
             insert_cat_embedds=insert_cat_embedds,
         )
 
@@ -231,18 +229,16 @@ class EmbedAugPipeline(nn.Module):
         )
         logger.info("Loading LLM from")
         if pipeline_args.trainable_llm and lora_llm.enable:
+            logger.info(
+                f"Loading LLM LoRA from {ckpt_path + '/llm/lora.safetensors'} with dtype {param_dtype}"
+            )
             llm.load_lora(Path(ckpt_path + "/llm/lora.safetensors"))
         elif pipeline_args.trainable_llm:
             llm_state_dict = load_state_dict(
                 Path(ckpt_path + "/llm"), dtype=param_dtype
             )
             llm.load_state_dict(llm_state_dict, strict=False, assign=True)
-        if pipeline_args.decoder_module.do:
-            assert Path(ckpt_path + "/llm/decoder").exists()
-            decoder_state_dict = load_state_dict(
-                Path(ckpt_path + "/llm/decoder"), dtype=param_dtype
-            )
-            llm.load_state_dict(decoder_state_dict, strict=False, assign=True)
+
 
         llm = llm.to(device)
         llm.eval()
@@ -276,10 +272,30 @@ class EmbedAugPipeline(nn.Module):
                 else Path(train_args["from_ckpt"]["embedder_path"])
             )
             assert (embed_path / "lora.safetensors").exists()
+            logger.info(
+                f"Loading embedder LoRA from {embed_path / 'lora.safetensors'} with dtype {param_dtype}"
+            )
             llm_embedder.load_lora(
                 embed_path / "lora.safetensors",
             )
-
+            if (pipeline_args.embedder_params.memory_tokens > 0
+                or pipeline_args.embedder_params.rec_tok
+                or pipeline_args.embedder_params.cont_tok):
+                
+                embed_path = Path(ckpt_path + "/embedder")
+                supp_tok_state_dict = load_state_dict(embed_path, dtype=param_dtype)
+                assert (
+                    "rec_tok.weight" in supp_tok_state_dict
+                    or "cont_tok.weight" in supp_tok_state_dict
+                    or "mem_embeddings.weight" in supp_tok_state_dict
+                ), f"no supp tok found in state dict {supp_tok_state_dict.keys()}"
+                logger.info(f'Loading additional tokens for embedder {supp_tok_state_dict.keys()}')
+                supp_tok_state_dict = {
+                    k: v.to(param_dtype) for k, v in supp_tok_state_dict.items() if any([(mod in k)  for mod in ["rec_tok", "cont_tok", "mem_embeddings"]])
+                }
+                llm_embedder.load_state_dict(
+                    supp_tok_state_dict, strict=False, assign=True
+                )
         elif (
             pipeline_args.embedder_params.trained_layers > 0
             or pipeline_args.embedder_params.memory_tokens > 0

@@ -25,7 +25,7 @@ class DataArgs(Serializable):
     )
     shuffle: bool = False
     adapt_seq_len: bool = False
-    n_times_sl_insertion: int = 1
+    n_times_sl_insertion: int = 0
     n_interleaved: int = 1  # Number of interleaved sequences to use for training. If > 0, the data will be interleaved.
     loss_last_cont_only: bool | None = (
         None  # If True, the loss will be computed only on the last continuation token.

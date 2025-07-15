@@ -157,6 +157,8 @@ def sequence_iterator_reconstruction(
                         for sp_tok in embed_tokenizer.tokenizer.special_tokens.keys():
                             text = text.replace(sp_tok, "")
                         new_embed_text.append(text.replace(sp_tok, ""))
+                else:
+                    new_embed_text = embed_text
                 new_embed_tokens = [toks[:seq_len] for toks in new_embed]
 
             if data_type == "instruct":
@@ -228,8 +230,8 @@ def sequence_iterator_reconstruction(
                         insert_embed_list.append(ins_list)
 
                     added_prefix = sum(ins_list)
-                    if any([len(toks) <= 1 for toks in embed_toks]):
-                        print("Embed text small", embed_text)
+                    # if any([len(toks) <= 1 for toks in embed_toks]):
+                    #     print("Embed text small", embed_text)
 
                     to_embed_buffer.append({"text": embed_text, "tokens": embed_toks})
                 else:

@@ -4,7 +4,7 @@
 #SBATCH --array=0-9
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
-#SBATCH --gpus-per-task=2
+#SBATCH --gpus-per-task=1
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
 #SBATCH --job-name=eval_models
@@ -13,7 +13,6 @@
 # Set up environment
 
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if already used
-
 
 
 # Get the configuration file for this job
@@ -28,6 +27,14 @@ CP8_L3B_MLP2_L8B_trunc2_nc_fft
 CP8_L3B_MLP2_L8B_trunc8_nc_fft
 CP8_L3B_MLP2_L8B_trunc8_nc_ft
 CP8_L3B_MLP2_L8B_trunc2_nc_ft
+Pisco_8memtoks_mistral
+Pisco_8memtoks_llama
+Pisco_32memtoks_mistral_v2
+Pisco_32memtoks_llama_v2
+Pisco_16memtoks_mistral_v2
+Pisco_16memtoks_llama_v2
+Pisco_8memtoks_mistral_v2
+Pisco_8memtoks_llama_v2
 )
 
 
@@ -55,7 +62,101 @@ echo "Starting at: $(date)"
 
 case $RUN_NAME in
 
-*fft)
+icae*llama)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
+        --max_samples --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B --embed_name Llama3.1-8B --tmp_folder baselines/icae/ --compressed_doc_in_icl --n_icl_exs 5  --bs 16
+    srun --gpus=$N_GPU  \
+        python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json  \
+        --max_sample  --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B --embed_name Llama3.1-8B --tmp_folder baselines/icae/ --compressed_doc_in_icl --bs 16
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
+        --max_samples --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B --embed_name Llama3.1-8B --tmp_folder baselines/icae/ --compressed_doc_in_icl --n_icl_exs 5 \
+         --benchmarks DistractorHotpotQA  --bs 1
+
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json  \
+        --max_sample  --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B --embed_name Llama3.1-8B --tmp_folder baselines/icae/ --compressed_doc_in_icl --bs 4 --europarl
+
+    ;;
+
+icae*mistral)
+
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
+        --max_samples --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B --embed_name mistral_7B --tmp_folder baselines/icae/ --compressed_doc_in_icl --n_icl_exs 5  --bs 16
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json  \
+        --max_sample  --eval_trad --run_name $RUN_NAME --llm_name mistral_7B --embed_name mistral_7B --tmp_folder baselines/icae/ --compressed_doc_in_icl --bs 16
+
+    ;;
+
+
+
+
+
+Pisco*llama*)
+
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
+        --max_samples --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B --embed_name Llama3.1-8B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --n_icl_exs 5  --bs 16
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
+        --max_samples --max_seq_len 64 --multi_passages 5  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B --embed_name Llama3.1-8B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --n_icl_exs 5  --bs 4 --benchmarks NQ
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
+        --max_samples --max_seq_len 64 --multi_passages 5  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B --embed_name Llama3.1-8B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --n_icl_exs 5  --bs 4 --benchmarks TRIVIAQA
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json  \
+        --max_sample  --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B --embed_name Llama3.1-8B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --bs 16
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
+        --max_samples --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B --embed_name Llama3.1-8B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --n_icl_exs 5 \
+         --benchmarks DistractorHotpotQA  --bs 1
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json  \
+        --max_sample  --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B --embed_name Llama3.1-8B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --bs 4 --europarl
+
+    ;;
+
+Pisco*mistral*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
+        --max_samples --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B --embed_name mistral_7B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --n_icl_exs 5  --bs 16
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
+        --max_samples --max_seq_len 64 --multi_passages 5  --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B --embed_name mistral_7B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --n_icl_exs 5  --bs 4 --benchmarks NQ
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
+        --max_samples --max_seq_len 64 --multi_passages 5  --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B --embed_name mistral_7B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --n_icl_exs 5  --bs 4 --benchmarks TRIVIAQA
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json  \
+        --max_sample  --eval_trad --run_name $RUN_NAME --llm_name mistral_7B --embed_name mistral_7B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --bs 16
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json \
+        --max_samples --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B --embed_name mistral_7B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --n_icl_exs 5 \
+         --benchmarks DistractorHotpotQA  --bs 1
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_baselines.json  \
+        --max_sample  --eval_trad --run_name $RUN_NAME --llm_name mistral_7B --embed_name mistral_7B --tmp_folder baselines/pisco/ --compressed_doc_in_icl --bs 1 --europarl
+
+    ;;
+*L3B_MLP2_M7B*fft)
+
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
         --n_passages 500 --max_seq_len 64 --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B  --embed_name Llama3.2-3B  --multi_passages 1 --n_icl_exs 0 --tmp_folder ablations/
@@ -68,16 +169,70 @@ case $RUN_NAME in
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
         --n_passages 500 --run_name $RUN_NAME --eval_trad    --embed_name Llama3.2-3B  --compressed_doc_in_icl --tmp_folder ablations/
     ;;
-*L3B_MLP*_M7B*_ft)
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.2-3B   --tmp_folder ablations/ 
+
+
+*L3B_MLP2_L8B*fft)
+
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500   --run_name $RUN_NAME  --embed_name Llama3.2-3B   --eval_trad  --new_template --tmp_folder ablations/ 
+        --n_passages 500 --max_seq_len 64 --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --multi_passages 1 --compressed_doc_in_icl --tmp_folder ablations/
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad    --embed_name Llama3.2-3B  --compressed_doc_in_icl --tmp_folder ablations/ --llm_name Llama3.1-8B 
     ;;
 
+*L3B_MLP2_M7B*fft*allstar*)
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B  --embed_name Llama3.2-3B  --multi_passages 1 --compressed_doc_in_icl
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad    --embed_name Llama3.2-3B  --compressed_doc_in_icl
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B  --embed_name Llama3.2-3B  --multi_passages 2 --compressed_doc_in_icl
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B  --embed_name Llama3.2-3B  --multi_passages 5 --compressed_doc_in_icl
+
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B  --embed_name Llama3.2-3B  --multi_passages 1 --compressed_doc_in_icl --benchmarks DistractorHotpotQA --bs 4
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --icl_w_document --run_name $RUN_NAME --llm_name mistral_7B  --embed_name Llama3.2-3B  --multi_passages 10 --compressed_doc_in_icl --benchmarks NarrativeQA_split --bs 1
+
+
+    ;;
+
+# Attention tmp folder
+*L3B_MLP2_M7B*)
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME   --embed_name Llama3.2-3B --tmp_folder ablations/
+
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad    --embed_name Llama3.2-3B --tmp_folder ablations/
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME   --embed_name Llama3.2-3B --tmp_folder ablations/ --compressed_doc_in_icl --n_icl_exs 5
+
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --run_name $RUN_NAME --eval_trad    --embed_name Llama3.2-3B --tmp_folder ablations/ --compressed_doc_in_icl
+    ;;
 
 *L3B_MLP2_L8B*)
     srun --gpus=$N_GPU  \
@@ -101,97 +256,21 @@ case $RUN_NAME in
 
 
 
-*L3B_*_M7B*_ft)
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.2-3B --tmp_folder "ablations/"
-
-
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad --embed_name Llama3.2-3B  --tmp_folder "ablations/"
-
-    ;;
-
-
-*L3B_*_M7B*)
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pt_ablations.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.2-3B --n_icl_exs 5 --tmp_folder "ablations/"
-
-
-
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pt_ablations.json \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad --embed_name Llama3.2-3B  --tmp_folder "ablations/"
-
-    ;;
-
-
-
-*L3B_MLP2_M7B*)
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME   --embed_name Llama3.2-3B
-
-
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad    --embed_name Llama3.2-3B
-
-    ;;
-
-*L3B_MLP2_L8B*)
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --llm_name Llama3.1-8B --embed_name Llama3.2-3B
-
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad   --llm_name Llama3.1-8B --embed_name Llama3.2-3B
-
-    ;;
-
-*_L8B_L8B*)
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --llm_name Llama3.1-8B --embed_name Llama3.1-8B --n_icl_exs 5
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-    #     --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --llm_name Llama3.1-8B --embed_name Llama3.1-8B --n_icl_exs 0
-
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --run_name $RUN_NAME --eval_trad   --llm_name Llama3.1-8B --embed_name Llama3.1-8B 
-
-    ;;
-
-*_L8B_MLP2_M7B*)
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME   --embed_name Llama3.1-8B 
-
-
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-    #     --n_passages 500 --run_name $RUN_NAME --eval_trad    --embed_name Llama3.1-8B
-
-    ;;
 
 *)
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json \
-        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME 
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 0
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_pretraining.json  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
+        --n_passages 500 --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --n_icl_exs 5
+
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json  \
         --n_passages 500 --run_name $RUN_NAME --eval_trad 
 
 
     ;;
 
-
 esac
-
