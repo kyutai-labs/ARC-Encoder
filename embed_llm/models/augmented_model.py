@@ -394,6 +394,7 @@ class EmbedAugPipeline(nn.Module):
         truncate_line: bool = False,
         device_generation: str | None = None,
         give_n_tokens: bool = False,
+        max_len_4_oom: int = 32768,
         **kwargs,
     ):
         """
@@ -447,7 +448,7 @@ class EmbedAugPipeline(nn.Module):
                 for text in l_text:
                     toks = self.embed_tokenizer.tokenizer.encode(
                         text, bos=False, eos=False
-                    )
+                    )[:max_len_4_oom]
                     sl.append(len(toks))
                     x_l.append(toks)
                 seqlens.append(sl)
@@ -530,13 +531,13 @@ class EmbedAugPipeline(nn.Module):
                     if index == 0:
                         toks = self.llm_tokenizer.tokenizer.encode(
                             prompt, bos=True, eos=False
-                        )
+                        )[:max_len_4_oom]
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
                     else:
                         toks = self.llm_tokenizer.tokenizer.encode(
                             prompt, bos=False, eos=False
-                        )
+                        )[:max_len_4_oom]
                         prompt_tokens.append(toks)
                         insertion_list.append(len(toks))
 

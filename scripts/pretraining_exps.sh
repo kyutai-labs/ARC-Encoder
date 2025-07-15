@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-3
+#SBATCH --array=0-4%3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -17,14 +17,11 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/icae/icae_64memtoks_mistral.yaml 
-# config/icae/icae_64memtoks_llama.yaml 
-config/icae/icae_32memtoks_mistral.yaml 
-config/icae/icae_16memtoks_mistral.yaml 
-# config/icae/icae_32memtoks_llama.yaml 
-# config/icae/icae_16memtoks_llama.yaml 
-config/icae/icae_8memtoks_mistral.yaml 
-# config/icae/icae_8memtoks_llama.yaml
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_10k.yaml 
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_10k_noinsert.yaml 
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_10k_higher_lr.yaml
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_40k.yaml 
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_20k.yaml 
 )
 
 

@@ -29,6 +29,8 @@ EVAL_DATA_PATH = {
     "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",  # Dev set of the SQuAD v1 dataset
     "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",  # Dev set of the FullWiki HotpotQA dataset
     "NarrativeQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test.jsonl",
+    "NarrativeQA_split": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test_split.jsonl",
+    "DistractorHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl",
 }
 
 METRIC_EVALUATION = {
@@ -38,6 +40,8 @@ METRIC_EVALUATION = {
     "SQUAD": get_em,
     "FullWikiHotpotQA": get_em,
     "NarrativeQA": get_em,
+    "NarrativeQA_split": get_em,
+    "DistractorHotpotQA": get_em,  # Added for the Distractor HotpotQA dataset
 }
 
 
@@ -499,6 +503,12 @@ def evaluate_QA(
         references = []
         for j, batch in enumerate(dataloader):
             with torch.no_grad():
+                if batch["inputs"]["input_ids"].numel() > 32768 * len(
+                    batch["inputs"]["input_ids"]
+                ):  # Avoid OOM
+                    batch["inputs"]["input_ids"] = batch["inputs"]["input_ids"][
+                        :, :32768
+                    ]
                 outputs = pipeline.model.generate(
                     **batch["inputs"],
                     max_new_tokens=max_seq_len,
@@ -931,7 +941,6 @@ def arg_parser():
         default="mistralai/Mistral-7B-v0.3",
     )
     parser.add_argument("--query_w_context", action="store_true")
-    parser.add_argument("--new_template", action="store_true")
     parser.add_argument("--europarl", action="store_true")
     parser.add_argument(
         "--max_samples",
@@ -1012,7 +1021,6 @@ if __name__ == "__main__":
             if args.benchmarks != "all"
             else ["Danish", "French", "Spanish", "German"],
             compressed_doc_in_icl=args.compressed_doc_in_icl,
-            new_template=args.new_template,
             europarl=args.europarl,
             max_samples=args.max_samples,
             prompt_compressor_name=args.compressor_name,
