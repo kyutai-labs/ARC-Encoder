@@ -19,6 +19,12 @@ import re  # noqa: F401
 
 
 PISCO_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/true_pisco/all_pisco_train_v2.jsonl"
+QA_DATA_PATH = [
+    "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl",
+    "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/hotpot_train_good_format.jsonl",
+    "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_train.jsonl",
+    "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl",
+]
 
 
 @dataclass
@@ -26,7 +32,7 @@ class Batch:
     passages: list[str]
     dataset: str
     question: str
-    label: list[str]
+    label: list[str] 
 
 
 def dataset_from_file(
@@ -54,12 +60,19 @@ def dataloader_from_file(
             data = next(dataset)
         except StopIteration:
             yield None
+        if data.get("passages", None) is not None:
+            passages = data["passages"]
+        elif data.get("passage", None) is not None:
+            passages = data["passage"]
+        
+        if isinstance(passages, str):
+            passages = [passages]
         batch_list.append(
             Batch(
-                dataset=data["dataset"],
-                passages=[passage.strip() for passage in data["passages"]],
+                dataset=data.get("dataset", file_path.split("/")[-1].split(".")[0]),
+                passages=[passage.strip() for passage in passages],
                 question=data["question"],
-                label=data["label"],
+                label=data.get("label", [data["answer"]] if isinstance(data["answer"], str) else data["answer"]),
             )
         )
         if len(batch_list) == batch_size:
@@ -127,7 +140,7 @@ def synthesize_data(
         n_samples += len(batch)
 
         prompts = [
-            '\n\n'.join(icl_exs[batch[0].dataset])
+            "\n\n".join(icl_exs[batch[0].dataset])
             + "\n\nDocument: "
             + "\n".join(sample.passages)
             + f"\nQuestion: {sample.question}\nAnswer:"
@@ -188,7 +201,7 @@ def arg_parser():
     parser.add_argument(
         "--output_path",
         type=str,
-        default="/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/synthesized/",
+        default="/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/synthesized/silver_data/",
     )
 
     parser.add_argument(
@@ -202,11 +215,21 @@ def arg_parser():
 
 if __name__ == "__main__":
     args = arg_parser()
-    synthesize_data(
-        model_folder_path=args.transformer,
-        batch_size=args.batch_size,
-        data_path=args.data_path,
-        output_path=args.output_path,
-        download_freq=args.download_freq,
-        ds_name="pisco_ftfs_data_",
-    )
+    # synthesize_data(
+    #     model_folder_path=args.transformer,
+    #     batch_size=args.batch_size,
+    #     data_path=args.data_path,
+    #     output_path=args.output_path,
+    #     download_freq=args.download_freq,
+    #     ds_name="pisco_ftfs_data_",
+    # )
+
+    for qa_data_path in QA_DATA_PATH:
+        synthesize_data(
+            model_folder_path=args.transformer,
+            batch_size=args.batch_size,
+            data_path=qa_data_path,
+            output_path=args.output_path,
+            download_freq=args.download_freq,
+            ds_name=qa_data_path.split("/")[-1].split(".")[0] + "_",
+        )

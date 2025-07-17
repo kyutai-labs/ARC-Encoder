@@ -47,8 +47,6 @@ from embed_llm.training.loss import (
     compute_kl_loss_with_mask,
 )
 from embed_llm.training.utils import (
-    CONTINUATION_PROMPT,
-    PARAPHRASE_PROMPT,
     TrainState,
     logged_closing,
     set_random_seed,
@@ -322,7 +320,6 @@ def _train(
         num_ckpt_keep=args.num_ckpt_keep,
         pipeline=pipeline,
     )
-
 
     main_logger_info("Start training")
     model.train()

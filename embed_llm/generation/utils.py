@@ -78,6 +78,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
             "llmlingua2",
             "prompt_compressor_name",
             "max_doc_len",
+            "chunk_to"
         ]
     elif benchmark.lower() == "factkg":
         key_list = [
@@ -107,6 +108,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
             "llmlingua2",
             "prompt_compressor_name",
             "europarl",
+            "chunk_to"
         ]
     else:
         raise ValueError("Invalid benchmark")
@@ -123,6 +125,8 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                         continue
                     for temp in results[run_name][ckpt][metric].keys():
                         for result in results[run_name][ckpt][metric][temp]:
+                            if result.get('chunk_to', None) is None:
+                                chunk_to = 0
                             formated_results = pd.concat(
                                 [
                                     formated_results,
@@ -145,6 +149,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                                                 "prompt_compressor_name", "no"
                                             ),
                                             "europarl": result.get("europarl", False),
+                                            "chunk_to": chunk_to ,  
                                         },
                                         index=[0],
                                     ),
@@ -166,6 +171,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                             "llmlingua2",
                             "prompt_compressor_name",
                             "europarl",
+                            "chunk_to",
                         ]
                     )
                     .first()
@@ -190,7 +196,8 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                     for temp in results[run_name][ckpt][benchmark][metric].keys():
                         for res in results[run_name][ckpt][benchmark][metric][temp]:
                             if metric == "EM":
-     
+                                if res.get('chunk_to', None) is None:
+                                    chunk_to = 0
                                 formated_results = pd.concat(
                                     [
                                         formated_results,
@@ -234,6 +241,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                                                 "llmlingua2": res.get(
                                                     "llmlingua2", False
                                                 ),
+                                                "chunk_to": chunk_to,  
                                             },
                                             index=[0],
                                         ),
@@ -274,6 +282,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                                             "prompt_compressor_name", 'none'
                                         ),
                                         "max_doc_len": res.get("max_doc_len", "maximum"),
+                                        "chunk_to": chunk_to,  
                                     },
                                     index=[0],
                                 )
@@ -300,6 +309,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                             "llmlingua2",
                             # "prompt_compressor_name",
                             "max_doc_len",
+                            "chunk_to",
                         ]
                     )
                     .first()
@@ -378,8 +388,6 @@ def DARE_merging(
         Path(output_path + "checkpoints/checkpoint_000000/embedder")
         / "consolidated.safetensors",
     )
-
-
     if Path(pretrain_path + "/llm/consolidated.safetensors").exists():
         pretrain_state_dict = load_state_dict(
             Path(pretrain_path) / "llm/", dtype=torch.float32

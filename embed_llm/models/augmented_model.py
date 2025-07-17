@@ -105,7 +105,6 @@ class EmbedAugModel(nn.Module):
                 ]
                 embeddings = new_embeddings.clone()
 
-            # print('Grouped embed_seqlens:', embed_seqlens)
             if self.bridge_module is not None:
                 embeddings = self.bridge_module(embeddings)
 
@@ -239,7 +238,6 @@ class EmbedAugPipeline(nn.Module):
             )
             llm.load_state_dict(llm_state_dict, strict=False, assign=True)
 
-
         llm = llm.to(device)
         llm.eval()
 
@@ -278,10 +276,11 @@ class EmbedAugPipeline(nn.Module):
             llm_embedder.load_lora(
                 embed_path / "lora.safetensors",
             )
-            if (pipeline_args.embedder_params.memory_tokens > 0
+            if (
+                pipeline_args.embedder_params.memory_tokens > 0
                 or pipeline_args.embedder_params.rec_tok
-                or pipeline_args.embedder_params.cont_tok):
-                
+                or pipeline_args.embedder_params.cont_tok
+            ):
                 embed_path = Path(ckpt_path + "/embedder")
                 supp_tok_state_dict = load_state_dict(embed_path, dtype=param_dtype)
                 assert (
@@ -289,9 +288,18 @@ class EmbedAugPipeline(nn.Module):
                     or "cont_tok.weight" in supp_tok_state_dict
                     or "mem_embeddings.weight" in supp_tok_state_dict
                 ), f"no supp tok found in state dict {supp_tok_state_dict.keys()}"
-                logger.info(f'Loading additional tokens for embedder {supp_tok_state_dict.keys()}')
+                logger.info(
+                    f"Loading additional tokens for embedder {supp_tok_state_dict.keys()}"
+                )
                 supp_tok_state_dict = {
-                    k: v.to(param_dtype) for k, v in supp_tok_state_dict.items() if any([(mod in k)  for mod in ["rec_tok", "cont_tok", "mem_embeddings"]])
+                    k: v.to(param_dtype)
+                    for k, v in supp_tok_state_dict.items()
+                    if any(
+                        [
+                            (mod in k)
+                            for mod in ["rec_tok", "cont_tok", "mem_embeddings"]
+                        ]
+                    )
                 }
                 llm_embedder.load_state_dict(
                     supp_tok_state_dict, strict=False, assign=True
@@ -395,6 +403,7 @@ class EmbedAugPipeline(nn.Module):
         device_generation: str | None = None,
         give_n_tokens: bool = False,
         max_len_4_oom: int = 32768,
+        chunk_to: int | None = None,
         **kwargs,
     ):
         """
@@ -442,29 +451,60 @@ class EmbedAugPipeline(nn.Module):
         if w_embeds:
             seqlens = []
             x = []
-            for l_text in text_to_embed:
+            for l_text in text_to_embed:  # Here we have a list per sample in the batch
                 sl = []
                 x_l = []
-                for text in l_text:
-                    toks = self.embed_tokenizer.tokenizer.encode(
-                        text, bos=False, eos=False
-                    )[:max_len_4_oom]
-                    sl.append(len(toks))
-                    x_l.append(toks)
+                for text in l_text:  # The list contains texts that have to be embedded
+                    if chunk_to is None:
+                        toks = self.embed_tokenizer.tokenizer.encode(
+                            text, bos=False, eos=False
+                        )[:max_len_4_oom]
+                        sl.append([len(toks)])
+                        x_l.append([toks])
+                    else:
+                        toks = self.embed_tokenizer.tokenizer.encode(
+                            text, bos=False, eos=False
+                        )
+                        sl.append(
+                            [
+                                len(toks[i : i + chunk_to])
+                                for i in range(0, len(toks), chunk_to)
+                            ]
+                        )
+                        x_l.append(
+                            [
+                                toks[i : i + chunk_to]
+                                for i in range(0, len(toks), chunk_to)
+                            ]
+                        )
+
                 seqlens.append(sl)
                 x.append(x_l)
-            x = sum(x, [])
+            x = sum(sum(x, []), [])
 
-            n_context_tokens_before = [seql[-1] for seql in seqlens]
+            n_context_tokens_before = [sum(seql[-1]) for seql in seqlens]
             x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
                 device
             )
 
             embeddings, embed_seqlens = self.model.embedder.forward_embedder(
-                input_ids=x, seqlens=sum(seqlens, [])
+                input_ids=x, seqlens=sum(sum(seqlens, []), [])
             )
+            if chunk_to is not None:
+                # If chunking, we need to group the embed_seqlens by the original seqlens
+                new_embed_seqlens = []
+                for sample_sl in seqlens:  # Batch level
+                    sample_embed_seqlens = []
+                    ind = 0
+                    for sl in sample_sl:  # Text for one sample
+                        new_embed_sl = sum(embed_seqlens[ind : ind + len(sl)])
+                        ind += len(sl)
+                        sample_embed_seqlens.append(new_embed_sl)
+                    new_embed_seqlens.extend(sample_embed_seqlens) 
+                embed_seqlens = new_embed_seqlens
+
             embed_seqlens = group_embed_seqlens(
-                embed_seqlens, [len(l_text) for l_text in text_to_embed]
+                embed_seqlens, [len(sl) for sl in seqlens]
             )
             n_context_tokens_after = [seql[-1] for seql in embed_seqlens]
             if self.model.embedder.cont_tok is not None:

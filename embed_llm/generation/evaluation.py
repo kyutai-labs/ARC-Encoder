@@ -224,6 +224,7 @@ def evaluate_QA(
     together_multi_passages: bool = False,  # If True, use together multi-passage retrieval
     max_samples: bool = False,  # If True, use all the samples in the dataset
     max_doc_len: int | None = None,  # Maximum length of documents
+    chunk_to: int | None = None,  # If not None, chunk the dataset to this size
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
     if llm_path is not None:
@@ -366,10 +367,11 @@ def evaluate_QA(
                     batch_list_prompts=batch_list_prompts,
                     temperature=temp,
                     max_tokens=max_seq_len,
-                    truncate_line=False,
+                    truncate_line=True,
                     device=device,
                     device_generation=other_device,
                     give_n_tokens=True,
+                    chunk_to=chunk_to,  # If not None, chunk the dataset to this size
                 )
                 compress_ratio += sum_comp_ratio  # N tokens to be compressed / final number of tokens after compression
 
@@ -429,6 +431,7 @@ def evaluate_QA(
                     "llm_name": "mistral" if llm_name is None else llm_name,
                     "together_mp": together_multi_passages,
                     "max_doc_len": max_doc_len,
+                    "chunk_to": chunk_to if chunk_to is not None else 0,
                 }
                 value_f1 = (
                     sum(
@@ -452,13 +455,14 @@ def evaluate_QA(
                     "llm_name": "mistral" if llm_name is None else llm_name,
                     "together_mp": together_multi_passages,
                     "max_doc_len": max_doc_len,
+                    "chunk_to": chunk_to if chunk_to is not None else 0,
                 }
 
                 eval_logger_info(
                     logger,
-                    f"Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
+                    f"COMP RATE: {compress_ratio / n_samples} => Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
                 )
-
+          
                 eval_logger_info(
                     logger,
                     f"Temperature: {temp}, bench: {benchmark},  EM {value_em}, Approx EM {value_approx}, F1 {value_f1}",
@@ -541,6 +545,7 @@ def evaluate_trad(
     compressed_doc_in_icl: bool = False,  # Not used for translation
     europarl: bool = False,  # If True, use Europarl dataset instead of Flores
     max_samples: bool = False,  # If True, use all the samples in the dataset
+    chunk_to: int | None = None,  # If not None, chunk the dataset to this size
 ):
     # Loading model
     llm_name = llm_path.split("/")[-1]
@@ -669,10 +674,11 @@ def evaluate_trad(
                     batch_list_prompts=batch_list_prompts,
                     temperature=temp,
                     max_tokens=max_seq_len,
-                    truncate_line=False,
+                    truncate_line=not europarl,
                     device=device,
                     device_generation=other_device,
                     give_n_tokens=True,
+                    chunk_to=chunk_to,  # If not None, chunk the dataset to this size
                 )
 
                 compress_ratio += sum_comp_ratio  # N tokens to be compressed / final number of tokens after compression
@@ -697,6 +703,7 @@ def evaluate_trad(
                 "new_template": True,
                 "compressed_icl": compressed_doc_in_icl,
                 "llm_name": llm_name,
+                "chunk_to": chunk_to if chunk_to is not None else 0,
             }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
@@ -789,6 +796,11 @@ def arg_parser():
         type=int,
         default=None,
     )
+    parser.add_argument(
+        "--chunk_to",
+        type=int,
+        default=None,
+    )
 
     return parser.parse_args()
 
@@ -802,8 +814,6 @@ if __name__ == "__main__":
     
     if args.pisco_eval:
         args.multi_passages = 5
-        
-        
         
     tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/" + args.tmp_folder
     if args.benchmarks == "all":
@@ -857,6 +867,7 @@ if __name__ == "__main__":
             compressed_doc_in_icl=args.compressed_doc_in_icl,
             europarl=args.europarl,
             max_samples=args.max_samples,
+            chunk_to=args.chunk_to,
         )
         torch.cuda.empty_cache()
     else:
@@ -886,6 +897,7 @@ if __name__ == "__main__":
             together_multi_passages=args.together_multi_passages,
             max_samples=args.max_samples,
             max_doc_len=args.max_doc_len,
+            chunk_to=args.chunk_to,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -916,4 +928,5 @@ if __name__ == "__main__":
                 together_multi_passages=args.together_multi_passages,
                 max_samples=args.max_samples,
                 max_doc_len=args.max_doc_len,
+                chunk_to=args.chunk_to,
             )

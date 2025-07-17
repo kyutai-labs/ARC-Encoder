@@ -1,14 +1,14 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=6
+#SBATCH --array=0-3
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2   
 #SBATCH --job-name=long_explor_pt
-#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/ablations/embed_llm_%A_%a.out
+#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/ablations/pt_long_llm_%A_%a.out
 
 
 
@@ -64,13 +64,17 @@ CONFIG_FILES=(
 # config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_trunc8_nc.yaml 
 # config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_trunc6_nc.yaml
 # config/experiments/ablations/ablations_encoder/CP8_L3B_MLP2_M7B_trunc10_nc.yaml
-config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_trunc10_nc.yaml 
-config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_trunc8_nc.yaml 
-config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_notcausal.yaml 
-config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_trunc2_nc.yaml 
-config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_last.yaml 
-config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_fusion.yaml
-config/experiments/ablations/CP16_L3B_MLP2_M7B_allckpts_shorter.yaml
+# config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_trunc10_nc.yaml 
+# config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_trunc8_nc.yaml 
+# config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_notcausal.yaml 
+# config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_trunc2_nc.yaml 
+# config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_last.yaml 
+# config/experiments/ablations/few_llama/CP8_L3B_MLP2_L8B_fusion.yaml
+# config/experiments/ablations/CP16_L3B_MLP2_M7B_allckpts_shorter.yaml
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_100k.yaml 
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_80k.yaml 
+config/experiments/ablations/new_top/CP8_L3B_MLP2_M7B_best_60k.yaml
+config/experiments/ablations/new_top/CP8_L3B_MLP2_L8B_best_40k.yaml
 )
 
         
