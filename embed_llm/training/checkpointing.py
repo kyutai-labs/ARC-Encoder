@@ -94,7 +94,6 @@ class Checkpointer:
 
         return ckpts_to_delete
 
-
     @torch.no_grad()
     def retrieve_save_states(self, save_dtype: torch.dtype) -> dict[str, torch.Tensor]:
         # remove all potential hooks
@@ -125,7 +124,6 @@ class Checkpointer:
         llm_modules = {
             k: m for k, m in self.llm.named_modules() if is_trainable_fsdp(m)
         }
-
 
         embedder_modules = {
             k: m for k, m in self.embedder.named_modules() if is_trainable_fsdp(m)
@@ -206,7 +204,6 @@ class Checkpointer:
                         }
                     )
 
-
         llm_states = dict(sorted(llm_states.items()))
         
         if self.bridge_module is not None:
@@ -263,15 +260,19 @@ class Checkpointer:
                         save_only_lora=save_only_lora_4_llm,
                     ),  # always use safetensors for checkpointing
                 )
-
-            safetensors.torch.save_file(
-                embedder_states,
-                self.consolidated_path(
-                    tmp_trainable_embedder_dst,
-                    use_safetensors=True,
-                    save_only_lora=save_only_lora_4_embedder,
-                ),  # always use safetensors for checkpointing
-            )
+            if save_only_lora_4_embedder:
+                safetensors.torch.save_file(
+                    embedder_states,
+                    self.consolidated_path(
+                        tmp_trainable_embedder_dst,
+                        use_safetensors=True,
+                        save_only_lora=True,
+                    ),  # always use safetensors for checkpointing
+                )
+            else:
+                special_tokens_states.update(
+                    embedder_states
+                )
 
             safetensors.torch.save_file(
                 special_tokens_states,

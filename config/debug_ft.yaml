@@ -1,7 +1,7 @@
 data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
   adapt_seq_len: true
-  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/synthesized/final_specified_datasets/pisco_ft_data_Mistral-7B-Instruct-v0.2.jsonl:1.0:3
+  train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/synthesized/final_specified_datasets/pisco_ftfs_data_Mistral-7B-v0.3.jsonl:1.0:3
   sep_passages: true
   n_interleaved: 2
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/baselines/pisco/
@@ -15,9 +15,9 @@ max_steps: 3550
 seq_len: 128
 log_freq: 10
 batch_size: 16
-ckpt_freq: 5
+ckpt_freq: 2
 eval_freq: 50
-no_eval: true
+no_eval: false
 continuation: 0.0
 max_norm: 1.0
 optim:
@@ -45,7 +45,6 @@ pipeline:
     trained_layers: 32
     train_embedding_mtx: false
     memory_tokens: 8
-    rec_tok: true
     cont_tok: true
   max_embeds: 5
   trainable_llm: true
