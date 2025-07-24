@@ -278,7 +278,6 @@ class BufferCache:
                 cache_size
             )
 
-                
         elif subsequent_prefill:
             assert self.kv_seqlens is not None
             mask = BlockDiagonalMask.from_seqlens(

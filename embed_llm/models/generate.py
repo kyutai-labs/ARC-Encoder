@@ -56,8 +56,6 @@ def generate(
     cache.to(device=model.device, dtype=model.dtype)
     cache.reset()
 
-
-
     last_token_prelogits = None
 
     prelogits = model.generate(

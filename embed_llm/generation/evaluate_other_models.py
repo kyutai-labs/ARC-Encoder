@@ -18,6 +18,7 @@ from embed_llm.generation.metrics import (  # noqa: E402
     get_em,
     get_f1_score,
     get_substring_match_score,
+    get_rouge_score,  # noqa: E402
     metric_max_over_ground_truths,
 )
 
@@ -31,6 +32,7 @@ EVAL_DATA_PATH = {
     "NarrativeQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test.jsonl",
     "NarrativeQA_split": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test_split.jsonl",
     "DistractorHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl",
+    "CNN": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_Sum/cnn_dailymail_test.jsonl",
 }
 
 METRIC_EVALUATION = {
@@ -42,6 +44,7 @@ METRIC_EVALUATION = {
     "NarrativeQA": get_em,
     "NarrativeQA_split": get_em,
     "DistractorHotpotQA": get_em,  # Added for the Distractor HotpotQA dataset
+    "CNN": get_rouge_score,  # Added for the CNN dataset
 }
 
 
@@ -616,7 +619,37 @@ def evaluate_QA(
                     "max_doc_len": max_doc_len,
                     "llmlingua2": use_llmlingua2,
                 }
+                print(
+                    f"Bench: {benchmark},  EM {value_em}, Approx EM {value_approx}, F1 {value_f1}",
+                )
+            elif METRIC_EVALUATION[benchmark] == get_rouge_score:
+                value_rouge = sum(
+                    [
+                        metric_max_over_ground_truths(get_rouge_score, pred, gts)
+                        for pred, gts in zip(generated_sequences, new_answers)
+                    ]
+                ) / len(generated_sequences)
 
+                if "ROUGE" not in metrics[benchmark].keys():
+                    metrics[benchmark]["ROUGE"] = {}
+                metrics[benchmark]["ROUGE"][str(0)] = {}
+
+                metrics[benchmark]["ROUGE"][str(0)] = {
+                    "n_samples": n_samples,
+                    "icl_examples": icl_examples,
+                    "w_context_in_examples": icl_w_document,
+                    "w_context_w_query": query_w_context,
+                    "Metric": value_rouge,
+                    "n_passages": max_multi_passage,
+                    "compress_ratio": compress_ratio,
+                    "compressed_icl": compressed_doc_in_icl,
+                    "llm_name": "mistral" if llm_name is None else llm_name,
+                    "together_mp": together_multi_passages,
+                    "max_doc_len": max_doc_len,
+                }
+                print(
+                    f"Bench: {benchmark},  ROUGE {value_rouge}",
+                )
             else:
                 raise NotImplementedError(
                     f"Metric {METRIC_EVALUATION[benchmark]} is not implemented for benchmark {benchmark}"
@@ -626,9 +659,6 @@ def evaluate_QA(
                 f"Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
             )
 
-            print(
-                f"Bench: {benchmark},  EM {value_em}, Approx EM {value_approx}, F1 {value_f1}",
-            )
     if accelerator.is_main_process:
         if w_embeds:
             run_name = prompt_compressor_name.split("/")[-1] + llm_name.split("/")[-1]

@@ -20,10 +20,12 @@ import re  # noqa: F401
 
 PISCO_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/true_pisco/all_pisco_train_v2.jsonl"
 QA_DATA_PATH = [
-    "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl",
-    "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/hotpot_train_good_format.jsonl",
-    "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_train.jsonl",
-    "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl",
+    # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl",
+    # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/hotpot_train_good_format.jsonl",
+    # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_train.jsonl",
+    # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl",
+    "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/drop.jsonl",
+    # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/msmarco_qa_answerpresent.jsonl "
 ]
 
 

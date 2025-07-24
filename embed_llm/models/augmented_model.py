@@ -150,8 +150,6 @@ class EmbedAugPipeline(nn.Module):
         embed_seqlens = []
 
         # Trainable Embedder
-        embeddings = [to_embed["tokens"] for to_embed in batch.to_embed]
-
         embeddings = torch.from_numpy(
             np.array(
                 [
@@ -500,7 +498,7 @@ class EmbedAugPipeline(nn.Module):
                         new_embed_sl = sum(embed_seqlens[ind : ind + len(sl)])
                         ind += len(sl)
                         sample_embed_seqlens.append(new_embed_sl)
-                    new_embed_seqlens.extend(sample_embed_seqlens) 
+                    new_embed_seqlens.extend(sample_embed_seqlens)
                 embed_seqlens = new_embed_seqlens
 
             embed_seqlens = group_embed_seqlens(

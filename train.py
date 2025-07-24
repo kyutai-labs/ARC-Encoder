@@ -304,10 +304,10 @@ def _train(
         else [args.optim.max_lr, args.optim.max_lr, args.optim.max_lr_projector],
         total_steps=args.max_steps,
         pct_start=float(args.optim.warm_up_steps) / args.max_steps,
-        anneal_strategy="linear" if args.optim.type == "linear" else "cos" ,
+        anneal_strategy="linear" if args.optim.type == "linear" else "cos",
         div_factor=args.optim.max_lr / args.optim.initial_lr,
         final_div_factor=args.optim.max_lr / args.optim.final_lr,
-    ) 
+    )
 
     state = TrainState(args.max_steps)
 
@@ -443,20 +443,20 @@ def _train(
             #             x[ind_toks : sum(seqlens[:3])].tolist()
             #         ),
             #     )
-            #     # # target = [int(tok) for tok in batch.y]
-            #     # embed = [int(toks) for tokens in batch.to_embed[0]["tokens"] for toks in tokens]
-            #     # # continuation = [
-            #     # #     int(tok)
-            #     # #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
-            #     # # ]
-            #     # print("Beginning", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
-            #     # print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
-            #     # # print('embedding tokens', batch.to_embed[13]["tokens"])
-            #     # # print('embed', batch.to_embed[13]["text"])
-            #     # # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))
-            #     # # print('X len', len(batch.x))
-            #     # # print("Sizes", batch.sizes)
-            #     # # print("Embed seqlens", embed_seqlens)
+            # # target = [int(tok) for tok in batch.y]
+            # embed = [int(toks) for tokens in batch.to_embed[0]["tokens"] for toks in tokens]
+            # # continuation = [
+            # #     int(tok)
+            # #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
+            # # ]
+            # print("Beginning", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
+            # print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
+            # # print('embedding tokens', batch.to_embed[13]["tokens"])
+            # # print('embed', batch.to_embed[13]["text"])
+            # # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))
+            # # print('X len', len(batch.x))
+            # # print("Sizes", batch.sizes)
+            # # print("Embed seqlens", embed_seqlens)
             #     # print('Insert cat embedds', insert_cat_embedds)
 
             # print('PREPARE BATCH TIME',"--- %s seconds ---" % (time.time() - start_time))
@@ -493,10 +493,7 @@ def _train(
                             max(
                                 len(
                                     pipeline.llm_tokenizer.tokenizer.decode(
-                                        [
-                                            int(tok)
-                                            for tok in y[ind : ind + size]
-                                        ]
+                                        [int(tok) for tok in y[ind : ind + size]]
                                     )
                                 ),
                                 1,
@@ -509,7 +506,10 @@ def _train(
                                     pipeline.llm_tokenizer.tokenizer.decode(
                                         [
                                             int(tok)
-                                            for ind_y, tok in enumerate(y[ind : ind + size]) if y_mask[ind + ind_y]
+                                            for ind_y, tok in enumerate(
+                                                y[ind : ind + size]
+                                            )
+                                            if y_mask[ind + ind_y]
                                         ]
                                     )
                                 ),

@@ -1,15 +1,15 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=3,7
+#SBATCH --array=0-1
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/hp_v2
-#SBATCH --job-name=europarl_llama_multpass
-#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/baseline_eval_%A_%a.out
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx10
+#SBATCH --job-name=cnn_baseline_eval
+#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/baseline_cnn_eval_%A_%a.out
+#SBATCH --nodelist=par2dc5-ai-prd-cl02s02dgx26
 
 # Get number of GPUs allocated to this task, -z checks if CUDA_VISIBLE_DEVICES is empty
 if [ -z "$CUDA_VISIBLE_DEVICES" ]; then
@@ -31,52 +31,50 @@ case $SLURM_ARRAY_TASK_ID in
 
 0)
 
-    srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_RAG_QA_paperfinal.json \
-        --max_sample --max_seq_len 64  --wo_embeds --llm_name meta-llama/Llama-3.1-8B  --benchmarks NarrativeQA --bs 1   --n_icl_exs 0 --query_w_context --max_doc_len 32768
+   srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_LLMLingua_paperfinal.json \
+        --max_sample     --max_seq_len 256  --llm_name mistralai/Mistral-7B-v0.3  --compressed_doc_in_icl --compressor_name microsoft/llmlingua-2-xlm-roberta-large-meetingbank --use_llmlingua2  --comp_rate 2.0 --bs 16  --n_icl_exs 5 --max_doc_len 2048  --benchmarks CNN
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_RAG_QA_paperfinal.json \
-        --max_sample --max_seq_len 64  --wo_embeds --llm_name mistralai/Mistral-7B-v0.3  --benchmarks NarrativeQA --bs 1  --n_icl_exs 0 --query_w_context --max_doc_len 32768
+            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_LLMLingua_paperfinal.json \
+        --max_sample    --max_seq_len 256  --llm_name mistralai/Mistral-7B-v0.3  --compressed_doc_in_icl --compressor_name microsoft/llmlingua-2-xlm-roberta-large-meetingbank --use_llmlingua2  --comp_rate 4.0 --bs 16  --n_icl_exs 5 --max_doc_len 2048  --benchmarks CNN
 
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_RAG_QA_paperfinal.json \
-    #     --max_sample --max_seq_len 64   --multi_passages 1 --wo_embeds --query_w_context --llm_name mistralai/Mistral-7B-v0.3 --icl_w_document --benchmarks NarrativeQA --bs 4 --n_icl_exs 0 --max_doc_len 6144
+   srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_LLMLingua_paperfinal.json \
+        --max_sample    --max_seq_len 256  --llm_name mistralai/Mistral-7B-v0.3  --compressed_doc_in_icl --compressor_name microsoft/llmlingua-2-xlm-roberta-large-meetingbank --use_llmlingua2  --comp_rate 8.0 --bs 16  --n_icl_exs 5 --max_doc_len 2048  --benchmarks CNN
+    
+   srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_LLMLingua_paperfinal.json \
+        --max_sample    --max_seq_len 256  --llm_name meta-llama/Llama-3.1-8B  --compressed_doc_in_icl --compressor_name microsoft/llmlingua-2-xlm-roberta-large-meetingbank --use_llmlingua2  --comp_rate 2.0 --bs 16  --n_icl_exs 5 --max_doc_len 2048  --benchmarks CNN
 
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_RAG_QA_paperfinal.json \
-    #     --max_sample --max_seq_len 64   --multi_passages 1 --wo_embeds --query_w_context --llm_name meta-llama/Llama-3.1-8B  --icl_w_document --benchmarks NarrativeQA --bs 1 --n_icl_exs 0 --max_doc_len 16384
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_LLMLingua_paperfinal.json \
+        --max_sample    --max_seq_len 256  --llm_name meta-llama/Llama-3.1-8B  --compressed_doc_in_icl --compressor_name microsoft/llmlingua-2-xlm-roberta-large-meetingbank --use_llmlingua2  --comp_rate 4.0 --bs 16  --n_icl_exs 5 --max_doc_len 2048  --benchmarks CNN
 
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_RAG_QA_paperfinal.json \
-    #     --max_sample --max_seq_len 64   --multi_passages 1 --wo_embeds --query_w_context --llm_name mistralai/Mistral-7B-v0.3 --icl_w_document --benchmarks NarrativeQA --bs 1 --n_icl_exs 0 --max_doc_len 16384
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_RAG_QA_paperfinal.json \
-    #     --max_sample --max_seq_len 64   --multi_passages 1 --wo_embeds --query_w_context --llm_name meta-llama/Llama-3.1-8B  --icl_w_document --benchmarks NarrativeQA --bs 1 --n_icl_exs 0 --max_doc_len 32768
-
-    # srun --gpus=$N_GPU  \
-    #         python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_RAG_QA_paperfinal.json \
-    #     --max_sample --max_seq_len 64   --multi_passages 1 --wo_embeds --query_w_context --llm_name mistralai/Mistral-7B-v0.3 --icl_w_document --benchmarks NarrativeQA --bs 1 --n_icl_exs 0 --max_doc_len 32768
-
-
+   srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_LLMLingua_paperfinal.json \
+        --max_sample    --max_seq_len 256  --llm_name meta-llama/Llama-3.1-8B  --compressed_doc_in_icl --compressor_name microsoft/llmlingua-2-xlm-roberta-large-meetingbank --use_llmlingua2  --comp_rate 8.0 --bs 16  --n_icl_exs 5 --max_doc_len 2048  --benchmarks CNN
+    
+    
     ;;
-
 
 1)
-   srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_LLMLingua_paperfinal.json \
-        --max_sample    --eval_trad   --llm_name mistralai/Mistral-7B-v0.3  --compressed_doc_in_icl --compressor_name microsoft/llmlingua-2-xlm-roberta-large-meetingbank --use_llmlingua2  --comp_rate 2.0 --max_seq_len 64 
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_LLMLingua_paperfinal.json \
-        --max_sample    --eval_trad   --llm_name mistralai/Mistral-7B-v0.3  --compressed_doc_in_icl --compressor_name microsoft/llmlingua-2-xlm-roberta-large-meetingbank --use_llmlingua2  --comp_rate 4.0 --max_seq_len 64 
+            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_RAG_QA_paperfinal.json \
+        --max_sample --max_seq_len 256  --wo_embeds --llm_name meta-llama/Llama-3.1-8B  --benchmarks CNN --bs 16   --n_icl_exs 5 --query_w_context --max_doc_len 2048
 
-   srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_LLMLingua_paperfinal.json \
-        --max_sample    --eval_trad   --llm_name mistralai/Mistral-7B-v0.3  --compressed_doc_in_icl --compressor_name microsoft/llmlingua-2-xlm-roberta-large-meetingbank --use_llmlingua2  --comp_rate 8.0 --max_seq_len 64 
+    srun --gpus=$N_GPU  \
+            python embed_llm/generation/evaluate_other_models.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/other_models/eval_RAG_QA_paperfinal.json \
+        --max_sample --max_seq_len 256  --wo_embeds --llm_name mistralai/Mistral-7B-v0.3  --benchmarks CNN --bs 16  --n_icl_exs 5 --query_w_context --max_doc_len 2048
 
+
+    
+    
     ;;
+
+
+
 
 2)
    srun --gpus=$N_GPU  \

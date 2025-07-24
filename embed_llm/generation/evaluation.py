@@ -11,6 +11,7 @@ from tqdm import tqdm, trange
 from embed_llm.generation.metrics import (  # noqa: E402
     get_approx_em,
     get_bleu_score,
+    get_rouge_score,
     get_em,
     get_f1_score,
     get_substring_match_score,
@@ -29,7 +30,8 @@ EVAL_DATA_PATH = {
     "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",  # Dev set of the FullWiki HotpotQA dataset
     "NarrativeQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test.jsonl",
     "NarrativeQA_split": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test_split.jsonl",
-    "DistractorHotpotQA": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl'
+    "DistractorHotpotQA": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl',
+    "CNN": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_Sum/cnn_dailymail_test.jsonl'
 }
 
 METRIC_EVALUATION = {
@@ -41,6 +43,7 @@ METRIC_EVALUATION = {
     "NarrativeQA": get_em,
     "NarrativeQA_split": get_em,
     "DistractorHotpotQA": get_em,  # Added for the Distractor HotpotQA dataset
+    "CNN": get_rouge_score,  # Added for the CNN dataset
 }
 
 
@@ -272,6 +275,9 @@ def evaluate_QA(
         if benchmark == "SQUAD" and max_multi_passage > 1:
             benchmarks.remove(benchmark)
             continue
+        elif benchmark == "CNN" and max_multi_passage > 1:
+            benchmarks.remove(benchmark)
+            continue
 
         metrics[benchmark] = {}
         eval_data = EVAL_DATA_PATH[benchmark]
@@ -466,6 +472,41 @@ def evaluate_QA(
                 eval_logger_info(
                     logger,
                     f"Temperature: {temp}, bench: {benchmark},  EM {value_em}, Approx EM {value_approx}, F1 {value_f1}",
+                )
+            elif METRIC_EVALUATION[benchmark] == get_rouge_score:
+                value_rouge = sum(
+                    [
+                        metric_max_over_ground_truths(get_rouge_score, pred, gts)
+                        for pred, gts in zip(generated_sequences, new_answers)
+                    ]
+                ) / len(generated_sequences)
+
+                if "ROUGE" not in metrics[benchmark].keys():
+                    metrics[benchmark]["ROUGE"] = {}
+                metrics[benchmark]["ROUGE"][str(temp)] = {}
+
+                metrics[benchmark]["ROUGE"][str(temp)] = {
+                    "n_samples": n_samples,
+                    "icl_examples": icl_examples,
+                    "w_context_in_examples": icl_w_document,
+                    "w_context_w_query": query_w_context,
+                    "Metric": value_rouge,
+                    "n_passages": max_multi_passage,
+                    "compress_ratio": compress_ratio,
+                    "compressed_icl": compressed_doc_in_icl,
+                    "llm_name": "mistral" if llm_name is None else llm_name,
+                    "together_mp": together_multi_passages,
+                    "max_doc_len": max_doc_len,
+                    "chunk_to": chunk_to if chunk_to is not None else 0,
+                }
+                eval_logger_info(
+                    logger,
+                    f"COMP RATE: {compress_ratio / n_samples} => Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
+                )
+          
+                eval_logger_info(
+                    logger,
+                    f"Temperature: {temp}, bench: {benchmark},  EM {value_rouge}",
                 )
             else:
                 raise NotImplementedError(
@@ -817,7 +858,7 @@ if __name__ == "__main__":
         
     tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/" + args.tmp_folder
     if args.benchmarks == "all":
-        benchmarks = ["NQ", "TRIVIAQA", "SQUAD"]
+        benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "CNN"]
     else:
         benchmarks = [args.benchmarks]
     icl_tests = [0, 5] if args.n_icl_exs is None else [args.n_icl_exs]
