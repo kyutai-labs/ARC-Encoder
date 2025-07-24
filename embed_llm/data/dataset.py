@@ -184,6 +184,7 @@ def sequence_iterator(
     n_interleaved: int = 1,
     loss_last_cont_only: bool = False,  # If True, the loss will be computed only on the last continuation token.
     sep_passages: bool = False,  # If True, passages will be separated by a special token in the input sequence.
+    chunk_to: int | None = None,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -315,6 +316,7 @@ def sequence_iterator(
                     n_interleaved=n_interleaved,
                     loss_last_cont_only=loss_last_cont_only,  # If True, the loss will be computed only on the last continuation token.
                     sep_passages=sep_passages,
+                    chunk_to=chunk_to,
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -419,6 +421,7 @@ def build_dataset(
             n_interleaved=args.n_interleaved,
             loss_last_cont_only=args.loss_last_cont_only,
             sep_passages=args.sep_passages,
+            chunk_to=args.chunk_to,
         )
         for fs, it in zip(few_shots, dataset_iterators)
     ]

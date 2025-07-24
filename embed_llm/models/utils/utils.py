@@ -15,7 +15,6 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataP
 # )
 
 
-from embed_llm.models.args import DecoderArgs
 from embed_llm.models.transformer_layers import TransformerBlock 
 from embed_llm.training.distributed import (
     get_rank,
@@ -132,9 +131,10 @@ def initialize_lora_parameters(model: torch.nn.Module, param_dtype: torch.dtype)
                 elif m_name.split(".")[-1] == "lora_B":
                     torch.nn.init.zeros_(param)
                 else:
-                    raise (
-                        "Only LoRA layers should be randomly initialized if not cross-attention!!!"
-                    )
+                    main_logger_info(f"Unknown LoRA layer name: {m_name} | {p_name}")
+                    # raise (
+                    #     "Only LoRA layers should be randomly initialized if not cross-attention!!!"
+                    # )
 
 
 def get_attr(obj, attr_path):
@@ -142,23 +142,6 @@ def get_attr(obj, attr_path):
     return reduce(getattr, attr_path.split('.'), obj)
 
 
-def initialize_decoder_layers_parameters(
-    model: torch.nn.Module, param_dtype: torch.dtype, decoder_args: DecoderArgs
-):
-    mapping_dict = {}
-    for i, llm_layer_id in enumerate(decoder_args.insert_at):
-        mapping_dict["layer_" + str(i)] = llm_layer_id
-
-    decoder_state_dict = model.decoder_modules.state_dict() 
-    llm_state_dict = model.state_dict()
-    
-    for key in decoder_state_dict.keys():
-        if key.split(".")[0] in mapping_dict.keys():
-            decoder_state_dict[key] = llm_state_dict[
-                "layers." + str(mapping_dict[key.split(".")[0]]) + "." + ".".join(key.split(".")[1:])
-            ].to(param_dtype)
-    model.decoder_modules.load_state_dict(decoder_state_dict, strict=True, assign=True)
-        
 
 def group_embed_seqlens(values: list[int], sizes: list[int]):
     result = []

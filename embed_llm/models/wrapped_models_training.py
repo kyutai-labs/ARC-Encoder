@@ -17,7 +17,6 @@ from embed_llm.data.tokenize import Tokenizer
 from embed_llm.models.utils.utils import (
     get_fsdp_policy,
     initialize_lora_parameters,
-    initialize_decoder_layers_parameters,
     log_train_params,
     main_logger_info,
 )
@@ -207,7 +206,7 @@ def load_training_model(
         param.requires_grad = False
         
     for name, param in augmented_model.embedder.named_parameters():
-        if (lora_embedder.enable or pipeline_args.embedder_params) and "lora" in name:
+        if lora_embedder.enable and "lora" in name:
             param.requires_grad = True
         elif (
             any(
@@ -513,6 +512,7 @@ def load_training_model_from_ckpt(
                 param.requires_grad = True
             
     log_train_params(augmented_model)
+
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
 

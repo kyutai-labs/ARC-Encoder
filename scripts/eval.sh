@@ -11,8 +11,8 @@
 #SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/multi_eval_dissect_%A_%a.out
 
 # Set up environment
-export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if already used
 
+export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if already used
 
 
 # Get the configuration file for this job
@@ -41,6 +41,7 @@ fi
 echo "Starting job array ${SLURM_ARRAY_TASK_ID} "
 echo "Using $N_GPUS GPUs: $CUDA_VISIBLE_DEVICES"
 echo "Starting at: $(date)"
+echo "Run name: $RUN_NAME"
 
 
 case $RUN_NAME in
@@ -165,6 +166,4 @@ case $RUN_NAME in
         --n_passages 500  --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 2 --compressed_doc_in_icl --new_template
     ;;
 
-
 esac
-

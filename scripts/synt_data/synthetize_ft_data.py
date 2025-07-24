@@ -94,7 +94,8 @@ general_prompts = [
 ]
 
 pwc_prompt = [
-    "Design 10 prompts specified to the above text to test understanding of the above text. These prompts should be diverse and cover as many aspects (e.g., {a_1}, {a_2}, {a_3}, {a_4}, {a_5}, {a_6} and {a_7}) of the text as possible. The first half of these prompts should be like an instruction, the other should be like a question. In addition to the prompts specified to the above text, please also design 5 general prompts like {gen_p1}, {gen_p2}, {gen_p3}, {gen_p4} and {gen_p5}. Each prompt should be outputted in the following format: [{format}]"
+    "Design 10 prompts specified to the above text to test understanding of the above text. These prompts should be diverse and cover as many aspects (e.g., {a_1}, {a_2}, {a_3}, {a_4}, {a_5}, {a_6} and {a_7}) of the text as possible. The first half of these prompts should be like an instruction, the other should be like a question. In addition to the prompts specified to the above text, please \
+        also design 5 general prompts like {gen_p1}, {gen_p2}, {gen_p3}, {gen_p4} and {gen_p5}. Each prompt should be outputted in the following format: [{format}]"
 ]
 
 translate_prompts = [
@@ -194,9 +195,7 @@ def dataset_from_file(
                                 break
                             if len(line.strip()) > 0:
                                 text.append(line.strip())
-                                count += len(
-                                    tokenizer.encode(line.strip())
-                                )
+                                count += len(tokenizer.encode(line.strip()))
                         text = "\n".join(text)
                     else:
                         text = data["text"].strip()

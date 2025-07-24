@@ -224,7 +224,11 @@ def _train(
 
         eval_batches = []
         while len(eval_batches) < 40:
-            batch = next(eval_data_loader_4rec)
+            try:
+                batch = next(eval_data_loader_4rec)
+            except StopIteration:
+                main_logger_info("No more batches in eval data loader")
+                break
 
             if len(batch.sizes) > 70:
                 print("Too many embeddings to do, skipping batch")
@@ -252,10 +256,14 @@ def _train(
             # pre-load all eval batches, 40 batches * n_gpus * batch_size // n_gpus
             eval_batches_4cont = []
             while len(eval_batches_4cont) < 40:
-                batch = next(eval_data_loader_4cont)
-                if len(batch.sizes) > 70:
-                    print("Too many embeddings to do, skipping batch")
-                    continue
+                try:
+                    batch = next(eval_data_loader_4cont)
+                except StopIteration:
+                    main_logger_info("No more batches in eval data loader")
+                    break
+                # if len(batch.sizes) > 70:
+                #     print("Too many embeddings to do, skipping batch")
+                #     continue
                 else:
                     eval_batches_4cont.append(batch)
         else:
@@ -292,7 +300,7 @@ def _train(
         else [args.optim.max_lr, args.optim.max_lr, args.optim.max_lr_projector],
         total_steps=args.max_steps,
         pct_start=float(args.optim.warm_up_steps) / args.max_steps,
-        anneal_strategy="cos",
+        anneal_strategy="linear" if args.optim.type == "linear" else "cos",
         div_factor=args.optim.max_lr / args.optim.initial_lr,
         final_div_factor=args.optim.max_lr / args.optim.final_lr,
     )

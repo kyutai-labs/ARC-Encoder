@@ -16,6 +16,15 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 logger = logging.getLogger(__name__)
 
 
+def get_max_memory():
+    """Get the maximum memory available for the current GPU for loading models."""
+    free_in_GB = int(torch.cuda.mem_get_info()[0] / 1024**3)
+    max_memory = f"{free_in_GB - 6}GB"
+    n_gpus = torch.cuda.device_count()
+    max_memory = {i: max_memory for i in range(n_gpus)}
+    return max_memory
+
+
 def set_global_seed(seed=42):
     # Python's random module
     random.seed(seed)
@@ -55,6 +64,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
         or benchmark.lower() == "narrativeqa"
         or benchmark.lower() == "narrativeqa_split"
         or benchmark.lower() == "fullwikihotpotqa"
+        or benchmark.lower() == "distractorhotpotqa"
     ):
         key_list = [
             "run_name",
@@ -73,23 +83,31 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
             "EM approx_Metric",
             "xRAG metric",
             "llm_name",
-            'together_mp',
+            "together_mp",
             "llmlingua2",
             "prompt_compressor_name",
             "max_doc_len",
+            "chunk_to",
         ]
-    elif benchmark.lower() == "factkg":
+    elif benchmark.lower() == "cnn":
         key_list = [
             "run_name",
             "ckpt",
+            "ROUGE",
             "temp",
             "n_samples",
             "icl_examples",
             "context_in_examples",
-            "Metric",
-            "Prop_a_in_cont",
+            "context_w_query",
             "n_passages",
-            "llm_name"
+            "compress_ratio",
+            "compressed_icl",
+            "llm_name",
+            "together_mp",
+            "llmlingua2",
+            "prompt_compressor_name",
+            "max_doc_len",
+            "chunk_to",
         ]
     elif benchmark.lower() == "traduction":
         key_list = [
@@ -106,6 +124,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
             "llmlingua2",
             "prompt_compressor_name",
             "europarl",
+            "chunk_to",
         ]
     else:
         raise ValueError("Invalid benchmark")
@@ -122,34 +141,49 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                         continue
                     for temp in results[run_name][ckpt][metric].keys():
                         for result in results[run_name][ckpt][metric][temp]:
+                            if result.get("chunk_to", None) is None:
+                                chunk_to = 0
+                            else:
+                                chunk_to = result["chunk_to"]
                             formated_results = pd.concat(
                                 [
                                     formated_results,
                                     pd.DataFrame(
                                         {
                                             "run_name": run_name,
-                                            "ckpt": int(ckpt),
+                                            "ckpt": ckpt,
                                             "temp": float(temp),
                                             "Metric": result["Metric"],
                                             "n_samples": result["n_samples"],
                                             "language": result["language"],
-                                            "new_template": result.get("new_template", False),
-                                            "compressed_icl": result.get("compressed_icl", False),
+                                            "new_template": result.get(
+                                                "new_template", False
+                                            ),
+                                            "compressed_icl": result.get(
+                                                "compressed_icl", False
+                                            ),
                                             "compress_ratio": result.get(
                                                 "compress_ratio", None
                                             ),
-                                            "llm_name": result.get("llm_name", 'mistral_7B'),
-                                            "llmlingua2": result.get("llmlingua2", False),
+                                            "llm_name": result.get(
+                                                "llm_name", "mistral_7B"
+                                            ),
+                                            "llmlingua2": result.get(
+                                                "llmlingua2", False
+                                            ),
                                             "prompt_compressor_name": result.get(
                                                 "prompt_compressor_name", "no"
                                             ),
                                             "europarl": result.get("europarl", False),
+                                            "chunk_to": chunk_to,
                                         },
                                         index=[0],
                                     ),
                                 ]
                             )
-                formated_results["prompt_compressor_name"] = formated_results["prompt_compressor_name"].fillna("None")
+                formated_results["prompt_compressor_name"] = formated_results[
+                    "prompt_compressor_name"
+                ].fillna("None")
                 formated_results = (
                     formated_results.groupby(
                         [
@@ -165,6 +199,7 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                             "llmlingua2",
                             "prompt_compressor_name",
                             "europarl",
+                            "chunk_to",
                         ]
                     )
                     .first()
@@ -179,8 +214,10 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                 or benchmark.lower() == "narrativeqa"
                 or benchmark.lower() == "fullwikihotpotqa"
                 or benchmark.lower() == "narrativeqa_split"
+                or benchmark.lower() == "distractorhotpotqa"
+                or benchmark.lower() == "cnn"
             ):
-                for metric in ["EM", "F1"]:
+                for metric in ["EM", "F1", "ROUGE"]:
                     if benchmark not in results[run_name][ckpt].keys():
                         continue
                     if metric not in results[run_name][ckpt][benchmark].keys():
@@ -188,14 +225,17 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                     for temp in results[run_name][ckpt][benchmark][metric].keys():
                         for res in results[run_name][ckpt][benchmark][metric][temp]:
                             if metric == "EM":
-     
+                                if res.get("chunk_to", None) is None:
+                                    chunk_to = 0
+                                else:
+                                    chunk_to = res["chunk_to"]
                                 formated_results = pd.concat(
                                     [
                                         formated_results,
                                         pd.DataFrame(
                                             {
                                                 "run_name": run_name,
-                                                "ckpt": int(ckpt),
+                                                "ckpt": ckpt,
                                                 "temp": float(temp),
                                                 "n_samples": res["n_samples"],
                                                 "icl_examples": res["icl_examples"],
@@ -223,25 +263,77 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                                                 "EM approx_Metric": res.get(
                                                     "approx_Metric", None
                                                 ),
-                                                "llm_name": res.get("llm_name", 'mistral_7B'),
-                                                "together_mp": res.get("together_mp", False),
-                                                "max_doc_len": res.get("max_doc_len", "maximum"),
+                                                "llm_name": res.get(
+                                                    "llm_name", "mistral_7B"
+                                                ),
+                                                "together_mp": res.get(
+                                                    "together_mp", False
+                                                ),
+                                                "max_doc_len": res.get(
+                                                    "max_doc_len", "maximum"
+                                                ),
                                                 "prompt_compressor_name": res.get(
-                                                    "prompt_compressor_name", 'no'
+                                                    "prompt_compressor_name", "no"
                                                 ),
                                                 "llmlingua2": res.get(
                                                     "llmlingua2", False
                                                 ),
+                                                "chunk_to": chunk_to,
                                             },
                                             index=[0],
                                         ),
                                     ]
                                 )
-                            else:
+                            elif metric == "ROUGE":
+                                if res.get("chunk_to", None) is None:
+                                    chunk_to = 0
+                                else:
+                                    chunk_to = res["chunk_to"]
                                 df_res = pd.DataFrame(
                                     {
                                         "run_name": run_name,
-                                        "ckpt": int(ckpt),
+                                        "ckpt": ckpt,
+                                        "temp": float(temp),
+                                        "n_samples": res["n_samples"],
+                                        "icl_examples": res["icl_examples"],
+                                        "ROUGE": res.get("Metric", None),
+                                        "compress_ratio": res.get(
+                                            "compress_ratio", None
+                                        ),
+                                        "compressed_icl": res.get(
+                                            "compressed_icl", False
+                                        ),
+                                        "context_in_examples": res[
+                                            "w_context_in_examples"
+                                        ],
+                                        "context_w_query": res.get(
+                                            "w_context_w_query", False
+                                        ),
+                                        "n_passages": res.get("n_passages", 1),
+                                        "llm_name": res.get("llm_name", "mistral_7B"),
+                                        "together_mp": res.get("together_mp", False),
+                                        "llmlingua2": res.get("llmlingua2", False),
+                                        "prompt_compressor_name": res.get(
+                                            "prompt_compressor_name", "none"
+                                        ),
+                                        "max_doc_len": res.get(
+                                            "max_doc_len", "maximum"
+                                        ),
+                                        "chunk_to": chunk_to,
+                                    },
+                                    index=[0],
+                                )
+
+                                formated_results = pd.concat([formated_results, df_res])
+                            else:
+                                if res.get("chunk_to", None) is None:
+                                    chunk_to = 0
+                                else:
+                                    chunk_to = res["chunk_to"]
+                                df_res = pd.DataFrame(
+                                    {
+                                        "run_name": run_name,
+                                        "ckpt": ckpt,
                                         "temp": float(temp),
                                         "n_samples": res["n_samples"],
                                         "icl_examples": res["icl_examples"],
@@ -263,23 +355,28 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                                             None,
                                         ),
                                         "n_passages": res.get("n_passages", 1),
-                                        "llm_name": res.get("llm_name", 'mistral_7B'),
+                                        "llm_name": res.get("llm_name", "mistral_7B"),
                                         "together_mp": res.get("together_mp", False),
-                                        "llmlingua2": res.get(
-                                            "llmlingua2", False
-                                        ),
+                                        "llmlingua2": res.get("llmlingua2", False),
                                         "prompt_compressor_name": res.get(
-                                            "prompt_compressor_name", 'none'
+                                            "prompt_compressor_name", "none"
                                         ),
-                                        "max_doc_len": res.get("max_doc_len", "maximum"),
+                                        "max_doc_len": res.get(
+                                            "max_doc_len", "maximum"
+                                        ),
+                                        "chunk_to": chunk_to,
                                     },
                                     index=[0],
                                 )
 
                                 formated_results = pd.concat([formated_results, df_res])
 
-                formated_results["prompt_compressor_name"] = formated_results["prompt_compressor_name"].fillna("None")
-                formated_results["max_doc_len"] = formated_results["max_doc_len"].fillna("None")
+                formated_results["prompt_compressor_name"] = formated_results[
+                    "prompt_compressor_name"
+                ].fillna("None")
+                formated_results["max_doc_len"] = formated_results[
+                    "max_doc_len"
+                ].fillna("None")
                 formated_results = (
                     formated_results.groupby(
                         [
@@ -298,11 +395,34 @@ def format_results(results: dict, benchmark: str) -> pd.DataFrame:
                             "llmlingua2",
                             # "prompt_compressor_name",
                             "max_doc_len",
+                            "chunk_to",
                         ]
                     )
                     .first()
                     .reset_index(allow_duplicates=True)
                 )
+
+    return formated_results
+
+
+def long_context_eval(results: dict, benchmark: str) -> pd.DataFrame:
+    key_list = [
+        "llm_name",
+        "model_name",
+        "n_samples",
+        "max_seq_len",
+        "eval_model",
+        "em",
+        "acc",
+        "f1",
+        "rouge",
+        "comp_rate",
+        "max_doc_len",
+        "chunk_to",
+        "seed",
+    ]
+    results = results[benchmark]
+    formated_results = pd.DataFrame(results, columns=key_list)
 
     return formated_results
 
@@ -376,46 +496,7 @@ def DARE_merging(
         Path(output_path + "checkpoints/checkpoint_000000/embedder")
         / "consolidated.safetensors",
     )
-
-    if Path(pretrain_path + "/llm/decoder").exists():
-        pretrain_state_dict = load_state_dict(
-            Path(pretrain_path) / "llm/decoder", dtype=torch.float32
-        )
-
-        fine_tune_state_dicts = [
-            load_state_dict(Path(path) / "llm/decoder", dtype=torch.float32)
-            for path in fine_tune_paths
-        ]
-
-        if not Path(
-            output_path + "checkpoints/checkpoint_000000/llm/decoder/"
-        ).exists():
-            Path(output_path + "checkpoints/checkpoint_000000/llm/decoder/").mkdir(
-                parents=True, exist_ok=True
-            )
-        new_state_dict = {}
-        for k, v in pretrain_state_dict.items():
-            delta = torch.zeros_like(v)
-            for ft_state_dict in fine_tune_state_dicts:
-                m = torch.bernoulli(
-                    torch.ones_like(v) * drop_rate, generator=generator
-                ).to(v.device)
-                delta_param = (1 - m) * (ft_state_dict[k] - v) / (1 - drop_rate)
-                delta = delta + delta_param
-                if k in ft_state_dict.keys():
-                    delta = delta + ft_state_dict[k] - v
-                else:
-                    raise ValueError(
-                        f"Key {k} not found in fine-tuned state dicts. Ensure all fine-tuned models have the same architecture."
-                    )
-            new_state_dict[k] = pretrain_state_dict[k] + coeff * delta
-
-        safetensors.torch.save_file(
-            new_state_dict,
-            Path(output_path + "checkpoints/checkpoint_000000/llm/decoder/")
-            / "consolidated.safetensors",
-        )
-    elif Path(pretrain_path + "/llm/consolidated.safetensors").exists():
+    if Path(pretrain_path + "/llm/consolidated.safetensors").exists():
         pretrain_state_dict = load_state_dict(
             Path(pretrain_path) / "llm/", dtype=torch.float32
         )

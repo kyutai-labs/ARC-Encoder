@@ -1,7 +1,7 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=0-1
+#SBATCH --array=4
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
@@ -13,7 +13,6 @@
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
-
 
 
 

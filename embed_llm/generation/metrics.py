@@ -3,12 +3,15 @@ import string
 import unicodedata
 from collections import Counter
 import numpy as np
+from rouge_score import rouge_scorer
 
 import regex
 from sacrebleu.metrics import BLEU as SacreBLEU
 from torcheval.metrics import BLEUScore
 from nltk.translate import meteor_score
 # nltk.download("wordnet")
+
+ROUGE_SCORER = None
 
 
 def word_overlap(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
@@ -27,6 +30,15 @@ def word_overlap(ground_truth: list[str] | str, predicted: list[str] | str) -> f
             n_words += len(gt_text)
             avg_word_overlap += len(gt_text.intersection(pred_text))
         return avg_word_overlap / n_words
+
+
+def get_rouge_score(predicted: str, ground_truth: str) -> float:
+    global ROUGE_SCORER
+    if ROUGE_SCORER is None:
+        # init RougeScorer once (https://github.com/EleutherAI/lm-evaluation-harness/issues/1692)--rouge_types are constant
+        ROUGE_SCORER = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
+    r_scorer = ROUGE_SCORER
+    return r_scorer.score(predicted, ground_truth)["rougeL"].fmeasure
 
 
 class SimpleTokenizer(object):
@@ -118,6 +130,8 @@ def normalize_answer(s):
 
 def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
     scores_for_ground_truths = []
+    if isinstance(ground_truths, str):
+        ground_truths = [ground_truths]
     for ground_truth in ground_truths:
         score = metric_fn(prediction, ground_truth)
         scores_for_ground_truths.append(score)
@@ -125,12 +139,20 @@ def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
 
 
 def get_f1_score(prediction, ground_truth):
-    prediction_tokens = normalize_answer(prediction).split()
-    ground_truth_tokens = normalize_answer(ground_truth).split()
+    normalized_prediction = normalize_answer(prediction)
+    normalized_ground_truth = normalize_answer(ground_truth)
+    
+    if normalized_prediction in ['yes', 'no', 'noanswer'] and normalized_prediction != normalized_ground_truth:
+        return 0.
+    if normalized_ground_truth in ['yes', 'no', 'noanswer'] and normalized_prediction != normalized_ground_truth:
+        return 0.
+    
+    prediction_tokens = normalized_prediction.split()
+    ground_truth_tokens = normalized_ground_truth.split()
     common = Counter(prediction_tokens) & Counter(ground_truth_tokens)
     num_same = sum(common.values())
     if num_same == 0:
-        return 0
+        return 0.
     precision = 1.0 * num_same / len(prediction_tokens)
     recall = 1.0 * num_same / len(ground_truth_tokens)
     f1 = (2 * precision * recall) / (precision + recall)
@@ -178,7 +200,7 @@ def get_bleu_score(
     sacrebleu: bool = True,
 ) -> float:
     if sacrebleu:
-        _, _, bleu_fn = [], [], SacreBLEU(tokenize='13a', lowercase=True)
+        _, _, bleu_fn = [], [], SacreBLEU(tokenize="13a", lowercase=True)
         return bleu_fn.corpus_score(
             [predicted] if isinstance(predicted, str) else predicted,
             [[ground_truth]] if isinstance(ground_truth, str) else [ground_truth],
@@ -195,7 +217,9 @@ def get_bleu_score(
                 for gt_text, pred_text in zip(ground_truth, predicted):
                     assert len(gt_text) > 0, "Ground truth set is empty"
                     try:
-                        pred_text = pred_text if not trunc else pred_text[: len(gt_text)]
+                        pred_text = (
+                            pred_text if not trunc else pred_text[: len(gt_text)]
+                        )
                         metric.update(pred_text, [gt_text])
                     except Exception as e:
                         print(
@@ -213,7 +237,9 @@ def get_bleu_score(
                 assert len(ground_truth) > 0, "Ground truth set is empty"
                 for metric in metrics:
                     try:
-                        predicted = predicted if not trunc else predicted[: len(ground_truth)]
+                        predicted = (
+                            predicted if not trunc else predicted[: len(ground_truth)]
+                        )
                         metric.update(predicted, [ground_truth])
                     except Exception as e:
                         print(

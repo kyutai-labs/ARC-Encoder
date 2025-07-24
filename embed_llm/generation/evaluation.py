@@ -14,6 +14,7 @@ sys.path.insert(0, "/home/hippolytepilchen/code/mix_decoder_training")
 from embed_llm.generation.metrics import (  # noqa: E402
     get_approx_em,
     get_bleu_score,
+    get_rouge_score,
     get_em,
     get_f1_score,
     get_substring_match_score,
@@ -32,7 +33,8 @@ EVAL_DATA_PATH = {
     "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",  # Dev set of the FullWiki HotpotQA dataset
     "NarrativeQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test.jsonl",
     "NarrativeQA_split": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test_split.jsonl",
-    "DistractorHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl",
+    "DistractorHotpotQA": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl',
+    "CNN": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_Sum/cnn_dailymail_test.jsonl'
 }
 
 METRIC_EVALUATION = {
@@ -44,6 +46,7 @@ METRIC_EVALUATION = {
     "NarrativeQA": get_em,
     "NarrativeQA_split": get_em,
     "DistractorHotpotQA": get_em,  # Added for the Distractor HotpotQA dataset
+    "CNN": get_rouge_score,  # Added for the CNN dataset
 }
 
 
@@ -229,6 +232,7 @@ def evaluate_QA(
     together_multi_passages: bool = False,  # If True, use together multi-passage retrieval
     max_samples: bool = False,  # If True, use all the samples in the dataset
     max_doc_len: int | None = None,  # Maximum length of documents
+    chunk_to: int | None = None,  # If not None, chunk the dataset to this size
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
     if llm_path is not None:
@@ -279,6 +283,10 @@ def evaluate_QA(
             continue
 
         if compressed_doc_in_icl and icl_examples == 0:
+            continue
+        
+        if benchmark == "CNN" and max_multi_passage > 1:
+            benchmarks.remove(benchmark)
             continue
 
         metrics[benchmark] = {}
@@ -379,6 +387,7 @@ def evaluate_QA(
                     device=device,
                     device_generation=other_device,
                     give_n_tokens=True,
+                    chunk_to=chunk_to,  # If not None, chunk the dataset to this size
                 )
                 compress_ratio += sum_comp_ratio  # N tokens to be compressed / final number of tokens after compression
 
@@ -438,6 +447,7 @@ def evaluate_QA(
                     "llm_name": "mistral" if llm_name is None else llm_name,
                     "together_mp": together_multi_passages,
                     "max_doc_len": max_doc_len,
+                    "chunk_to": chunk_to if chunk_to is not None else 0,
                 }
                 value_f1 = (
                     sum(
@@ -461,16 +471,52 @@ def evaluate_QA(
                     "llm_name": "mistral" if llm_name is None else llm_name,
                     "together_mp": together_multi_passages,
                     "max_doc_len": max_doc_len,
+                    "chunk_to": chunk_to if chunk_to is not None else 0,
                 }
 
                 eval_logger_info(
                     logger,
-                    f"Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
+                    f"COMP RATE: {compress_ratio / n_samples} => Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
                 )
-
+          
                 eval_logger_info(
                     logger,
                     f"Temperature: {temp}, bench: {benchmark},  EM {value_em}, Approx EM {value_approx}, F1 {value_f1}",
+                )
+            elif METRIC_EVALUATION[benchmark] == get_rouge_score:
+                value_rouge = sum(
+                    [
+                        metric_max_over_ground_truths(get_rouge_score, pred, gts)
+                        for pred, gts in zip(generated_sequences, new_answers)
+                    ]
+                ) / len(generated_sequences)
+
+                if "ROUGE" not in metrics[benchmark].keys():
+                    metrics[benchmark]["ROUGE"] = {}
+                metrics[benchmark]["ROUGE"][str(temp)] = {}
+
+                metrics[benchmark]["ROUGE"][str(temp)] = {
+                    "n_samples": n_samples,
+                    "icl_examples": icl_examples,
+                    "w_context_in_examples": icl_w_document,
+                    "w_context_w_query": query_w_context,
+                    "Metric": value_rouge,
+                    "n_passages": max_multi_passage,
+                    "compress_ratio": compress_ratio,
+                    "compressed_icl": compressed_doc_in_icl,
+                    "llm_name": "mistral" if llm_name is None else llm_name,
+                    "together_mp": together_multi_passages,
+                    "max_doc_len": max_doc_len,
+                    "chunk_to": chunk_to if chunk_to is not None else 0,
+                }
+                eval_logger_info(
+                    logger,
+                    f"COMP RATE: {compress_ratio / n_samples} => Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
+                )
+          
+                eval_logger_info(
+                    logger,
+                    f"Temperature: {temp}, bench: {benchmark},  EM {value_rouge}",
                 )
             else:
                 raise NotImplementedError(
@@ -533,7 +579,7 @@ def evaluate_trad(
     llm_path: str | None = None,
     embed_path: str | None = None,
     ckpt: int | None = None,
-    max_seq_len: int = 512,
+    max_seq_len: int = 2048,
     temps: list[float] = [0, 0.5, 0.7, 1],
     benchmarks: list[str] = ["Danish", "French", "Spanish", "German"],
     max_bs: int = 4,
@@ -549,9 +595,9 @@ def evaluate_trad(
     | str
     | None = None,  # Path to the bridge checkpoint if using a bridge model
     compressed_doc_in_icl: bool = False,  # Not used for translation
-    new_template: bool = True,  # If True, use the old template for translation (without "Document:" prefix)
     europarl: bool = False,  # If True, use Europarl dataset instead of Flores
     max_samples: bool = False,  # If True, use all the samples in the dataset
+    chunk_to: int | None = None,  # If not None, chunk the dataset to this size
 ):
     # Loading model
     llm_name = llm_path.split("/")[-1]
@@ -603,7 +649,7 @@ def evaluate_trad(
                 for line in f:
                     data = json.loads(line)
                     traduction.append(data["text"].strip())
-
+            max_seq_len = 128
         else:
             eval_data = EUROPARL_TRAD_DATA_PATH[benchmark]
 
@@ -613,8 +659,8 @@ def evaluate_trad(
             with open(eval_data, "r") as f:
                 for line in f:
                     data = json.loads(line)
-                    traduction.append(data["answer"].strip())
-                    text.append(data["passage"].strip())
+                    traduction.append(data["answer"].strip().replace("\n", " "))
+                    text.append(data["passage"].strip().replace("\n", " "))
 
         c = list(zip(text, traduction))
 
@@ -624,52 +670,28 @@ def evaluate_trad(
         random.shuffle(c, random=lambda: seed)
         text, traduction = zip(*c)
         embed_prompt = []
-        if not new_template:
-            if compressed_doc_in_icl:
-                text_prompt_prefix = ["Document: "]
-                for doc, answ, _ in zip(text, traduction, range(4)):
-                    embed_prompt.append(doc.strip())
-                    text_prompt_prefix.append(
-                        f"\nTranslation: {answ.strip()}\n\nDocument: "
-                    )
-                embed_prompt.append(text[4].strip())
-                text_prompt_prefix.append(
-                    f"\nTranslation: {traduction[4].strip()}\n\nDocument: "
-                )
 
-            else:
-                text_prompt_prefix = [
-                    "\n\n".join(
-                        [
-                            f"Document: {doc}\nTranslation: {answ}"
-                            for doc, answ, _ in zip(text, traduction, range(5))
-                        ]
-                    )
-                    + "\n\nDocument: "
-                ]
+        if compressed_doc_in_icl:
+            text_prompt_prefix = ["Document: "]
+            for doc, answ, _ in zip(text, traduction, range(4)):
+                embed_prompt.append(doc.strip())
+                text_prompt_prefix.append(
+                    f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}\n\nDocument: "
+                )
+            embed_prompt.append(text[4].strip())
+            text_prompt_prefix.append(
+                f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {traduction[4].strip()}\n\nDocument: "
+            )
+
         else:
-            if compressed_doc_in_icl:
-                text_prompt_prefix = ["Document: "]
-                for doc, answ, _ in zip(text, traduction, range(4)):
-                    embed_prompt.append(doc.strip())
-                    text_prompt_prefix.append(
-                        f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}\n\nDocument: "
-                    )
-                embed_prompt.append(text[4].strip())
-                text_prompt_prefix.append(
-                    f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {traduction[4].strip()}\n\nDocument: "
-                )
-
-            else:
-                text_prompt_prefix = [
-                    "\n\n".join(
-                        [
-                            f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}"
-                            for doc, answ, _ in zip(text, traduction, range(5))
-                        ]
-                    )
-                    + "\n\nDocument: "
-                ]
+            text_prompt_prefix = [
+                "\n\n".join(
+                    [
+                        f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}"
+                        for doc, answ, _ in zip(text, traduction, range(5))
+                    ]
+                ) + '\n\nDocument: '
+            ]
         new_text, new_trad = (
             list(text[5:]),
             list(traduction[5:]),
@@ -683,23 +705,20 @@ def evaluate_trad(
             compress_ratio = 0
             generated_sequences = []
             n_samples = len(text) if n_samples is None or max_samples else n_samples
+            if europarl and max_samples:
+                n_samples = 1000
             for i in trange(0, n_samples, max_bs):
                 texts_to_embed = []
                 batch_list_prompts = []
                 bs = min(max_bs, n_samples - i)
 
-                if not new_template:
-                    batch_list_prompts = [
-                        text_prompt_prefix + ["\nTranslation:"] for _ in range(bs)
+                batch_list_prompts = [
+                    text_prompt_prefix
+                    + [
+                        f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer:"
                     ]
-                else:
-                    batch_list_prompts = [
-                        text_prompt_prefix
-                        + [
-                            f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer:"
-                        ]
-                        for _ in range(bs)
-                    ]
+                    for _ in range(bs)
+                ]
 
                 texts_to_embed = [embed_prompt + [seq] for seq in text[i : i + bs]]
 
@@ -708,10 +727,11 @@ def evaluate_trad(
                     batch_list_prompts=batch_list_prompts,
                     temperature=temp,
                     max_tokens=max_seq_len,
-                    truncate_line=True,
+                    truncate_line=not europarl,
                     device=device,
                     device_generation=other_device,
                     give_n_tokens=True,
+                    chunk_to=chunk_to,  # If not None, chunk the dataset to this size
                 )
 
                 compress_ratio += sum_comp_ratio  # N tokens to be compressed / final number of tokens after compression
@@ -733,11 +753,10 @@ def evaluate_trad(
                 "Metric": bleu_score,
                 "compress_ratio": compress_ratio / n_samples,
                 "language": benchmark,
-                "new_template": new_template,
-                "compressed_icl": compressed_doc_in_icl,
-                "new_template": new_template,
+                "new_template": True,
                 "compressed_icl": compressed_doc_in_icl,
                 "llm_name": llm_name,
+                "chunk_to": chunk_to if chunk_to is not None else 0,
             }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
@@ -819,8 +838,8 @@ def arg_parser():
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--query_w_context", action="store_true")
     parser.add_argument("--bridge_ckpt", type=str, default=None)
-    parser.add_argument("--new_template", action="store_true")
     parser.add_argument("--europarl", action="store_true")
+    parser.add_argument('--pisco_eval', action='store_true')
     parser.add_argument(
         "--max_samples",
         action="store_true",
@@ -837,6 +856,11 @@ def arg_parser():
         default=1,
         help="Number of LLMs to use, starting from 1",
     )
+    parser.add_argument(
+        "--chunk_to",
+        type=int,
+        default=None,
+    )
 
     return parser.parse_args()
 
@@ -845,11 +869,15 @@ if __name__ == "__main__":
     set_logger(logging.INFO)
 
     temp_tests = [0]
-
+        
     args = arg_parser()
+    
+    if args.pisco_eval:
+        args.multi_passages = 5
+        
     tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/" + args.tmp_folder
     if args.benchmarks == "all":
-        benchmarks = ["NQ", "TRIVIAQA", "SQUAD"]  # , "HotpotQA"]
+        benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "CNN"]
     else:
         benchmarks = [args.benchmarks]
     icl_tests = [0, 5] if args.n_icl_exs is None else [args.n_icl_exs]
@@ -897,10 +925,10 @@ if __name__ == "__main__":
             if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
             else False,
             compressed_doc_in_icl=args.compressed_doc_in_icl,
-            new_template=args.new_template,
             europarl=args.europarl,
             max_samples=args.max_samples,
             llm_number=args.llm_number - 1,
+            chunk_to=args.chunk_to,
         )
         torch.cuda.empty_cache()
     else:
@@ -931,6 +959,7 @@ if __name__ == "__main__":
             max_samples=args.max_samples,
             max_doc_len=args.max_doc_len,
             llm_number=args.llm_number - 1,
+            chunk_to=args.chunk_to,
         )
 
         for icl_ex in icl_tests[1:]:
@@ -962,4 +991,5 @@ if __name__ == "__main__":
                 max_samples=args.max_samples,
                 max_doc_len=args.max_doc_len,
                 llm_number=args.llm_number - 1,
+                chunk_to=args.chunk_to,
             )

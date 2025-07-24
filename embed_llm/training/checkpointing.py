@@ -94,20 +94,6 @@ class Checkpointer:
 
         return ckpts_to_delete
 
-    @staticmethod
-    def get_lora_states(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        return {k: v for k, v in state_dict.items() if "lora" in k}
-
-    @staticmethod
-    def get_non_lora_states(
-        state_dict: dict[str, torch.Tensor],
-    ) -> dict[str, torch.Tensor]:
-        return {
-            k: v
-            for k, v in state_dict.items()
-            if not any(l_key in k for l_key in ["lora", "frozen"])
-        }
-
     @torch.no_grad()
     def retrieve_save_states(self, save_dtype: torch.dtype) -> dict[str, torch.Tensor]:
         # remove all potential hooks
@@ -138,12 +124,6 @@ class Checkpointer:
         llm_modules = {
             k: m for k, m in self.llm.named_modules() if is_trainable_fsdp(m)
         }
-
-        decoder_modules = {
-            k: m for k, m in llm_modules.items() if "decoder_modules" in k
-        }
-
-        llm_modules = {k: v for k, v in llm_modules.items() if k not in decoder_modules}
 
         embedder_modules = {
             k: m for k, m in self.embedder.named_modules() if is_trainable_fsdp(m)
@@ -177,12 +157,13 @@ class Checkpointer:
                 )
 
         embedder_states = {}
+        special_tokens_states = {}
         for key, module in embedder_modules.items():
-            if "rec_tok" in key or "cont_tok" in key:
+            if "rec_tok" in key or "cont_tok" in key or 'mem_embeddings' in key:
                 parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
                     "_checkpoint_wrapped_module.", ""
                 )
-                embedder_states.update(
+                special_tokens_states.update(
                     {
                         f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
                         for k, v in module.state_dict().items()
@@ -223,24 +204,6 @@ class Checkpointer:
                         }
                     )
 
-        decoder_states = {}
-        for key, module in decoder_modules.items():
-            assert isinstance(module, FullyShardedDataParallel), (
-                "`module` should be an instance of `FullyShardedDataParallel`"
-            )
-            parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
-                "_checkpoint_wrapped_module.", ""
-            )
-            with module.summon_full_params(
-                module, writeback=True, offload_to_cpu=offload_to_cpu
-            ):
-                decoder_states.update(
-                    {
-                        f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
-                        for k, v in module.state_dict().items()
-                    }
-                )
-
         llm_states = dict(sorted(llm_states.items()))
         
         if self.bridge_module is not None:
@@ -250,7 +213,7 @@ class Checkpointer:
         return (
             llm_states,
             embedder_states,
-            decoder_states,
+            special_tokens_states,
             bridge_modules_states
         )
 
@@ -270,8 +233,6 @@ class Checkpointer:
         ), "dst exists"
 
         tmp_llm_dst.mkdir(parents=True, exist_ok=True)
-        if self.pipeline.pipeline_args.decoder_module.do:
-            Path(tmp_llm_dst / "decoder").mkdir(parents=True, exist_ok=True)
 
         tmp_trainable_embedder_dst = self._tmp(llm_dst.parent / "embedder")
         tmp_trainable_embedder_dst.mkdir(parents=True, exist_ok=True)
@@ -281,20 +242,43 @@ class Checkpointer:
         (
             llm_states,
             embedder_states,
-            decoder_states,
+            special_tokens_states,
             bridge_module_states,
         ) = self.retrieve_save_states(dtype)
 
         barrier()
 
         if self.rank == 0:
+            # save checkpoint in tmp path
+            if self.pipeline.pipeline_args.trainable_llm:
+                safetensors.torch.save_file(
+                    llm_states,
+                    self.consolidated_path(
+                        tmp_llm_dst,
+                        use_safetensors=True,
+                        save_only_lora=save_only_lora_4_llm,
+                    ),  # always use safetensors for checkpointing
+                )
+            if save_only_lora_4_embedder:
+                safetensors.torch.save_file(
+                    embedder_states,
+                    self.consolidated_path(
+                        tmp_trainable_embedder_dst,
+                        use_safetensors=True,
+                        save_only_lora=True,
+                    ),  # always use safetensors for checkpointing
+                )
+            else:
+                special_tokens_states.update(
+                    embedder_states
+                )
 
             safetensors.torch.save_file(
-                embedder_states,
+                special_tokens_states,
                 self.consolidated_path(
                     tmp_trainable_embedder_dst,
                     use_safetensors=True,
-                    save_only_lora=save_only_lora_4_embedder,
+                    save_only_lora=False,
                 ),  # always use safetensors for checkpointing
             )
                 
