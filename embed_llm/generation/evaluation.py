@@ -8,6 +8,7 @@ import subprocess as sp
 import torch
 from tqdm import tqdm, trange
 import sys
+
 sys.path.insert(0, "/home/hippolytepilchen/code/mix_decoder_training")
 
 from embed_llm.generation.metrics import (  # noqa: E402
@@ -25,12 +26,13 @@ from embed_llm.monitoring.utils import set_logger  # noqa: E402
 
 EVAL_DATA_PATH = {
     "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
-    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl",  # unfiltered.nocontext 
+    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl",  # unfiltered.nocontext
     "HotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl",
     "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",  # Dev set of the SQuAD v1 dataset
     "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",  # Dev set of the FullWiki HotpotQA dataset
     "NarrativeQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test.jsonl",
-    "NarrativeQA_split": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test_split.jsonl',
+    "NarrativeQA_split": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test_split.jsonl",
+    "DistractorHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl",
 }
 
 METRIC_EVALUATION = {
@@ -40,7 +42,8 @@ METRIC_EVALUATION = {
     "SQUAD": get_em,
     "FullWikiHotpotQA": get_em,
     "NarrativeQA": get_em,
-    'NarrativeQA_split': get_em,
+    "NarrativeQA_split": get_em,
+    "DistractorHotpotQA": get_em,  # Added for the Distractor HotpotQA dataset
 }
 
 
@@ -50,13 +53,6 @@ TRAD_DATA_PATH = {
     "French": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/fra_Latn.jsonl",
     "German": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/deu_Latn.jsonl",
     "Danish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/dan_Latn.jsonl",
-}
-
-EUROPARL_TRAD_DATA_PATH = {
-    "Spanish": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_es.jsonl",
-    "French": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_fr.jsonl",
-    "German": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_de.jsonl",
-    "Danish": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_da.jsonl",
 }
 
 EUROPARL_TRAD_DATA_PATH = {
@@ -95,23 +91,22 @@ def create_prompt_prefix(
             for query, answer, doc, index in zip(
                 queries, answers, docs, range(max_examples)
             ):
-                
                 if len(doc) == 1:
                     doc = doc[0]
-                elif len(doc) > 1 and not together_multi_passages:
+                elif len(doc) > 1 and together_multi_passages:
                     doc = "\n".join(doc)
-   
+
                 if index == 0:
                     prompt_str.append("Document: ")
-                    
+
                     if isinstance(doc, list):
                         for d in doc:
                             to_embed_str.append(d.strip())
-                            prompt_str.append('')
+                            prompt_str.append("")
                         prompt_str = prompt_str[:-1]  # Remove the last empty string
                     else:
                         to_embed_str.append(doc.strip())
-                        
+
                     prompt_str.append(
                         f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
                     )
@@ -119,7 +114,7 @@ def create_prompt_prefix(
                     if isinstance(doc, list):
                         for d in doc:
                             to_embed_str.append(d.strip())
-                            prompt_str.append('')
+                            prompt_str.append("")
                         prompt_str = prompt_str[:-1]  # Remove the last empty string
                     else:
                         to_embed_str.append(doc.strip())
@@ -128,7 +123,7 @@ def create_prompt_prefix(
                     if isinstance(doc, list):
                         for d in doc:
                             to_embed_str.append(d.strip())
-                            prompt_str.append('')
+                            prompt_str.append("")
                         prompt_str = prompt_str[:-1]  # Remove the last empty string
                     else:
                         to_embed_str.append(doc.strip())
@@ -142,7 +137,7 @@ def create_prompt_prefix(
             for query, answer, doc, _ in zip(
                 queries, answers, docs, range(max_examples)
             ):
-                doc = '\n'.join(doc)
+                doc = "\n".join(doc)
                 prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
 
             to_embed_str = None
@@ -181,28 +176,29 @@ def create_prompt(
     )
 
     if wdoc:
-        doc = '\n'.join(doc)
+        doc = "\n".join(doc)
         list_prompt.append(f"Document: {doc.strip()}\nQuestion: {query}\nAnswer:")
         return list_prompt, list_embed
     else:
         if w_embeds:
             last_prompt = list_prompt[-1]
             list_prompt[-1] = "".join([last_prompt, "Document: "])
-            
-            if len(doc) == 1 or together_multi_passages: 
-                doc = '\n'.join(doc)
+
+            if len(doc) == 1 or together_multi_passages:
+                doc = "\n".join(doc)
                 list_embed.append(doc.strip())
             else:
                 for d in doc:
                     list_embed.append(d.strip())
-                    list_prompt.append('')  # Add an empty string to separate passages so that there are embedded separately
+                    list_prompt.append(
+                        ""
+                    )  # Add an empty string to separate passages so that there are embedded separately
                 list_prompt = list_prompt[:-1]  # Remove the last empty string
             list_prompt.append(f"\nQuestion: {query}\nAnswer:")
         else:
             list_embed = None
             list_prompt.append(f"\nQuestion: {query}\nAnswer:")
         return list_prompt, list_embed
-
 
 
 def evaluate_QA(
@@ -266,6 +262,7 @@ def evaluate_QA(
         embed_type="llama"
         if embed_path is not None and "llama" in embed_path.lower()
         else "mistral",
+        llm_number=llm_number,
     )
 
     results = {benchmark: {} for benchmark in benchmarks}
@@ -280,12 +277,9 @@ def evaluate_QA(
         if benchmark == "SQUAD" and max_multi_passage > 1:
             benchmarks.remove(benchmark)
             continue
-        
+
         if compressed_doc_in_icl and icl_examples == 0:
             continue
-
-        # if benchmark == "HotpotQA":
-        #     max_multi_passage = 2
 
         metrics[benchmark] = {}
         eval_data = EVAL_DATA_PATH[benchmark]
@@ -381,7 +375,7 @@ def evaluate_QA(
                     batch_list_prompts=batch_list_prompts,
                     temperature=temp,
                     max_tokens=max_seq_len,
-                    truncate_line=False,
+                    truncate_line=True,
                     device=device,
                     device_generation=other_device,
                     give_n_tokens=True,
@@ -650,7 +644,8 @@ def evaluate_trad(
                             f"Document: {doc}\nTranslation: {answ}"
                             for doc, answ, _ in zip(text, traduction, range(5))
                         ]
-                    ) + '\n\nDocument: '
+                    )
+                    + "\n\nDocument: "
                 ]
         else:
             if compressed_doc_in_icl:
@@ -672,7 +667,8 @@ def evaluate_trad(
                             f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}"
                             for doc, answ, _ in zip(text, traduction, range(5))
                         ]
-                    ) + '\n\nDocument: '
+                    )
+                    + "\n\nDocument: "
                 ]
         new_text, new_trad = (
             list(text[5:]),
@@ -712,7 +708,7 @@ def evaluate_trad(
                     batch_list_prompts=batch_list_prompts,
                     temperature=temp,
                     max_tokens=max_seq_len,
-                    truncate_line=False,
+                    truncate_line=True,
                     device=device,
                     device_generation=other_device,
                     give_n_tokens=True,
@@ -835,6 +831,12 @@ def arg_parser():
         type=int,
         default=None,
     )
+    parser.add_argument(
+        "--llm_number",
+        type=int,
+        default=1,
+        help="Number of LLMs to use, starting from 1",
+    )
 
     return parser.parse_args()
 
@@ -847,7 +849,7 @@ if __name__ == "__main__":
     args = arg_parser()
     tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/" + args.tmp_folder
     if args.benchmarks == "all":
-        benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "HotpotQA"]
+        benchmarks = ["NQ", "TRIVIAQA", "SQUAD"]  # , "HotpotQA"]
     else:
         benchmarks = [args.benchmarks]
     icl_tests = [0, 5] if args.n_icl_exs is None else [args.n_icl_exs]

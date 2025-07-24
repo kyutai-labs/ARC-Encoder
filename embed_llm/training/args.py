@@ -107,7 +107,7 @@ class TrainArgs(Serializable):
     loss_args: LossArgs = field(default_factory=LossArgs)
     mixed_precision: bool = True
     from_ckpt: CkptArgs = field(default_factory=CkptArgs)
-
+    fair_instruct: bool = False  # If True, the model will be trained with fair-instruct.
     # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
     continuation: float = 0.0
     llm_paths: list[str] | None = (

@@ -396,11 +396,19 @@ def _train(
 
         # Number of steps to accumulate gradients before doing an optimizer step.
         for i in range(args.num_microbatches):
-            batch = next(train_data_loader)
-            # Avoid OOM due to too many embeddings for the same batch
-            while len(batch.sizes) > 100:
+            
+            if args.fair_instruct and state.step%2 == 0:
                 batch = next(train_data_loader)
-                print("Too many embeddings to do, skipping batch")
+                # Avoid OOM due to too many embeddings for the same batch
+                while len(batch.sizes) > 100:
+                    batch = next(train_data_loader)
+                    print("Too many embeddings to do, skipping batch")
+            elif not args.fair_instruct:
+                batch = next(train_data_loader)
+                # Avoid OOM due to too many embeddings for the same batch
+                while len(batch.sizes) > 100:
+                    batch = next(train_data_loader)
+                    print("Too many embeddings to do, skipping batch")
 
             """ Training loop for basic reconstruction"""
 
@@ -414,7 +422,7 @@ def _train(
             # with profile(use_cuda = True) as prof:
             llm_number = random.choices(
                 range(len(args.llm_paths)), weights=args.prob_forward, k=1
-            )
+            ) if not args.fair_instruct else [state.step%2]
             llm_number = torch.tensor(llm_number).to("cuda")
             torch.distributed.broadcast(llm_number, src=0)
             llm_number = llm_number.item()
@@ -639,7 +647,7 @@ def _train(
 
             batch_bpc = 0
             ind = 0
-            for i, size in enumerate(batch.sizes):
+            for size in batch.sizes:
                 if len(y[ind : ind + size]) > 0 and (
                     y_mask is None or torch.sum(y_mask[ind : ind + size]) > 0
                 ):
