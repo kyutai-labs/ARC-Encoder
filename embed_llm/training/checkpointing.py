@@ -250,15 +250,15 @@ class Checkpointer:
 
         if self.rank == 0:
             # save checkpoint in tmp path
-            if self.pipeline.pipeline_args.trainable_llm:
-                safetensors.torch.save_file(
-                    llm_states,
-                    self.consolidated_path(
-                        tmp_llm_dst,
-                        use_safetensors=True,
-                        save_only_lora=save_only_lora_4_llm,
-                    ),  # always use safetensors for checkpointing
-                )
+            # if self.pipeline.pipeline_args.trainable_llm:
+            #     safetensors.torch.save_file(
+            #         llm_states,
+            #         self.consolidated_path(
+            #             tmp_llm_dst,
+            #             use_safetensors=True,
+            #             save_only_lora=save_only_lora_4_llm,
+            #         ),  # always use safetensors for checkpointing
+            #     )
             if save_only_lora_4_embedder:
                 safetensors.torch.save_file(
                     embedder_states,

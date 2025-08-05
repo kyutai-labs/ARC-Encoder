@@ -62,7 +62,7 @@ case $RUN_NAME in
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json  \
-        --n_passages 500    --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.2-3B   --llm_number 1 --compressed_doc_in_icl --new_template
+        --n_passages 500    --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.2-3B   --llm_number 1 --compressed_doc_in_icl 
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
@@ -70,7 +70,7 @@ case $RUN_NAME in
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json  \
-        --n_passages 500    --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 2 --compressed_doc_in_icl --new_template
+        --n_passages 500    --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 2 --compressed_doc_in_icl 
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
@@ -86,7 +86,7 @@ case $RUN_NAME in
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json  \
-        --n_passages 500   --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.2-3B   --llm_number 1 --new_template
+        --n_passages 500   --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.2-3B   --llm_number 1 
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
@@ -94,7 +94,7 @@ case $RUN_NAME in
 
     srun --gpus=$N_GPU  \
             python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json  \
-        --n_passages 500   --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 2 --new_template
+        --n_passages 500   --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 2 
 
 
     ;;

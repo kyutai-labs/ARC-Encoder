@@ -586,7 +586,6 @@ def load_model(
             args=llm_args,
             checkpoint=checkpoint,
             embedder_args=pipeline_args.embedder_params if for_embedding else None,
-            decoder_args=pipeline_args.decoder_module,
             number_of_llm=number_of_llm,
         )
 
