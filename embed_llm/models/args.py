@@ -8,9 +8,34 @@ from embed_llm.models.utils.lora import LoraArgs
 
 @dataclass
 class PoolingArgs(Serializable):
-    pool_type: str = "mean_sa"
-    where: str = "before"  # "before", "inside_queries", "between", "attention"
-    based_on: str | None = None  # "q", "k", "v"
+    """Pooling arguments for the transformer model.
+    Args:
+        pool_type: Type of pooling to apply. Options include:
+            - "mean": Mean pooling.
+            - "last": Last token pooling.
+            - "sum": Sum pooling.
+            - "fusion": Fusion pooling.
+            - "metric_<metric_name>": Metric-based pooling:
+                - "pruning": Pruning and keeping last token.
+                - "pruning_norm": Pruning and keeping highest norm token.
+                - "kmeans_cosine": K-means clustering pooling based on cosine metric.
+                - "kmeans_euclidean": K-means clustering pooling based on Euclidean metric.
+                - "scalar_product": merge similar tokens
+                - "cosine": merge similar tokens based on cosine similarity
+                - "euclidean": merge similar tokens based on Euclidean distance
+                - "mse": merge similar tokens based on mean squared error
+                - "manhattan": merge similar tokens based on Manhattan distance
+                - "chebyshev": merge similar tokens based on Chebyshev distance,
+            - + "_pooled_queries": if "pooled_queries" is in the pool_type, 
+                                   it means that the pooling is applied to the queries which 
+                                   will attend to non pooled kv.
+        
+        where: Where to apply the pooling. Options include:
+            - "before": Before the self-attention layer.
+            - "between": Between the self-attention and MLP layers.
+    """
+    pool_type: str = "mean_pooled_queries" # Precise pooled_queries if before and pooled queries attend to non pooled kv
+    where: str = "before"  # "before", "between"
 
 
 @dataclass
@@ -30,34 +55,17 @@ class EmbedderArgs(Serializable):
     memory_tokens: int = 0
     rec_tok: bool = False
     cont_tok: bool = False
-    compress_rates: list[int] = field(default_factory=list)
+    compress_rates: list[int] = field(default_factory=list) # Compression rates for embeddings [2, 1] means pooling before the second to last layer 
     trained_layers: int = 0
     train_embedding_mtx: bool = False
     causal_embedder: bool = True
-    trained_causal: bool = True
-    matryoshka_training: dict[int, float] | None = None
-    mixed_method: bool = False
-    mixed_learned_method: bool = False
 
     def __post_init__(self) -> None:
-        if self.memory_tokens > 0 and not self.mixed_method:
+        if self.memory_tokens > 0:
             if isinstance(self.pooling_module, PoolingArgs):
                 assert self.pooling_module.pool_type == "mean", self.pooling_module
-                assert self.pooling_module.based_on is None, self.pooling_module
             assert self.compress_rates == [], self.compress_rates
-        elif self.mixed_method:
-            if isinstance(self.pooling_module, PoolingArgs):
-                assert self.pooling_module.where == "before" and "sa" in self.pooling_module.pool_type, self.pooling_module
-            print('Warning: take care that max_seq_len // compress_rate <= memory_tokens if using mixed method')
-        if self.mixed_learned_method:
-            assert self.mixed_method
-        if self.matryoshka_training is not None:
-            assert self.memory_tokens > 0, self.matryoshka_training
-            assert len(self.matryoshka_training.keys()) > 1, self.matryoshka_training
-            assert (
-                max([int(k) for k in self.matryoshka_training.keys()])
-                <= self.memory_tokens
-            ), (self.matryoshka_training, self.memory_tokens)
+
 
 
 @dataclass

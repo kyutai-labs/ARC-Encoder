@@ -11,13 +11,13 @@ from embed_llm.data.tokenize import Tokenizer
 class Batch:
     x: np.ndarray
     y: np.ndarray
-    to_embed: list[dict[list[str], list[list[int]]]]
+    to_embed: list[dict[list[str], list[list[int]]]] # A batch is a list of dicts within each dict: tokens and text, tokens are a list of lists 
     sizes: list[int]
     batch_size: int
     y_mask: np.ndarray | None = None
     is_pad_only: bool = False
     data_type: str = "reconstruction"
-    insert_embed_list: list[list[int]] | None = None
+    insert_embed_list: list[list[int]] | None = None # List of lists, each list contains the indices where to insert embeddings tokens in the text stream (x and y)
 
     def __post_init__(self):
         assert self.x.ndim == 1
@@ -183,6 +183,7 @@ def build_data_loader(
         ) or any([s == 0 for s in sample.sizes]):
             continue
 
+        # Store in different batch lists based on data type
         if sample.data_type not in batch_list_dict:
             batch_list_dict[sample.data_type] = Batchlist()
 

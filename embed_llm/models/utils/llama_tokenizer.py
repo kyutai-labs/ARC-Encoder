@@ -159,7 +159,7 @@ class Tokenizer:
             t.append(self.eos_id)
         return t
 
-    def decode(self, t: Sequence[int]) -> str:
+    def decode(self, t: Sequence[int], skip_special_tokens: bool = False) -> str:
         """
         Decodes a list of token IDs into a string.
 
@@ -170,7 +170,13 @@ class Tokenizer:
             str: The decoded string.
         """
         # Typecast is safe here. Tiktoken doesn't do anything list-related with the sequence.
-        return self.model.decode(cast(List[int], t))
+        list_toks = cast(List[int], t)
+        if skip_special_tokens:
+            # Remove special tokens from the sequence before decoding.
+            list_toks = [
+                tok for tok in list_toks if tok not in self.special_tokens.values()
+            ]
+        return self.model.decode(list_toks)
 
     @staticmethod
     def _split_whitespaces_or_nonwhitespaces(

@@ -55,7 +55,7 @@ def sequence_iterator_reconstruction(
     adapt_seq_len: bool = False,
     few_shot_instruct: list[str] | None = None,
     few_shot: int = 0,
-    n_interleaved: int = 1,
+    interleave: bool = False,
     loss_last_cont_only: bool = False,
     sep_passages: bool = False,
     chunk_to: int | None = None,
@@ -88,42 +88,29 @@ def sequence_iterator_reconstruction(
         # If instruct data type do not split the passage into smaller embeddings
         if data_type == "reconstruction":
             new_embed = tokens[cur_pos : cur_pos + n_missing]
-            if (
-                llm_tokenizer.model_name == "llama"
-            ):
-                new_text = llm_tokenizer.tokenizer.decode(new_embed)
-                bos = "<|begin_of_text|>" in new_text
-                eos = "<|end_of_text|>" in new_text
-                for sp_tok in llm_tokenizer.tokenizer.special_tokens.keys():
-                    new_text = new_text.replace(sp_tok, "")
-                to_embed_buffer.append(
-                    {
-                        "text": [new_text],
-                        "tokens": [
-                            embed_tokenizer.tokenizer.encode(new_text, bos=bos, eos=eos)
-                        ],
-                    }
-                )
 
-            elif (
-                llm_tokenizer.model_name == "mistral"
-            ):
-                bos = llm_tokenizer.tokenizer.bos_id in new_embed
-                eos = llm_tokenizer.tokenizer.eos_id in new_embed
+            bos = llm_tokenizer.tokenizer.bos_id in new_embed
+            eos = llm_tokenizer.tokenizer.eos_id in new_embed
+            if llm_tokenizer.tokenizer.model_name == "llama":
+                new_text = llm_tokenizer.tokenizer.decode(new_embed, skip_special_tokens=True)
+            elif llm_tokenizer.tokenizer.model_name == "mistral":
                 new_text = llm_tokenizer.tokenizer.decode(new_embed)
-                to_embed_buffer.append(
-                    {
-                        "text": [new_text],
-                        "tokens": [
-                            embed_tokenizer.tokenizer.encode(new_text, bos=bos, eos=eos)
-                        ],
-                    }
-                )
             else:
                 raise NotImplementedError(
                     f"Model {llm_tokenizer.model_name} not supported for reconstruction."
                 )
 
+            to_embed_buffer.append(
+                {
+                    "text": [new_text],
+                    "tokens": [
+                        embed_tokenizer.tokenizer.encode(new_text, bos=bos, eos=eos)
+                    ],
+                }
+            )
+
+
+ 
             # Each sample consists in: Embeddings + text (no text before the embeddings)
             insert_embed_list.append([0])
             x_buffer.extend(x[cur_pos : cur_pos + n_missing])
@@ -132,7 +119,7 @@ def sequence_iterator_reconstruction(
             # Instruct tuning
             assert adapt_seq_len
             seq_len = (
-                seq_len * (2 * n_interleaved + 1) if n_interleaved > 1 else seq_len
+                seq_len * (2 * int(interleave) * few_shot + 1) 
             )
             # If we can use more embeddings and that one passage reaches the limit \
             # we split it in two embeddings and so on
@@ -200,7 +187,7 @@ def sequence_iterator_reconstruction(
                     )
                 added_prefix = 0
                 splits = re.split(r"\n\nDocument:|\nQuestion:", prefix)
-                if n_interleaved > 1 and len(splits) > 1:
+                if interleave and len(splits) > 1:
                     ins_list = []
                     embed_toks = []
                     embed_text = []
@@ -403,7 +390,7 @@ def sequence_iterator_reconstruction(
     )
 
 
-def sequence_iterator_inserted_embed_continuation(
+def sequence_iterator_continuation(
     x_buffer: list[int],
     y_buffer: list[int],
     to_embed_buffer: list[dict[list[str], list[list[int]]]],
@@ -417,28 +404,28 @@ def sequence_iterator_inserted_embed_continuation(
     llm_tokenizer: Tokenizer,  # type: ignore
     embed_tokenizer: Tokenizer,  # type: ignore
     data_type: str = "continuation",
-    n_times_sl_insertion: int = 1,
-    shorten_continuation: bool = False,
+    interleave: bool = False,
 ) -> SequenceEmbedMaskAndSizes:
-    assert 0 <= len(x_buffer) < (1 + n_times_sl_insertion) * seq_len, len(x_buffer)
+    assert 0 <= len(x_buffer) < (1 + int(interleave)) * seq_len, len(x_buffer)
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     size = 0
     while cur_pos < len(x):
         overall_size = len(x[cur_pos : cur_pos + n_missing])
         curr_mask = mask[cur_pos : cur_pos + n_missing]
+        
+        # we have a sequence with a mask filled with False
         if not any(curr_mask):
             cur_pos += overall_size
-            # we have a sequence with a mask filled with False
             continue
 
+        # Skipping too small sequences
         if overall_size < 6:
             assert len(mask_buffer) == len(x_buffer) == sum(sizes) == len(y_buffer)
             assert len(to_embed_buffer) == len(sizes), (
                 len(to_embed_buffer),
                 len(sizes),
             )
-            # we don't want to yield sequences with a mask filled with False
             if any(mask_buffer):
                 return (
                     SequenceEmbedMaskAndSizes(
@@ -455,8 +442,9 @@ def sequence_iterator_inserted_embed_continuation(
             else:
                 break
 
+        # Text before embedded sequence
         upper_bound_non_embed_prefix = max(0, overall_size - 2 * seq_len)
-        # either you can continue 256 tokens of embeddings by 256 tokens then the spared ones are put before the embeddings
+
 
         x_buffer.extend(x[cur_pos : cur_pos + upper_bound_non_embed_prefix])
         y_buffer.extend(y[cur_pos : cur_pos + upper_bound_non_embed_prefix])
@@ -473,30 +461,16 @@ def sequence_iterator_inserted_embed_continuation(
         new_embed = x[cur_pos : cur_pos + left_tokens // 2]
 
         if (
-            llm_tokenizer.model_name == "llama"
-            and embed_tokenizer.model_name == "mistral"
-        ):
-            new_text = llm_tokenizer.tokenizer.decode(new_embed)
-            bos = "<|begin_of_text|>" in new_text
-            eos = "<|end_of_text|>" in new_text
-            for sp_tok in llm_tokenizer.tokenizer.special_tokens.keys():
-                new_text = new_text.replace(sp_tok, "")
-            to_embed_buffer.append(
-                {
-                    "text": [new_text],
-                    "tokens": [
-                        embed_tokenizer.tokenizer.encode(new_text, bos=bos, eos=eos)
-                    ],
-                }
-            )
-
-        elif (
-            llm_tokenizer.model_name == "mistral"
-            and embed_tokenizer.model_name == "llama"
+            llm_tokenizer.model_name  != embed_tokenizer.model_name 
         ):
             bos = llm_tokenizer.tokenizer.bos_id in new_embed
             eos = llm_tokenizer.tokenizer.eos_id in new_embed
-            new_text = llm_tokenizer.tokenizer.decode(new_embed)
+            
+            if llm_tokenizer.tokenizer.model_name == "llama":
+                new_text = llm_tokenizer.tokenizer.decode(new_embed, skip_special_tokens=True)
+            else:
+                new_text = llm_tokenizer.tokenizer.decode(new_embed)
+                
             to_embed_buffer.append(
                 {
                     "text": [new_text],
@@ -515,11 +489,7 @@ def sequence_iterator_inserted_embed_continuation(
 
         cur_pos += len(x[cur_pos : cur_pos + left_tokens // 2])
 
-        to_continue_tokens = (
-            left_tokens // 2 if not shorten_continuation else min(32, left_tokens // 2)
-        )
-        if shorten_continuation:
-            overall_size -= max((left_tokens // 2) - 32, 0)
+        to_continue_tokens = left_tokens // 2 
         x_buffer.extend(x[cur_pos : cur_pos + to_continue_tokens])
         y_buffer.extend(y[cur_pos : cur_pos + to_continue_tokens])
 
@@ -540,8 +510,8 @@ def sequence_iterator_inserted_embed_continuation(
         size = 0
         if n_missing == 0:
             assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
-            assert len(x_buffer) <= seq_len * (1 + n_times_sl_insertion), (
-                f"Buffer to long {len(x_buffer)} | {seq_len * (1 + n_times_sl_insertion)}"
+            assert len(x_buffer) <= seq_len * (1 + int(interleave)), (
+                f"Buffer to long {len(x_buffer)} | {seq_len * (1 + int(interleave))}"
             )
 
             assert len(to_embed_buffer) == len(sizes)
@@ -566,7 +536,7 @@ def sequence_iterator_inserted_embed_continuation(
                     [],
                     [],
                     [],
-                    seq_len * 2 + n_times_sl_insertion * seq_len,
+                    seq_len * 2 + int(interleave) * seq_len,
                     [],
                 )
     return (
@@ -579,167 +549,3 @@ def sequence_iterator_inserted_embed_continuation(
         sizes,
     )
 
-
-def sequence_iterator_interleaved_cont(
-    x_buffer: list[int],
-    y_buffer: list[int],
-    to_embed_buffer: list[dict[list[str], list[list[int]]]],
-    insert_embed_list: list[list[int]],
-    n_missing: int,
-    mask_buffer: Mask,
-    sizes: list[int],
-    sample: TokenSample,
-    cur_pos: int,
-    seq_len: int,
-    llm_tokenizer: Tokenizer,  # type: ignore
-    embed_tokenizer: Tokenizer,  # type: ignore
-    data_type: str = "continuation",
-    n_interleaved: int = 1,
-    loss_last_cont_only: bool = False,
-) -> SequenceEmbedMaskAndSizes:
-    tokens, mask = sample.tokens, sample.masks[1:]
-    x, y = tokens[:-1], tokens[1:]
-    size = 0
-    while cur_pos < len(x):
-        overall_size = len(x[cur_pos : cur_pos + n_missing])
-        curr_mask = mask[cur_pos : cur_pos + n_missing]
-        if not any(curr_mask):
-            cur_pos += overall_size
-            # we have a sequence with a mask filled with False
-            continue
-
-        if overall_size < 2 * (2 * n_interleaved + 1):
-            assert len(mask_buffer) == len(x_buffer) == sum(sizes) == len(y_buffer)
-            assert len(to_embed_buffer) == len(sizes), (
-                len(to_embed_buffer),
-                len(sizes),
-            )
-
-            # we don't want to yield sequences with a mask filled with False
-            if any(mask_buffer):
-                return (
-                    SequenceEmbedMaskAndSizes(
-                        x=x_buffer,
-                        y=y_buffer,
-                        to_embed=to_embed_buffer,
-                        mask=mask_buffer,
-                        sizes=sizes,
-                        data_type=data_type,
-                        insert_embed_list=insert_embed_list,
-                    ),
-                    len(x),
-                )  # ensures that it does not come back to this sample
-            else:
-                break
-
-        one_chunk_size = overall_size // (2 * n_interleaved + 1)
-        text_embed = []
-        toks_embed = []
-        ins_list = []
-        for j in range(2 * n_interleaved + 1):
-            if j % 2 == 0 and j < 2 * n_interleaved:
-                x_buffer.extend(x[cur_pos : cur_pos + one_chunk_size])
-                y_buffer.extend(y[cur_pos : cur_pos + one_chunk_size])
-                if loss_last_cont_only:
-                    mask_buffer.extend(
-                        [False] * len(mask[cur_pos : cur_pos + one_chunk_size])
-                    )
-                else:
-                    mask_buffer.extend(
-                        [True] * len(mask[cur_pos : cur_pos + one_chunk_size])
-                    )
-                size += len(x[cur_pos : cur_pos + one_chunk_size])
-                ins_list.append(len(x[cur_pos : cur_pos + one_chunk_size]))
-
-                cur_pos += len(x[cur_pos : cur_pos + one_chunk_size])
-
-            elif j % 2 == 1:
-                new_embed = x[cur_pos : cur_pos + one_chunk_size]
-                if (
-                    llm_tokenizer.model_name == "llama"
-                    and embed_tokenizer.model_name == "mistral"
-                ):
-                    new_text = llm_tokenizer.tokenizer.decode(new_embed)
-                    bos = "<|begin_of_text|>" in new_text
-                    eos = "<|end_of_text|>" in new_text
-                    for sp_tok in llm_tokenizer.tokenizer.special_tokens.keys():
-                        new_text = new_text.replace(sp_tok, "")
-                    text_embed.append(new_text)
-                    toks_embed.append(
-                        embed_tokenizer.tokenizer.encode(new_text, bos=bos, eos=eos)
-                    )
-
-                elif (
-                    llm_tokenizer.model_name == "mistral"
-                    and embed_tokenizer.model_name == "llama"
-                ):
-                    bos = llm_tokenizer.tokenizer.bos_id in new_embed
-                    eos = llm_tokenizer.tokenizer.eos_id in new_embed
-                    new_text = llm_tokenizer.tokenizer.decode(new_embed)
-                    text_embed.append(new_text)
-                    toks_embed.append(
-                        embed_tokenizer.tokenizer.encode(new_text, bos=bos, eos=eos)
-                    )
-                else:
-                    text_embed.append(llm_tokenizer.tokenizer.decode(new_embed))
-                    toks_embed.append(new_embed)
-
-                cur_pos += len(x[cur_pos : cur_pos + one_chunk_size])
-            else:
-                to_continue_tokens = overall_size // (
-                    2 * n_interleaved + 1
-                ) + overall_size % (2 * n_interleaved + 1)
-
-                x_buffer.extend(x[cur_pos : cur_pos + to_continue_tokens])
-                y_buffer.extend(y[cur_pos : cur_pos + to_continue_tokens])
-                size += len(x[cur_pos : cur_pos + to_continue_tokens])
-                mask_buffer.extend(
-                    [True] * len(mask[cur_pos : cur_pos + to_continue_tokens])
-                )
-                cur_pos += len(x[cur_pos : cur_pos + to_continue_tokens])
-        insert_embed_list.append(ins_list)
-        sizes.append(size)
-        to_embed_buffer.append(
-            {
-                "text": text_embed,
-                "tokens": toks_embed,
-            }
-        )
-        n_missing -= overall_size
-        size = 0
-        if n_missing == 0:
-            assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
-            assert len(to_embed_buffer) == len(sizes)
-            # we don't want to yield sequences with a mask filled with False
-            if any(mask_buffer):
-                return (
-                    SequenceEmbedMaskAndSizes(
-                        x=x_buffer,
-                        y=y_buffer,
-                        to_embed=to_embed_buffer,
-                        mask=mask_buffer,
-                        sizes=sizes,
-                        data_type=data_type,
-                        insert_embed_list=insert_embed_list,
-                    ),
-                    cur_pos,
-                )
-            else:
-                return (
-                    [],
-                    [],
-                    [],
-                    [],
-                    [],
-                    seq_len,
-                    [],
-                )
-    return (
-        x_buffer,
-        y_buffer,
-        to_embed_buffer,
-        insert_embed_list,
-        mask_buffer,
-        n_missing,
-        sizes,
-    )

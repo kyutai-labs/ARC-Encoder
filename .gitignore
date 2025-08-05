@@ -32,3 +32,4 @@ scripts/dissect*
 scripts/test*
 results/*
 filter_data.ipynb
+retrieval/*

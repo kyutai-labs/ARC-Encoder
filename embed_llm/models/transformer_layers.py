@@ -36,13 +36,11 @@ def insert_embeds(
     Args:
         h: hidden states of the model
         embeds: Embeddings to be prepended
-        tok_embeddings: token embedding layer (if prepended at layer 0)
-        embed_seqlens: At training time one embed_seqlen per passage,
-                        at generation we can have several embeddings in between full tokens
-        seqlens: list of token lengths for each input sequence
-        insert_cat_embedds: list of where to insert the embeddings (for generation)
-        batch_type: type of batch (reconstruction, continuation, etc.)
+        embed_seqlens: For each input sequence, a list of lengths of embeddings that will be inserted
+        seqlens: list of text token lengths for each input sequence
+        insert_cat_embedds: list of where to insert the embeddings 
     """
+    
     num_supp_toks = embeds.shape[0]
     if isinstance(embed_seqlens, list):
         if isinstance(embed_seqlens[0], list):
@@ -64,7 +62,6 @@ def insert_embeds(
 
     new_seqlens = []
     pos_to_keep = []
-    decod_mask = []
 
     # For generation
     ind_h = 0
@@ -73,7 +70,6 @@ def insert_embeds(
 
     for i, size in enumerate(seqlens):
         assert size > 0
-        decod_sub_mask = []
         # Used during training only
 
         size_embed = sum(embed_seqlens[i])
@@ -94,9 +90,6 @@ def insert_embeds(
             ind_embeds += sub_embed_size
             pos_to_keep.extend([False] * sub_embed_size)
 
-            decod_sub_mask.extend([True] * insert_idx)
-            decod_sub_mask.extend([True] * sub_embed_size)
-
         if ind_toks < sum(seqlens[: i + 1]):
             left_toks = sum(seqlens[: i + 1]) - ind_toks
             # Insert the remaining tokens
@@ -105,17 +98,14 @@ def insert_embeds(
             ]
             pos_to_keep.extend([True] * left_toks)
             # Hide all the texts that are after compressed embeddings
-            decod_sub_mask.extend([False] * left_toks)
             ind_toks += left_toks
             ind_h += left_toks
 
-
-        decod_mask.append(decod_sub_mask)
         new_seqlens.append(size + size_embed)
     assert len(pos_to_keep) == len(new_h_states), (
         f"len(pos_to_keep): {len(pos_to_keep)} != len(new_h_states): {len(new_h_states)}"
     )
-    return new_h_states, new_seqlens, pos_to_keep, decod_mask
+    return new_h_states, new_seqlens, pos_to_keep
 
 
 class Attention(nn.Module):
@@ -141,8 +131,6 @@ class Attention(nn.Module):
         self.wv = MaybeLora(dim, n_kv_heads * head_dim, bias=False)
         self.wo = MaybeLora(n_heads * head_dim, dim, bias=False)
 
-        self.pooling_module = None
-
     def forward(
         self,
         x: torch.Tensor,
@@ -151,10 +139,6 @@ class Attention(nn.Module):
         freqs_cis_k: torch.Tensor | None = None,
         cache: CacheView | None = None,
         mask: BlockDiagonalMask | BlockDiagonalCausalMask | torch.Tensor | None = None,
-        comp_rate: int | None = None,
-        pool_type: str | None = None,
-        based_on: str | None = None,
-        where: str = "before",
     ) -> torch.Tensor:
         assert mask is None or cache is None
         seqlen_sum, _ = x.shape
@@ -166,37 +150,6 @@ class Attention(nn.Module):
         xq, xk, xv = self.wq(x), self.wk(other_kv), self.wv(other_kv)
         xq = xq.view(seqlen_sum, self.n_heads, self.head_dim)
         seqlens = None
-        if self.pooling_module is None and where == "inside_queries":
-            assert comp_rate is not None
-            self.pooling_module = PoolingModule(PoolingArgs(pool_type=pool_type))
-
-        if self.pooling_module is not None and where == "inside_queries":
-            seqlens = np.array(mask.q_seqinfo.seqstart_py[1:]) - np.array(
-                mask.q_seqinfo.seqstart_py[:-1]
-            )
-            seqlens = seqlens.tolist()
-            xq, new_seqlens = self.pooling_module(
-                x=xq,
-                comp_rate=comp_rate,
-                seqlens=seqlens,
-            )
-            seqlen_sum = sum(new_seqlens)
-
-            # Freqs_cis is already at the good shape
-            if isinstance(mask, BlockDiagonalCausalMask):
-                new_mask = BlockDiagonalCausalMask.from_seqlens(
-                    q_seqlen=new_seqlens, kv_seqlen=seqlens
-                )
-            elif isinstance(mask, BlockDiagonalMask):
-                new_mask = BlockDiagonalMask.from_seqlens(
-                    q_seqlen=new_seqlens, kv_seqlen=seqlens
-                )
-            else:
-                raise ValueError(f"Unsupported mask type: {type(mask)}")
-            positions = positions_from_sizes(new_seqlens, device=x.device)
-            freqs_cis = freqs_cis[positions].to(x.device)
-            mask = new_mask
-            seqlens = new_seqlens
 
         xk = xk.view(kv_seqlen, self.n_kv_heads, self.head_dim)
         xv = xv.view(kv_seqlen, self.n_kv_heads, self.head_dim)
@@ -227,60 +180,19 @@ class Attention(nn.Module):
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
 
-        if where == "attention":
-            scale = 1 / xq.shape[-1] ** 0.5
-            xq = xq * scale
-            xq = xq.transpose(1, 2)  # (B=1,S, H, D)
-            key = key.transpose(1, 2)  # (B=1, H, S, D)
-            val = val.transpose(1, 2)
-            attn = xq @ key.transpose(-2, -1)  # (B=1, H, S, S)
-            attn_bias = mask if cache is None else cache.mask
-            attn_shape = attn.shape
-            if attn_bias is not None:
-                attn = attn + attn_bias.materialize(attn_shape).to(attn.device)
-            attn = attn.softmax(-1)  # (B=1, H, S, S)
-            if self.pooling_module is None:
-                assert comp_rate is not None
-                self.pooling_module = PoolingModule(PoolingArgs(pool_type=pool_type))
-
-            if self.pooling_module is not None:
-                seqlens = np.array(mask.q_seqinfo.seqstart_py[1:]) - np.array(
-                    mask.q_seqinfo.seqstart_py[:-1]
-                )
-                seqlens = seqlens.tolist()
-                attn, new_seqlens = self.pooling_module(
-                    x=attn,
-                    comp_rate=comp_rate,
-                    seqlens=seqlens,
-                )
-                seqlen_sum = sum(new_seqlens)
-                seqlens = new_seqlens
-            output = (attn @ val).transpose(1, 2).squeeze()  # (B=1, S, H, D)
-            output = output.reshape(seqlen_sum, self.n_heads * self.head_dim)
-        else:
-            output = memory_efficient_attention(
-                xq, key, val, mask if cache is None else cache.mask
-            )
-            output = output.view(seqlen_sum, self.n_heads * self.head_dim)
+        output = memory_efficient_attention(
+            xq, key, val, mask if cache is None else cache.mask
+        )
+        output = output.view(seqlen_sum, self.n_heads * self.head_dim)
 
         assert isinstance(output, torch.Tensor)
 
-        if based_on is None:
-            base = None
-        elif based_on == "q":
-            base = xq.view(seqlen_sum, 1, self.n_heads * self.head_dim)
-        elif based_on == "k":
-            base = xk.view(kv_seqlen, 1, self.n_kv_heads * self.head_dim)
-        elif based_on == "v":
-            base = xv.view(kv_seqlen, 1, self.n_kv_heads * self.head_dim)
-        else:
-            raise ValueError(f"Unsupported based_on value: {based_on}")
+
 
         return (
             self.wo(output),
-            base,
-            seqlens,
-        )  # type: ignore
+            seqlens
+        )  
 
 
 class FeedForward(nn.Module):
@@ -348,68 +260,19 @@ class TransformerBlock(nn.Module):
         mask: BlockDiagonalCausalMask | BlockDiagonalMask | torch.Tensor | None = None,
         comp_rate: int | None = None,
         pool_type: str | None = None,
-        based_on: str | None = None,
         where: str = "before",
-        mixed_method_comp_seqlen: list[int] | None = None,
-        mixed_method_n_mem_tokens: int | None = None,
-        cl_mem_tokens: nn.Module | None = None,
     ) -> torch.Tensor:
         # If comp_rate not None and freqs_cis_k is None, pooling between modules
-        r, merge_based_on, seqlens = self.attention.forward(
+        r,  seqlens = self.attention.forward(
             x=self.attention_norm(x),
             freqs_cis=freqs_cis,
             cache=cache,
             mask=mask,
             other_kv=None if other_kv is None else self.attention_norm(other_kv),
             freqs_cis_k=freqs_cis_k,
-            comp_rate=comp_rate,
-            pool_type=pool_type,
-            based_on=based_on,
-            where=where,
         )
 
-        if (
-            comp_rate is not None
-            and abs(comp_rate) != 1
-            and (where == "inside_queries" or where == "attention")
-        ):
-            h = r
-        else:
-            h = x + r
-
-        if (
-            mixed_method_comp_seqlen is not None
-            and mixed_method_n_mem_tokens is not None
-        ):
-            new_h = torch.zeros(
-                (len(h), h.shape[-1]),
-                device=h.device,
-                dtype=h.dtype,
-            )
-            ind = 0
-            ind_new_h = 0
-            seqlens = np.array(mask.q_seqinfo.seqstart_py[1:]) - np.array(
-                mask.q_seqinfo.seqstart_py[:-1]
-            )
-            for j, size in enumerate(seqlens):
-                ind += mixed_method_comp_seqlen[j] - mixed_method_n_mem_tokens
-                if cl_mem_tokens is not None:
-                   
-                    cl = cl_mem_tokens(torch.arange(size, device=h.device, dtype=torch.long).view(-1))
-                    cl = torch.nn.functional.sigmoid(cl)
-                    new_h[ind_new_h : ind_new_h + size] = (
-                        h[ind_new_h : ind_new_h + size] * (1 - cl)
-                        + other_kv[ind : ind + mixed_method_n_mem_tokens][:size] * cl
-                    ) 
-                else:
-                    new_h[ind_new_h : ind_new_h + size] = (
-                        h[ind_new_h : ind_new_h + size]
-                        + other_kv[ind : ind + mixed_method_n_mem_tokens][:size]
-                    ) / 2
-                ind_new_h += size
-                ind += mixed_method_n_mem_tokens
-
-            h = new_h
+        h = x + r
 
         if self.pooling_module is None and where == "between":
             assert comp_rate is not None
@@ -424,13 +287,12 @@ class TransformerBlock(nn.Module):
                 x=h,
                 comp_rate=comp_rate,
                 seqlens=seqlens,
-                merge_base=merge_based_on,
             )
             seqlens = new_seqlens
 
         r = self.feed_forward.forward(self.ffn_norm(h))
         out = h + r
-        return out, seqlens, merge_based_on
+        return out, seqlens
 
 
 def positions_from_sizes(sizes: Iterable[int], device) -> torch.Tensor:

@@ -179,16 +179,6 @@ def load_training_model(
                 )
                 ignored_states.append(augmented_model.embedder.rec_tok[j].weight)
 
-        if pipeline_args.embedder_params.mixed_learned_method:
-            augmented_model.embedder.cl_mem_tokens[j].weight = torch.nn.Parameter(
-                torch.ones_like(
-                    augmented_model.embedder.cl_mem_tokens[j].weight,
-                    device="cuda",
-                    dtype=param_dtype,
-                )
-            )
-
-            ignored_states.append(augmented_model.embedder.cl_mem_tokens[j].weight)
 
         if pipeline_args.embedder_params.cont_tok:
             augmented_model.embedder.cont_tok[j].weight = torch.nn.Parameter(
@@ -229,11 +219,6 @@ def load_training_model(
         elif (
             pipeline_args.embedder_params.train_embedding_mtx
             and "tok_embeddings" in name
-        ):
-            param.requires_grad = True
-        elif (
-            pipeline_args.embedder_params.mixed_learned_method
-            and "cl_mem_tokens" in name
         ):
             param.requires_grad = True
         else:
@@ -429,18 +414,6 @@ def load_training_model_from_ckpt(
             assign=True,
         )
         ignored_states.extend([augmented_model.embedder.rec_tok[llm_number].weight for llm_number in range(len(llms))])
-    if pipeline_args.embedder_params.mixed_learned_method:
-        state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
-        augmented_model.embedder.cl_mem_tokens.load_state_dict(
-            {
-                k.split("cl_mem_tokens.")[-1]: v.cuda()
-                for k, v in state_dict.items()
-                if "cl_mem_tokens" in k
-            },
-            strict=True,
-            assign=True,
-        )
-        ignored_states.extend([augmented_model.embedder.cl_mem_tokens[llm_number].weight for llm_number in range(len(llms))])
 
     if pipeline_args.embedder_params.cont_tok:
         if not st_loaded:
@@ -498,12 +471,6 @@ def load_training_model_from_ckpt(
         elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
             param.requires_grad = True
         elif pipeline_args.embedder_params.cont_tok and "cont_tok" in name:
-            param.requires_grad = True
-        elif (
-            pipeline_args.embedder_params.mixed_learned_method
-            and "cl_mem_tokens" in name
-            and not train_args.freeze_embedder
-        ):
             param.requires_grad = True
         else:
             param.requires_grad = False

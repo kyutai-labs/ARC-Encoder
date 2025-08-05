@@ -11,9 +11,8 @@ import torch.distributed as dist
 from embed_llm.data.args import DataArgs
 from embed_llm.data.sequence_iterators import (
     SequenceEmbedMaskAndSizes,
-    sequence_iterator_inserted_embed_continuation,
+    sequence_iterator_continuation,
     sequence_iterator_reconstruction,
-    sequence_iterator_interleaved_cont,
 )
 from embed_llm.data.tokenize import Mask, Tokenizer, TokenSample, encode
 from embed_llm.training.distributed import get_rank
@@ -178,10 +177,8 @@ def sequence_iterator(
     is_finite: bool,
     adapt_seq_len: bool = False,
     continuation: float = 0.0,
-    n_times_sl_insertion: int = 1,
-    rec_seq_len_factor: int = 1,
     few_shot: int = 0,
-    n_interleaved: int = 1,
+    interleave: bool = False,
     loss_last_cont_only: bool = False,  # If True, the loss will be computed only on the last continuation token.
     sep_passages: bool = False,  # If True, passages will be separated by a special token in the input sequence.
     chunk_to: int | None = None,
@@ -196,7 +193,7 @@ def sequence_iterator(
     mask_buffer: Mask = []
     sizes: list[int] = []
     n_missing_cont = (
-        seq_len * 2 + n_times_sl_insertion * seq_len if n_interleaved <= 1 else seq_len
+        seq_len * 2 + int(interleave) * seq_len 
     )
 
     x_buffer_cont: list[int] = []
@@ -208,11 +205,8 @@ def sequence_iterator(
 
     few_shot_instruct = []
     cur_pos = 0
-    n_missing = (
-        seq_len // (2 * n_interleaved + 1)
-        if continuation > 0 and n_interleaved > 1
-        else int(seq_len * rec_seq_len_factor)
-    )
+    n_missing = seq_len
+    
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
 
@@ -227,7 +221,7 @@ def sequence_iterator(
         if do_continuation:
             while True:
                 res = (
-                    sequence_iterator_inserted_embed_continuation(
+                    sequence_iterator_continuation(
                         sample=sample,
                         x_buffer=x_buffer_cont,
                         y_buffer=y_buffer_cont,
@@ -241,28 +235,10 @@ def sequence_iterator(
                         n_missing=n_missing_cont,
                         data_type="continuation",
                         cur_pos=cur_pos,
-                        n_times_sl_insertion=n_times_sl_insertion,
-                        shorten_continuation=(rec_seq_len_factor > 1.0),
+                        interleave=interleave,
                     )
-                    if n_interleaved <= 1
-                    else sequence_iterator_interleaved_cont(
-                        sample=sample,
-                        x_buffer=x_buffer_cont,
-                        y_buffer=y_buffer_cont,
-                        mask_buffer=mask_buffer_cont,
-                        to_embed_buffer=to_embed_buffer_cont,
-                        insert_embed_list=insert_embed_cont_list,
-                        sizes=sizes_cont,
-                        seq_len=seq_len,
-                        llm_tokenizer=llm_tokenizer,
-                        embed_tokenizer=embed_tokenizer,
-                        n_missing=n_missing_cont,
-                        data_type="continuation",
-                        cur_pos=cur_pos,
-                        n_interleaved=n_interleaved,
-                        loss_last_cont_only=loss_last_cont_only,
                     )
-                )
+  
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
                     yield res[0]
@@ -273,9 +249,7 @@ def sequence_iterator(
                     insert_embed_cont_list = []
                     sizes_cont = []
                     n_missing_cont = (
-                        seq_len * 2 + n_times_sl_insertion * seq_len
-                        if n_interleaved <= 1
-                        else seq_len
+                        seq_len * 2 + int(interleave) * seq_len
                     )  # 2*seq_len for compressed tokens and contionuation, + the ones for text before compressed tokens
                     cur_pos = res[1]
                 else:
@@ -300,11 +274,7 @@ def sequence_iterator(
                     mask_buffer=mask_buffer,
                     to_embed_buffer=to_embed_buffer,
                     sizes=sizes,
-                    seq_len=(
-                        seq_len // (2 * n_interleaved + 1)
-                        if continuation > 0 and n_interleaved > 1
-                        else int(seq_len * rec_seq_len_factor)
-                    ),
+                    seq_len=seq_len,
                     llm_tokenizer=llm_tokenizer,
                     embed_tokenizer=embed_tokenizer,
                     adapt_seq_len=adapt_seq_len,
@@ -313,7 +283,7 @@ def sequence_iterator(
                     insert_embed_list=insert_embed_list,
                     few_shot_instruct=few_shot_instruct if few_shot > 0 else None,
                     few_shot=few_shot,
-                    n_interleaved=n_interleaved,
+                    interleave=interleave,
                     loss_last_cont_only=loss_last_cont_only,  # If True, the loss will be computed only on the last continuation token.
                     sep_passages=sep_passages,
                     chunk_to=chunk_to,
@@ -327,11 +297,7 @@ def sequence_iterator(
                     to_embed_buffer = []
                     insert_embed_list = []
                     sizes = []
-                    n_missing = (
-                        seq_len // (2 * n_interleaved + 1)
-                        if continuation > 0 and n_interleaved > 1
-                        else int(seq_len * rec_seq_len_factor)
-                    )
+                    n_missing = seq_len
                     cur_pos = res[1]
                 else:
                     (
@@ -384,7 +350,6 @@ def build_dataset(
     world_size: int,
     is_eval: bool,
     seed: int | None = None,
-    shuffle: bool = False,
     continuation: float = 0.0,
     max_embeds: int = 1,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
@@ -400,7 +365,6 @@ def build_dataset(
             world_size=world_size,
             is_finite=is_eval,
             seed=seed,
-            shuffle_at_epoch=not is_eval and shuffle,
             max_embeds=max_embeds,
         )
         for source in sources
@@ -415,10 +379,8 @@ def build_dataset(
             embed_tokenizer=embed_tokenizer,
             adapt_seq_len=args.adapt_seq_len,
             continuation=continuation,
-            n_times_sl_insertion=args.n_times_sl_insertion,
-            rec_seq_len_factor=args.rec_seq_len_factor,
-            few_shot=max(args.few_shot, fs),
-            n_interleaved=args.n_interleaved,
+            few_shot=fs,
+            interleaved=args.interleave,
             loss_last_cont_only=args.loss_last_cont_only,
             sep_passages=args.sep_passages,
             chunk_to=args.chunk_to,
@@ -450,7 +412,6 @@ def get_dataset_iterator(
     rank: int,
     world_size: int,
     is_finite: bool,
-    shuffle_at_epoch: bool,
     llm_tokenizer: Tokenizer,  # type: ignore
     embed_tokenizer: Tokenizer,  # type: ignore
     seed: int | None = None,
@@ -465,33 +426,19 @@ def get_dataset_iterator(
         # train mode
         while True:
             for jsonl_file in jsonl_files:
-                if shuffle_at_epoch:
-                    assert rng is not None, "`seed` has to be passed when shuffling"
-                    # will preload all data into RAM, shuffle and yield
-                    yield from preload_and_yield(
-                        jsonl_file,
-                        rank=rank,
-                        world_size=world_size,
-                        rng=rng,
-                        llm_tokenizer=llm_tokenizer,
-                        embed_tokenizer=embed_tokenizer,
-                        max_embeds=max_embeds,
-                    )
-                else:
-                    # will read data on-the-fly and yield
-                    main_logger_info(f"Lazily loading {jsonl_file} ...")
-                    yield from lazy_load_and_yield(
-                        jsonl_file,
-                        rank=rank,
-                        world_size=world_size,
-                        llm_tokenizer=llm_tokenizer,
-                        embed_tokenizer=embed_tokenizer,
-                        max_embeds=max_embeds,
-                    )
+                # will read data on-the-fly and yield
+                main_logger_info(f"Lazily loading {jsonl_file} ...")
+                yield from lazy_load_and_yield(
+                    jsonl_file,
+                    rank=rank,
+                    world_size=world_size,
+                    llm_tokenizer=llm_tokenizer,
+                    embed_tokenizer=embed_tokenizer,
+                    max_embeds=max_embeds,
+                )
     else:
         # eval mode
         for jsonl_file in jsonl_files:
-            # No need to shuffle for eval
             yield from lazy_load_and_yield(
                 jsonl_file,
                 rank=rank,
@@ -500,33 +447,6 @@ def get_dataset_iterator(
                 embed_tokenizer=embed_tokenizer,
                 max_embeds=max_embeds,
             )
-
-
-def preload_and_yield(
-    jsonl_file: Path,
-    rank: int,
-    world_size: int,
-    rng: np.random.RandomState,
-    llm_tokenizer: Tokenizer | None = None,  # type: ignore
-    embed_tokenizer: Tokenizer | None = None,  # type: ignore
-    max_embeds: int = 1,
-) -> Iterator[TokenSample] | Iterator[str]:
-    # only instruct data has to be chunked
-    # load dataset if not already loaded. Make sure to only load 1/world_size dataset
-    data_list = maybe_load_local_dataset(
-        jsonl_file,
-        rank=rank,
-        world_size=world_size,
-        llm_tokenizer=llm_tokenizer,
-        embed_tokenizer=embed_tokenizer,
-        max_embeds=max_embeds,
-    )
-
-    main_logger_info(f"Shuffling {jsonl_file} ...")
-    rng.shuffle(data_list)  # type: ignore
-
-    for data_sample in data_list:
-        yield data_sample
 
 
 def lazy_load_and_yield(
@@ -559,4 +479,17 @@ def lazy_load_and_yield(
 def interleave_iterators(iterators: list[Iterator], probabilities, rng):
     while True:
         it_id = rng.choice(range(len(iterators)), p=probabilities)
-        yield next(iterators[it_id])
+        try:
+            yield next(iterators[it_id])
+        except (OSError, StopIteration) as e:
+            # If the iterator is exhausted, we remove it from the list
+            # and continue with the next one.
+            main_logger_info(
+                f"Iterator {it_id} exhausted. Removing it from the list."
+            )
+            del iterators[it_id]
+            del probabilities[it_id]
+            probabilities = probabilities / np.sum(probabilities)  # re-normalize probabilities
+            if len(iterators) == 0:
+                raise e
+            continue

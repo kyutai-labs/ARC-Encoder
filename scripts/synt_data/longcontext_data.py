@@ -24,9 +24,9 @@ from vllm import LLM, SamplingParams  # type: ignore
 
 nltk.download("punkt")
 
-ATLAS_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Atlas/enwiki-dec2021/text-list-100-sec.jsonl"
-ARXIV_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/LongContext/long_context_arxiv.jsonl"
-PG19_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/LongContext/pg19.train.jsonl"
+ATLAS_PATH = ".../atlas.jsonl"
+ARXIV_PATH = ".../arxiv.jsonl"
+PG19_PATH = ".../pg19_train.jsonl"
 
 
 PREFIX = {

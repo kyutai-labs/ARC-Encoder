@@ -102,7 +102,6 @@ class PoolingModule(nn.Module):
         x: torch.Tensor,
         comp_rate: int,
         seqlens: list[int] | None = None,
-        merge_base: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         embed_seqlens: List of a list of embeddings size per sample in the batch
@@ -144,7 +143,6 @@ class PoolingModule(nn.Module):
                 comp_rate=comp_rate,
                 metric=self.pool_type.split("metric_")[-1],
                 pruning="pruning" in self.pool_type,
-                merge_base=merge_base,
             )
             assert x.shape[0] == sum(new_seqlens), (
                 f"Shape of x {x.shape[0]} must be equal to sum of new_seqlens {sum(new_seqlens)}"
@@ -154,16 +152,6 @@ class PoolingModule(nn.Module):
             new_seqlens = seqlens
             pool_mask = None
 
-        if pool_mask is not None and len(x.shape) == 4:
-            # pooling the attention weights
-            assert "fusion" not in self.pool_type, (
-                "Pooling attention weights with advanced pooling is not implemented yet. Please use 2D tensor."
-            )
-            x = torch.einsum("sl,bhll -> bhsl", pool_mask, x)
-            pool_mask = None
-        elif pool_mask is not None and len(x.shape) == 3:
-            x = torch.einsum("sl,lhd -> shd", pool_mask, x)
-            pool_mask = None
 
         queries = x if pool_mask is None else pool_mask @ x
 

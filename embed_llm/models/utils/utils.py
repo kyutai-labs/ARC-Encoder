@@ -78,13 +78,6 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
     )
 
     policies = [
-        # torch_wrap.ModuleWrapPolicy(
-        #     [
-        #         LatentAttention,
-        #         ReversedLatentAttention,
-        #         AdaptivePoolingAttention,
-        #     ]
-        # ),
         fsdp_lora_policy,
         transformer_block_wrap_policy,
     ]
@@ -144,6 +137,14 @@ def get_attr(obj, attr_path):
 
 
 def group_embed_seqlens(values: list[int], sizes: list[int]):
+    """
+    Groups a list of values into sublists based on the provided sizes.
+    Each size indicates how many elements should be in each sublist.
+    If the total number of values is less than the sum of sizes, the last sublist
+    will contain the remaining values. 
+    To group embeddings for a same sample even though they have been compressed in parallel.
+    """
+    
     result = []
     for size in sizes:
         if size <= len(values):
