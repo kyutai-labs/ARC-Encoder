@@ -20,14 +20,9 @@ class TrainState:
     this_step_time: float = 0.0
     begin_step_time: float = 0.0
     this_eval_perplexity_rec: float | None = None
-    this_eval_perplexity_textcont: float | None = None
-    this_eval_perplexity_embcont: float | None = None
+    this_eval_perplexity_cont: float | None = None
     this_eval_loss_rec: float | None = None
-    this_eval_loss_textcont: float | None = None
-    this_eval_loss_embcont: float | None = None
-    this_eval_kl_loss: float | None = None
-    this_eval_loss_nocontext: float | None = None
-    this_eval_perplexity_nocontext: float | None = None
+    this_eval_loss_cont: float | None = None
     comp_rate: float = 0.0
 
     def start_step(self):
@@ -93,21 +88,3 @@ def logged_closing(thing: Closable, name: str):
 def now_as_str() -> str:
     return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-
-def print_w_mask(
-    input_ids: list[int], tokenizer, mask: torch.Tensor | None = None
-) -> None:
-    if mask is None:
-        print(tokenizer.decode(input_ids))
-    else:
-        mask_val = bool(mask[0].item())
-        to_print = []
-        for i, input_id in enumerate(input_ids):
-            if bool(mask[i].item()) == mask_val:
-                to_print.append(input_id)
-            else:
-                print(f" Mask value {mask_val}: ", tokenizer.decode(to_print))
-                to_print = [input_id]
-                mask_val = bool(mask[i].item())
-
-        print(f" Mask value {mask_val}: ", tokenizer.decode(to_print))

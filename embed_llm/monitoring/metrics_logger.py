@@ -24,7 +24,6 @@ def get_train_logs(
     allocated_mem: float,
     train_args: TrainArgs,
     bpc: float | None = None,
-    kl_loss: float | None = None,
     batch_type: str = "reconstruction",
 ) -> dict[str, float | int]:
     metrics = {
@@ -41,7 +40,6 @@ def get_train_logs(
         "eta_in_seconds": state.eta,
         "Bit per Character": bpc,
         "batch_type": batch_type,
-        "kl_loss": kl_loss,
         "comp_rate": state.comp_rate,
     }
 
@@ -53,13 +51,9 @@ def get_eval_logs(
     train_loss: float,
     perplexity_rec: float | None = None,
     eval_loss_rec: float | None = None,
-    eval_ppl_textcont: float | None = None,
-    eval_loss_textcont: float | None = None,
-    eval_ppl_embcont: float | None = None,
-    eval_loss_embcont: float | None = None,
+    eval_ppl_cont: float | None = None,
+    eval_loss_cont: float | None = None,
     train_bpc: float | None = None,
-    eval_loss_nocontext: float | None = None,
-    eval_ppl_nocontext: float | None = None,
 ) -> dict[str, float | int]:
     eval_dict = {"step": step, "train_loss": train_loss}
 
@@ -69,26 +63,14 @@ def get_eval_logs(
     if eval_loss_rec is not None:
         eval_dict["eval_loss_rec"] = eval_loss_rec
 
-    if eval_ppl_textcont is not None:
-        eval_dict["eval_ppl_textcont"] = eval_ppl_textcont
+    if eval_ppl_cont is not None:
+        eval_dict["eval_ppl_cont"] = eval_ppl_cont
 
-    if eval_loss_textcont is not None:
-        eval_dict["eval_loss_textcont"] = eval_loss_textcont
-
-    if eval_ppl_embcont is not None:
-        eval_dict["eval_ppl_embcont"] = eval_ppl_embcont
-
-    if eval_loss_embcont is not None:
-        eval_dict["eval_loss_embcont"] = eval_loss_embcont
+    if eval_loss_cont is not None:
+        eval_dict["eval_loss_cont"] = eval_loss_cont
 
     if train_bpc is not None:
         eval_dict["train_bpc"] = train_bpc
-
-    if eval_loss_nocontext is not None:
-        eval_dict["eval_loss_nocontext"] = eval_loss_nocontext
-
-    if eval_ppl_nocontext is not None:
-        eval_dict["eval_ppl_nocontext"] = eval_ppl_nocontext
 
     return eval_dict
 
@@ -119,7 +101,6 @@ def train_log_msg(
         ("eta", "%Y-%m-%d %H:%M:%S", "ETA"),
         ("Bit per Character", ".3f", None),
         ("batch_type", "s", "Batch Type"),
-        ("kl_loss", ".3f", "KL Loss"),
         ("seen_tokens", "d", "Seen Tokens"),
         ("comp_rate", ".2f", "CR/Mem. Toks"),
     ]:
@@ -142,13 +123,9 @@ def eval_log_msg(logs: dict[str, float | int]) -> str:
         ("perplexity_rec", ".3f", "Eval Reconstruction PPL"),
         ("eval_loss_rec", ".3f", "Eval Reconstruction Loss"),
         ("train_loss", ".3f", "Train Loss"),
-        ("eval_ppl_textcont", ".3f", "Eval Textcont PPL"),
-        ("eval_loss_textcont", ".3f", "Eval Textcont Loss"),
-        ("eval_ppl_embcont", ".3f", "Eval Embcont PPL"),
-        ("eval_loss_embcont", ".3f", "Eval Embcont Loss"),
+        ("eval_ppl_cont", ".3f", "Eval cont PPL"),
+        ("eval_loss_cont", ".3f", "Eval cont Loss"),
         ("train_bpc", ".3f", "Training BPC"),
-        ("eval_loss_nocontext", ".3f", "eval_loss_nocontext"),
-        ("eval_perplexity_nocontext", ".3f", "PPL continuation wo context"),
     ]:
         name = key if new_name is None else new_name
         if key in logs:

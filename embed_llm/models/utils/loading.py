@@ -9,7 +9,7 @@ import torch
 from embed_llm.models.utils.mistral_tokenizer import MistralTokenizer
 from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
 from embed_llm.models.args import (
-    EmbedAugArgs,
+    PipelineArgs,
     LoraArgs,
     ModelArgs,
     EmbedderArgs,
@@ -31,19 +31,19 @@ def load_args(
     lora: LoraArgs,
     max_batch_size: int | None = None,
     pipe_path: str | None = None,
-    pipe_args: EmbedAugArgs | None = None,
+    pipe_args: PipelineArgs | None = None,
     args_type: str = "mistral",
-) -> tuple[ModelArgs, EmbedAugArgs]:
+) -> tuple[ModelArgs, PipelineArgs]:
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
 
     if pipe_path is not None:
         with open(pipe_path + "/params.json", "r") as f:
             args = json.loads(f.read())
 
-        pipeline_args = EmbedAugArgs(
+        pipeline_args = PipelineArgs(
             **{
                 k: args.get(k)
-                for k in EmbedAugArgs.__dataclass_fields__.keys()
+                for k in PipelineArgs.__dataclass_fields__.keys()
                 if k in args
             }
         )
@@ -63,10 +63,6 @@ def load_args(
                 if k in pipeline_args.embedder_params.pooling_module
             }
         )
-        if pipeline_args.embedder_params.pooling_module.get("inside_queries", False):
-            pooling_args.where = "inside_queries"
-        elif pipeline_args.embedder_params.pooling_module.get("between", False):
-            pooling_args.where = "between"
 
         pipeline_args.embedder_params.pooling_module = pooling_args
 
@@ -95,15 +91,9 @@ def load_args(
         if args.get("rope_theta") is not None:
             llm_args.rope_theta = args["rope_theta"]
 
-        if llm_args.vocab_size == 32000:
-            raise ValueError(
-                f"Fine-tuning is not supported for older model versions with vocab_size 32000. Make sure to extend your model to vocab_size=32768 using `python -m utils.extend_model_vocab --original_model_ckpt {folder} --extended_model_ckpt {folder}_extended`."
-            )
-
-        assert llm_args.vocab_size >= 32768, (
-            "Make sure to use a model with a vocab size of at least 32768"
-        )
     elif args_type == "llama":
+        
+        # Convert Llama args to ModelArgs
         if args.get("ffn_dim_multiplier", None) is not None:
             hidden_dim = int(args["ffn_dim_multiplier"] * int(2 * 4 * args["dim"] / 3))
         else:
@@ -159,8 +149,6 @@ def load_state_dict(path: Path, dtype: torch.dtype) -> dict[str, torch.Tensor]:
     logger.info(f"Converting model to dtype {dtype} ...")
 
     for k, v in model_state_dict.items():
-        if v.dtype == dtype:
-            break
         model_state_dict[k] = v.to(dtype)
 
     return model_state_dict

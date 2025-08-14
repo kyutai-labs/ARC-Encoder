@@ -37,7 +37,6 @@ EVAL_DATA_PATH = {
     "NQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/long_context/narrativeqa_valid.jsonl",
     "Qspr": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/long_context/qasper_valid.jsonl",
     "GvRp": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/long_context/govreport_valid.jsonl",
-    # "SSFD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/long_context/summ_screen_fd_test.jsonl",
     "QMSum": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/long_context/qmsum_valid.jsonl",
 }
 
@@ -46,7 +45,6 @@ METRIC_EVALUATION = {
     "NQA": get_f1_score,
     "Qspr": get_f1_score,
     "GvRp": get_rouge_score,
-    # "SSFD": get_rouge_score,
     "QMSum": get_rouge_score,
 }
 

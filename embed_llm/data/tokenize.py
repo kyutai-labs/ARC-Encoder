@@ -37,9 +37,9 @@ def encode(
     llm_tokenizer: Tokenizer | None = None,  # type: ignore
     embed_tokenizer: Tokenizer | None = None,  # type: ignore
     data_path: str | None = None,
-    max_embed: int = 1,
+    max_passages: int = 1,
 ) -> TokenSample | None:
-    return get_sample(data, data_path, llm_tokenizer, embed_tokenizer, max_embed)
+    return get_sample(data, data_path, llm_tokenizer, embed_tokenizer, max_passages)
 
 
 def get_sample(
@@ -47,7 +47,7 @@ def get_sample(
     data_path: str,
     llm_tokenizer,
     embed_tokenizer,
-    max_embed: int = 1,
+    max_passages: int = 1,
 ) -> str:
     if (
         "instruct_data" in data_path.lower()
@@ -67,12 +67,12 @@ def get_sample(
         if "passage" in data.keys():
             assert isinstance(data["passage"], str) or isinstance(data["passage"], list)
             if isinstance(data["passage"], list):
-                if max_embed <= -1:
-                    embed_passage = data["passage"][:-max_embed]
-                elif max_embed == 1:
-                    embed_passage = data["passage"][:max_embed]
-                elif max_embed > 1:
-                    n_embed = random.randint(1, max_embed)
+                if max_passages <= -1:
+                    embed_passage = data["passage"][:-max_passages]
+                elif max_passages == 1:
+                    embed_passage = data["passage"][:max_passages]
+                elif max_passages > 1:
+                    n_embed = random.randint(1, max_passages)
                     embed_passage = data["passage"][:n_embed]
             else:
                 embed_passage = [data["passage"]]
@@ -82,12 +82,12 @@ def get_sample(
                 data["passages"], list
             )
             if isinstance(data["passages"], list):
-                if max_embed <= -1:
-                    embed_passage = data["passages"][:-max_embed]
-                elif max_embed == 1:
-                    embed_passage = data["passages"][:max_embed]
-                elif max_embed > 1:
-                    n_embed = random.randint(1, max_embed)
+                if max_passages <= -1:
+                    embed_passage = data["passages"][:-max_passages]
+                elif max_passages == 1:
+                    embed_passage = data["passages"][:max_passages]
+                elif max_passages > 1:
+                    n_embed = random.randint(1, max_passages)
                     embed_passage = data["passages"][:n_embed]
             else:
                 embed_passage = [data["passages"]]
@@ -119,12 +119,12 @@ def get_sample(
         if data.get("passage") is not None:
             passages = data["passage"]
 
-            if max_embed <= -1:
-                n_embed = -max_embed
-            elif max_embed == 1:
-                n_embed = max_embed
-            elif max_embed > 1:
-                n_embed = random.randint(1, max_embed)
+            if max_passages <= -1:
+                n_embed = -max_passages
+            elif max_passages == 1:
+                n_embed = max_passages
+            elif max_passages > 1:
+                n_embed = random.randint(1, max_passages)
 
             embed_passage = (
                 [passages] if not isinstance(passages, list) else passages[:n_embed]

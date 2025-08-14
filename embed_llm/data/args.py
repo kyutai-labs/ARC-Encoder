@@ -30,7 +30,9 @@ class DataArgs(Serializable):
     prefix: str | None = None  # If set, the prefix will be prepended to each datapath.
     sep_passages: bool = False  # If True, passages will be separated by a special token in the input sequence.
     chunk_to: int | None = None
-
+    max_passages: int = 1  # Maximum number of passages to use per loaded sample (if several retrieved passages in the dataset).
+    n_eval_batchs: int = 40
+    
     def __post_init__(self) -> None:
         if self.prefix is not None:
             self.train_data = ",".join(

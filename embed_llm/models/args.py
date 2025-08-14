@@ -57,7 +57,6 @@ class EmbedderArgs(Serializable):
     cont_tok: bool = False
     compress_rates: list[int] = field(default_factory=list) # Compression rates for embeddings [2, 1] means pooling before the second to last layer 
     trained_layers: int = 0
-    train_embedding_mtx: bool = False
     causal_embedder: bool = True
 
     def __post_init__(self) -> None:
@@ -69,20 +68,11 @@ class EmbedderArgs(Serializable):
 
 
 @dataclass
-class EmbedAugArgs(Serializable):
+class PipelineArgs(Serializable):
     param_dtype: torch.dtype = torch.float32
     embedder_params: EmbedderArgs = field(default_factory=EmbedderArgs)
-    max_embeds: int = 1
-    w_embeds: bool = True
-    comp_rate_curriculum: dict | None = None
     bridge_module: BridgeArgs = field(default_factory=BridgeArgs)
 
-    def __post_init__(self) -> None:
-        if self.comp_rate_curriculum is not None:
-            if isinstance(self.embedder_params, EmbedderArgs):
-                assert len(self.embedder_params.compress_rates) == 1, (
-                    "Adapt compression while training if pooling once at last layer only"
-                )
 
 
 @dataclass

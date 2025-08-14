@@ -90,9 +90,6 @@ class LoRALinear(nn.Module):
                 "lora_A.weight": self.lora_A.weight,
                 "lora_B.weight": self.lora_B.weight,
             }
-            # print('Key name', key_name)
-            # print('Self Lora A', self.lora_A.weight)
-            # print('Self Lora B', self.lora_B.weight)
 
             self.load_state_dict(state_dict, assign=True, strict=True)
 

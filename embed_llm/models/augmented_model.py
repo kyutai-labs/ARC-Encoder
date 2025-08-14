@@ -9,7 +9,7 @@ from torch.nn import ModuleList
 
 from embed_llm.data.data_loader import Batch
 from embed_llm.generation.utils import eval_logger_info
-from embed_llm.models.args import EmbedAugArgs, LoraArgs
+from embed_llm.models.args import PipelineArgs, LoraArgs
 from embed_llm.models.utils.utils import group_embed_seqlens, is_torchrun
 from embed_llm.models.embedding_modules import EmbProjector
 from embed_llm.models.utils.loading import (
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 class EmbedAugModel(nn.Module):
     def __init__(
         self,
-        pipeline_args: EmbedAugArgs,
+        pipeline_args: PipelineArgs,
         llms: list[Transformer],
         embedder: Transformer | None = None,
     ):
@@ -144,7 +144,7 @@ class EmbedAugModel(nn.Module):
 class EmbedAugPipeline(nn.Module):
     def __init__(
         self,
-        pipeline_args: EmbedAugArgs,
+        pipeline_args: PipelineArgs,
         embedding_model: Transformer,
         llm_tokenizer: list[Tokenizer] | None = None,
         embed_tokenizer: Tokenizer | None = None,
@@ -217,22 +217,25 @@ class EmbedAugPipeline(nn.Module):
         embed_type: str = "mistral",
         max_batch_size: int = 4,
         param_dtype: torch.dtype = torch.float32,
-        bridge_ckpt_path: str | None = None,
         llm_number: int = 0,
     ):
         with open(os.path.join(ckpt_path, "../../args.yaml"), "r") as f:
             train_args = yaml.safe_load(f)
-
+            
+        lora_llm = LoraArgs(**train_args["lora_llm"])
         lora_embedder = LoraArgs(**train_args["lora_embedder"])
 
         llm_args, pipeline_args = load_args(
             Path(llm_path),
-            lora=None,
+            lora=lora_llm,
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
             args_type=llm_type,
         )
-
+        
+        if lora_llm.enable:
+            assert Path(ckpt_path + "/llm").exists()
+            
         llm, llm_tokenizer = load_model(
             llm_args=llm_args,
             pipeline_args=pipeline_args,
@@ -245,7 +248,13 @@ class EmbedAugPipeline(nn.Module):
             number_of_llm=1,
         )
         logger.info("Loading LLM from")
-
+        
+        if lora_llm.enable:
+            logger.info(
+                f"Loading LLM LoRA from {ckpt_path + '/llm/lora.safetensors'} with dtype {param_dtype}"
+            )
+            llm.load_lora(Path(ckpt_path + "/llm/lora.safetensors"))
+            
         llm = llm.to(device)
         llm.eval()
 
@@ -395,19 +404,21 @@ class EmbedAugPipeline(nn.Module):
         )
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llms=[llm]))
-        if (
-            pipeline_args.bridge_module.bridge_type is not None
-            and bridge_ckpt_path is not None
-        ):
+        if pipeline_args.bridge_module.bridge_type is not None:
+            
+            bridge_ckpt_path = ckpt_path + "/bridge_module"
             logger.info(
                 f"Loading bridge module from {bridge_ckpt_path} with dtype {param_dtype}"
             )
             state_dict = load_state_dict(Path(bridge_ckpt_path), dtype=param_dtype)
-            state_dict = {
-                "0." + ".".join(k.split(".")[1:]): v
-                for k, v in state_dict.items()
-                if str(llm_number) in k.split(".")[0]
-            }
+            
+            if pipeline_args.bridge_module.bridge_type == "multi_module":
+                state_dict = {
+                    "0." + ".".join(k.split(".")[1:]): v
+                    for k, v in state_dict.items()
+                    if str(llm_number) in k.split(".")[0]
+                }
+ 
             augmented_pipeline.model.bridge_module.load_state_dict(
                 state_dict, strict=False
             )
@@ -423,8 +434,8 @@ class EmbedAugPipeline(nn.Module):
 
         augmented_pipeline.model.eval()
 
-        for name, parm in augmented_pipeline.model.named_parameters():
-            parm.requires_grad = False
+        for param in augmented_pipeline.model.parameters():
+            param.requires_grad = False
 
         return augmented_pipeline
 
@@ -694,7 +705,6 @@ def load_pipeline(
     mistral: bool = False,
     ckpt: int | None = None,
     comp_rate: int | None = None,
-    bridge_ckpt: bool | str | None = None,
     llm_type: str = "mistral",
     embed_type: str = "mistral",
     llm_number: int = 0,
@@ -727,13 +737,6 @@ def load_pipeline(
                 ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
                 device=device,
                 max_batch_size=max_bs,
-                bridge_ckpt_path=tmp_path
-                + run_name
-                + "/checkpoints/"
-                + last_ckpt
-                + "/bridge_module/"
-                if bridge_ckpt is None
-                else (bridge_ckpt if isinstance(bridge_ckpt, str) else None),
                 llm_type=llm_type,
                 embed_type=embed_type,
                 llm_number=llm_number,

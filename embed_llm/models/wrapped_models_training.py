@@ -36,6 +36,7 @@ def load_training_model(
     train_args: TrainArgs,
     llm_paths: list[str],
     embed_folder: Path,
+    lora_llm: LoraArgs,
     lora_embedder: LoraArgs,
     param_dtype: torch.dtype,
     checkpoint: bool = False,
@@ -52,7 +53,7 @@ def load_training_model(
    
         llm_args, pipeline_args = load_args(
             llm_folder,
-            None,
+            lora_llm,
             max_batch_size=max_batch_size,
             pipe_args=train_args.pipeline,
             args_type=train_args.llm_types[i],
@@ -110,7 +111,11 @@ def load_training_model(
         if lora_embedder.enable:
             main_logger_info("Initializing lora layers for embedder ...")
             initialize_lora_parameters(augmented_model.embedder, param_dtype)
-
+            
+        if lora_llm.enable:
+            main_logger_info("Initializing lora layers  for LLM ...")
+            initialize_lora_parameters(augmented_model.llms[0], param_dtype)
+            
         if pipeline_args.embedder_params.memory_tokens > 0:
             main_logger_info("Initializing memory tokens for embedder ...")
             for i in range(len(llms)):
@@ -193,7 +198,10 @@ def load_training_model(
     torch.distributed.barrier()
 
     for name, param in augmented_model.llms.named_parameters():
-        param.requires_grad = False
+        if lora_llm.enable and "lora" in name:
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
         
     for name, param in augmented_model.embedder.named_parameters():
         if lora_embedder.enable and "lora" in name:
@@ -208,18 +216,11 @@ def load_training_model(
             and not lora_embedder.enable
         ):
             param.requires_grad = True
-        elif (
-            pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name
-        ):
+        elif pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name:
             param.requires_grad = True
         elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
             param.requires_grad = True
         elif pipeline_args.embedder_params.cont_tok and "cont_tok" in name:
-            param.requires_grad = True
-        elif (
-            pipeline_args.embedder_params.train_embedding_mtx
-            and "tok_embeddings" in name
-        ):
             param.requires_grad = True
         else:
             param.requires_grad = False
@@ -260,6 +261,7 @@ def load_training_model_from_ckpt(
     llm_paths: Path | None,
     embed_folder: Path | None,
     bridge_folder: Path | None,
+    lora_llm: LoraArgs,
     lora_embedder: LoraArgs,
     param_dtype: torch.dtype,
     embedder_path: Path | None = None,
@@ -278,7 +280,7 @@ def load_training_model_from_ckpt(
    
         llm_args, pipeline_args = load_args(
             llm_folder,
-            None,
+            lora_llm,
             max_batch_size=max_batch_size,
             pipe_args=train_args.pipeline,
             args_type=train_args.llm_types[i],
@@ -347,7 +349,12 @@ def load_training_model_from_ckpt(
             augmented_model.embedder.load_state_dict(
                 state_dict, assign=True, strict=False
             )
-
+            
+        if lora_llm.enable:
+            assert llm_path is not None, "LLM path is required for training"
+            main_logger_info("Loading LoRA layers  for LLM ...")
+            augmented_model.llms[0].load_lora(Path(llm_paths[0]), scaling=lora_llm.scaling)
+            
         if pipeline_args.bridge_module.bridge_type is not None:
             if bridge_folder is None:
                 main_logger_info("Initializing bridge module for embedder ...")
@@ -397,18 +404,21 @@ def load_training_model_from_ckpt(
             "All parameters should be on meta"
         )
     ignored_states = []
-    st_loaded = False
+
     if pipeline_args.embedder_params.rec_tok:
         supp_toks_path = (
             Path(embedder_path) if supp_toks_path is None else Path(supp_toks_path)
         )
         state_dict = load_state_dict(supp_toks_path, dtype=param_dtype)
-        st_loaded = True
+        filtered_state_dict = {
+            k: v for k, v in state_dict.items() if k in augmented_model.embedder.state_dict().keys() and "rec_tok" in k
+        }
+
+        
         augmented_model.embedder.rec_tok.load_state_dict(
             {
                 k.split("rec_tok.")[-1]: v.cuda()
-                for k, v in state_dict.items()
-                if "rec_tok" in k
+                for k, v in filtered_state_dict.items()
             },
             strict=True,
             assign=True,
@@ -416,17 +426,18 @@ def load_training_model_from_ckpt(
         ignored_states.extend([augmented_model.embedder.rec_tok[llm_number].weight for llm_number in range(len(llms))])
 
     if pipeline_args.embedder_params.cont_tok:
-        if not st_loaded:
-            supp_toks_path = (
-                Path(embedder_path) if supp_toks_path is None else Path(supp_toks_path)
-            )
-            state_dict = load_state_dict(supp_toks_path, dtype=param_dtype)
-            st_loaded = True
+
+        supp_toks_path = (
+            Path(embedder_path) if supp_toks_path is None else Path(supp_toks_path)
+        )
+        state_dict = load_state_dict(supp_toks_path, dtype=param_dtype)
+        filtered_state_dict = {
+            k: v for k, v in state_dict.items() if k in augmented_model.embedder.state_dict().keys() and "cont_tok" in k
+        }
         augmented_model.embedder.cont_tok.load_state_dict(
             {
                 k.split("cont_tok.")[-1]: v.cuda()
-                for k, v in state_dict.items()
-                if "cont_tok" in k
+                for k, v in filtered_state_dict.items()
             },
             strict=True,
             assign=True,
@@ -437,7 +448,10 @@ def load_training_model_from_ckpt(
 
     # only finetune LoRA, MLP projector and pooling parameters and freeze before wrapping
     for name, param in augmented_model.llms.named_parameters():
-        param.requires_grad = False
+        if lora_llm.enable and "lora" in name:
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
 
     for name, param in augmented_model.embedder.named_parameters():
         if (
@@ -457,16 +471,7 @@ def load_training_model_from_ckpt(
             and not train_args.freeze_embedder
         ):
             param.requires_grad = True
-        elif (
-            pipeline_args.embedder_params.memory_tokens > 0
-            and "mem_embeddings" in name
-        ):
-            param.requires_grad = True
-        elif (
-            pipeline_args.embedder_params.train_embedding_mtx
-            and "tok_embeddings" in name
-            and not train_args.freeze_embedder
-        ):
+        elif pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name:
             param.requires_grad = True
         elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
             param.requires_grad = True

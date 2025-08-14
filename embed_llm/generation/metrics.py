@@ -6,30 +6,12 @@ import numpy as np
 from rouge_score import rouge_scorer
 
 import regex
+import nltk
 from sacrebleu.metrics import BLEU as SacreBLEU
-from torcheval.metrics import BLEUScore
-from nltk.translate import meteor_score
-# nltk.download("wordnet")
+
+nltk.download("wordnet")
 
 ROUGE_SCORER = None
-
-
-def word_overlap(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
-    if isinstance(ground_truth, str) and isinstance(predicted, str):
-        ground_truth = set(ground_truth.split(" "))
-        predicted = set(predicted.split(" "))
-        assert len(ground_truth) > 0, "Ground truth set is empty"
-        return len(ground_truth.intersection(predicted)) / len(ground_truth)
-    elif isinstance(ground_truth, list) and isinstance(predicted, list):
-        avg_word_overlap = 0
-        n_words = 0
-        for gt_text, pred_text in zip(ground_truth, predicted):
-            gt_text = set(gt_text.split(" "))
-            pred_text = set(pred_text.split(" "))
-            assert len(gt_text) > 0, "Ground truth set is empty"
-            n_words += len(gt_text)
-            avg_word_overlap += len(gt_text.intersection(pred_text))
-        return avg_word_overlap / n_words
 
 
 def get_rouge_score(predicted: str, ground_truth: str) -> float:
@@ -180,113 +162,13 @@ def get_approx_em(pred: str, ground_truth: str) -> int:
     return 0
 
 
-def get_acc_factchecking(pred: str, ground_truth: str) -> int:
-    if str(ground_truth).lower() == "false":
-        answer = ["refutes", "no", "false"]
-    if str(ground_truth).lower() == "true":
-        answer = ["supports", "yes", "true"]
-
-    assert answer == ["refutes", "no", "false"] or answer == ["supports", "yes", "true"]
-    if pred.lower() in answer:
-        return 1
-    return 0
-
-
 def get_bleu_score(
     ground_truth: list[str] | str,
     predicted: list[str] | str,
-    avg: bool = False,
-    trunc: bool = False,
-    sacrebleu: bool = True,
 ) -> float:
-    if sacrebleu:
-        _, _, bleu_fn = [], [], SacreBLEU(tokenize="13a", lowercase=True)
-        return bleu_fn.corpus_score(
-            [predicted] if isinstance(predicted, str) else predicted,
-            [[ground_truth]] if isinstance(ground_truth, str) else [ground_truth],
-        ).score
-    else:
-        if not avg:
-            metric = BLEUScore(n_gram=4)
-            if isinstance(ground_truth, str) and isinstance(predicted, str):
-                assert len(ground_truth) > 0, "Ground truth set is empty"
-                predicted = predicted if not trunc else predicted[: len(ground_truth)]
-                metric.update(predicted, [ground_truth])
-                return metric.compute().item()
-            elif isinstance(ground_truth, list) and isinstance(predicted, list):
-                for gt_text, pred_text in zip(ground_truth, predicted):
-                    assert len(gt_text) > 0, "Ground truth set is empty"
-                    try:
-                        pred_text = (
-                            pred_text if not trunc else pred_text[: len(gt_text)]
-                        )
-                        metric.update(pred_text, [gt_text])
-                    except Exception as e:
-                        print(
-                            "Error with update:",
-                            "\nGround-Truth: ",
-                            gt_text,
-                            "\nPred: ",
-                            pred_text,
-                            e,
-                        )
-                return metric.compute().item()
-        else:
-            metrics = [BLEUScore(n_gram=i) for i in range(1, 5)]
-            if isinstance(ground_truth, str) and isinstance(predicted, str):
-                assert len(ground_truth) > 0, "Ground truth set is empty"
-                for metric in metrics:
-                    try:
-                        predicted = (
-                            predicted if not trunc else predicted[: len(ground_truth)]
-                        )
-                        metric.update(predicted, [ground_truth])
-                    except Exception as e:
-                        print(
-                            "Error with update:",
-                            "\nGround-Truth: ",
-                            ground_truth,
-                            "\nPred: ",
-                            predicted,
-                            e,
-                        )
-                result = np.array([metric.compute().item() for metric in metrics])
-                return result.mean()
-            elif isinstance(ground_truth, list) and isinstance(predicted, list):
-                for gt_text, pred_text in zip(ground_truth, predicted):
-                    assert len(gt_text) > 0, "Ground truth set is empty"
-                    try:
-                        for metric in metrics:
-                            pred_text = (
-                                pred_text if not trunc else pred_text[: len(gt_text)]
-                            )
-                            metric.update(pred_text, [gt_text])
-                    except Exception as e:
-                        print(
-                            "Error with update:",
-                            "\nGround-Truth: ",
-                            gt_text,
-                            "\nPred: ",
-                            pred_text,
-                            e,
-                        )
-                result = np.array([metric.compute().item() for metric in metrics])
-                return result.mean()
 
-
-def get_meteor(ground_truth: list[str] | str, predicted: list[str] | str) -> float:
-    if isinstance(ground_truth, str) and isinstance(predicted, str):
-        assert len(ground_truth) > 0, "Ground truth set is empty"
-        l_ground_truth = ground_truth.split(" ")
-        l_predicted = predicted.split(" ")
-        return meteor_score.single_meteor_score(l_ground_truth, l_predicted)
-    elif isinstance(ground_truth, list) and isinstance(predicted, list):
-        meteor_avg_score = 0
-        for gt_text, pred_text in zip(ground_truth, predicted):
-            assert len(gt_text) > 0, "Ground truth set is empty"
-            l_ground_truth = gt_text.split(" ")
-            l_predicted = pred_text.split(" ")
-            meteor_avg_score += meteor_score.single_meteor_score(
-                l_ground_truth, l_predicted
-            )
-        return meteor_avg_score / len(ground_truth)
+    _, _, bleu_fn = [], [], SacreBLEU(tokenize="13a", lowercase=True)
+    return bleu_fn.corpus_score(
+        [predicted] if isinstance(predicted, str) else predicted,
+        [[ground_truth]] if isinstance(ground_truth, str) else [ground_truth],
+    ).score

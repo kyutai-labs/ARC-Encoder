@@ -19,7 +19,6 @@ DOC_TEMPLATE = {
     "NQA": "Story:\n{text}",
     "Qspr": "Article:\n{text}",
     "GvRp": "Report:\n{text}",
-    "SSFD": "Episode Script:\n{text}",
     "QMSum": "Transcript:\n{text}",
 }
 
@@ -27,7 +26,6 @@ DATA_TEMPLATE = {
     "NQA": "{instruction}Question:\n{question}\n\nAnswer:\n{answer}",
     "Qspr": "{instruction}Question:\n{question}\n\nAnswer:\n{answer}",
     "GvRp": "{instruction}Summary:\n{answer}",
-    "SSFD": "{instruction}Summary:\n{answer}",
     "QMSum": "{instruction}Query:\n{question}\n\nAnswer:\n{answer}",
 }
 
@@ -35,8 +33,14 @@ TRUNCATE_SEPARATOR = {
     "NQA": "... [The rest of the story is omitted]\n\n",
     "Qspr": "... [The rest of the article is omitted]\n\n",
     "GvRp": "... [The rest of the report is omitted]\n\n",
-    "SSFD": "... [The rest of the episode script is omitted]\n\n",
     "QMSum": "... [The rest of the transcript is omitted]\n\n",
+}
+
+INSTRUCTION = {
+    "NQA": "You are given a story, which can be either a novel or a movie script, and a question. Answer the question as concisely as you can, using a single phrase if possible.\n\n",
+    "Qspr": 'You are given a scientific article and a question. Answer the question as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write "unanswerable". If the question is a yes/no question, answer "yes", "no", or "unanswerable".\n\n',
+    "GvRp": "Instruction: You are given a report by a government agency. Write a one-page summary of the report.\n",
+    "QMSum": "You are given a meeting transcript and a query containing a question or instruction. Answer the query in one or more sentences.\n\n",
 }
 
 
@@ -264,6 +268,7 @@ class TestItem:
 
         # get the encoder input ids (called context inputs here)
         if len(context_text) > 0:
+            # print('Len context before', len(context_text))
             context_inputs = tokenizer(
                 context_text,
                 return_tensors="pt",
@@ -274,6 +279,8 @@ class TestItem:
                 truncation=True,
                 add_special_tokens=False,
             )
+            # print('Len context text', len(context_text[0]))
+            # print('CONTEXT INPUTS', context_inputs.input_ids.shape)
 
             # unsqueeze bc we expect shape of bsz, n_context, seq_len
             encoder_input_ids = context_inputs.input_ids.unsqueeze(0)

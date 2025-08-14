@@ -5,15 +5,166 @@ import os
 import random
 import numpy as np
 import torch
+import subprocess as sp
 from embed_llm.models.utils.utils import is_torchrun
-from embed_llm.models.utils.loading import (
-    load_state_dict,
-)
-import safetensors.torch
-from pathlib import Path
+from embed_llm.generation.metrics import get_em, get_rouge_score
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 logger = logging.getLogger(__name__)
+
+EVAL_DATA_PATH = {
+    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
+    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl",  # unfiltered.nocontext
+    "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",  # Dev set of the SQuAD v1 dataset
+    "DistractorHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl",
+    "CNN": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_Sum/cnn_dailymail_test.jsonl",
+}
+
+METRIC_EVALUATION = {
+    "NQ": get_em,
+    "TRIVIAQA": get_em,
+    "SQUAD": get_em,
+    "DistractorHotpotQA": get_em,  # Added for the Distractor HotpotQA dataset
+    "CNN": get_rouge_score,  # Added for the CNN dataset
+}
+
+
+TRAD_DATA_PATH = {
+    "English": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/eng_Latn.jsonl",
+    "Spanish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/spa_Latn.jsonl",
+    "French": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/fra_Latn.jsonl",
+    "German": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/deu_Latn.jsonl",
+    "Danish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/dan_Latn.jsonl",
+}
+
+
+def create_prompt(
+    prefix_prompt: list[str],
+    prefix_embed: list[str] | None,
+    doc: list[str],
+    query: str,
+    wdoc: bool = True,
+    w_embeds: bool = True,
+    cat_multi_passages: bool = False,
+) -> tuple[list[str], list[str] | None]:
+    list_prompt = prefix_prompt.copy()
+
+    if prefix_embed is None and w_embeds:
+        list_embed = []
+    elif not w_embeds:
+        list_embed = []
+    else:
+        list_embed = prefix_embed.copy()
+
+    assert int(wdoc) * int(w_embeds) == 0, (
+        "Cannot use both text context and embeddings as the document in the same time"
+    )
+
+    if wdoc:
+        doc = "\n".join(doc)
+        list_prompt.append(f"Document: {doc.strip()}\nQuestion: {query}\nAnswer:")
+        return list_prompt, list_embed
+    else:
+        if w_embeds:
+            last_prompt = list_prompt[-1]
+            list_prompt[-1] = "".join([last_prompt, "Document: "])
+
+            if len(doc) == 1 or cat_multi_passages:
+                doc = "\n".join(doc)
+                list_embed.append(doc.strip())
+            else:
+                for d in doc:
+                    list_embed.append(d.strip())
+                    list_prompt.append(
+                        ""
+                    )  # Add an empty string to separate passages so that there are embedded separately
+                list_prompt = list_prompt[:-1]  # Remove the last empty string
+            list_prompt.append(f"\nQuestion: {query}\nAnswer:")
+        else:
+            list_prompt.append(f"\nQuestion: {query}\nAnswer:")
+        return list_prompt, list_embed
+
+
+
+def create_prompt_prefix(
+    queries: list[str],
+    answers: list[str],
+    docs: list[list[str]] | None = None,
+    max_examples: int | None = None,
+    cat_multi_passages: bool = False,
+    compressed_doc_in_icl: bool = True,
+) -> tuple[list[str], list[str] | None]:
+    max_examples = max_examples if max_examples is not None else len(queries)
+    prompt_str = []
+    to_embed_str = []
+
+    prompt = ""
+    if docs is not None:
+        if compressed_doc_in_icl:
+            for query, answer, doc, index in zip(
+                queries, answers, docs, range(max_examples)
+            ):
+                if len(doc) == 1:
+                    doc = doc[0]
+                elif len(doc) > 1 and not cat_multi_passages:
+                    doc = "\n".join(doc)
+
+                if index == 0:
+                    prompt_str.append("Document: ")
+
+                    if isinstance(doc, list):
+                        for d in doc:
+                            to_embed_str.append(d.strip())
+                            prompt_str.append("")
+                        prompt_str = prompt_str[:-1]  # Remove the last empty string
+                    else:
+                        to_embed_str.append(doc.strip())
+
+                    prompt_str.append(
+                        f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
+                    )
+                elif index == max_examples - 1:
+                    if isinstance(doc, list):
+                        for d in doc:
+                            to_embed_str.append(d.strip())
+                            prompt_str.append("")
+                        prompt_str = prompt_str[:-1]  # Remove the last empty string
+                    else:
+                        to_embed_str.append(doc.strip())
+                    prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\n")
+                else:
+                    if isinstance(doc, list):
+                        for d in doc:
+                            to_embed_str.append(d.strip())
+                            prompt_str.append("")
+                        prompt_str = prompt_str[:-1]  # Remove the last empty string
+                    else:
+                        to_embed_str.append(doc.strip())
+                    prompt_str.append(
+                        f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
+                    )
+
+            if max_examples == 0:
+                prompt_str.append("")
+        else:
+            for query, answer, doc, _ in zip(
+                queries, answers, docs, range(max_examples)
+            ):
+                doc = "\n".join(doc)
+                prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
+
+            to_embed_str = None
+            prompt_str.append(prompt)
+
+    else:
+        for query, answer, _ in zip(queries, answers, range(max_examples)):
+            prompt += f"Question: {query}\nAnswer: {answer}\n\n"
+
+        prompt_str.append(prompt)
+        to_embed_str = None
+
+    return prompt_str, to_embed_str
+
 
 
 def get_max_memory():
@@ -23,6 +174,12 @@ def get_max_memory():
     n_gpus = torch.cuda.device_count()
     max_memory = {i: max_memory for i in range(n_gpus)}
     return max_memory
+
+# Profiling memory
+def get_gpu_memory():
+    command = "nvidia-smi"
+    memory_free_info = sp.check_output(command.split()).decode("ascii")
+    return memory_free_info
 
 
 def set_global_seed(seed=42):
@@ -53,519 +210,3 @@ def ensure_reproducibility(seed=42):
 def eval_logger_info(logger, message: str) -> None:
     if not is_torchrun() or torch.distributed.get_rank() == 0:
         logger.info(message)
-
-
-def format_results(results: dict, benchmark: str) -> pd.DataFrame:
-    if (
-        benchmark.lower() == "nq"
-        or benchmark.lower() == "triviaqa"
-        or benchmark.lower() == "hotpotqa"
-        or benchmark.lower() == "squad"
-        or benchmark.lower() == "narrativeqa"
-        or benchmark.lower() == "narrativeqa_split"
-        or benchmark.lower() == "fullwikihotpotqa"
-        or benchmark.lower() == "distractorhotpotqa"
-    ):
-        key_list = [
-            "run_name",
-            "ckpt",
-            "EM Metric",
-            "F1",
-            "temp",
-            "n_samples",
-            "icl_examples",
-            "context_in_examples",
-            "context_w_query",
-            "Prop_a_in_cont",
-            "n_passages",
-            "compress_ratio",
-            "compressed_icl",
-            "EM approx_Metric",
-            "xRAG metric",
-            "llm_name",
-            "together_mp",
-            "llmlingua2",
-            "prompt_compressor_name",
-            "max_doc_len",
-            "chunk_to",
-        ]
-    elif benchmark.lower() == "cnn":
-        key_list = [
-            "run_name",
-            "ckpt",
-            "ROUGE",
-            "temp",
-            "n_samples",
-            "icl_examples",
-            "context_in_examples",
-            "context_w_query",
-            "n_passages",
-            "compress_ratio",
-            "compressed_icl",
-            "llm_name",
-            "together_mp",
-            "llmlingua2",
-            "prompt_compressor_name",
-            "max_doc_len",
-            "chunk_to",
-        ]
-    elif benchmark.lower() == "traduction":
-        key_list = [
-            "run_name",
-            "ckpt",
-            "temp",
-            "n_samples",
-            "language",
-            "Bleu",
-            "compress_ratio",
-            "new_template",
-            "llm_name",
-            "compressed_icl",
-            "llmlingua2",
-            "prompt_compressor_name",
-            "europarl",
-            "chunk_to",
-        ]
-    else:
-        raise ValueError("Invalid benchmark")
-
-    formated_results = pd.DataFrame(columns=key_list)
-
-    for run_name in results.keys():
-        for ckpt in results[run_name].keys():
-            if benchmark.lower() == "traduction":
-                for metric in [
-                    "BLEU",
-                ]:
-                    if metric not in results[run_name][ckpt].keys():
-                        continue
-                    for temp in results[run_name][ckpt][metric].keys():
-                        for result in results[run_name][ckpt][metric][temp]:
-                            if result.get("chunk_to", None) is None:
-                                chunk_to = 0
-                            else:
-                                chunk_to = result["chunk_to"]
-                            formated_results = pd.concat(
-                                [
-                                    formated_results,
-                                    pd.DataFrame(
-                                        {
-                                            "run_name": run_name,
-                                            "ckpt": ckpt,
-                                            "temp": float(temp),
-                                            "Metric": result["Metric"],
-                                            "n_samples": result["n_samples"],
-                                            "language": result["language"],
-                                            "new_template": result.get(
-                                                "new_template", False
-                                            ),
-                                            "compressed_icl": result.get(
-                                                "compressed_icl", False
-                                            ),
-                                            "compress_ratio": result.get(
-                                                "compress_ratio", None
-                                            ),
-                                            "llm_name": result.get(
-                                                "llm_name", "mistral_7B"
-                                            ),
-                                            "llmlingua2": result.get(
-                                                "llmlingua2", False
-                                            ),
-                                            "prompt_compressor_name": result.get(
-                                                "prompt_compressor_name", "no"
-                                            ),
-                                            "europarl": result.get("europarl", False),
-                                            "chunk_to": chunk_to,
-                                        },
-                                        index=[0],
-                                    ),
-                                ]
-                            )
-                formated_results["prompt_compressor_name"] = formated_results[
-                    "prompt_compressor_name"
-                ].fillna("None")
-                formated_results = (
-                    formated_results.groupby(
-                        [
-                            "run_name",
-                            "ckpt",
-                            "temp",
-                            "n_samples",
-                            "language",
-                            "new_template",
-                            "compressed_icl",
-                            "compress_ratio",
-                            "llm_name",
-                            "llmlingua2",
-                            "prompt_compressor_name",
-                            "europarl",
-                            "chunk_to",
-                        ]
-                    )
-                    .first()
-                    .reset_index()
-                )
-
-            elif (
-                benchmark.lower() == "nq"
-                or benchmark.lower() == "triviaqa"
-                or benchmark.lower() == "hotpotqa"
-                or benchmark.lower() == "squad"
-                or benchmark.lower() == "narrativeqa"
-                or benchmark.lower() == "fullwikihotpotqa"
-                or benchmark.lower() == "narrativeqa_split"
-                or benchmark.lower() == "distractorhotpotqa"
-                or benchmark.lower() == "cnn"
-            ):
-                for metric in ["EM", "F1", "ROUGE"]:
-                    if benchmark not in results[run_name][ckpt].keys():
-                        continue
-                    if metric not in results[run_name][ckpt][benchmark].keys():
-                        continue
-                    for temp in results[run_name][ckpt][benchmark][metric].keys():
-                        for res in results[run_name][ckpt][benchmark][metric][temp]:
-                            if metric == "EM":
-                                if res.get("chunk_to", None) is None:
-                                    chunk_to = 0
-                                else:
-                                    chunk_to = res["chunk_to"]
-                                formated_results = pd.concat(
-                                    [
-                                        formated_results,
-                                        pd.DataFrame(
-                                            {
-                                                "run_name": run_name,
-                                                "ckpt": ckpt,
-                                                "temp": float(temp),
-                                                "n_samples": res["n_samples"],
-                                                "icl_examples": res["icl_examples"],
-                                                "EM Metric": res.get("Metric", None),
-                                                "compress_ratio": res.get(
-                                                    "compress_ratio", None
-                                                ),
-                                                "compressed_icl": res.get(
-                                                    "compressed_icl", False
-                                                ),
-                                                "context_in_examples": res[
-                                                    "w_context_in_examples"
-                                                ],
-                                                "context_w_query": res.get(
-                                                    "w_context_w_query", False
-                                                ),
-                                                "n_passages": res.get("n_passages", 1),
-                                                "Prop_a_in_cont": res.get(
-                                                    "Prop context containing the answer",
-                                                    None,
-                                                ),
-                                                "xRAG metric": res.get(
-                                                    "xRAG metric", None
-                                                ),
-                                                "EM approx_Metric": res.get(
-                                                    "approx_Metric", None
-                                                ),
-                                                "llm_name": res.get(
-                                                    "llm_name", "mistral_7B"
-                                                ),
-                                                "together_mp": res.get(
-                                                    "together_mp", False
-                                                ),
-                                                "max_doc_len": res.get(
-                                                    "max_doc_len", "maximum"
-                                                ),
-                                                "prompt_compressor_name": res.get(
-                                                    "prompt_compressor_name", "no"
-                                                ),
-                                                "llmlingua2": res.get(
-                                                    "llmlingua2", False
-                                                ),
-                                                "chunk_to": chunk_to,
-                                            },
-                                            index=[0],
-                                        ),
-                                    ]
-                                )
-                            elif metric == "ROUGE":
-                                if res.get("chunk_to", None) is None:
-                                    chunk_to = 0
-                                else:
-                                    chunk_to = res["chunk_to"]
-                                df_res = pd.DataFrame(
-                                    {
-                                        "run_name": run_name,
-                                        "ckpt": ckpt,
-                                        "temp": float(temp),
-                                        "n_samples": res["n_samples"],
-                                        "icl_examples": res["icl_examples"],
-                                        "ROUGE": res.get("Metric", None),
-                                        "compress_ratio": res.get(
-                                            "compress_ratio", None
-                                        ),
-                                        "compressed_icl": res.get(
-                                            "compressed_icl", False
-                                        ),
-                                        "context_in_examples": res[
-                                            "w_context_in_examples"
-                                        ],
-                                        "context_w_query": res.get(
-                                            "w_context_w_query", False
-                                        ),
-                                        "n_passages": res.get("n_passages", 1),
-                                        "llm_name": res.get("llm_name", "mistral_7B"),
-                                        "together_mp": res.get("together_mp", False),
-                                        "llmlingua2": res.get("llmlingua2", False),
-                                        "prompt_compressor_name": res.get(
-                                            "prompt_compressor_name", "none"
-                                        ),
-                                        "max_doc_len": res.get(
-                                            "max_doc_len", "maximum"
-                                        ),
-                                        "chunk_to": chunk_to,
-                                    },
-                                    index=[0],
-                                )
-
-                                formated_results = pd.concat([formated_results, df_res])
-                            else:
-                                if res.get("chunk_to", None) is None:
-                                    chunk_to = 0
-                                else:
-                                    chunk_to = res["chunk_to"]
-                                df_res = pd.DataFrame(
-                                    {
-                                        "run_name": run_name,
-                                        "ckpt": ckpt,
-                                        "temp": float(temp),
-                                        "n_samples": res["n_samples"],
-                                        "icl_examples": res["icl_examples"],
-                                        "F1": res.get("Metric", None),
-                                        "compress_ratio": res.get(
-                                            "compress_ratio", None
-                                        ),
-                                        "compressed_icl": res.get(
-                                            "compressed_icl", False
-                                        ),
-                                        "context_in_examples": res[
-                                            "w_context_in_examples"
-                                        ],
-                                        "context_w_query": res.get(
-                                            "w_context_w_query", False
-                                        ),
-                                        "Prop_a_in_cont": res.get(
-                                            "Prop context containing the answer",
-                                            None,
-                                        ),
-                                        "n_passages": res.get("n_passages", 1),
-                                        "llm_name": res.get("llm_name", "mistral_7B"),
-                                        "together_mp": res.get("together_mp", False),
-                                        "llmlingua2": res.get("llmlingua2", False),
-                                        "prompt_compressor_name": res.get(
-                                            "prompt_compressor_name", "none"
-                                        ),
-                                        "max_doc_len": res.get(
-                                            "max_doc_len", "maximum"
-                                        ),
-                                        "chunk_to": chunk_to,
-                                    },
-                                    index=[0],
-                                )
-
-                                formated_results = pd.concat([formated_results, df_res])
-
-                formated_results["prompt_compressor_name"] = formated_results[
-                    "prompt_compressor_name"
-                ].fillna("None")
-                formated_results["max_doc_len"] = formated_results[
-                    "max_doc_len"
-                ].fillna("None")
-                formated_results = (
-                    formated_results.groupby(
-                        [
-                            "run_name",
-                            "ckpt",
-                            "temp",
-                            "n_samples",
-                            "icl_examples",
-                            "context_in_examples",
-                            "context_w_query",
-                            "n_passages",
-                            "compressed_icl",
-                            "compress_ratio",
-                            "llm_name",
-                            "together_mp",
-                            "llmlingua2",
-                            # "prompt_compressor_name",
-                            "max_doc_len",
-                            "chunk_to",
-                        ]
-                    )
-                    .first()
-                    .reset_index(allow_duplicates=True)
-                )
-
-    return formated_results
-
-
-def long_context_eval(results: dict, benchmark: str) -> pd.DataFrame:
-    key_list = [
-        "llm_name",
-        "model_name",
-        "n_samples",
-        "max_seq_len",
-        "eval_model",
-        "em",
-        "acc",
-        "f1",
-        "rouge",
-        "comp_rate",
-        "max_doc_len",
-        "chunk_to",
-        "seed",
-    ]
-    results = results[benchmark]
-    formated_results = pd.DataFrame(results, columns=key_list)
-
-    return formated_results
-
-
-def DARE_merging(
-    pretrain_path: str,
-    fine_tune_paths: list,
-    output_path: str,
-    coeff: float,
-    drop_rate: float = 0.3,
-    seed: int = 42,
-) -> None:
-    """
-    Language Models are Super Mario
-    Merges the pre-trained model with fine-tuned models for DARE.
-
-    Args:
-        pretrain_path (str): Path to the pre-trained model.
-        fine_tune_paths (list): List of paths to fine-tuned models.
-        output_path (str): Path to save the merged model.
-    """
-    with open(Path(pretrain_path) / "params.json", "r") as f:
-        params = f.read()
-    Path(output_path + "checkpoints/checkpoint_000000/").mkdir(
-        parents=True, exist_ok=True
-    )
-    with open(
-        Path(output_path + "checkpoints/checkpoint_000000/") / "params.json", "w"
-    ) as f:
-        f.write(params)
-
-    with open(Path(pretrain_path + "../../") / "args.yaml", "r") as f:
-        params = f.read()
-    Path(output_path).mkdir(parents=True, exist_ok=True)
-    with open(Path(output_path) / "args.yaml", "w") as f:
-        f.write(params)
-
-    pretrain_state_dict = load_state_dict(
-        Path(pretrain_path) / "embedder", dtype=torch.float32
-    )
-
-    fine_tune_state_dicts = [
-        load_state_dict(Path(path) / "embedder", dtype=torch.float32)
-        for path in fine_tune_paths
-    ]
-    generator = torch.Generator().manual_seed(seed)
-    new_state_dict = {}
-    for k, v in pretrain_state_dict.items():
-        delta = torch.zeros_like(v)
-        for ft_state_dict in fine_tune_state_dicts:
-            m = torch.bernoulli(torch.ones_like(v) * drop_rate, generator=generator).to(
-                v.device
-            )
-            delta_param = (1 - m) * (ft_state_dict[k] - v) / (1 - drop_rate)
-            delta = delta + delta_param
-            if k in ft_state_dict.keys():
-                delta = delta + ft_state_dict[k] - v
-            else:
-                raise ValueError(
-                    f"Key {k} not found in fine-tuned state dicts. Ensure all fine-tuned models have the same architecture."
-                )
-        new_state_dict[k] = pretrain_state_dict[k] + coeff * delta
-
-    if not Path(output_path + "checkpoints/checkpoint_000000/embedder/").exists():
-        Path(output_path + "checkpoints/checkpoint_000000/embedder/").mkdir(
-            parents=True, exist_ok=True
-        )
-
-    safetensors.torch.save_file(
-        new_state_dict,
-        Path(output_path + "checkpoints/checkpoint_000000/embedder")
-        / "consolidated.safetensors",
-    )
-    if Path(pretrain_path + "/llm/consolidated.safetensors").exists():
-        pretrain_state_dict = load_state_dict(
-            Path(pretrain_path) / "llm/", dtype=torch.float32
-        )
-
-        fine_tune_state_dicts = [
-            load_state_dict(Path(path) / "llm/", dtype=torch.float32)
-            for path in fine_tune_paths
-        ]
-
-        if not Path(output_path + "checkpoints/checkpoint_000000/llm/").exists():
-            Path(output_path + "checkpoints/checkpoint_000000/llm/").mkdir(
-                parents=True, exist_ok=True
-            )
-        new_state_dict = {}
-        for k, v in pretrain_state_dict.items():
-            delta = torch.zeros_like(v)
-            for ft_state_dict in fine_tune_state_dicts:
-                m = torch.bernoulli(
-                    torch.ones_like(v) * drop_rate, generator=generator
-                ).to(v.device)
-                delta_param = (1 - m) * (ft_state_dict[k] - v) / (1 - drop_rate)
-                delta = delta + delta_param
-                if k in ft_state_dict.keys():
-                    delta = delta + ft_state_dict[k] - v
-                else:
-                    raise ValueError(
-                        f"Key {k} not found in fine-tuned state dicts. Ensure all fine-tuned models have the same architecture."
-                    )
-            new_state_dict[k] = pretrain_state_dict[k] + coeff * delta
-        safetensors.torch.save_file(
-            new_state_dict,
-            Path(output_path + "checkpoints/checkpoint_000000/llm/")
-            / "consolidated.safetensors",
-        )
-    if Path(pretrain_path + "/bridge_module").exists():
-        pretrain_state_dict = load_state_dict(
-            Path(pretrain_path) / "/bridge_module", dtype=torch.float32
-        )
-
-        fine_tune_state_dicts = [
-            load_state_dict(Path(path) / "/bridge_module", dtype=torch.float32)
-            for path in fine_tune_paths
-        ]
-
-        if not Path(
-            output_path + "checkpoints/checkpoint_000000/bridge_module"
-        ).exists():
-            Path(output_path + "checkpoints/checkpoint_000000/bridge_module").mkdir(
-                parents=True, exist_ok=True
-            )
-        new_state_dict = {}
-        for k, v in pretrain_state_dict.items():
-            delta = torch.zeros_like(v)
-            for ft_state_dict in fine_tune_state_dicts:
-                m = torch.bernoulli(
-                    torch.ones_like(v) * drop_rate, generator=generator
-                ).to(v.device)
-                delta_param = (1 - m) * (ft_state_dict[k] - v) / (1 - drop_rate)
-                delta = delta + delta_param
-                if k in ft_state_dict.keys():
-                    delta = delta + ft_state_dict[k] - v
-                else:
-                    raise ValueError(
-                        f"Key {k} not found in fine-tuned state dicts. Ensure all fine-tuned models have the same architecture."
-                    )
-            new_state_dict[k] = pretrain_state_dict[k] + coeff * delta
-
-        safetensors.torch.save_file(
-            new_state_dict,
-            Path(output_path + "checkpoints/checkpoint_000000/bridge_module")
-            / "consolidated.safetensors",
-        )

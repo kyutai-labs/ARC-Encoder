@@ -8,13 +8,6 @@ import torch
 import torch.distributed.fsdp.wrap as torch_wrap
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 
-# from embed_llm.models.embedding_modules import (
-#     AdaptivePoolingAttention,
-#     LatentAttention,
-#     ReversedLatentAttention,
-# )
-
-
 from embed_llm.models.transformer_layers import TransformerBlock 
 from embed_llm.training.distributed import (
     get_rank,
@@ -96,11 +89,12 @@ def log_train_params(model: torch.nn.Module | FullyShardedDataParallel):
     embedder_params = sum(p.numel() for n, p in model.embedder.named_parameters())
 
     llm_params = sum(p.numel() for n, p in model.llms.named_parameters())
-
+    mlp_params = sum(p.numel() for n, p in model.bridge_module.named_parameters())
     main_logger_info(
         f"\n LLM params:  {llm_params:,.0f} ({llm_params / num_params * 100:.2f}%), \
         \n Embedder params: {embedder_params:,.0f} ({embedder_params / num_params * 100:.2f}%), \
-            \n LoRA params: {lora_params:,.0f} ({lora_params / num_params * 100:.2f}%)"
+            \n LoRA params: {lora_params:,.0f} ({lora_params / num_params * 100:.2f}%), \
+                \n MLP params: {mlp_params:,.0f} ({mlp_params / num_params * 100:.2f}%)"
     )
 
 

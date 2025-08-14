@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from simple_parsing.helpers import Serializable
-from embed_llm.models.args import LoraArgs, EmbedAugArgs
+from embed_llm.models.args import LoraArgs, PipelineArgs
 from embed_llm.data.args import DataArgs
 
 
@@ -20,14 +20,6 @@ class OptimArgs(Serializable):
     def __post_init__(self) -> None:
         if self.max_lr_projector is None:
             self.max_lr_projector = self.max_lr
-
-
-@dataclass
-class LossArgs(Serializable):
-    kl: bool = False
-    kl_weight: float = 2.0
-    top_k: float = 0.9
-    temperature: float = 0.9
 
 
 @dataclass
@@ -101,10 +93,10 @@ class TrainArgs(Serializable):
 
     # LoRA
     lora_embedder: LoraArgs = field(default_factory=LoraArgs)
+    lora_llm: LoraArgs = field(default_factory=LoraArgs)
 
     # Pretrained embedder to use off the shelf
-    pipeline: EmbedAugArgs = field(default_factory=EmbedAugArgs)
-    loss_args: LossArgs = field(default_factory=LossArgs)
+    pipeline: PipelineArgs = field(default_factory=PipelineArgs)
     mixed_precision: bool = True
     from_ckpt: CkptArgs = field(default_factory=CkptArgs)
     fair_instruct: bool = False  # If True, the model will be trained with fair-instruct.
@@ -123,7 +115,7 @@ class TrainArgs(Serializable):
     embed_type: str = (
         "mistral"  # Type of the embedder to use, either "mistral" or "llama"
     )
-    freeze_embedder: bool = False  # If True, the embedder will not be trained.
+    freeze_embedder: bool = False  # If True, the embedder will not be trained but the special tokens and the MLP projection can still be trained. Useful for training a new MLP for a new decoder using the same encoder as for other decoders.
 
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None
@@ -139,10 +131,7 @@ class TrainArgs(Serializable):
 
         if self.embedder_path is not None:
             Path(self.embedder_path).exists()
-
-        if self.continuation < 1 and self.data.n_times_sl_insertion > 0:
-            print("For reconstruction training, no text inserted before embeddings")
-
+            
         if len(self.llm_paths) > 1:
             assert len(self.llm_paths) == len(self.llm_types), (
                 "If multiple LLMs are used, the number of paths and types must match."
@@ -150,3 +139,9 @@ class TrainArgs(Serializable):
             assert len(self.llm_paths) == len(self.prob_forward), (
                 "If multiple LLMs are used, the number of paths and prob_forward must match."
             )
+
+        if self.lora_llm.enable:
+            assert len(self.llm_paths) == 1, (
+                "LoRA LLM can only be used with a single LLM. "
+                "If you want to use multiple LLMs, training LLMs is not supported."
+            ) 

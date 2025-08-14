@@ -20,188 +20,24 @@ from embed_llm.generation.metrics import (  # noqa: E402
     get_substring_match_score,
     metric_max_over_ground_truths,
 )
-from embed_llm.generation.utils import ensure_reproducibility, eval_logger_info  # noqa: E402
+from embed_llm.generation.utils import (
+    ensure_reproducibility, 
+    eval_logger_info,
+    create_prompt_prefix,
+    create_prompt,
+    EVAL_DATA_PATH,
+    METRIC_EVALUATION,
+    TRAD_DATA_PATH
+)
 from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline  # noqa: E402
 from embed_llm.models.utils.utils import is_torchrun  # noqa: E402
 from embed_llm.monitoring.utils import set_logger  # noqa: E402
 
-EVAL_DATA_PATH = {
-    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
-    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl",  # unfiltered.nocontext
-    "HotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl",
-    "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",  # Dev set of the SQuAD v1 dataset
-    "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",  # Dev set of the FullWiki HotpotQA dataset
-    "NarrativeQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test.jsonl",
-    "NarrativeQA_split": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test_split.jsonl",
-    "DistractorHotpotQA": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl',
-    "CNN": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_Sum/cnn_dailymail_test.jsonl'
-}
-
-METRIC_EVALUATION = {
-    "NQ": get_em,
-    "TRIVIAQA": get_em,
-    "HotpotQA": get_em,
-    "SQUAD": get_em,
-    "FullWikiHotpotQA": get_em,
-    "NarrativeQA": get_em,
-    "NarrativeQA_split": get_em,
-    "DistractorHotpotQA": get_em,  # Added for the Distractor HotpotQA dataset
-    "CNN": get_rouge_score,  # Added for the CNN dataset
-}
-
-
-TRAD_DATA_PATH = {
-    "English": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/eng_Latn.jsonl",
-    "Spanish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/spa_Latn.jsonl",
-    "French": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/fra_Latn.jsonl",
-    "German": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/deu_Latn.jsonl",
-    "Danish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/dan_Latn.jsonl",
-}
-
-EUROPARL_TRAD_DATA_PATH = {
-    "Spanish": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_es.jsonl",
-    "French": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_fr.jsonl",
-    "German": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_de.jsonl",
-    "Danish": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/translation/Europarl_Corpus/europarl_en_da.jsonl",
-}
 
 
 logger = logging.getLogger(__name__)
 
 
-# Profiling memory
-def get_gpu_memory():
-    command = "nvidia-smi"
-    memory_free_info = sp.check_output(command.split()).decode("ascii")
-    return memory_free_info
-
-
-def create_prompt_prefix(
-    queries: list[str],
-    answers: list[str],
-    docs: list[list[str]] | None = None,
-    max_examples: int | None = None,
-    compressed_doc_in_icl: bool = False,
-    together_multi_passages: bool = False,
-) -> tuple[list[str], list[str] | None]:
-    max_examples = max_examples if max_examples is not None else len(queries)
-    prompt_str = []
-    to_embed_str = []
-
-    prompt = ""
-    if docs is not None:
-        if compressed_doc_in_icl:
-            for query, answer, doc, index in zip(
-                queries, answers, docs, range(max_examples)
-            ):
-                if len(doc) == 1:
-                    doc = doc[0]
-                elif len(doc) > 1 and together_multi_passages:
-                    doc = "\n".join(doc)
-
-                if index == 0:
-                    prompt_str.append("Document: ")
-
-                    if isinstance(doc, list):
-                        for d in doc:
-                            to_embed_str.append(d.strip())
-                            prompt_str.append("")
-                        prompt_str = prompt_str[:-1]  # Remove the last empty string
-                    else:
-                        to_embed_str.append(doc.strip())
-
-                    prompt_str.append(
-                        f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
-                    )
-                elif index == max_examples - 1:
-                    if isinstance(doc, list):
-                        for d in doc:
-                            to_embed_str.append(d.strip())
-                            prompt_str.append("")
-                        prompt_str = prompt_str[:-1]  # Remove the last empty string
-                    else:
-                        to_embed_str.append(doc.strip())
-                    prompt_str.append(f"\nQuestion: {query}\nAnswer: {answer}\n\n")
-                else:
-                    if isinstance(doc, list):
-                        for d in doc:
-                            to_embed_str.append(d.strip())
-                            prompt_str.append("")
-                        prompt_str = prompt_str[:-1]  # Remove the last empty string
-                    else:
-                        to_embed_str.append(doc.strip())
-                    prompt_str.append(
-                        f"\nQuestion: {query}\nAnswer: {answer}\n\nDocument: "
-                    )
-
-            if max_examples == 0:
-                prompt_str.append("")
-        else:
-            for query, answer, doc, _ in zip(
-                queries, answers, docs, range(max_examples)
-            ):
-                doc = "\n".join(doc)
-                prompt += f"Document: {doc}\nQuestion: {query}\nAnswer: {answer}\n\n"
-
-            to_embed_str = None
-            prompt_str.append(prompt)
-
-    else:
-        for query, answer, _ in zip(queries, answers, range(max_examples)):
-            prompt += f"Question: {query}\nAnswer: {answer}\n\n"
-
-        prompt_str.append(prompt)
-        to_embed_str = None
-
-    return prompt_str, to_embed_str
-
-
-def create_prompt(
-    prefix_prompt: list[str],
-    prefix_embed: list[str] | None,
-    doc: list[str],
-    query: str,
-    wdoc: bool = True,
-    w_embeds: bool = True,
-    together_multi_passages: bool = False,
-) -> tuple[list[str], list[str] | None]:
-    list_prompt = prefix_prompt.copy()
-
-    if prefix_embed is None and w_embeds:
-        list_embed = []
-    elif not w_embeds:
-        list_embed = None
-    else:
-        list_embed = prefix_embed.copy()
-
-    assert int(wdoc) * int(w_embeds) == 0, (
-        "Cannot use both text context and embeddings as the document in the same time"
-    )
-
-    if wdoc:
-        doc = "\n".join(doc)
-        list_prompt.append(f"Document: {doc.strip()}\nQuestion: {query}\nAnswer:")
-        return list_prompt, list_embed
-    else:
-        if w_embeds:
-            last_prompt = list_prompt[-1]
-            list_prompt[-1] = "".join([last_prompt, "Document: "])
-
-            if len(doc) == 1 or together_multi_passages:
-                doc = "\n".join(doc)
-                list_embed.append(doc.strip())
-            else:
-                for d in doc:
-                    list_embed.append(d.strip())
-                    list_prompt.append(
-                        ""
-                    )  # Add an empty string to separate passages so that there are embedded separately
-                list_prompt = list_prompt[:-1]  # Remove the last empty string
-            list_prompt.append(f"\nQuestion: {query}\nAnswer:")
-        else:
-            list_embed = None
-            list_prompt.append(f"\nQuestion: {query}\nAnswer:")
-        return list_prompt, list_embed
 
 
 def evaluate_QA(
@@ -218,19 +54,11 @@ def evaluate_QA(
     tmp_path: str = None,
     icl_examples: int = 0,
     pipeline: EmbedAugPipeline | None = None,
-    w_embeds: bool = True,  # To test baseline LLM
-    query_w_context: bool = False,
-    icl_w_document: bool = True,
     max_multi_passage: int = 1,
     seed: float = 0.42,
-    compressed_doc_in_icl: bool = False,
     comp_rate: int | None = None,
-    llm_number: int = 1,
-    bridge_ckpt: bool
-    | str
-    | None = None,  # Path to the bridge checkpoint if using a bridge model
-    together_multi_passages: bool = False,  # If True, use together multi-passage retrieval
-    max_samples: bool = False,  # If True, use all the samples in the dataset
+    llm_number: int = 0,
+    cat_multi_passages: bool = False,  # If True, use together multi-passage retrieval
     max_doc_len: int | None = None,  # Maximum length of documents
     chunk_to: int | None = None,  # If not None, chunk the dataset to this size
 ):
@@ -259,7 +87,6 @@ def evaluate_QA(
         pipeline=pipeline,
         ckpt=ckpt,
         comp_rate=comp_rate,
-        bridge_ckpt=bridge_ckpt,
         llm_type="llama"
         if llm_path is not None and "llama" in llm_path.lower()
         else "mistral",
@@ -282,9 +109,6 @@ def evaluate_QA(
             benchmarks.remove(benchmark)
             continue
 
-        if compressed_doc_in_icl and icl_examples == 0:
-            continue
-        
         if benchmark == "CNN" and max_multi_passage > 1:
             benchmarks.remove(benchmark)
             continue
@@ -311,7 +135,7 @@ def evaluate_QA(
 
                 if max_multi_passage <= 1:
                     if max_doc_len is not None:
-                        context.append([data["passages"][0].strip()[: max_doc_len * 3]])
+                        context.append([data["passages"][0].strip()[: max_doc_len * 3]]) # Approximate the number of tokens
                     else:
                         context.append([data["passages"][0].strip()])
                 else:
@@ -326,20 +150,12 @@ def evaluate_QA(
 
         eval_logger_info(logger, f"Evaluation dataset loaded for {benchmark}")
 
-        if compressed_doc_in_icl:
-            assert w_embeds, (
-                "Compressed document in ICL is not compatible without embeddings"
-            )
-        if query_w_context:
-            assert not w_embeds, "Query with context is not compatible with embeddings"
-
         prompt_str, to_embed_str = create_prompt_prefix(
             queries=questions,
             answers=[answer[0] for answer in answers],
-            docs=None if not icl_w_document else context,
+            docs=context,
             max_examples=icl_examples,
-            compressed_doc_in_icl=compressed_doc_in_icl,
-            together_multi_passages=together_multi_passages,
+            cat_multi_passages=cat_multi_passages,
         )
 
         new_context, new_questions, new_answers = (
@@ -356,7 +172,7 @@ def evaluate_QA(
             compress_ratio = 0
             generated_sequences = []
             n_samples = (
-                len(new_questions) if n_samples is None or max_samples else n_samples
+                len(new_questions) if n_samples is None else min(len(new_questions), n_samples)
             )
             for i in trange(0, n_samples, max_bs):
                 texts_to_embed = []
@@ -370,16 +186,15 @@ def evaluate_QA(
                         prefix_prompt=prompt_str,
                         prefix_embed=to_embed_str,
                         doc=doc,
-                        w_embeds=w_embeds,
                         query=query,
-                        wdoc=query_w_context,
-                        together_multi_passages=together_multi_passages,
+                        wdoc=True,
+                        cat_multi_passages=cat_multi_passages,
                     )
 
                     batch_list_prompts.append(batch_list_prompt)
                     texts_to_embed.append(text_to_embed)
                 generated_sequence, sum_comp_ratio = pipeline.generate(
-                    text_to_embed=texts_to_embed if w_embeds else None,
+                    text_to_embed=texts_to_embed,
                     batch_list_prompts=batch_list_prompts,
                     temperature=temp,
                     max_tokens=max_seq_len,
@@ -432,22 +247,21 @@ def evaluate_QA(
                     generated_sequences, new_answers[:n_samples]
                 )
 
-                metrics[benchmark]["EM"][str(temp)] = {
+                metrics[benchmark]["EM"]= {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
-                    "w_context_in_examples": icl_w_document,
-                    "w_context_w_query": query_w_context,
                     "Metric": value_em,
                     "approx_Metric": value_approx,
                     "Prop context containing the answer": n_answer_in_context,
                     "xRAG metric": value_xrag,
-                    "n_passages": max_multi_passage,
+                    "n_samples": max_multi_passage,
                     "compress_ratio": compress_ratio / n_samples,
-                    "compressed_icl": compressed_doc_in_icl,
                     "llm_name": "mistral" if llm_name is None else llm_name,
-                    "together_mp": together_multi_passages,
+                    "together_mp": cat_multi_passages,
                     "max_doc_len": max_doc_len,
                     "chunk_to": chunk_to if chunk_to is not None else 0,
+                    "ckpt": ckpt if ckpt is not None else "None",
+                    'temp': temp,
                 }
                 value_f1 = (
                     sum(
@@ -459,19 +273,18 @@ def evaluate_QA(
                     / n_samples
                 )
 
-                metrics[benchmark]["F1"][str(temp)] = {
+                metrics[benchmark]["F1"] = {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
-                    "w_context_in_examples": icl_w_document,
-                    "w_context_w_query": query_w_context,
                     "Metric": value_f1,
-                    "n_passages": max_multi_passage,
+                    "n_samples": max_multi_passage,
                     "compress_ratio": compress_ratio / n_samples,
-                    "compressed_icl": compressed_doc_in_icl,
                     "llm_name": "mistral" if llm_name is None else llm_name,
-                    "together_mp": together_multi_passages,
+                    "together_mp": cat_multi_passages,
                     "max_doc_len": max_doc_len,
                     "chunk_to": chunk_to if chunk_to is not None else 0,
+                    "ckpt": ckpt if ckpt is not None else "None",
+                    'temp': temp,
                 }
 
                 eval_logger_info(
@@ -493,21 +306,20 @@ def evaluate_QA(
 
                 if "ROUGE" not in metrics[benchmark].keys():
                     metrics[benchmark]["ROUGE"] = {}
-                metrics[benchmark]["ROUGE"][str(temp)] = {}
+                metrics[benchmark]["ROUGE"] = {}
 
-                metrics[benchmark]["ROUGE"][str(temp)] = {
+                metrics[benchmark]["ROUGE"]= {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
-                    "w_context_in_examples": icl_w_document,
-                    "w_context_w_query": query_w_context,
                     "Metric": value_rouge,
-                    "n_passages": max_multi_passage,
+                    "n_samples": max_multi_passage,
                     "compress_ratio": compress_ratio,
-                    "compressed_icl": compressed_doc_in_icl,
                     "llm_name": "mistral" if llm_name is None else llm_name,
-                    "together_mp": together_multi_passages,
+                    "together_mp": cat_multi_passages,
                     "max_doc_len": max_doc_len,
                     "chunk_to": chunk_to if chunk_to is not None else 0,
+                    "ckpt": ckpt if ckpt is not None else "None",
+                    'temp': temp,
                 }
                 eval_logger_info(
                     logger,
@@ -524,15 +336,7 @@ def evaluate_QA(
                 )
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
-        try:
-            if run_name is not None:
-                with open(
-                    tmp_path + run_name + "/results_generation.json",
-                    "a",
-                ) as f:
-                    json.dump(results, f)
-        except FileNotFoundError:
-            print("No result generation file found, creating a new one.")
+
         with open(
             output_file,
             "r",
@@ -541,29 +345,17 @@ def evaluate_QA(
 
         if run_name not in overall_results.keys():
             overall_results[run_name] = {}
-        if str(ckpt) not in overall_results[run_name].keys():
-            overall_results[run_name][str(ckpt)] = {}
+
         for benchmark in benchmarks:
-            if benchmark not in overall_results[run_name][str(ckpt)].keys():
-                overall_results[run_name][str(ckpt)][benchmark] = {}
+            if benchmark not in overall_results[run_name].keys():
+                overall_results[run_name][benchmark] = {}
 
         for benchmark in metrics.keys():
             for metric in metrics[benchmark].keys():
-                if metric not in overall_results[run_name][str(ckpt)][benchmark].keys():
-                    overall_results[run_name][str(ckpt)][benchmark][metric] = {}
-                for temp in metrics[benchmark][metric].keys():
-                    if (
-                        temp
-                        not in overall_results[run_name][str(ckpt)][benchmark][
-                            metric
-                        ].keys()
-                    ):
-                        overall_results[run_name][str(ckpt)][benchmark][metric][
-                            temp
-                        ] = []
-                    overall_results[run_name][str(ckpt)][benchmark][metric][
-                        temp
-                    ].append(metrics[benchmark][metric][temp])
+                if metric not in overall_results[run_name][benchmark].keys():
+                    overall_results[run_name][benchmark][metric] = []
+
+                overall_results[run_name][benchmark][metric].append(metrics[benchmark][metric])
 
         with open(
             output_file,
@@ -579,7 +371,7 @@ def evaluate_trad(
     llm_path: str | None = None,
     embed_path: str | None = None,
     ckpt: int | None = None,
-    max_seq_len: int = 2048,
+    max_seq_len: int = 128,
     temps: list[float] = [0, 0.5, 0.7, 1],
     benchmarks: list[str] = ["Danish", "French", "Spanish", "German"],
     max_bs: int = 4,
@@ -587,16 +379,9 @@ def evaluate_trad(
     n_samples: int | None = 1000,
     tmp_path: str = None,
     pipeline: EmbedAugPipeline | None = None,
-    w_embeds: bool = True,  # To test baseline LLM
     seed: float = 0.42,
     comp_rate: int | None = None,
-    llm_number: int = 1,
-    bridge_ckpt: bool
-    | str
-    | None = None,  # Path to the bridge checkpoint if using a bridge model
-    compressed_doc_in_icl: bool = False,  # Not used for translation
-    europarl: bool = False,  # If True, use Europarl dataset instead of Flores
-    max_samples: bool = False,  # If True, use all the samples in the dataset
+    llm_number: int = 0,
     chunk_to: int | None = None,  # If not None, chunk the dataset to this size
 ):
     # Loading model
@@ -620,7 +405,6 @@ def evaluate_trad(
         pipeline=pipeline,
         ckpt=ckpt,
         comp_rate=comp_rate,
-        bridge_ckpt=bridge_ckpt,
         llm_type="llama" if "llama" in llm_path.lower() else "mistral",
         embed_type="llama" if "llama" in embed_path.lower() else "mistral",
         llm_number=llm_number,
@@ -634,64 +418,40 @@ def evaluate_trad(
         benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
     ):
         metrics[benchmark] = {}
-        if not europarl:
-            eval_data = TRAD_DATA_PATH[benchmark]
 
-            text = []
-            traduction = []
+        eval_data = TRAD_DATA_PATH[benchmark]
 
-            with open(TRAD_DATA_PATH["English"], "r") as f:
-                for line in f:
-                    data = json.loads(line)
-                    text.append(data["text"].strip())
+        text = []
+        traduction = []
 
-            with open(eval_data, "r") as f:
-                for line in f:
-                    data = json.loads(line)
-                    traduction.append(data["text"].strip())
-            max_seq_len = 128
-        else:
-            eval_data = EUROPARL_TRAD_DATA_PATH[benchmark]
+        with open(TRAD_DATA_PATH["English"], "r") as f:
+            for line in f:
+                data = json.loads(line)
+                text.append(data["text"].strip())
 
-            text = []
-            traduction = []
-
-            with open(eval_data, "r") as f:
-                for line in f:
-                    data = json.loads(line)
-                    traduction.append(data["answer"].strip().replace("\n", " "))
-                    text.append(data["passage"].strip().replace("\n", " "))
+        with open(eval_data, "r") as f:
+            for line in f:
+                data = json.loads(line)
+                traduction.append(data["text"].strip())
 
         c = list(zip(text, traduction))
 
-        # fixed_random = random.Random()
-        # fixed_random.seed(42)
-        # fixed_random.shuffle(c)
         random.shuffle(c, random=lambda: seed)
         text, traduction = zip(*c)
         embed_prompt = []
 
-        if compressed_doc_in_icl:
-            text_prompt_prefix = ["Document: "]
-            for doc, answ, _ in zip(text, traduction, range(4)):
-                embed_prompt.append(doc.strip())
-                text_prompt_prefix.append(
-                    f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}\n\nDocument: "
-                )
-            embed_prompt.append(text[4].strip())
-            text_prompt_prefix.append(
-                f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {traduction[4].strip()}\n\nDocument: "
-            )
 
-        else:
-            text_prompt_prefix = [
-                "\n\n".join(
-                    [
-                        f"Document: {doc}\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}"
-                        for doc, answ, _ in zip(text, traduction, range(5))
-                    ]
-                ) + '\n\nDocument: '
-            ]
+        text_prompt_prefix = ["Document: "]
+        for doc, answ, _ in zip(text, traduction, range(4)):
+            embed_prompt.append(doc.strip())
+            text_prompt_prefix.append(
+                f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {answ.strip()}\n\nDocument: "
+            )
+        embed_prompt.append(text[4].strip())
+        text_prompt_prefix.append(
+            f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: {traduction[4].strip()}\n\nDocument: "
+        )
+
         new_text, new_trad = (
             list(text[5:]),
             list(traduction[5:]),
@@ -704,9 +464,8 @@ def evaluate_trad(
         for temp in temps:
             compress_ratio = 0
             generated_sequences = []
-            n_samples = len(text) if n_samples is None or max_samples else n_samples
-            if europarl and max_samples:
-                n_samples = 1000
+            n_samples = len(text) if n_samples is None else min(len(text), n_samples)
+
             for i in trange(0, n_samples, max_bs):
                 texts_to_embed = []
                 batch_list_prompts = []
@@ -723,11 +482,11 @@ def evaluate_trad(
                 texts_to_embed = [embed_prompt + [seq] for seq in text[i : i + bs]]
 
                 generated_sequence, sum_comp_ratio = pipeline.generate(
-                    text_to_embed=texts_to_embed if w_embeds else None,
+                    text_to_embed=texts_to_embed,
                     batch_list_prompts=batch_list_prompts,
                     temperature=temp,
                     max_tokens=max_seq_len,
-                    truncate_line=not europarl,
+                    truncate_line=True,
                     device=device,
                     device_generation=other_device,
                     give_n_tokens=True,
@@ -748,27 +507,19 @@ def evaluate_trad(
                 traduction[: len(generated_sequences)], generated_sequences
             )
             print("BLEU score:", bleu_score)
-            metrics[benchmark]["BLEU"][str(temp)] = {
+            metrics[benchmark]["BLEU"] = {
                 "n_samples": n_samples,
                 "Metric": bleu_score,
                 "compress_ratio": compress_ratio / n_samples,
                 "language": benchmark,
                 "new_template": True,
-                "compressed_icl": compressed_doc_in_icl,
                 "llm_name": llm_name,
                 "chunk_to": chunk_to if chunk_to is not None else 0,
+                "ckpt": ckpt if ckpt is not None else "None",
+                'temp': temp,
             }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
-        try:
-            if run_name is not None:
-                with open(
-                    tmp_path + run_name + "/results_generation.json",
-                    "a",
-                ) as f:
-                    json.dump(results, f)
-        except FileNotFoundError:
-            print("No result generation file found, creating a new one.")
 
         with open(
             output_file,
@@ -778,19 +529,15 @@ def evaluate_trad(
 
         if run_name not in overall_results.keys():
             overall_results[run_name] = {}
-        if str(ckpt) not in overall_results[run_name].keys():
-            overall_results[run_name][str(ckpt)] = {}
+
 
         for benchmark in metrics.keys():
             for metric in metrics[benchmark].keys():
-                if metric not in overall_results[run_name][str(ckpt)].keys():
-                    overall_results[run_name][str(ckpt)][metric] = {}
-                for temp in metrics[benchmark][metric].keys():
-                    if temp not in overall_results[run_name][str(ckpt)][metric].keys():
-                        overall_results[run_name][str(ckpt)][metric][temp] = []
-                    overall_results[run_name][str(ckpt)][metric][temp].append(
-                        metrics[benchmark][metric][temp]
-                    )
+                if metric not in overall_results[run_name].keys():
+                    overall_results[run_name][metric] = []
+                overall_results[run_name][metric].append(
+                    metrics[benchmark][metric]
+                )
 
         with open(
             output_file,
@@ -803,64 +550,25 @@ def evaluate_trad(
 
 def arg_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--run_name",
-        type=str,
-        default=None,
-    )
+    parser.add_argument("--run_name",type=str, default=None)
     parser.add_argument("--ckpt", type=int, default=None)
     parser.add_argument("--out_file", type=str, default=None)
-    parser.add_argument("--n_passages", type=int, default=500)
+    parser.add_argument("--n_samples", type=int, default=500)
     parser.add_argument("--max_seq_len", type=int, default=64)
     parser.add_argument("--bs", type=int, default=32)
-    parser.add_argument("--wo_embeds", action="store_false")
     parser.add_argument("--multi_passages", type=int, default=1)
-    parser.add_argument(
-        "--together_multi_passages",
-        action="store_true",
-    )
+    parser.add_argument("--cat_multi_passages",action="store_true")
     parser.add_argument("--benchmarks", type=str, default="all")
     parser.add_argument("--seed", type=float, default=0.42)
     parser.add_argument("--n_icl_exs", type=int, default=None)
-    parser.add_argument("--icl_w_document", action="store_true")
-    parser.add_argument("--compressed_doc_in_icl", action="store_true")
-    parser.add_argument(
-        "--comp_rate", type=int, default=None
-    )  # can enable to fix number of memory tokens if > 0
+    parser.add_argument("--comp_rate", type=int, default=None)  # can enable to fix number of memory tokens if > 0
     parser.add_argument("--eval_trad", action="store_true")
-    parser.add_argument(
-        "--tmp_folder",
-        type=str,
-        default="hp_v2/",
-    )
-    parser.add_argument("--fine_tuned", action="store_true")
+    parser.add_argument("--tmp_folder",type=str,default="hp_v2/")
     parser.add_argument("--llm_name", type=str, default="mistral_7B")
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
-    parser.add_argument("--query_w_context", action="store_true")
-    parser.add_argument("--bridge_ckpt", type=str, default=None)
-    parser.add_argument("--europarl", action="store_true")
-    parser.add_argument('--pisco_eval', action='store_true')
-    parser.add_argument(
-        "--max_samples",
-        action="store_true",
-        help="If True, use the maximum number of samples for each benchmark",
-    )
-    parser.add_argument(
-        "--max_doc_len",
-        type=int,
-        default=None,
-    )
-    parser.add_argument(
-        "--llm_number",
-        type=int,
-        default=1,
-        help="Number of LLMs to use, starting from 1",
-    )
-    parser.add_argument(
-        "--chunk_to",
-        type=int,
-        default=None,
-    )
+    parser.add_argument("--max_doc_len", type=int,default=None)
+    parser.add_argument("--llm_number",type=int,default=0,help="Number of LLMs to use, starting from 0",)
+    parser.add_argument("--chunk_to", type=int, default=None, help="If not None, chunk each sample into samples of size chunk_to and compress them in parallel") 
 
     return parser.parse_args()
 
@@ -872,8 +580,7 @@ if __name__ == "__main__":
         
     args = arg_parser()
     
-    if args.pisco_eval:
-        args.multi_passages = 5
+ 
         
     tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/" + args.tmp_folder
     if args.benchmarks == "all":
@@ -894,7 +601,7 @@ if __name__ == "__main__":
             json.dump({}, f)
 
     max_seq_len = args.max_seq_len
-    n_passages = args.n_passages
+    n_samples = args.n_samples
     llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/" + args.llm_name
     embed_path = (
         "/lustre/scwpod02/client/kyutai-interns/hippop/models/" + args.embed_name
@@ -912,22 +619,15 @@ if __name__ == "__main__":
             embed_path=embed_path,
             max_bs=args.bs,
             output_file=output_file,
-            n_samples=n_passages,
+            n_samples=n_samples,
             tmp_path=tmp_path,
-            w_embeds=args.wo_embeds,
             pipeline=None,
             seed=args.seed,
             comp_rate=args.comp_rate,
             benchmarks=benchmarks
             if args.benchmarks != "all"
             else ["Danish", "French", "Spanish", "German"],
-            bridge_ckpt=args.bridge_ckpt
-            if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
-            else False,
-            compressed_doc_in_icl=args.compressed_doc_in_icl,
-            europarl=args.europarl,
-            max_samples=args.max_samples,
-            llm_number=args.llm_number - 1,
+            llm_number=args.llm_number,
             chunk_to=args.chunk_to,
         )
         torch.cuda.empty_cache()
@@ -941,24 +641,16 @@ if __name__ == "__main__":
             embed_path=embed_path,
             max_bs=args.bs,
             output_file=output_file,
-            n_samples=n_passages,
+            n_samples=n_samples,
             max_seq_len=max_seq_len,
             tmp_path=tmp_path,
             icl_examples=icl_tests[0],
-            w_embeds=args.wo_embeds,
-            icl_w_document=args.icl_w_document,
             max_multi_passage=args.multi_passages,
             seed=args.seed,
-            compressed_doc_in_icl=args.compressed_doc_in_icl,
             comp_rate=args.comp_rate,
-            query_w_context=args.query_w_context,
-            bridge_ckpt=args.bridge_ckpt
-            if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
-            else False,
-            together_multi_passages=args.together_multi_passages,
-            max_samples=args.max_samples,
+            cat_multi_passages=args.cat_multi_passages,
             max_doc_len=args.max_doc_len,
-            llm_number=args.llm_number - 1,
+            llm_number=args.llm_number,
             chunk_to=args.chunk_to,
         )
 
@@ -971,25 +663,17 @@ if __name__ == "__main__":
                 embed_path=embed_path,
                 max_bs=args.bs,
                 output_file=output_file,
-                n_samples=n_passages,
+                n_samples=n_samples,
                 max_seq_len=max_seq_len,
                 tmp_path=tmp_path,
                 icl_examples=icl_ex,
-                w_embeds=args.wo_embeds,
-                icl_w_document=args.icl_w_document,
                 pipeline=pipeline,
                 ckpt=ckpt,
                 max_multi_passage=args.multi_passages,
                 seed=args.seed,
-                compressed_doc_in_icl=args.compressed_doc_in_icl,
                 comp_rate=args.comp_rate,
-                query_w_context=args.query_w_context,
-                bridge_ckpt=args.bridge_ckpt
-                if args.bridge_ckpt is None or "false" not in args.bridge_ckpt.lower()
-                else False,
-                together_multi_passages=args.together_multi_passages,
-                max_samples=args.max_samples,
+                cat_multi_passages=args.cat_multi_passages,
                 max_doc_len=args.max_doc_len,
-                llm_number=args.llm_number - 1,
+                llm_number=args.llm_number,
                 chunk_to=args.chunk_to,
             )

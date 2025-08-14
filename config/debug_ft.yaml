@@ -48,7 +48,7 @@ pipeline:
     trained_layers: 14
     rec_tok: true
     train_embedding_mtx: true
-  max_embeds: 1
+
   trainable_llm: false
   w_embeds: true
   w_prefix_prompt: false
@@ -67,3 +67,4 @@ data:
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
   shuffle: false
   train_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/Reading_Comp/squad_v2_only_answered.jsonl # Instruct data must be in a folder named instruct_data
+  max_passages: 4

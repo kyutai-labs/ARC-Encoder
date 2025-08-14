@@ -70,7 +70,7 @@ def generate(
 
     # Stop concatenating after first chunk
     if concat:
-        # Both in cache
+        # Both in KV cache
         cat_embeddings = None
         insertion_lists = []
 

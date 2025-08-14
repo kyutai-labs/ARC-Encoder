@@ -24,7 +24,7 @@ def evaluate(
     state: TrainState,
     batches_cont: list[Batch] | None = None,
 ):
-    # Create fake samples to make FSDP happy for unbalanced data
+    # Create fake samples if all rank does not have the same number of samples 
     num_samples = torch.tensor([len(batches_rec)], device="cuda", dtype=torch.long)
     all_num_samples = [torch.zeros_like(num_samples) for _ in range(get_world_size())]
 

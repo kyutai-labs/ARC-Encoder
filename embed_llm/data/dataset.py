@@ -44,7 +44,7 @@ def maybe_load_local_dataset(
     world_size: int,
     llm_tokenizer: Tokenizer | None = None,  # type: ignore
     embed_tokenizer: Tokenizer | None = None,  # type: ignore
-    max_embeds: int = 1,
+    max_passages: int = 1,
 ) -> list[TokenSample]:
     global _LOADED_DATASETS
 
@@ -66,7 +66,7 @@ def maybe_load_local_dataset(
             llm_tokenizer=llm_tokenizer,
             embed_tokenizer=embed_tokenizer,
             data_path=str(path),
-            max_embed=max_embeds,
+            max_passages=max_passages,
         )
         data_list.append(data_sample)
 
@@ -351,7 +351,6 @@ def build_dataset(
     is_eval: bool,
     seed: int | None = None,
     continuation: float = 0.0,
-    max_embeds: int = 1,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     data = args.train_data if not is_eval else args.eval_data
     sources, probabilities, few_shots = parse_data_sources(data)
@@ -365,7 +364,7 @@ def build_dataset(
             world_size=world_size,
             is_finite=is_eval,
             seed=seed,
-            max_embeds=max_embeds,
+            max_passages=args.max_passages,
         )
         for source in sources
     ]
@@ -415,7 +414,7 @@ def get_dataset_iterator(
     llm_tokenizer: Tokenizer,  # type: ignore
     embed_tokenizer: Tokenizer,  # type: ignore
     seed: int | None = None,
-    max_embeds: int = 1,
+    max_passages: int = 1,
 ) -> Iterator[TokenSample]:
     jsonl_files = source.jsonl_files
     rng: np.random.RandomState | None = (
@@ -434,7 +433,7 @@ def get_dataset_iterator(
                     world_size=world_size,
                     llm_tokenizer=llm_tokenizer,
                     embed_tokenizer=embed_tokenizer,
-                    max_embeds=max_embeds,
+                    max_passages=max_passages,
                 )
     else:
         # eval mode
@@ -445,7 +444,7 @@ def get_dataset_iterator(
                 world_size=world_size,
                 llm_tokenizer=llm_tokenizer,
                 embed_tokenizer=embed_tokenizer,
-                max_embeds=max_embeds,
+                max_passages=max_passages,
             )
 
 
@@ -455,7 +454,7 @@ def lazy_load_and_yield(
     world_size: int,
     llm_tokenizer: Tokenizer | None = None,  # type: ignore
     embed_tokenizer: Tokenizer | None = None,  # type: ignore
-    max_embeds: int = 1,
+    max_passages: int = 1,
 ):
     with jsonl_file.open() as file_handle:
         for idx, line in enumerate(file_handle):
@@ -472,7 +471,7 @@ def lazy_load_and_yield(
                 llm_tokenizer=llm_tokenizer,
                 embed_tokenizer=embed_tokenizer,
                 data_path=str(jsonl_file),
-                max_embed=max_embeds,
+                max_passages=max_passages,
             )
 
 

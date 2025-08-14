@@ -166,7 +166,6 @@ def build_data_loader(
         world_size=world_size,
         is_eval=is_eval,
         continuation=continuation,
-        max_embeds=max_embeds,
     )
 
     batch_list_dict = {}

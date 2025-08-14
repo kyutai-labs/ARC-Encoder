@@ -13,7 +13,7 @@ from torch import nn
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask
 
 from embed_llm.models.args import (
-    EmbedAugArgs,
+    PipelineArgs,
     EmbedderArgs,
     ModelArgs,
 )
@@ -497,7 +497,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
 def load_model(
     llm_args: ModelArgs,
-    pipeline_args: EmbedAugArgs,
+    pipeline_args: PipelineArgs,
     folder: Path,
     checkpoint: bool,
     param_dtype: torch.dtype,
@@ -506,6 +506,7 @@ def load_model(
     llm_type: str = "mistral",
     embed_type: str = "mistral",
     number_of_llm: int = 1,
+    folder_w_models: str = "/lustre/scwpod02/client/kyutai-interns/hippop/models",
 ) -> tuple[torch.nn.Module, int]:
     with torch.device("meta"):
         model = Transformer(
@@ -529,14 +530,14 @@ def load_model(
         embed_type == "mistral" and for_embedding
     ):
         tokenizer = load_mistral_tokenizer(
-            Path("/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B")
+            Path(folder_w_models + "/mistral_7B")
         ).instruct_tokenizer.tokenizer
         return model, tokenizer
     elif (llm_type == "llama" and not for_embedding) or (
         embed_type == "llama" and for_embedding
     ):
         tokenizer = LlamaTokenizer(
-            model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B/tokenizer.model"
+            model_path=folder_w_models + "/Llama3.1-8B/tokenizer.model"
         )
     else:
         raise ValueError(f"Unknown llm_type: {llm_type} or embed_type: {embed_type}")
