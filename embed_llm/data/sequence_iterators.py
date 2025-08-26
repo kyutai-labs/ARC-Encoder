@@ -93,12 +93,8 @@ def sequence_iterator_reconstruction(
             eos = llm_tokenizer.tokenizer.eos_id in new_embed
             if llm_tokenizer.tokenizer.model_name == "llama":
                 new_text = llm_tokenizer.tokenizer.decode(new_embed, skip_special_tokens=True)
-            elif llm_tokenizer.tokenizer.model_name == "mistral":
-                new_text = llm_tokenizer.tokenizer.decode(new_embed)
             else:
-                raise NotImplementedError(
-                    f"Model {llm_tokenizer.model_name} not supported for reconstruction."
-                )
+                new_text = llm_tokenizer.tokenizer.decode(new_embed)
 
             to_embed_buffer.append(
                 {

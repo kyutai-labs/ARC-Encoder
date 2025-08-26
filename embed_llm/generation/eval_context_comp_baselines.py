@@ -302,6 +302,10 @@ def evaluate_QA(
         n_samples = (
             len(new_questions) if n_samples is None  else min(n_samples, len(new_questions))
         )
+        if benchmark == 'CNN':
+            n_samples = min(n_samples, 1000)
+            max_seq_len = 256
+            
         dataset, compress_ratio = create_QA_dataset(
             n_samples=n_samples,
             new_questions=new_questions,
@@ -726,7 +730,6 @@ def arg_parser():
     parser.add_argument(
         "--llm_name",
         type=str,
-        choices=["mistralai/Mistral-7B-v0.3", "meta-llama/Llama-3.1-8B"],
         default="mistralai/Mistral-7B-v0.3",
     )
     parser.add_argument(

@@ -343,6 +343,21 @@ def load_training_model_from_ckpt(
             main_logger_info("Loading lora layers for embedder ...")
             augmented_model.embedder.load_lora(
                 Path(embedder_path), scaling=2.0)
+            if pipeline_args.embedder_params.memory_tokens > 0:
+                main_logger_info("Loading memory tokens for embedder ...")
+                assert supp_toks_path is not None, (
+                    "Supp tokens path is required for memory tokens"
+                )
+                state_dict = load_state_dict(Path(supp_toks_path), dtype=param_dtype)
+                augmented_model.embedder.mem_embeddings.load_state_dict(
+                    {
+                        k.split("mem_embeddings.")[-1]: v.cuda()
+                        for k, v in state_dict.items()
+                        if "mem_embeddings" in k
+                    },
+                    strict=True,
+                    assign=True,
+                )
         elif embedder_path is not None:
             main_logger_info("Loading trained layers for embedder ...")
             state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)

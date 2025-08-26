@@ -173,6 +173,11 @@ def evaluate_QA(
             n_samples = (
                 len(new_questions) if n_samples is None else min(len(new_questions), n_samples)
             )
+
+            if benchmark == 'CNN':
+                n_samples = min(n_samples, 1000)
+                max_seq_len = 256
+
             for i in trange(0, n_samples, max_bs):
                 texts_to_embed = []
                 batch_list_prompts = []
@@ -465,7 +470,7 @@ def evaluate_trad(
             compress_ratio = 0
             generated_sequences = []
             n_samples = len(text) if n_samples is None else min(len(text), n_samples)
-
+            
             for i in trange(0, n_samples, max_bs):
                 texts_to_embed = []
                 batch_list_prompts = []
