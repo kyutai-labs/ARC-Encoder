@@ -3,7 +3,7 @@ import random
 from dataclasses import dataclass
 from embed_llm.models.utils.mistral_tokenizer import MistralTokenizer
 from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
-
+from embed_llm.models.utils.olmo_tokenizer import Tokenizer as OlmoTokenizer
 
 logger = logging.getLogger("tokenize")
 
@@ -14,7 +14,7 @@ TEMPLATE_FOR_QA = "\nQuestion: {question}\nAnswer: "
 
 @dataclass()
 class Tokenizer:
-    tokenizer: MistralTokenizer | LlamaTokenizer
+    tokenizer: MistralTokenizer | LlamaTokenizer | OlmoTokenizer
     model_name: str
 
 

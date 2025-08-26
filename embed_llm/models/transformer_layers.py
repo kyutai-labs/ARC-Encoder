@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import numpy as np
-import random
+from functools import partial
 import operator
 from typing import Iterable
 from functools import reduce
@@ -139,6 +139,7 @@ class Attention(nn.Module):
         freqs_cis_k: torch.Tensor | None = None,
         cache: CacheView | None = None,
         mask: BlockDiagonalMask | BlockDiagonalCausalMask | torch.Tensor | None = None,
+        olmo: bool = False,
     ) -> torch.Tensor:
         assert mask is None or cache is None
         seqlen_sum, _ = x.shape
@@ -156,7 +157,7 @@ class Attention(nn.Module):
 
         if freqs_cis is not None:
             xq, xk = apply_rotary_emb(
-                xq, xk, freqs_cis=freqs_cis, freqs_cis_k=freqs_cis_k
+                xq, xk, freqs_cis=freqs_cis, freqs_cis_k=freqs_cis_k, olmo=olmo
             )
 
         if cache is None:
@@ -233,6 +234,7 @@ class TransformerBlock(nn.Module):
         head_dim: int,
         norm_eps: float,
         lora: LoraArgs | None = None,
+        non_parametric_norm: bool = False
     ):
         super().__init__()
         self.n_heads = n_heads
@@ -244,8 +246,14 @@ class TransformerBlock(nn.Module):
             n_kv_heads=n_kv_heads,
             lora=lora,
         )
-        self.attention_norm = RMSNorm(dim, eps=norm_eps)
-        self.ffn_norm = RMSNorm(dim, eps=norm_eps)
+        if not non_parametric_norm:
+            self.attention_norm = RMSNorm(dim, eps=norm_eps)
+            self.ffn_norm = RMSNorm(dim, eps=norm_eps)
+            self.olmo = False
+        else:
+            self.attention_norm = partial(torch.nn.functional.layer_norm, normalized_shape=(dim,), eps=norm_eps, weight = None, bias = None)
+            self.ffn_norm = partial(torch.nn.functional.layer_norm, normalized_shape=(dim,), eps=norm_eps, weight = None, bias = None)
+            self.olmo = True
 
         self.feed_forward = FeedForward(dim=dim, hidden_dim=hidden_dim, lora=lora)
         self.pooling_module = None
@@ -270,6 +278,7 @@ class TransformerBlock(nn.Module):
             mask=mask,
             other_kv=None if other_kv is None else self.attention_norm(other_kv),
             freqs_cis_k=freqs_cis_k,
+            olmo=self.olmo,  
         )
 
         h = x + r

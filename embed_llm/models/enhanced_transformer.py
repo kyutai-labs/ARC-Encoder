@@ -21,6 +21,7 @@ from embed_llm.models.utils.mistral_tokenizer import (
     load_tokenizer as load_mistral_tokenizer,
 )
 from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
+from embed_llm.models.utils.olmo_tokenizer import Tokenizer as OlmoTokenizer
 from embed_llm.training.distributed import (
     get_rank,
 )
@@ -135,6 +136,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 lora=args.lora
                 if embedder_args is None or i in self.trained_layers
                 else None,
+                non_parametric_norm=args.non_parametric_norm,
             )
 
             if checkpoint:
@@ -148,9 +150,11 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         self.norm: None | RMSNorm = None
 
-        if not self.for_embedding:
-            self.norm = RMSNorm(args.dim, eps=args.norm_eps)
-
+        if not self.for_embedding: 
+            if args.non_parametric_norm:
+                self.norm = partial(torch.nn.functional.layer_norm, normalized_shape=(args.dim,), eps=args.norm_eps)
+            else:
+                self.norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.layers = nn.ModuleDict({str(i): layers[i] for i in range(self.n_layers)})
 
         self.output = None
@@ -517,7 +521,7 @@ def load_model(
         )
 
     if not parll or get_rank() == 0:
-        state_dict = load_state_dict(folder, dtype=param_dtype)
+        state_dict = load_state_dict(folder, dtype=param_dtype, olmo=(llm_type == 'olmo' and not for_embedding))
 
         if not for_embedding and (llm_args.lora is None or not llm_args.lora.enable):
             assert all([k in model.state_dict() for k in state_dict.keys()]), (
@@ -539,6 +543,8 @@ def load_model(
         tokenizer = LlamaTokenizer(
             model_path=folder_w_models + "/Llama3.1-8B/tokenizer.model"
         )
+    elif llm_type == 'olmo' and not for_embedding:
+        tokenizer = OlmoTokenizer.from_file('/lustre/scwpod02/client/kyutai-interns/hippop/models/Olmo7B/tokenizer.json')
     else:
         raise ValueError(f"Unknown llm_type: {llm_type} or embed_type: {embed_type}")
     return model, tokenizer

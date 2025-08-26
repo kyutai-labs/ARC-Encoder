@@ -115,6 +115,21 @@ def load_args(
             rope_theta=args["rope_theta"],
             max_batch_size=max_batch_size,
         )
+    elif args_type=='olmo':
+        llm_args = ModelArgs(
+            lora=lora,
+            dim=args["dim"],
+            n_layers=args["n_layers"],
+            head_dim=args["dim"] // args["n_heads"],
+            hidden_dim= 11008,
+            n_heads=args["n_heads"],
+            n_kv_heads=args["n_heads"],
+            norm_eps=args["norm_eps"],
+            vocab_size=args["vocab_size"],
+            rope_theta=10_000,
+            max_batch_size=max_batch_size,
+            non_parametric_norm = True
+        )
 
     else:
         raise ValueError(f"Unsupported llm_type: {args_type}")
@@ -126,7 +141,7 @@ def load_args(
 
 
 @torch.no_grad()
-def load_state_dict(path: Path, dtype: torch.dtype) -> dict[str, torch.Tensor]:
+def load_state_dict(path: Path, dtype: torch.dtype, olmo = False) -> dict[str, torch.Tensor]:
     assert path.is_dir(), path
 
     this_safetensors_path = Checkpointer.consolidated_path(path, use_safetensors=True)
@@ -150,5 +165,34 @@ def load_state_dict(path: Path, dtype: torch.dtype) -> dict[str, torch.Tensor]:
 
     for k, v in model_state_dict.items():
         model_state_dict[k] = v.to(dtype)
+        
+    if olmo:    
 
+        # Olmo models have a different naming convention for the attention layers
+        new_model_state_dict = {}
+        
+        for k, v in model_state_dict.items():
+            
+            if 'att_proj' in k:
+                wq, wk, wv = v.split((v.shape[0] // 3, v.shape[0] // 3, v.shape[0] // 3), dim=0)
+                new_model_state_dict[k.replace('att_proj', 'attention.wq').replace('model.transformer.blocks.', 'layers.')] = wq
+                new_model_state_dict[k.replace('att_proj', 'attention.wk').replace('model.transformer.blocks.', 'layers.')] = wk
+                new_model_state_dict[k.replace('att_proj', 'attention.wv').replace('model.transformer.blocks.', 'layers.')] = wv
+            elif 'ff_proj' in k:
+                x, gate = v.chunk(2, dim=0)
+                new_model_state_dict[k.replace('ff_proj', 'feed_forward.w1').replace('model.transformer.blocks.', 'layers.')] = gate
+                new_model_state_dict[k.replace('ff_proj', 'feed_forward.w3').replace('model.transformer.blocks.', 'layers.')] = x
+            elif 'blocks.' in k and 'ff_out' in k:
+                new_model_state_dict[k.replace('ff_out.', 'feed_forward.w2.').replace('model.transformer.blocks.', 'layers.')] = v
+            elif 'attn_out' in k:
+                new_model_state_dict[k.replace('attn_out.', 'attention.wo.').replace('model.transformer.blocks.', 'layers.')] = v
+            elif 'wte' in k:
+                new_model_state_dict[k.replace('model.transformer.wte.', 'tok_embeddings.')] = v
+            elif 'ff_out' in k:
+                new_model_state_dict[k.replace('model.transformer.ff_out.','output.')] = v
+            else:
+                raise ValueError(f"Unexpected key in model state dict: {k}")
+
+        del model_state_dict
+        return new_model_state_dict
     return model_state_dict

@@ -87,9 +87,8 @@ def evaluate_QA(
         pipeline=pipeline,
         ckpt=ckpt,
         comp_rate=comp_rate,
-        llm_type="llama"
-        if llm_path is not None and "llama" in llm_path.lower()
-        else "mistral",
+        llm_type= "llama" if llm_path is not None and "llama" in llm_path.lower() else ("olmo" if llm_path is not None 
+                                                              and "olmo" in llm_path.lower() else "mistral"),
         embed_type="llama"
         if embed_path is not None and "llama" in embed_path.lower()
         else "mistral",
@@ -405,7 +404,8 @@ def evaluate_trad(
         pipeline=pipeline,
         ckpt=ckpt,
         comp_rate=comp_rate,
-        llm_type="llama" if "llama" in llm_path.lower() else "mistral",
+        llm_type="llama" if llm_path is not None and "llama" in llm_path.lower() else ("olmo" if llm_path is not None 
+                                                              and "olmo" in llm_path.lower() else "mistral"),
         embed_type="llama" if "llama" in embed_path.lower() else "mistral",
         llm_number=llm_number,
     )
