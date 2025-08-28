@@ -162,9 +162,15 @@ def load_state_dict(path: Path, dtype: torch.dtype, olmo = False) -> dict[str, t
         model_state_dict = torch.load(this_torch_path)
 
     logger.info(f"Converting model to dtype {dtype} ...")
+    
+    
 
     for k, v in model_state_dict.items():
-        model_state_dict[k] = v.to(dtype)
+        if 'rec_tok.weight' in k or 'mem_embeddings.weight' in k or 'cont_tok.weight' in k:
+            model_state_dict[k.replace('.weight','.0.weight')] = v.to(dtype)
+            del model_state_dict[k]
+        else:
+            model_state_dict[k] = v.to(dtype)
         
     if olmo:    
 

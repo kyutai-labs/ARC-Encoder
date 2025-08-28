@@ -474,7 +474,6 @@ def lazy_load_and_yield(
                 max_passages=max_passages,
             )
 
-
 def interleave_iterators(iterators: list[Iterator], probabilities, rng):
     while True:
         it_id = rng.choice(range(len(iterators)), p=probabilities)
@@ -487,8 +486,10 @@ def interleave_iterators(iterators: list[Iterator], probabilities, rng):
                 f"Iterator {it_id} exhausted. Removing it from the list."
             )
             del iterators[it_id]
+            if not isinstance(probabilities, list):
+                probabilities = list(probabilities)
             del probabilities[it_id]
-            probabilities = probabilities / np.sum(probabilities)  # re-normalize probabilities
+            probabilities = [prob / np.sum(probabilities) for prob in probabilities]  # re-normalize probabilities
             if len(iterators) == 0:
                 raise e
             continue
