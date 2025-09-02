@@ -9,7 +9,6 @@ import torch
 from tqdm import tqdm, trange
 import sys
 
-sys.path.insert(0, "/home/hippolytepilchen/code/mix_decoder_training")
 
 from embed_llm.generation.metrics import (  # noqa: E402
     get_approx_em,
@@ -32,7 +31,7 @@ from embed_llm.generation.utils import (
 from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline  # noqa: E402
 from embed_llm.models.utils.utils import is_torchrun  # noqa: E402
 from embed_llm.monitoring.utils import set_logger  # noqa: E402
-
+from embed_llm import TMP_PATH, MODEL_PATH  # noqa: E402
 
 
 logger = logging.getLogger(__name__)
@@ -568,7 +567,6 @@ def arg_parser():
     parser.add_argument("--n_icl_exs", type=int, default=None)
     parser.add_argument("--comp_rate", type=int, default=None)  # can enable to fix number of memory tokens if > 0
     parser.add_argument("--eval_trad", action="store_true")
-    parser.add_argument("--tmp_folder",type=str,default="hp_v2/")
     parser.add_argument("--llm_name", type=str, default="mistral_7B")
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--max_doc_len", type=int,default=None)
@@ -584,10 +582,7 @@ if __name__ == "__main__":
     temp_tests = [0]
         
     args = arg_parser()
-    
- 
-        
-    tmp_path = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/" + args.tmp_folder
+            
     if args.benchmarks == "all":
         benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "CNN"]
     else:
@@ -595,11 +590,7 @@ if __name__ == "__main__":
     icl_tests = [0, 5] if args.n_icl_exs is None else [args.n_icl_exs]
     ensure_reproducibility(29)
 
-    output_file = (
-        "/home/hippolytepilchen/code/hp_v2/results/NVEmbed/mistral/eval_mistral_translate.json"
-        if args.out_file is None
-        else args.out_file
-    )
+    output_file = args.out_file
 
     if not os.path.exists(output_file):
         with open(output_file, "w") as f:
@@ -607,10 +598,9 @@ if __name__ == "__main__":
 
     max_seq_len = args.max_seq_len
     n_samples = args.n_samples
-    llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/" + args.llm_name
-    embed_path = (
-        "/lustre/scwpod02/client/kyutai-interns/hippop/models/" + args.embed_name
-    )
+    llm_path = MODEL_PATH + args.llm_name
+    embed_path = MODEL_PATH + args.embed_name
+
     if args.run_name is not None:
         print("Evuating run:", args.run_name)
 
@@ -625,7 +615,7 @@ if __name__ == "__main__":
             max_bs=args.bs,
             output_file=output_file,
             n_samples=n_samples,
-            tmp_path=tmp_path,
+            tmp_path=TMP_PATH,
             pipeline=None,
             seed=args.seed,
             comp_rate=args.comp_rate,
@@ -648,7 +638,7 @@ if __name__ == "__main__":
             output_file=output_file,
             n_samples=n_samples,
             max_seq_len=max_seq_len,
-            tmp_path=tmp_path,
+            tmp_path=TMP_PATH,
             icl_examples=icl_tests[0],
             max_multi_passage=args.multi_passages,
             seed=args.seed,
@@ -670,7 +660,7 @@ if __name__ == "__main__":
                 output_file=output_file,
                 n_samples=n_samples,
                 max_seq_len=max_seq_len,
-                tmp_path=tmp_path,
+                tmp_path=TMP_PATH,
                 icl_examples=icl_ex,
                 pipeline=pipeline,
                 ckpt=ckpt,

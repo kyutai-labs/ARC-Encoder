@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-
+from pathlib import Path
 from simple_parsing.helpers import Serializable
 
 logger = logging.getLogger("data")
@@ -38,7 +38,7 @@ class DataArgs(Serializable):
             self.train_data = ",".join(
                 [self.prefix + train_path for train_path in self.train_data.split(",")]
             )
-            if 'lustre' not in self.eval_data:
+            if self.eval_data != '' and not Path(self.eval_data).exists(): 
                 self.eval_data = ",".join(
                     [self.prefix + eval_path for eval_path in self.eval_data.split(",")]
                 )

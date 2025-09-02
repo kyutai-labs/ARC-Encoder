@@ -23,7 +23,7 @@ from embed_llm.models.generate import generate as transformer_generate
 
 from mistral_inference.transformer import Transformer as MistralTransformer
 from embed_llm.data.tokenize import Tokenizer
-
+from embed_llm import TMP_PATH, MODEL_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -213,17 +213,28 @@ class EmbedAugPipeline(nn.Module):
         embedder_path: str,
         ckpt_path: str | None,
         device: str,
+        train_config_path: str | None = None,
         llm_type: str = "mistral",
         embed_type: str = "mistral",
         max_batch_size: int = 4,
         param_dtype: torch.dtype = torch.float32,
         llm_number: int = 0,
     ):
-        with open(os.path.join(ckpt_path, "../../args.yaml"), "r") as f:
-            train_args = yaml.safe_load(f)
-            
-        lora_llm = LoraArgs(**train_args["lora_llm"])
-        lora_embedder = LoraArgs(**train_args["lora_embedder"])
+        
+        train_config_path = os.path.join(ckpt_path, "../../args.yaml") if train_config_path is None else train_config_path
+        if Path(train_config_path).exists():
+            with open(train_config_path, "r") as f:
+                train_args = yaml.safe_load(f)
+            lora_llm = LoraArgs(**train_args["lora_llm"])
+            lora_embedder = LoraArgs(**train_args["lora_embedder"])
+            freeze_embedder = train_args.get("freeze_embedder", False) # Needs to load trained embedder from another ckpt than the one from ckpt_path
+            embedder_ckpt_path = None if not freeze_embedder else Path(train_args["from_ckpt"]["embedder_path"])
+        else:
+            lora_llm = LoraArgs()
+            lora_embedder = LoraArgs()
+            freeze_embedder = False
+            embedder_ckpt_path = None
+
 
         llm_args, pipeline_args = load_args(
             Path(llm_path),
@@ -284,8 +295,8 @@ class EmbedAugPipeline(nn.Module):
         if lora_embedder.enable:
             embed_path = (
                 Path(ckpt_path + "/embedder")
-                if not train_args.get("freeze_embedder", False)
-                else Path(train_args["from_ckpt"]["embedder_path"])
+                if not freeze_embedder
+                else embedder_ckpt_path
             )
             assert (embed_path / "lora.safetensors").exists()
             logger.info(
@@ -330,8 +341,8 @@ class EmbedAugPipeline(nn.Module):
         ):
             embed_path = (
                 Path(ckpt_path + "/embedder")
-                if not train_args.get("freeze_embedder", False)
-                else Path(train_args["from_ckpt"]["embedder_path"])
+                if not freeze_embedder
+                else embedder_ckpt_path
             )
             logger.info("Loading embedder trained layers")
             embed_layers_state_dict = load_state_dict(embed_path, dtype=param_dtype)
@@ -371,7 +382,7 @@ class EmbedAugPipeline(nn.Module):
                 ),
             )
 
-            if train_args.get("freeze_embedder", False) and (
+            if freeze_embedder and (
                 pipeline_args.embedder_params.rec_tok
                 or pipeline_args.embedder_params.cont_tok
                 or pipeline_args.embedder_params.memory_tokens > 0
@@ -700,7 +711,7 @@ def load_pipeline(
     embedder_path: str,
     device: str,
     max_bs: int,
-    tmp_path: str = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/",
+    tmp_path: str = TMP_PATH,
     pipeline: EmbedAugPipeline | Transformer | None = None,
     mistral: bool = False,
     ckpt: int | None = None,
@@ -708,6 +719,7 @@ def load_pipeline(
     llm_type: str = "mistral",
     embed_type: str = "mistral",
     llm_number: int = 0,
+    train_config_path: str | None = None
 ) -> EmbedAugPipeline | Transformer:
     if not mistral:
         if pipeline is None:
@@ -740,6 +752,7 @@ def load_pipeline(
                 llm_type=llm_type,
                 embed_type=embed_type,
                 llm_number=llm_number,
+                train_config_path=train_config_path,
             )
 
             ckpt = int(last_ckpt.split("_")[-1])
@@ -764,7 +777,7 @@ def load_pipeline(
     else:
         if pipeline is None:
             mistral_model = MistralTransformer.from_folder(
-                "/lustre/scwpod02/client/kyutai-interns/hippop/models/mistral_7B/",
+                os.path.join(MODEL_PATH,"mistral_7B/"),
                 device=device,
                 max_batch_size=max_bs,
                 dtype=torch.float32,

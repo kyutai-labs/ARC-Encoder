@@ -1,16 +1,3 @@
-# /// script
-# requires-python = ">=3.10"
-# dependencies = [
-#     "argparse",
-#     "dataclasses",
-#     "pathlib",
-#     "setuptools",
-#     "vllm",
-#     "numpy",
-#     "transformers",
-#     "nltk",
-# ]
-# ///
 import argparse
 import json
 import random

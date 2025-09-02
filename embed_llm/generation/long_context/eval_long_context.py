@@ -31,6 +31,7 @@ from embed_llm.generation.utils import (
     ensure_reproducibility,
 )  # noqa: E402
 from embed_llm.monitoring.utils import set_logger  # noqa: E402
+from embed_llm import TMP_PATH, MODEL_PATH  # noqa: E402
 
 logger = logging.getLogger(__name__)
 EVAL_DATA_PATH = {
@@ -346,11 +347,8 @@ def arg_parser():
         type=int,
         default=None,
     )
-    parser.add_argument(
-        "--tmp_path",
-        type=str,
-        default="/lustre/scwpod02/client/kyutai-interns/hippop/tmp/ablations",
-    )
+    
+    
     # CEPED "hyen/CEPED-LLaMA-2-Chat-7B"
     # Baseline "meta-llama/Llama-2-7b-chat-hf", "meta-llama/Llama-3.1-8B"
     # Together Instruct "togethercomputer/Llama-2-7B-32K-Instruct"
@@ -364,11 +362,11 @@ if __name__ == "__main__":
     args = arg_parser()
 
     if args.eval_model == "ours":
-        llm_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B"
-        embed_path = "/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.2-3B"
+        llm_path = os.path.join(MODEL_PATH, "Llama3.1-8B")
+        embed_path = os.path.join(MODEL_PATH, "Llama3.2-3B")
         pipeline, ckpt = load_pipeline(
             run_name=args.model_name,
-            tmp_path=args.tmp_path,
+            tmp_path=TMP_PATH,
             llm_path=llm_path,
             embedder_path=embed_path,
             device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),

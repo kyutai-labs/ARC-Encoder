@@ -103,7 +103,7 @@ class TrainArgs(Serializable):
     # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
     continuation: float = 0.0
     llm_paths: list[str] | None = (
-        None  # Path to the directory containing the LLM model or model id: "mistral-small"
+        None  # Path to the directory containing the LLM model or model: "mistral-small"
     )
     llm_types: list[str] | None = (
         None  # List of model types to use, either "mistral" or "llama"

@@ -1,15 +1,3 @@
-# /// script
-# requires-python = ">=3.10"
-# dependencies = [
-#     "argparse",
-#     "dataclasses",
-#     "pathlib",
-#     "setuptools",
-#     "vllm",
-#     "numpy",
-#     "transformers",
-# ]
-# ///
 import argparse
 import json
 from pathlib import Path

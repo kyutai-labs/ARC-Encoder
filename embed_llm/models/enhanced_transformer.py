@@ -1,9 +1,7 @@
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-# import os
-# import pickle
-
+import os
 
 import numpy as np
 import torch
@@ -42,6 +40,7 @@ from embed_llm.models.transformer_layers import (
     insert_embeds,
     positions_from_sizes,
 )
+from embed_llm import TMP_PATH, MODEL_PATH  
 
 Tokenizer = MistralTokenizer | LlamaTokenizer
 
@@ -510,7 +509,7 @@ def load_model(
     llm_type: str = "mistral",
     embed_type: str = "mistral",
     number_of_llm: int = 1,
-    folder_w_models: str = "/lustre/scwpod02/client/kyutai-interns/hippop/models",
+    folder_w_models: str = MODEL_PATH,
 ) -> tuple[torch.nn.Module, int]:
     with torch.device("meta"):
         model = Transformer(
@@ -544,7 +543,7 @@ def load_model(
             model_path=folder_w_models + "/Llama3.1-8B/tokenizer.model"
         )
     elif llm_type == 'olmo' and not for_embedding:
-        tokenizer = OlmoTokenizer.from_file('/lustre/scwpod02/client/kyutai-interns/hippop/models/Olmo7B/tokenizer.json')
+        tokenizer = OlmoTokenizer.from_file(os.path.join(MODEL_PATH,'Olmo7B/tokenizer.json'))
     else:
         raise ValueError(f"Unknown llm_type: {llm_type} or embed_type: {embed_type}")
     return model, tokenizer
