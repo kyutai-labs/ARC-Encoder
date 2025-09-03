@@ -18,6 +18,7 @@ import torch.nn.functional as F
 from embeddings import encode_text, get_pretrained_embedder
 from index import Indexer
 from tqdm import tqdm
+from embed_llm import DATA_PATH
 
 
 class DeltaTimeFormatter(logging.Formatter):
@@ -290,54 +291,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     datapath = [
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/eval.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/test.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/test.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/commonsense_qa.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/freebase_qa.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/web_qa.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa_good_answer.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/wiki_qa.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/yahoo_qa.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_open_data/train.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/nq_data_old/train.jsonl", # Only one not done or not in process
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/triviaqa_data/train.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/msmarco_qa.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/factkg/factkg_test.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/factkg/factkg_dev.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/factkg/factkg_train.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Hotpot_qa_test.jsonl"
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Pisco_train_dataset.jsonl"
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/Pisco_train_dataset.jsonl",
-        '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/unfiltered_nocontext_triviaqa/trivia_qa_test.jsonl',
-        '/lustre/scwpod02/client/kyutai-interns/hippop/datasets/Question_Answering/unfiltered_nocontext_triviaqa/trivia_qa_train.jsonl',
+        DATA_PATH + "raw/nq_validation.jsonl",
+        DATA_PATH + "raw/triviaqa_validation.jsonl",
     ]
 
     output_path = [
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/triviaqa_data.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_data_old.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/commonsense_qa.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/freebase_qa.jsonl  ",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/web_qa.jsonl  ",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa_good_answer.jsonl  ",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/wiki_qa.jsonl  ",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/yahoo_qa.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_open_data.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/nq_data_old.jsonl", # Only one not done or not in process
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/triviaqa_data.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/msmarco_qa.jsonl ",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_test.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_dev.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/factkg_NVEmbed/factkg_train.jsonl"
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/Hotpot_qa_test.jsonl"
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/popqa_test.jsonl",
-        # "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/true_128_kilt_pisco_train_dataset.jsonl"
-        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl",
-        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_test.jsonl",
-        "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/QA_w_retrieved_passages_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_train.jsonl",
-        
+        DATA_PATH + "w_retrieved/nq_validation.jsonl",
+        DATA_PATH + "w_retrieved/triviaqa_validation.jsonl",
     ]
 
     set_logger(logging.INFO)
@@ -356,7 +316,7 @@ if __name__ == "__main__":
         n_subquantizers=args.n_subquantizers,
         n_bits=args.n_bits,
         indexing_batch_size=args.idx_bs,  # Should use a large enough batch to train the IndexPQ
-        pathname_embeddings=r"/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
+        pathname_embeddings=DATA_PATH + r"raw/Atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
         save_or_load_index=True,
         model_name="NVEmbed",
         split="all_indexed_PQ",

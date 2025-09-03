@@ -44,18 +44,12 @@ def encode(
 
 def get_sample(
     data: dict[str, object],
-    data_path: str,
     llm_tokenizer,
     embed_tokenizer,
     max_passages: int = 1,
+    instruct: bool = False,
 ) -> str:
-    if (
-        "instruct_data" in data_path.lower()
-        or "synthesized" in data_path.lower()
-        or "translation" in data_path.lower()
-        or "eval_qa" in data_path.lower()
-        or "eval_read" in data_path.lower()
-    ):
+    if instruct:
         question = data["question"]
 
         assert isinstance(data["answer"], str) or isinstance(data["answer"], list)
@@ -116,21 +110,7 @@ def get_sample(
 
     else:
         sample = data["text"]
-        if data.get("passage") is not None:
-            passages = data["passage"]
-
-            if max_passages <= -1:
-                n_embed = -max_passages
-            elif max_passages == 1:
-                n_embed = max_passages
-            elif max_passages > 1:
-                n_embed = random.randint(1, max_passages)
-
-            embed_passage = (
-                [passages] if not isinstance(passages, list) else passages[:n_embed]
-            )
-        else:
-            embed_passage = [sample]
+        embed_passage = [sample]
 
         assert isinstance(sample, str), sample
 

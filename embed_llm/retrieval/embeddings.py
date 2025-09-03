@@ -1,4 +1,3 @@
-from gritlm import GritLM
 from transformers import AutoTokenizer, AutoModel
 from nvembed.modeling_nvembed import custom_encode
 import os
@@ -8,6 +7,7 @@ from tqdm.auto import tqdm
 import json
 import numpy as np
 import argparse
+from embed_llm import DATA_PATH
 
 
 def mean_pooling(model_output, attention_mask):
@@ -22,11 +22,7 @@ def mean_pooling(model_output, attention_mask):
 
 
 def get_pretrained_embedder(model_name: str, device_map: str = "auto"):
-    if model_name == "GritLM":
-        model = GritLM("GritLM/GritLM-7B", torch_dtype="auto", device_map="auto")
-        return model
-
-    elif model_name == "Contriever":
+    if model_name == "Contriever":
         model = AutoModel.from_pretrained("facebook/contriever", device_map="auto")
         return model
     elif model_name == "NVEmbed":
@@ -44,7 +40,7 @@ def get_pretrained_embedder(model_name: str, device_map: str = "auto"):
 def encode_text(
     text: list[str] | str,
     model_name: str,
-    model: GritLM | AutoModel,
+    model: AutoModel,
     query_embedding: bool = True,
     tokenizer: AutoTokenizer | None = None,
     device: str = "cpu",
@@ -54,15 +50,8 @@ def encode_text(
     if isinstance(text, str):
         text = [text]
 
-    if model_name == "GritLM":
-        with torch.no_grad():
-            embedding = model.encode(text)
-        if device == "cpu":
-            return embedding.cpu().numpy()
-        else:
-            return embedding
 
-    elif model_name == "Contriever":
+    if model_name == "Contriever":
         tokenizer = (
             AutoTokenizer.from_pretrained("facebook/contriever")
             if tokenizer is None
@@ -143,15 +132,6 @@ def generate_embeddings(
         elif i >= end_partition:
             break
         else:
-            # for passage in row["text"]:  # All passages must be useful
-            #     # Truncate passages on the char level to 1024
-            #     used_texts.append(passage[:1024])
-            # All passages must be useful, atlas should already be preprocessed
-            # if len(row["text"]) < 20:
-            #     continue
-            # Truncate passages on the char level to 2048
-            # used_texts.append(row["text"][:2048].strip())
-            # used_texts.append({"id": row["id"], "text": row["text"].strip()})
             used_texts.append(row["text"][:2048].strip())
     count = 0
     embeddings_array = []
@@ -268,8 +248,8 @@ if __name__ == "__main__":
     output_path = args.save_output_path
     data_path = args.data_name_to_load
     bs = args.batch_size
-    output_path = "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/pisco_kilt_128_embeddings/"
-    data_path = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/KILT/pisco_kilt_128.jsonl"
+    output_path = DATA_PATH + "raw/Atlas_passages_embeddings"
+    data_path = DATA_PATH + "raw/Atlas_passages_validation.jsonl"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     generate_embeddings(
         "NVEmbed",

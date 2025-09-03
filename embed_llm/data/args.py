@@ -21,7 +21,7 @@ class DataArgs(Serializable):
         ""  # Each line in the jsonl files inside the data source directories must be a dictionary with a "text" key.
         # See Readme for more details. Can be left empty.
     )
-    
+    instruct: bool = False
     adapt_seq_len: bool = False
     interleave: bool = False  # Number of interleaved sequences to use for training. If > 0, the data will be interleaved.
     loss_last_cont_only: bool | None = (

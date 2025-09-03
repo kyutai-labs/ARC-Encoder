@@ -8,33 +8,36 @@ import torch
 import subprocess as sp
 from embed_llm.models.utils.utils import is_torchrun
 from embed_llm.generation.metrics import get_em, get_rouge_score
+from embed_llm import DATA_PATH
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 logger = logging.getLogger(__name__)
 
+       
+       
 EVAL_DATA_PATH = {
-    "NQ": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/nq_open_data.jsonl",  # nq_data.jsonl
-    "TRIVIAQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_QA_NVEmbed/unfiltered_nocontext_triviaqa/trivia_qa_valid.jsonl",  # unfiltered.nocontext
-    "SQUAD": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl",  # Dev set of the SQuAD v1 dataset
-    "DistractorHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl",
-    "CNN": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_Sum/cnn_dailymail_test.jsonl",
+    "NQ":  DATA_PATH + "w_retrieved/nq_validation.jsonl",  
+    "TRIVIAQA":  DATA_PATH + "w_retrieved/triviaqa_validation.jsonl", 
+    "SQUAD": DATA_PATH + "raw/squad_validation.jsonl",
+    "DistractorHotpotQA": DATA_PATH + "raw/hotpotqa_validation.jsonl",
+    "CNN": DATA_PATH + "raw/cnn_validation.jsonl",
 }
 
 METRIC_EVALUATION = {
     "NQ": get_em,
     "TRIVIAQA": get_em,
     "SQUAD": get_em,
-    "DistractorHotpotQA": get_em,  # Added for the Distractor HotpotQA dataset
-    "CNN": get_rouge_score,  # Added for the CNN dataset
+    "DistractorHotpotQA": get_em,  
+    "CNN": get_rouge_score,  
 }
 
 
 TRAD_DATA_PATH = {
-    "English": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/eng_Latn.jsonl",
-    "Spanish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/spa_Latn.jsonl",
-    "French": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/fra_Latn.jsonl",
-    "German": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/deu_Latn.jsonl",
-    "Danish": "/lustre/scwpod02/client/kyutai-interns/helium/eval/multilingual/flores/dan_Latn.jsonl",
+    "English":  DATA_PATH + "flores/eng_Latn.jsonl",
+    "Spanish":  DATA_PATH + "flores/spa_Latn.jsonl",
+    "French":  DATA_PATH + "flores/fra_Latn.jsonl",
+    "German":  DATA_PATH + "flores/deu_Latn.jsonl",
+    "Danish":  DATA_PATH + "flores/dan_Latn.jsonl",
 }
 
 

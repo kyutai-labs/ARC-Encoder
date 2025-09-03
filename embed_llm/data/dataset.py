@@ -38,44 +38,6 @@ def load_file(path: Path, world_size: int, rank: int) -> list[str]:
     return lines
 
 
-def maybe_load_local_dataset(
-    path: Path,
-    rank: int,
-    world_size: int,
-    llm_tokenizer: Tokenizer | None = None,  # type: ignore
-    embed_tokenizer: Tokenizer | None = None,  # type: ignore
-    max_passages: int = 1,
-) -> list[TokenSample]:
-    global _LOADED_DATASETS
-
-    if path in _LOADED_DATASETS:
-        return _LOADED_DATASETS[path]
-
-    main_logger_info(f"Loading {path} ...")
-    lines: list[str] = load_file(path, rank=rank, world_size=world_size)
-
-    data_list: list[TokenSample] = []
-    for line in lines:
-        data = json.loads(line)
-
-        if "rand" in data.keys() and float(data["rand"]) >= 0.8:
-            continue
-
-        data_sample: TokenSample = encode(
-            data,
-            llm_tokenizer=llm_tokenizer,
-            embed_tokenizer=embed_tokenizer,
-            data_path=str(path),
-            max_passages=max_passages,
-        )
-        data_list.append(data_sample)
-
-    main_logger_info(f"{path} loaded and tokenized.")
-    _LOADED_DATASETS[path] = data_list
-
-    return _LOADED_DATASETS[path]
-
-
 @dataclass
 class DataDir:
     path: Path
@@ -365,6 +327,7 @@ def build_dataset(
             is_finite=is_eval,
             seed=seed,
             max_passages=args.max_passages,
+            instruct=args.instruct,
         )
         for source in sources
     ]
@@ -415,6 +378,7 @@ def get_dataset_iterator(
     embed_tokenizer: Tokenizer,  # type: ignore
     seed: int | None = None,
     max_passages: int = 1,
+    instruct: bool = False,
 ) -> Iterator[TokenSample]:
     jsonl_files = source.jsonl_files
     rng: np.random.RandomState | None = (
@@ -434,6 +398,7 @@ def get_dataset_iterator(
                     llm_tokenizer=llm_tokenizer,
                     embed_tokenizer=embed_tokenizer,
                     max_passages=max_passages,
+                    instruct=instruct,
                 )
     else:
         # eval mode
@@ -445,6 +410,7 @@ def get_dataset_iterator(
                 llm_tokenizer=llm_tokenizer,
                 embed_tokenizer=embed_tokenizer,
                 max_passages=max_passages,
+                instruct=instruct,
             )
 
 
@@ -455,6 +421,7 @@ def lazy_load_and_yield(
     llm_tokenizer: Tokenizer | None = None,  # type: ignore
     embed_tokenizer: Tokenizer | None = None,  # type: ignore
     max_passages: int = 1,
+    instruct: bool = False,
 ):
     with jsonl_file.open() as file_handle:
         for idx, line in enumerate(file_handle):
@@ -470,8 +437,8 @@ def lazy_load_and_yield(
                 data,
                 llm_tokenizer=llm_tokenizer,
                 embed_tokenizer=embed_tokenizer,
-                data_path=str(jsonl_file),
                 max_passages=max_passages,
+                instruct=instruct,
             )
 
 def interleave_iterators(iterators: list[Iterator], probabilities, rng):
