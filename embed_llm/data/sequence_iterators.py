@@ -98,7 +98,7 @@ def sequence_iterator_reconstruction(
 
             bos = llm_tokenizer.tokenizer.bos_id in new_embed
             eos = llm_tokenizer.tokenizer.eos_id in new_embed
-            if llm_tokenizer.tokenizer.model_name == "llama":
+            if "llama" in llm_tokenizer.tokenizer.model_name:
                 new_text = llm_tokenizer.tokenizer.decode(new_embed, skip_special_tokens=True)
             else:
                 new_text = llm_tokenizer.tokenizer.decode(new_embed)

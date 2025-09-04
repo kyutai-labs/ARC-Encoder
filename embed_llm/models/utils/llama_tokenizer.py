@@ -18,6 +18,7 @@ from typing import (
 )
 
 import tiktoken
+from sentencepiece import SentencePieceProcessor
 from tiktoken.load import load_tiktoken_bpe
 
 
@@ -233,3 +234,83 @@ class ChatFormat:
         # Add the start of an assistant message for the model to complete.
         tokens.extend(self.encode_header({"role": "assistant", "content": ""}))
         return tokens
+
+
+
+class Tokenizer_Llama2:
+    """tokenizing and encoding/decoding text using SentencePiece."""
+    def __init__(self, model_path: str):
+        """
+        Initializes the Tokenizer with a SentencePiece model.
+
+        Args:
+            model_path (str): The path to the SentencePiece model file.
+        """
+        # reload tokenizer
+        assert os.path.isfile(model_path), model_path
+        self.sp_model = SentencePieceProcessor(model_file=model_path)
+        logger.info(f"Reloaded SentencePiece model from {model_path}")
+
+        # BOS / EOS token IDs
+        self.n_words: int = self.sp_model.vocab_size()
+        self.bos_id: int = self.sp_model.bos_id()
+        self.eos_id: int = self.sp_model.eos_id()
+        self.pad_id: int = self.sp_model.pad_id()
+
+        self.special_tokens = {
+            "<s>": self.bos_id,
+            "</s>": self.eos_id,
+            "<unk>": self.pad_id,
+        }
+        logger.info(
+            f"#words: {self.n_words} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}"
+        )
+        assert self.sp_model.vocab_size() == self.sp_model.get_piece_size()
+
+    def encode(self, s: str, bos: bool, eos: bool) -> List[int]:
+        """
+        Encodes a string into a list of token IDs.
+
+        Args:
+            s (str): The input string to be encoded.
+            bos (bool): Whether to prepend the beginning-of-sequence token.
+            eos (bool): Whether to append the end-of-sequence token.
+
+        Returns:
+            List[int]: A list of token IDs.
+        """
+        
+        if isinstance(s, str):
+            new_s = [s]
+        else:
+            new_s = s
+        out = []
+        for s_ in new_s:  
+            assert type(s_) is str
+            t = self.sp_model.encode(s_)
+            if bos:
+                t = [self.bos_id] + t
+            if eos:
+                t = t + [self.eos_id]
+            out.append(t)
+        return out if isinstance(s, list) else out[0]
+
+
+    def decode(self, t: List[int], skip_special_tokens = False) -> str:
+        """
+        Decodes a list of token IDs into a string.
+
+        Args:
+            t (List[int]): The list of token IDs to be decoded.
+
+        Returns:
+            str: The decoded string.
+        """
+        if len(t) == 0:
+            return ""
+        text = self.sp_model.decode(t)
+        if skip_special_tokens:
+            # Remove special tokens from the decoded text
+            for token in self.special_tokens.keys():
+                text = text.replace(token, "")
+        return text

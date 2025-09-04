@@ -410,7 +410,7 @@ if __name__ == "__main__":
     args = arg_parser()
 
     if args.eval_model == "ours":
-        llm_path = os.path.join(MODEL_PATH, "Llama3.1-8B")
+        llm_path = os.path.join(MODEL_PATH, "Llama2-7B-Chat")
         embed_path = os.path.join(MODEL_PATH, "Llama3.2-3B")
         pipeline, ckpt = load_pipeline(
             run_name=args.model_name,
@@ -421,12 +421,8 @@ if __name__ == "__main__":
             max_bs=1,
             comp_rate=args.comp_rate,
             bridge_ckpt=None,
-            llm_type="llama"
-            if llm_path is not None and "llama" in llm_path.lower()
-            else "mistral",
-            embed_type="llama"
-            if embed_path is not None and "llama" in embed_path.lower()
-            else "mistral",
+            llm_type="llama_2",
+            embed_type="llama",
         )
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

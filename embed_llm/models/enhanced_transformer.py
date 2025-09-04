@@ -19,6 +19,7 @@ from embed_llm.models.utils.mistral_tokenizer import (
     load_tokenizer as load_mistral_tokenizer,
 )
 from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
+from embed_llm.models.utils.llama_tokenizer import Tokenizer_Llama2
 from embed_llm.models.utils.olmo_tokenizer import Tokenizer as OlmoTokenizer
 from embed_llm.training.distributed import (
     get_rank,
@@ -539,9 +540,12 @@ def load_model(
     elif (llm_type == "llama" and not for_embedding) or (
         embed_type == "llama" and for_embedding
     ):
-        tokenizer = LlamaTokenizer(
-            model_path=folder_w_models + "/Llama3.1-8B/tokenizer.model"
-        )
+        if (llm_type == "llama_2" and not for_embedding) or (embed_type == "llama_2" and for_embedding):
+            tokenizer = Tokenizer_Llama2(model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama2-7B-Chat/tokenizer.model")
+        else:
+            tokenizer = LlamaTokenizer(
+                model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B/tokenizer.model")       
+            
     elif llm_type == 'olmo' and not for_embedding:
         tokenizer = OlmoTokenizer.from_file(os.path.join(MODEL_PATH,'Olmo7B/tokenizer.json'))
     else:
