@@ -32,6 +32,7 @@ class DataArgs(Serializable):
     chunk_to: int | None = None
     max_passages: int = 1  # Maximum number of passages to use per loaded sample (if several retrieved passages in the dataset).
     n_eval_batchs: int = 40
+    instruct_decoder: bool = False  # If True, only the decoder will be instructed (for encoder-decoder models).
     
     def __post_init__(self) -> None:
         if self.prefix is not None:

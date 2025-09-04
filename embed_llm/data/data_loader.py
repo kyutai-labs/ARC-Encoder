@@ -14,6 +14,7 @@ class Batch:
     to_embed: list[dict[list[str], list[list[int]]]] # A batch is a list of dicts within each dict: tokens and text, tokens are a list of lists 
     sizes: list[int]
     batch_size: int
+    instruct_prompt: list[str] | None = None
     y_mask: np.ndarray | None = None
     is_pad_only: bool = False
     data_type: str = "reconstruction"
@@ -62,6 +63,7 @@ class Batchlist:
     insert_embed_list: list[list[list[int]]] | None = None
     sizes: list[list[int]] = dataclasses.field(default_factory=list)
     y_mask: list[list[bool]] = dataclasses.field(default_factory=list)
+    instruct_prompt: list[list[str]] | None = None
     data_type: str = None
 
     def __post_init__(self):
@@ -86,6 +88,7 @@ class Batchlist:
         y_mask: list[bool],
         data_type: str,
         insert_embed_list: list[list[int]] | None = None,
+        instruct_prompt: list[str] | None = None,
     ):
         self.x.append(x)
         self.y.append(y)
@@ -100,6 +103,11 @@ class Batchlist:
             if self.insert_embed_list is None:
                 self.insert_embed_list = []
             self.insert_embed_list.append(insert_embed_list)
+            
+        if instruct_prompt is not None:
+            if self.instruct_prompt is None:
+                self.instruct_prompt = []
+            self.instruct_prompt.append(instruct_prompt)
 
         assert self.data_type == data_type
 
@@ -111,6 +119,7 @@ class Batchlist:
         self.sizes = []
         self.y_mask = []
         self.data_type = None
+        self.instruct_prompt = None
 
     @staticmethod
     def flatten_to_numpy(list_of_lists: list[list[object]], dtype) -> np.ndarray:
@@ -122,10 +131,17 @@ class Batchlist:
         x_np: np.ndarray = self.flatten_to_numpy(self.x, dtype=np.int64)
         y_np: np.ndarray = self.flatten_to_numpy(self.y, dtype=np.int64)
         sizes = sum(self.sizes, [])  # noqa
+        
         if self.insert_embed_list is not None:
             insert_embed_list = sum(self.insert_embed_list, [])  # noqa
         else:
             insert_embed_list = None
+            
+        if self.instruct_prompt is not None:
+            instruct_prompt = sum(self.instruct_prompt, [])
+        else:
+            instruct_prompt = None
+            
         to_embed = sum(self.to_embed, [])  # noqa
 
         y_mask_flatten = self.flatten_to_numpy(self.y_mask, dtype=bool)
@@ -140,6 +156,7 @@ class Batchlist:
             y_mask=y_mask_np,
             data_type=self.data_type,
             insert_embed_list=insert_embed_list,
+            instruct_prompt=instruct_prompt,
         )
 
 
@@ -196,6 +213,7 @@ def build_data_loader(
             sample.mask,
             data_type=sample.data_type,
             insert_embed_list=sample.insert_embed_list,
+            instruct_prompt=sample.instruct_prompt,  # type: ignore
         )
 
         if len(batch_list) == batch_size:

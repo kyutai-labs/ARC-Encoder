@@ -8,12 +8,13 @@ from nltk.tokenize import sent_tokenize
 
 import nltk  # type: ignore
 from vllm import LLM, SamplingParams  # type: ignore
+from embed_llm import DATA_PATH
 
 nltk.download("punkt")
 
-ATLAS_PATH = ".../atlas.jsonl"
-ARXIV_PATH = ".../arxiv.jsonl"
-PG19_PATH = ".../pg19_train.jsonl"
+ATLAS_PATH = DATA_PATH + 'raw/Atlas_passages_validation.jsonl'
+ARXIV_PATH = DATA_PATH + 'raw/arxiv.jsonl'
+PG19_PATH = DATA_PATH + 'raw/pg19.jsonl'
 
 
 PREFIX = {
@@ -439,7 +440,6 @@ def arg_parser():
     parser.add_argument(
         "--output_path",
         type=str,
-        default="/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/synthesized/",
     )
 
     parser.add_argument(

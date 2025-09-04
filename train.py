@@ -29,6 +29,7 @@ from embed_llm.monitoring.metrics_logger import (
     get_train_logs,
     train_log_msg,
 )
+from functools import partial
 from embed_llm.monitoring.utils import set_logger
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.checkpointing import Checkpointer
@@ -345,7 +346,7 @@ def _train(
             """ Training loop for basic reconstruction"""
 
             x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
-                pipeline.prepare_forward(batch)
+                pipeline.prepare_forward(batch, args.data.instruct_decoder)
             )
             if len(args.llm_paths) > 1:
                 llm_number = random.choices(
@@ -608,7 +609,8 @@ def _train(
 
             evaluate(
                 model=model,
-                prepare_batch_fn=pipeline.prepare_forward,
+                prepare_batch_fn=partial(pipeline.prepare_forward,
+                                         instruct_decoder=args.data.instruct_decoder),
                 batches_rec=eval_batches,
                 state=state,
                 batches_cont=eval_batches_4cont,

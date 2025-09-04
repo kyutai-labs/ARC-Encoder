@@ -144,6 +144,7 @@ def sequence_iterator(
     loss_last_cont_only: bool = False,  # If True, the loss will be computed only on the last continuation token.
     sep_passages: bool = False,  # If True, passages will be separated by a special token in the input sequence.
     chunk_to: int | None = None,
+    instruct_decoder: bool = False,  # If True, the decoder will be used for instruction data.
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -157,6 +158,8 @@ def sequence_iterator(
     n_missing_cont = (
         seq_len * 2 + int(interleave) * seq_len 
     )
+    instruct_prompt: list[str] = []
+    instruct_prompt_cont: list[str] = []
 
     x_buffer_cont: list[int] = []
     y_buffer_cont: list[int] = []
@@ -198,6 +201,7 @@ def sequence_iterator(
                         data_type="continuation",
                         cur_pos=cur_pos,
                         interleave=interleave,
+                        instruct_prompt=instruct_prompt_cont if instruct_decoder else None,
                     )
                     )
   
@@ -210,6 +214,7 @@ def sequence_iterator(
                     to_embed_buffer_cont = []
                     insert_embed_cont_list = []
                     sizes_cont = []
+                    instruct_prompt_cont = []
                     n_missing_cont = (
                         seq_len * 2 + int(interleave) * seq_len
                     )  # 2*seq_len for compressed tokens and contionuation, + the ones for text before compressed tokens
@@ -223,6 +228,7 @@ def sequence_iterator(
                         mask_buffer_cont,
                         n_missing_cont,
                         sizes_cont,
+                        instruct_prompt_cont,
                     ) = res
                     cur_pos = 0
                     break
@@ -249,6 +255,7 @@ def sequence_iterator(
                     loss_last_cont_only=loss_last_cont_only,  # If True, the loss will be computed only on the last continuation token.
                     sep_passages=sep_passages,
                     chunk_to=chunk_to,
+                    instruct_prompt=instruct_prompt if instruct_decoder else None,
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -259,6 +266,7 @@ def sequence_iterator(
                     to_embed_buffer = []
                     insert_embed_list = []
                     sizes = []
+                    instruct_prompt = []
                     n_missing = seq_len
                     cur_pos = res[1]
                 else:
@@ -271,6 +279,7 @@ def sequence_iterator(
                         n_missing,
                         sizes,
                         few_shot_instruct,
+                        instruct_prompt,
                     ) = res
                     cur_pos = 0
                     break
@@ -300,6 +309,7 @@ def sequence_iterator(
                     if int(continuation) == 1 or isinstance(continuation, float)
                     else "reconstruction"
                 ),
+                instruct_prompt=instruct_prompt if instruct_decoder else None,
             )
 
 
@@ -327,6 +337,7 @@ def build_dataset(
             is_finite=is_eval,
             seed=seed,
             max_passages=args.max_passages,
+            instruct_decoder=args.instruct_decoder,
             instruct=args.instruct,
         )
         for source in sources
@@ -346,6 +357,7 @@ def build_dataset(
             loss_last_cont_only=args.loss_last_cont_only,
             sep_passages=args.sep_passages,
             chunk_to=args.chunk_to,
+            instruct_decoder=args.instruct_decoder,
         )
         for fs, it in zip(few_shots, dataset_iterators)
     ]
@@ -379,6 +391,7 @@ def get_dataset_iterator(
     seed: int | None = None,
     max_passages: int = 1,
     instruct: bool = False,
+    instruct_decoder: bool = False,  # If True, the decoder will be used for instruction data
 ) -> Iterator[TokenSample]:
     jsonl_files = source.jsonl_files
     rng: np.random.RandomState | None = (
@@ -398,6 +411,7 @@ def get_dataset_iterator(
                     llm_tokenizer=llm_tokenizer,
                     embed_tokenizer=embed_tokenizer,
                     max_passages=max_passages,
+                    instruct_decoder=instruct_decoder,
                     instruct=instruct,
                 )
     else:
@@ -411,6 +425,7 @@ def get_dataset_iterator(
                 embed_tokenizer=embed_tokenizer,
                 max_passages=max_passages,
                 instruct=instruct,
+                instruct_decoder=instruct_decoder,
             )
 
 
@@ -422,6 +437,7 @@ def lazy_load_and_yield(
     embed_tokenizer: Tokenizer | None = None,  # type: ignore
     max_passages: int = 1,
     instruct: bool = False,
+    instruct_decoder: bool = False,  # If True, the decoder will be used for instruction data
 ):
     with jsonl_file.open() as file_handle:
         for idx, line in enumerate(file_handle):
@@ -439,6 +455,7 @@ def lazy_load_and_yield(
                 embed_tokenizer=embed_tokenizer,
                 max_passages=max_passages,
                 instruct=instruct,
+                instruct_decoder=instruct_decoder,
             )
 
 def interleave_iterators(iterators: list[Iterator], probabilities, rng):

@@ -774,11 +774,7 @@ if __name__ == "__main__":
     icl_tests = [0, 5] if args.n_icl_exs is None else [args.n_icl_exs]
     ensure_reproducibility(29)
 
-    output_file = (
-        "/home/hippolytepilchen/code/hp_v2/results/NVEmbed/mistral/eval_mistral_translate.json"
-        if args.out_file is None
-        else args.out_file
-    )
+    output_file = args.out_file
 
     if not os.path.exists(output_file):
         with open(output_file, "w") as f:

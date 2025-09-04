@@ -31,14 +31,15 @@ from embed_llm.generation.utils import (
     ensure_reproducibility,
 )  # noqa: E402
 from embed_llm.monitoring.utils import set_logger  # noqa: E402
-from embed_llm import TMP_PATH, MODEL_PATH  # noqa: E402
+from embed_llm.models.utils.utils import format_for_chat  # noqa: E402
+from embed_llm import TMP_PATH, MODEL_PATH, DATA_PATH  # noqa: E402
 
 logger = logging.getLogger(__name__)
 EVAL_DATA_PATH = {
-    "NQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/long_context/narrativeqa_valid.jsonl",
-    "Qspr": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/long_context/qasper_valid.jsonl",
-    "GvRp": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/long_context/govreport_valid.jsonl",
-    "QMSum": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/long_context/qmsum_valid.jsonl",
+    "NQA":  DATA_PATH + "long_context/narrativeqa_validation.jsonl",
+    "Qspr":  DATA_PATH + "long_context/qasper_validation.jsonl",
+    "GvRp":  DATA_PATH + "long_context/govreport_validation.jsonl",
+    "QMSum": DATA_PATH + "long_context/qmsum_validation.jsonl",
 }
 
 
@@ -152,10 +153,26 @@ def evaluate_long_context(
             test_item = inputs.pop("test_item")
 
             if eval_model == "ours":
+                  # print('Embed seqlens before pooling',inputs["embed_seqlens"])
                 embeddings, embed_seqlens = pipeline.model.embedder.forward_embedder(
-                    input_ids=inputs["embeddings"], seqlens=inputs["embed_seqlens"]
+                    input_ids=torch.tensor(inputs["embeddings"]).to(device),
+                    seqlens=sum(inputs["embed_seqlens"], []),
                 )
                 embed_seqlens = [embed_seqlens]
+                embeddings = embeddings[: inputs["n_toks_left"]]
+                new_embed_seqlens = []
+                ind = 0
+                for size in embed_seqlens[0]:
+                    if ind + size > inputs["n_toks_left"]:
+                        size = inputs["n_toks_left"] - ind
+                        if size > 0:
+                            new_embed_seqlens.append(size)
+                        break
+
+                    new_embed_seqlens.append(size)
+                    ind += size
+                embed_seqlens = [new_embed_seqlens]
+
                 if pipeline.model.embedder.cont_tok is not None:
                     sp_cont_tok = pipeline.model.embedder.cont_tok(
                         torch.tensor([0]).to(embeddings.device)
@@ -181,29 +198,60 @@ def evaluate_long_context(
 
                         ind_new += 1
 
-                    embed_seqlens = [[size + 1 for size in embed_seqlens]]
+                    embed_seqlens = [[size + 1 for size in embed_seqlens[0]]]
                     embeddings = new_embeddings.clone()
-
                 if pipeline.model.bridge_module is not None:
                     embeddings = pipeline.model.bridge_module(embeddings)
+                inputs["insertion_lists"] = [0] * len(
+                    embed_seqlens[0]
+                )  # Insert after BOS token
+                prefix_prompt = (
+                    inputs["instruct"].split("||")[0]
+                    if inputs["instruct"] is not None
+                    else ""
+                )
+                instr_prompt = (
+                    inputs["instruct"].split("||")[1]
+                    if inputs["instruct"] is not None
+                    else ""
+                )
+                suffix_prompt = (
+                    inputs["instruct"].split("||")[2]
+                    if inputs["instruct"] is not None
+                    else ""
+                )
 
+                new_toks, _, insert_list, _ = format_for_chat(
+                    [],
+                    inputs["insertion_lists"],
+                    pipeline.llm_tokenizer.tokenizer,
+                    mask=None,
+                    system_message=None,
+                    instruct_prompt=instr_prompt,
+                    prefix_prompt=prefix_prompt,
+                    suffix_prompt=suffix_prompt,
+                    generation=True,
+                )
                 eos_id = pipeline.llm_tokenizer.tokenizer.eos_id
+
                 generated_tokens = transformer_generate(
-                    prompt_tokens=inputs["prompt_tokens"],
-                    insertion_lists=inputs["insertion_lists"],
+                    prompt_tokens=[new_toks],  # Since one batch
+                    insertion_lists=[insert_list],
                     model=pipeline.model.llm,
                     max_tokens=max_seq_len,
-                    temperature=0.0,
+                    temperature=0.7 if benchmark == "GvRp" else 0.0,
                     eos_id=eos_id,
                     embed_seqlens=embed_seqlens,
                     cat_embeddings=embeddings,
                 )
 
+
                 produced_text = [
                     pipeline.llm_tokenizer.tokenizer.decode(generated_tokens[i])
                     for i in range(len(generated_tokens))
                 ]
-                prediction = [text.split("\n\n")[0].strip() for text in produced_text]
+                prediction = [text.strip() for text in produced_text][0]
+
 
             else:
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -411,12 +459,7 @@ if __name__ == "__main__":
     else:
         benchmarks = [args.benchmarks]
 
-    output_file = (
-        "/home/hippolytepilchen/code/hp_v2/results/long_context/eval.json"
-        if args.out_file is None
-        else args.out_file
-    )
-
+    output_file = args.out_file
     if not os.path.exists(output_file):
         with open(output_file, "w") as f:
             json.dump({}, f)

@@ -19,6 +19,7 @@ DOC_TEMPLATE = {
     "NQA": "Story:\n{text}",
     "Qspr": "Article:\n{text}",
     "GvRp": "Report:\n{text}",
+    "SSFD": "Episode Script:\n{text}",
     "QMSum": "Transcript:\n{text}",
 }
 
@@ -26,6 +27,7 @@ DATA_TEMPLATE = {
     "NQA": "{instruction}Question:\n{question}\n\nAnswer:\n{answer}",
     "Qspr": "{instruction}Question:\n{question}\n\nAnswer:\n{answer}",
     "GvRp": "{instruction}Summary:\n{answer}",
+    "SSFD": "{instruction}Summary:\n{answer}",
     "QMSum": "{instruction}Query:\n{question}\n\nAnswer:\n{answer}",
 }
 
@@ -33,14 +35,8 @@ TRUNCATE_SEPARATOR = {
     "NQA": "... [The rest of the story is omitted]\n\n",
     "Qspr": "... [The rest of the article is omitted]\n\n",
     "GvRp": "... [The rest of the report is omitted]\n\n",
+    "SSFD": "... [The rest of the episode script is omitted]\n\n",
     "QMSum": "... [The rest of the transcript is omitted]\n\n",
-}
-
-INSTRUCTION = {
-    "NQA": "You are given a story, which can be either a novel or a movie script, and a question. Answer the question as concisely as you can, using a single phrase if possible.\n\n",
-    "Qspr": 'You are given a scientific article and a question. Answer the question as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write "unanswerable". If the question is a yes/no question, answer "yes", "no", or "unanswerable".\n\n',
-    "GvRp": "Instruction: You are given a report by a government agency. Write a one-page summary of the report.\n",
-    "QMSum": "You are given a meeting transcript and a query containing a question or instruction. Answer the query in one or more sentences.\n\n",
 }
 
 
@@ -167,7 +163,7 @@ class TestItem:
 
         input_max_length = input_max_length - generation_max_length
 
-        prefix_input_ids, prefix_attn_mask, overflown_text = self.format_decoder_inputs(
+        prefix_input_ids, prefix_attn_mask, _ = self.format_decoder_inputs(
             self.test_documents,
             self.test_text,
             input_max_length,
@@ -189,49 +185,67 @@ class TestItem:
 
     def get_text(
         self,
-        context_max_length: int,
-        concat_N: int,
+        input_max_length: int,
         llm_tokenizer,
+        concat_N: int,
         compressor_tokenizer,
+        max_chunks: int | None = -1,
+        generation_max_length: int | None = 1024,
     ):
         model_inputs = {}
         decoder_input = self.test_text
+        assert len(self.test_documents) == 1, (
+            f"Only one document is expected for Ours model w long context eval {len(self.test_documents)}"
+        )
+
+        suffix = "Answer:\n" if "Answer:" in self.test_text else "Summary:\n"
+        decoder_input = decoder_input.replace("\n\nAnswer:\n", "").replace(
+            "Summary:\n", ""
+        )
+
+        model_inputs["instruct"] = (
+            DOC_TEMPLATE[self.dataset_name].format(text="")
+            + "||"
+            + decoder_input
+            + "||"
+            + suffix
+        )
+        n_toks_left = (
+            input_max_length
+            - len(
+                llm_tokenizer.encode(model_inputs["instruct"], bos = False, eos = False))
+            - generation_max_length
+        )
         passage_tokens = compressor_tokenizer.encode(
-            self.test_documents, bos=False, eos=False
-        )[:context_max_length]
-        passage_tokens = [
-            passage_tokens[ind : ind + len(passage_tokens) // concat_N]
-            for ind in range(0, len(passage_tokens), len(passage_tokens) // concat_N)
-        ]
-        encoder_text_input = [
-            DOC_TEMPLATE[self.dataset_name].format(
-                text=compressor_tokenizer.decode(passage, skip_special_tokens=True)
-            )
-            for passage in passage_tokens
-        ]
-        encoder_inputs = [
-            compressor_tokenizer.encode(text, bos=False, eos=False)
-            for text in encoder_text_input
-        ]
+            self.test_documents[0], bos=False, eos=False
+        )
+
+        if max_chunks is None:
+            max_chunks = -1
+
+        if len(passage_tokens) < concat_N:
+            # if the passage is shorter than concat_N, we just use the whole passage
+            passage_tokens = [passage_tokens]
+        else:
+            passage_tokens = [
+                passage_tokens[ind : ind + concat_N]
+                for ind in range(0, len(passage_tokens), concat_N)
+            ][:max_chunks]
+
+        encoder_inputs = passage_tokens
         model_inputs["embed_seqlens"] = [
-            len(encoder_input) for encoder_input in encoder_inputs
+            [len(encoder_input) for encoder_input in encoder_inputs]
         ]
-        model_inputs["embeddings"] = torch.cat(
-            [
-                compressor_tokenizer.encode(text, bos=False, eos=False)
-                for text in encoder_text_input
-            ],
-            dim=0,
-        )
-        model_inputs["prompt_tokens"] = llm_tokenizer.encode(
-            decoder_input, add_special_tokens=False, bos=True, eos=False
-        )
-        model_inputs["insertion_lists"] = [1]  # Insert after BOS token
+    
+        model_inputs["embeddings"] = encoder_inputs
+        model_inputs["embeddings"] = sum(model_inputs["embeddings"], [])
+        model_inputs["insertion_lists"] = [0]*len(model_inputs["embeddings"]) #  Insert after BOS token
+        model_inputs["n_toks_left"] = n_toks_left
+
         return model_inputs
 
     def get_context_inputs(
         self,
-        eval_model: str,
         input_max_length: int,
         generation_max_length: int,
         context_max_length: int,
@@ -268,7 +282,7 @@ class TestItem:
 
         # get the encoder input ids (called context inputs here)
         if len(context_text) > 0:
-            # print('Len context before', len(context_text))
+            # print('Len context', len(context_text))
             context_inputs = tokenizer(
                 context_text,
                 return_tensors="pt",
@@ -279,8 +293,6 @@ class TestItem:
                 truncation=True,
                 add_special_tokens=False,
             )
-            # print('Len context text', len(context_text[0]))
-            # print('CONTEXT INPUTS', context_inputs.input_ids.shape)
 
             # unsqueeze bc we expect shape of bsz, n_context, seq_len
             encoder_input_ids = context_inputs.input_ids.unsqueeze(0)
@@ -316,6 +328,7 @@ class TestItemDataset(Dataset):
         input_max_length: int | None = None,
         context_max_length: int | None = None,
         concat_N: int | None = None,
+        max_chunks: int | None = None,
     ):
         self.eval_model = eval_model
         self.dataset_name = dataset_name
@@ -326,6 +339,7 @@ class TestItemDataset(Dataset):
         self.context_max_length = context_max_length
         self.input_max_length = input_max_length
         self.concat_N = concat_N
+        self.max_chunks = max_chunks
 
     def __len__(self):
         return len(self.test_data)
@@ -335,7 +349,6 @@ class TestItemDataset(Dataset):
 
         if "cepe" in self.eval_model:
             inputs = test_item.get_context_inputs(
-                self.eval_model,
                 self.input_max_length,
                 self.generation_max_length,
                 self.context_max_length,
@@ -350,10 +363,12 @@ class TestItemDataset(Dataset):
             )
         elif "ours" in self.eval_model:
             inputs = test_item.get_text(
-                self.context_max_length,
-                self.concat_N,
+                self.input_max_length,
                 self.llm_tokenizer,
+                self.concat_N,
                 self.compressor_tokenizer,
+                self.max_chunks,
+                self.generation_max_length,
             )
 
         inputs["original_data"] = self.test_data[idx]

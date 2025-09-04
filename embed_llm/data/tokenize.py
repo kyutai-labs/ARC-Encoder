@@ -38,8 +38,10 @@ def encode(
     embed_tokenizer: Tokenizer | None = None,  # type: ignore
     data_path: str | None = None,
     max_passages: int = 1,
+    instruct: bool = False,
+    instruct_decoder: bool = False,
 ) -> TokenSample | None:
-    return get_sample(data, data_path, llm_tokenizer, embed_tokenizer, max_passages)
+    return get_sample(data, data_path, llm_tokenizer, embed_tokenizer, max_passages, instruct, instruct_decoder=instruct_decoder)
 
 
 def get_sample(
@@ -48,6 +50,7 @@ def get_sample(
     embed_tokenizer,
     max_passages: int = 1,
     instruct: bool = False,
+    instruct_decoder: bool = False,
 ) -> str:
     if instruct:
         question = data["question"]
@@ -87,13 +90,25 @@ def get_sample(
                 embed_passage = [data["passages"]]
         else:
             raise ValueError("No passage or passages key found in data")
+        
+        if "instruction" in data.keys():
+            instruct = data["instruction"]
+        else:
+            instruct = None
 
         assert isinstance(question, str), question
-
-        question = TEMPLATE_FOR_QA.format(question=question)
-
-        q_tokens = llm_tokenizer.tokenizer.encode(question, bos=False, eos=False)
-        a_tokens = llm_tokenizer.tokenizer.encode(answer, bos=False, eos=True)
+        
+        if question == "":
+            q_tokens = []
+            a_tokens = llm_tokenizer.tokenizer.encode(
+                answer, bos=False, eos=True if not instruct_decoder else False
+            )
+        else:
+            question = TEMPLATE_FOR_QA.format(question=question)
+            q_tokens = llm_tokenizer.tokenizer.encode(question, bos=False, eos=False)
+            a_tokens = llm_tokenizer.tokenizer.encode(
+                answer, bos=False, eos=True if not instruct_decoder else False
+            )
 
         masks = [False] * len(q_tokens) + [True] * len(a_tokens)
         # masks = [True] * len(q_tokens) + [True] * len(a_tokens)
@@ -114,7 +129,12 @@ def get_sample(
 
         assert isinstance(sample, str), sample
 
-        tokens = llm_tokenizer.tokenizer.encode(sample, bos=True, eos=True)
+        tokens = llm_tokenizer.tokenizer.encode(
+            sample,
+            bos=True if not instruct_decoder else False,
+            eos=True if not instruct_decoder else False,
+        )
+
 
         masks = [True] * len(tokens)
 

@@ -50,9 +50,9 @@ from transformers.models.llama.configuration_llama import LlamaConfig
 
 
 # # if is_flash_attn_available():
-from flash_attn import flash_attn_func, flash_attn_varlen_func
-from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
-from flash_attn.layers.rotary import apply_rotary_emb_func
+# from flash_attn import flash_attn_func, flash_attn_varlen_func
+# from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
+# from flash_attn.layers.rotary import apply_rotary_emb_func
 
 
 logger = logging.get_logger(__name__)

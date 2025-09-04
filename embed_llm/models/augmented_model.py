@@ -10,7 +10,7 @@ from torch.nn import ModuleList
 from embed_llm.data.data_loader import Batch
 from embed_llm.generation.utils import eval_logger_info
 from embed_llm.models.args import PipelineArgs, LoraArgs
-from embed_llm.models.utils.utils import group_embed_seqlens, is_torchrun
+from embed_llm.models.utils.utils import group_embed_seqlens, is_torchrun, format_for_chat
 from embed_llm.models.embedding_modules import EmbProjector
 from embed_llm.models.utils.loading import (
     load_args,
@@ -170,6 +170,7 @@ class EmbedAugPipeline(nn.Module):
     def prepare_forward(
         self,
         batch: Batch,
+        instruct_decoder: bool = False,
     ) -> tuple:
         embed_seqlens = []
 
@@ -194,18 +195,95 @@ class EmbedAugPipeline(nn.Module):
                 )
                 embed_seqlen.append(len(seq_emb))
             embed_seqlens.append(embed_seqlen)
-        seqlens = batch.sizes
+        if not instruct_decoder:
+            seqlens = batch.sizes
 
-        insert_cat_embedds = batch.insert_embed_list
+            insert_cat_embedds = batch.insert_embed_list
 
-        x = torch.from_numpy(batch.x).cuda(non_blocking=True)
-        y = torch.from_numpy(batch.y).cuda(non_blocking=True)
-        y_mask = (
-            torch.from_numpy(batch.y_mask).cuda(non_blocking=True)
-            if batch.y_mask is not None
-            else None
-        )
-        return x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds
+            x = torch.from_numpy(batch.x).cuda(non_blocking=True)
+            y = torch.from_numpy(batch.y).cuda(non_blocking=True)
+            y_mask = (
+                torch.from_numpy(batch.y_mask).cuda(non_blocking=True)
+                if batch.y_mask is not None
+                else None
+            )
+            return x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds
+        else:
+            new_seqlens = []
+            new_x = []
+            new_y = []
+            new_y_mask = []
+            new_insert_cat_embedds = []
+            ind = 0
+            poped = 0
+            for i, seqlen in enumerate(batch.sizes):
+                if seqlen == 0 or embed_seqlens[i-poped] == []:
+                    if embed_seqlens[i-poped] != []:
+                        print('Removing embeddings')
+                        embeddings = torch.cat([embeddings[:sum(sum(embed_seqlens[:i-poped], []), [])], embeddings[sum(sum(embed_seqlens[:i-poped+1], []), ):]], dim=0).cuda()
+                    embed_seqlens.pop(i-poped)
+                    poped += 1
+                    continue
+                
+                prefix_prompt = (
+                    batch.instruct_prompt[i].split("||")[0]
+                    if batch.instruct_prompt[i] is not None
+                    else ""
+                )
+                instruct_prompt = (
+                    batch.instruct_prompt[i].split("||")[1]
+                    if batch.instruct_prompt[i] is not None
+                    else ""
+                )
+                suffix_prompt = (
+                    batch.instruct_prompt[i].split("||")[2]
+                    if batch.instruct_prompt[i] is not None
+                    else ""
+                )
+                x_toks, y_toks, new_insert_list, new_mask = format_for_chat(
+                    (batch.x[ind : ind + seqlen]).tolist(),
+                    batch.insert_embed_list[i]
+                    if batch.insert_embed_list is not None
+                    else None,
+                    self.llm_tokenizer.tokenizer,
+                    mask=None
+                    if batch.y_mask is None
+                    else batch.y_mask[ind : ind + seqlen],
+                    system_message=None,
+                    suffix_prompt=suffix_prompt,
+                    instruct_prompt=instruct_prompt,
+                    prefix_prompt=prefix_prompt,
+                    generation=False,
+                )
+                ind += seqlen
+                new_seqlens.append(len(x_toks))
+                new_x.extend(x_toks)
+                new_y.extend(y_toks)
+                new_y_mask.extend(new_mask)
+                new_insert_cat_embedds.append(new_insert_list)
+            x = torch.from_numpy(np.array(new_x, dtype=np.int64)).cuda(
+                non_blocking=True
+            )
+            y = torch.from_numpy(np.array(new_y, dtype=np.int64)).cuda(
+                non_blocking=True
+            )
+            y_mask = (
+                torch.from_numpy(np.array(new_y_mask, dtype=bool)).cuda(
+                    non_blocking=True
+                )
+                if any(new_y_mask)
+                else None
+            )
+            # print('New seqlens', new_seqlens)
+            return (
+                x,
+                y,
+                y_mask,
+                new_seqlens,
+                embeddings,
+                embed_seqlens,
+                new_insert_cat_embedds,
+            )
 
     @staticmethod
     def load_inference_model(
