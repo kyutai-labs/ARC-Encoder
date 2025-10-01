@@ -1,15 +1,15 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=4
+#SBATCH --array=2
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
-#SBATCH --chdir=/home/hippolytepilchen/code/mix_decoder_training
-#SBATCH --job-name=fine_tuning_multi_decoder
-#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/embed_llm_%A_%a.out
-
+#SBATCH --chdir=/home/hippolytepilchen/code/clean_hp
+#SBATCH --job-name=tests_new_database
+#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/tests_%A_%a.out
+#SBATCH --dependency=afterany:1078256_0
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
@@ -17,9 +17,9 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/experiments/ablations/multi_decoder_L3_MLP_ft_allstar_v2.yaml
-config/experiments/ablations/multi_decoder_L3_MLP_nc_v2_ft.yaml 
-# config/experiments/ablations/multi_decoder_L3_MLP_nc_v2_ft_fairinstruct.yaml
+config/test_trueL3_MLP_fft4_full5shot_exp_seed32.yaml 
+config/test_trueL3_MLP_fft4_full5shot_exp_seed16.yaml
+config/test_trueL3_MLP_fft4_full5shot_exp_copy.yaml
 )
 
 
@@ -45,7 +45,7 @@ echo "Starting at: $(date)"
 
 # Run the actual job, allocate with srun to refresh the context
 srun --gpus=$N_GPU \
-    torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG
+    uv run torchrun --nproc-per-node $N_GPUS --master_port $MASTER_PORT -m train $CONFIG
 
 RUN_NAME=$(basename "$CONFIG" .yaml)
 
@@ -54,49 +54,78 @@ echo "Starting evaluation of run $RUN_NAME"
 
 case $RUN_NAME in
 
-*)
+*trueL3*)
+    srun --gpus=$N_GPU  \
+            uv run python -m embed_llm.generation.eval_context_comp   --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json \
+      --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500   --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 1 --compressed_doc_in_icl --n_icl_exs 5
+            uv run python -m embed_llm.generation.eval_context_comp --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json  \
+        --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.2-3B   --llm_number 0  
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json  \
-        --n_passages 500    --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.2-3B   --llm_number 1 --compressed_doc_in_icl 
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json \
+       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500   --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 2 --compressed_doc_in_icl --n_icl_exs 5
+            uv run python -m embed_llm.generation.eval_context_comp   --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json  \
+       --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 1  
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json  \
-        --n_passages 500    --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 2 --compressed_doc_in_icl 
+            uv run python -m embed_llm.generation.eval_context_comp   --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json \
+     --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks CNN --bs 4
+
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500   --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 1 --compressed_doc_in_icl --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
+            uv run python -m embed_llm.generation.eval_context_comp   --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json \
+      --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME   --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5 --benchmarks CNN --bs 4
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500   --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 2 --compressed_doc_in_icl --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json \
+      --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500  --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 1
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json \
+       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
+    ;;
+
+*_L3_MLP_*)
+
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json  \
-        --n_passages 500   --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.2-3B   --llm_number 1 
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json \
+           --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME  --embed_name Llama3.2-3B   --n_icl_exs 5 --llm_name Olmo7B
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json \
-        --n_passages 500  --max_seq_len 64 --multi_passages 1  --icl_w_document --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 2
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json  \
+            --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B    --llm_name Olmo7B
+
 
     srun --gpus=$N_GPU  \
-            python embed_llm/generation/evaluation.py  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/eval_ft.json  \
-        --n_passages 500   --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 2 
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json \
+           --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME --llm_name Olmo7B --embed_name Llama3.2-3B    --n_icl_exs 5 --benchmarks CNN --bs 4
 
+
+    srun --gpus=$N_GPU  \
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json \
+           --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME  --embed_name Llama3.2-3B    --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1 --llm_name Olmo7B
 
     ;;
 
+*)
+    srun --gpus=$N_GPU  \
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json  \
+            --max_seq_len 64 --run_name default_finetuning --embed_name Llama3.2-3B  --multi_passages 1 --n_icl_exs 5 
+
+    srun --gpus=$N_GPU  \
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json  \
+        --run_name $RUN_NAME --eval_trad    --embed_name Llama3.2-3B 
+
+
+    srun --gpus=$N_GPU  \
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/tests.json  \
+        --max_seq_len 64 --run_name $RUN_NAME  --embed_name Llama3.2-3B  --multi_passages 1 --benchmarks DistractorHotpotQA --bs 4 --n_icl_exs 5
+
+
+    ;;
 esac

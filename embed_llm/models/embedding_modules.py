@@ -84,9 +84,6 @@ class EmbProjector(nn.Module):
             x = self.norm(x)
             x = self.layer1(x)
             x = self.layer2(x)
-        elif self.proj_type == "residual":
-            out = self.layer1(x)
-            x = self.layer2(out) + x
         elif self.proj_type == "linear":
             x = self.layer1(x)
         return x
@@ -111,7 +108,7 @@ class PoolingModule(nn.Module):
         if comp_rate != -1 and "metric_" not in self.pool_type:
             for embed_size in seqlens:
                 compressed_embed_size = []
-                # <-1 means compression rate, >0 means number of tokens to compress to
+                # <-1 means pooling factor, >0 means number of tokens to compress to
                 if comp_rate == 0:
                     compressed_embed_size = [embed_size]
                 elif comp_rate > 0 and embed_size // comp_rate == 0:
@@ -122,7 +119,6 @@ class PoolingModule(nn.Module):
                     compressed_embed_size = split_integer(embed_size, comp_rate)
                 pool_size.extend(compressed_embed_size)
                 new_seqlens.append(len(compressed_embed_size))
-
             if "last" in self.pool_type:
                 pool_mask = torch.block_diag(
                     *[torch.tensor([0.0] * (max(t - 1, 0)) + [1.0]) for t in pool_size]
@@ -131,11 +127,14 @@ class PoolingModule(nn.Module):
                 pool_mask = torch.block_diag(*[torch.ones(t) for t in pool_size]).to(
                     device=x.device, dtype=x.dtype
                 )
-            else:
+            elif "mean" in self.pool_type or "fusion" in self.pool_type:
                 # Mean pooling
                 pool_mask = torch.block_diag(
                     *[torch.ones(t) / t for t in pool_size]
                 ).to(device=x.device, dtype=x.dtype)
+            else:
+                raise NotImplementedError(f"Pooling type {self.pool_type} not implemented")
+                
         elif "metric_" in self.pool_type:
             x, new_seqlens = smart_merge(
                 hidden_states=x,
@@ -155,6 +154,8 @@ class PoolingModule(nn.Module):
 
         queries = x if pool_mask is None else pool_mask @ x
 
+
+        # Renormalize the pooled queries if fusion
         if comp_rate != -1 and "fusion" in self.pool_type:
             pooled_queries_norm = torch.norm(queries, dim=-1, keepdim=True)
             max_norms = []
@@ -170,5 +171,5 @@ class PoolingModule(nn.Module):
                 max_norms, device=x.device, dtype=x.dtype
             ).unsqueeze(1)
             queries = queries * max_norms / pooled_queries_norm
-
+            
         return queries, new_seqlens

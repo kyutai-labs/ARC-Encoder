@@ -22,36 +22,22 @@ class DataArgs(Serializable):
         # See Readme for more details. Can be left empty.
     )
     instruct: bool = False
-    adapt_seq_len: bool = False
-    interleave: bool = False  # Number of interleaved sequences to use for training. If > 0, the data will be interleaved.
-    loss_last_cont_only: bool | None = (
-        None  # If True, the loss will be computed only on the last continuation token.
-    )
-    prefix: str | None = None  # If set, the prefix will be prepended to each datapath.
+    interleave: bool = False  # Number of interleaved sequences to use for training. If True, the data will be interleaved.
+    prefix_path: str | None = None  # If set, the prefix path will be prepended to each datapath.
     sep_passages: bool = False  # If True, passages will be separated by a special token in the input sequence.
-    chunk_to: int | None = None
-    max_passages: int = 1  # Maximum number of passages to use per loaded sample (if several retrieved passages in the dataset).
-    n_eval_batchs: int = 40
+    max_passages: int = 1  # Maximum number of passages to use per loaded sample (if several retrieved passages for each samples in the dataset).
+    n_eval_batches: int = 40 # To reduce if long context
     instruct_decoder: bool = False  # If True, only the decoder will be instructed (for encoder-decoder models).
     
+    chunk_to: int | None = None # Whether to chunk the sequences to a maximum length (for long documents) and process them in parallel.
+    max_chunks: int = 5  # Maximum number of chunks to use if split context in several chunks.
+    
     def __post_init__(self) -> None:
-        if self.prefix is not None:
+        if self.prefix_path is not None:
             self.train_data = ",".join(
-                [self.prefix + train_path for train_path in self.train_data.split(",")]
+                [self.prefix_path + train_path for train_path in self.train_data.split(",")]
             )
             if self.eval_data != '' and not Path(self.eval_data).exists(): 
                 self.eval_data = ",".join(
-                    [self.prefix + eval_path for eval_path in self.eval_data.split(",")]
+                    [self.prefix_path + eval_path for eval_path in self.eval_data.split(",")]
                 )
-        if self.adapt_seq_len:
-            self.loss_last_cont_only = (
-                self.loss_last_cont_only
-                if self.loss_last_cont_only is not None
-                else True
-            )
-        else:
-            self.loss_last_cont_only = (
-                self.loss_last_cont_only
-                if self.loss_last_cont_only is not None
-                else False
-            )

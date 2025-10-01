@@ -6,7 +6,6 @@ from torch.distributed.fsdp.api import ShardingStrategy
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 
 # import safetensors
-from embed_llm.models.args import LoraArgs
 from embed_llm.models.augmented_model import EmbedAugPipeline
 from embed_llm.models.utils.loading import (
     load_args,
@@ -16,7 +15,6 @@ from embed_llm.data.tokenize import Tokenizer
 from embed_llm.data.tokenize import Tokenizer
 from embed_llm.models.utils.utils import (
     get_fsdp_policy,
-    initialize_lora_parameters,
     log_train_params,
     main_logger_info,
 )
@@ -36,8 +34,6 @@ def load_training_model(
     train_args: TrainArgs,
     llm_paths: list[str],
     embed_folder: Path,
-    lora_llm: LoraArgs,
-    lora_embedder: LoraArgs,
     param_dtype: torch.dtype,
     checkpoint: bool = False,
     max_batch_size: int = 32,
@@ -53,7 +49,6 @@ def load_training_model(
    
         llm_args, pipeline_args = load_args(
             llm_folder,
-            lora_llm,
             max_batch_size=max_batch_size,
             pipe_args=train_args.pipeline,
             args_type=train_args.llm_types[i],
@@ -77,12 +72,11 @@ def load_training_model(
     main_logger_info("Loading embedder model ...")
     embed_args, _ = load_args(
         embed_folder,
-        lora_embedder,
         max_batch_size=max_batch_size,
         pipe_args=train_args.pipeline,
         args_type=train_args.embed_type,
     )
-    embed_args.lora = lora_embedder
+    
     # Load pretrained params on rank 0
     llm_embedder, embed_tokenizer = load_model(
         llm_args=embed_args,
@@ -108,13 +102,6 @@ def load_training_model(
 
     if get_rank() == 0:
 
-        if lora_embedder.enable:
-            main_logger_info("Initializing lora layers for embedder ...")
-            initialize_lora_parameters(augmented_model.embedder, param_dtype)
-            
-        if lora_llm.enable:
-            main_logger_info("Initializing lora layers  for LLM ...")
-            initialize_lora_parameters(augmented_model.llms[0], param_dtype)
             
         if pipeline_args.embedder_params.memory_tokens > 0:
             main_logger_info("Initializing memory tokens for embedder ...")
@@ -196,27 +183,26 @@ def load_training_model(
             ignored_states.append(augmented_model.embedder.cont_tok[j].weight)
 
     torch.distributed.barrier()
-
-    for name, param in augmented_model.llms.named_parameters():
-        if lora_llm.enable and "lora" in name:
-            param.requires_grad = True
-        else:
-            param.requires_grad = False
+    for param in augmented_model.llms.parameters():
+        param.requires_grad = False
         
     for name, param in augmented_model.embedder.named_parameters():
-        if lora_embedder.enable and "lora" in name:
-            param.requires_grad = True
-        elif (
+        if (
             any(
                 [
                     f"layers.{layer}" in name
                     for layer in augmented_model.embedder.trained_layers
                 ]
             )
-            and not lora_embedder.enable
         ):
             param.requires_grad = True
         elif pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name:
+            param.requires_grad = True
+            
+        elif (
+            pipeline_args.embedder_params.train_embedding_mtx
+            and "tok_embeddings" in name
+        ):
             param.requires_grad = True
         elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
             param.requires_grad = True
@@ -261,8 +247,6 @@ def load_training_model_from_ckpt(
     llm_paths: Path | None,
     embed_folder: Path | None,
     bridge_folder: Path | None,
-    lora_llm: LoraArgs,
-    lora_embedder: LoraArgs,
     param_dtype: torch.dtype,
     embedder_path: Path | None = None,
     supp_toks_path: Path | None = None,
@@ -280,7 +264,6 @@ def load_training_model_from_ckpt(
    
         llm_args, pipeline_args = load_args(
             llm_folder,
-            lora_llm,
             max_batch_size=max_batch_size,
             pipe_args=train_args.pipeline,
             args_type=train_args.llm_types[i],
@@ -304,12 +287,10 @@ def load_training_model_from_ckpt(
     main_logger_info("Loading embedder model ...")
     embed_args, _ = load_args(
         embed_folder,
-        lora_embedder,
         max_batch_size=max_batch_size,
         pipe_args=train_args.pipeline,
         args_type=train_args.embed_type,
     )
-    embed_args.lora = lora_embedder
     # Load pretrained params on rank 0
     llm_embedder, embed_tokenizer = load_model(
         llm_args=embed_args,
@@ -336,40 +317,15 @@ def load_training_model_from_ckpt(
 
     if get_rank() == 0:
 
-        if lora_embedder.enable:
-            assert embedder_path is not None, (
-                "Embedder path is required for LoRA embedder"
-            )
-            main_logger_info("Loading lora layers for embedder ...")
-            augmented_model.embedder.load_lora(
-                Path(embedder_path), scaling=2.0)
-            if pipeline_args.embedder_params.memory_tokens > 0:
-                main_logger_info("Loading memory tokens for embedder ...")
-                assert supp_toks_path is not None, (
-                    "Supp tokens path is required for memory tokens"
-                )
-                state_dict = load_state_dict(Path(supp_toks_path), dtype=param_dtype)
-                augmented_model.embedder.mem_embeddings.load_state_dict(
-                    {
-                        k.split("mem_embeddings.")[-1]: v.cuda()
-                        for k, v in state_dict.items()
-                        if "mem_embeddings" in k
-                    },
-                    strict=True,
-                    assign=True,
-                )
-        elif embedder_path is not None:
+        if embedder_path is not None:
             main_logger_info("Loading trained layers for embedder ...")
             state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
             augmented_model.embedder.load_state_dict(
                 state_dict, assign=True, strict=False
             )
             
-        if lora_llm.enable:
-            assert llm_path is not None, "LLM path is required for training"
-            main_logger_info("Loading LoRA layers  for LLM ...")
-            augmented_model.llms[0].load_lora(Path(llm_paths[0]), scaling=lora_llm.scaling)
-            
+
+
         if pipeline_args.bridge_module.bridge_type is not None:
             if bridge_folder is None:
                 main_logger_info("Initializing bridge module for embedder ...")
@@ -460,30 +416,24 @@ def load_training_model_from_ckpt(
         ignored_states.extend([augmented_model.embedder.cont_tok[llm_number].weight for llm_number in range(len(llms))])
 
     torch.distributed.barrier()
+    for param in augmented_model.llms.parameters():
+        param.requires_grad = False
 
-    # only finetune LoRA, MLP projector and pooling parameters and freeze before wrapping
-    for name, param in augmented_model.llms.named_parameters():
-        if lora_llm.enable and "lora" in name:
-            param.requires_grad = True
-        else:
-            param.requires_grad = False
 
     for name, param in augmented_model.embedder.named_parameters():
         if (
-            (lora_embedder.enable or pipeline_args.embedder_params)
-            and "lora" in name
-            and not train_args.freeze_embedder
-        ):
-            param.requires_grad = True
-        elif (
             any(
                 [
                     f"layers.{layer}" in name
                     for layer in augmented_model.embedder.trained_layers
                 ]
             )
-            and not lora_embedder.enable
-            and not train_args.freeze_embedder
+            and not train_args.freeze_encoder
+        ):
+            param.requires_grad = True
+        elif (
+            pipeline_args.embedder_params.train_embedding_mtx
+            and "tok_embeddings" in name
         ):
             param.requires_grad = True
         elif pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name:
@@ -499,9 +449,9 @@ def load_training_model_from_ckpt(
                 param.requires_grad = True
             
     log_train_params(augmented_model)
-
-
+            
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
+    
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
@@ -517,6 +467,8 @@ def load_training_model_from_ckpt(
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
         ignored_states=ignored_states,
     )
+
+
 
     main_logger_info("Model sharded!")
 

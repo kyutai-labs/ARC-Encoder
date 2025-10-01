@@ -8,7 +8,6 @@ from rouge_score import rouge_scorer
 import regex
 import nltk
 from sacrebleu.metrics import BLEU as SacreBLEU
-
 nltk.download("wordnet")
 
 ROUGE_SCORER = None

@@ -9,7 +9,7 @@ This repository contains the code to reproduce most of the experiments of the pa
 ```sh
 git clone ...
 ```
-Once clone set import paths at `embed_llm/__init__.py`.
+Once cloned set import paths at `embed_llm/__init__.py`.
 
 ### 2️⃣ Install all required dependencies:
 We recommend using [`uv`](https://docs.astral.sh/uv/) to manage the environment.
@@ -47,6 +47,11 @@ wget   url -P <MODEL_PATH>/Llama3.2-3B
 # For Llama3.1 8B
 wget   url -P <MODEL_PATH>/Llama3.1-8B
 
+# For Llama2 7B Chat
+wget   https://huggingface.co/meta-llama/Llama-2-7b-chat/resolve/main/consolidated.00.pth? -P <MODEL_PATH>/Llama2-7B-Chat
+wget https://huggingface.co/meta-llama/Llama-2-7b-chat/resolve/main/tokenizer.model? -P <MODEL_PATH>/Llama2-7B-Chat
+echo '{"dim": 4096, "multiple_of": 256, "n_heads": 32, "n_layers": 32, "norm_eps": 1e-05, "vocab_size": 32000}' > <MODEL_PATH>/Llama2-7B-Chat/params.json
+
 # For Olmo7B
 wget https://huggingface.co/allenai/OLMo-7B/resolve/main/model.safetensors? -P <MODEL_PATH>/Olmo7B
 wget https://huggingface.co/allenai/OLMo-7B/resolve/main/tokenizer.json? -P <MODEL_PATH>/Olmo7B
@@ -56,7 +61,7 @@ echo '{"dim": 4096, "n_heads": 32, "n_layers": 32, "norm_eps": 1e-05, "vocab_siz
 
 ## 📚 Prepare datasets
 
-For the fine-tuning dataset, please directly load our HuggingFace dataset at [BLABLA](blabla). Use the `load_datasets.ipynb` notebook to load the evaluation datasets. Then, you should run `retrieval/embeddings.py` (on GPUs if possible) and `retrieval/passage_retrieval.py` (you can stay on CPUs) to retrieve passages from Wikipedia for Natural Question and TRIVIAQA as done in the paper.
+For the fine-tuning dataset, please directly load our HuggingFace dataset at [BLABLA](blabla). Use the `load_datasets.ipynb` notebook to load the evaluation datasets. Then, you should run `retrieval/embeddings.py` (on GPUs if possible) to create embeddings of the Wikipedia text chunks and `retrieval/passage_retrieval.py` (you can stay on CPUs) to retrieve passages from Wikipedia for Natural Question and TRIVIAQA as done in the paper.
 
 
 

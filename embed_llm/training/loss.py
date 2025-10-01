@@ -16,6 +16,7 @@ def compute_ce_loss_with_mask(
     return mb_loss
 
 
+
 def compute_bpt_loss(logits, targets, target_mask: torch.Tensor | None):
     # Compute the cross-entropy loss
     loss = F.cross_entropy(logits, targets, reduction="none")

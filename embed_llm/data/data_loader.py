@@ -36,6 +36,11 @@ class Batch:
         assert len(self.to_embed) == len(self.sizes), (
             f"{len(self.to_embed)}, {len(self.sizes)}"
         )
+        
+        if self.instruct_prompt is not None:
+            assert len(self.instruct_prompt) == len(self.sizes), (
+                f"{len(self.instruct_prompt)}, {len(self.sizes)}"
+            )
 
         if self.y_mask is not None:
             assert self.y_mask.size == self.y.size, (self.y_mask.shape, self.y.shape)
@@ -171,7 +176,6 @@ def build_data_loader(
     is_eval: bool,
     seed: int | None = None,
     continuation: float = 0.0,
-    max_embeds: int = 1,
 ) -> Iterator[Batch]:
     dataset = build_dataset(
         args=args,
@@ -204,7 +208,6 @@ def build_data_loader(
             batch_list_dict[sample.data_type] = Batchlist()
 
         batch_list = batch_list_dict[sample.data_type]
-
         batch_list.add(
             sample.x,
             sample.y,

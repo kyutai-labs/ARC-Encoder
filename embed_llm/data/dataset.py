@@ -20,9 +20,6 @@ from embed_llm.training.distributed import get_rank
 logger = logging.getLogger("dataset")
 
 
-_LOADED_DATASETS: dict[Path, list[TokenSample]] = {}
-
-
 def main_logger_info(message: str) -> None:
     if dist.is_initialized() and get_rank() == 0:
         logger.info(message)
@@ -141,10 +138,10 @@ def sequence_iterator(
     continuation: float = 0.0,
     few_shot: int = 0,
     interleave: bool = False,
-    loss_last_cont_only: bool = False,  # If True, the loss will be computed only on the last continuation token.
     sep_passages: bool = False,  # If True, passages will be separated by a special token in the input sequence.
     chunk_to: int | None = None,
     instruct_decoder: bool = False,  # If True, the decoder will be used for instruction data.
+    max_chunks: int = 5,
 ) -> Iterator[SequenceEmbedMaskAndSizes]:
     """
     Creates sequences of length `seq_len` from the dataset iterator by concatenating samples.
@@ -158,6 +155,7 @@ def sequence_iterator(
     n_missing_cont = (
         seq_len * 2 + int(interleave) * seq_len 
     )
+
     instruct_prompt: list[str] = []
     instruct_prompt_cont: list[str] = []
 
@@ -252,10 +250,10 @@ def sequence_iterator(
                     few_shot_instruct=few_shot_instruct if few_shot > 0 else None,
                     few_shot=few_shot,
                     interleave=interleave,
-                    loss_last_cont_only=loss_last_cont_only,  # If True, the loss will be computed only on the last continuation token.
                     sep_passages=sep_passages,
                     chunk_to=chunk_to,
                     instruct_prompt=instruct_prompt if instruct_decoder else None,
+                    max_chunks=max_chunks,
                 )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
@@ -350,14 +348,14 @@ def build_dataset(
             is_finite=is_eval,
             llm_tokenizer=llm_tokenizer,
             embed_tokenizer=embed_tokenizer,
-            adapt_seq_len=args.adapt_seq_len,
+            adapt_seq_len=args.instruct,
             continuation=continuation,
             few_shot=fs,
-            interleaved=args.interleave,
-            loss_last_cont_only=args.loss_last_cont_only,
+            interleave=args.interleave,
             sep_passages=args.sep_passages,
             chunk_to=args.chunk_to,
             instruct_decoder=args.instruct_decoder,
+            max_chunks=args.max_chunks,
         )
         for fs, it in zip(few_shots, dataset_iterators)
     ]
@@ -394,9 +392,6 @@ def get_dataset_iterator(
     instruct_decoder: bool = False,  # If True, the decoder will be used for instruction data
 ) -> Iterator[TokenSample]:
     jsonl_files = source.jsonl_files
-    rng: np.random.RandomState | None = (
-        get_rng(seed, rank) if seed is not None else None
-    )
 
     if not is_finite:
         # train mode

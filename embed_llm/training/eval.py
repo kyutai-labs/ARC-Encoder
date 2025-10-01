@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-import torch.cuda
+import torch
 import torch.distributed as dist
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
 from embed_llm.data.data_loader import Batch
@@ -43,42 +43,34 @@ def evaluate(
 
     # eval mode!
     model.eval()
+    with torch.no_grad():
+        if batches_cont is not None:
+            eval_loss_embcont = torch.tensor(0.0).cuda()
+            main_logger_info(f"Start eval for {len(batches_cont)} continuation batches")
 
-    if batches_cont is not None:
-        eval_loss_embcont = torch.tensor(0.0).cuda()
-        main_logger_info(f"Start eval for {len(batches_rec)} continuation batches")
-
-        for i, batch in enumerate(batches_cont):
-            with torch.no_grad():
-                x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
-                    prepare_batch_fn(batch)
-                )
-
-                output = model.forward(
-                    x=x,
-                    embeddings=embeddings,
-                    seqlens=seqlens,
-                    embed_seqlens=embed_seqlens,
-                    insert_cat_embedds=insert_cat_embedds,
-                    batch_type="continuation",
-                )
-                if len(output.size()) > 2:
-                    output = output.view(-1, output.size(-1)).float()
-                    y = y.view(-1).long()
-                    y_mask = None if y_mask is None else y_mask.view(-1)
-                    assert output.size(0) == y.size(0), (
-                        f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}"
+            for batch in batches_cont:
+                with torch.no_grad():
+                    x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
+                        prepare_batch_fn(batch)
                     )
 
-                eval_loss_embcont += compute_ce_loss_with_mask(
-                    output, y, y_mask
-                )
+                    output = model.forward(
+                        x=x,
+                        embeddings=embeddings,
+                        seqlens=seqlens,
+                        embed_seqlens=embed_seqlens,
+                        insert_cat_embedds=insert_cat_embedds,
+                        batch_type="continuation",
+                    )
+  
+                    eval_loss_embcont += compute_ce_loss_with_mask(
+                        output, y, y_mask
+                    )
 
-    eval_loss_rec = torch.tensor(0.0).cuda()
-    main_logger_info(f"Start eval for {len(batches_rec)} reconstruction batches")
+        eval_loss_rec = torch.tensor(0.0).cuda()
+        main_logger_info(f"Start eval for {len(batches_rec)} reconstruction batches")
 
-    for i, batch in enumerate(batches_rec):
-        with torch.no_grad():
+        for batch in batches_rec:
             x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
                 prepare_batch_fn(batch)
             )
@@ -91,13 +83,7 @@ def evaluate(
                 insert_cat_embedds=insert_cat_embedds,
                 batch_type="reconstruction",
             )
-            if len(output.size()) > 2:
-                output = output.view(-1, output.size(-1)).float()
-                y = y.view(-1).long()
-                y_mask = None if y_mask is None else y_mask.view(-1)
-                assert output.size(0) == y.size(0), (
-                    f"Output and target sizes do not match: {output.size(0)} != {y.size(0)}"
-                )
+
             if not batch.is_pad_only:
                 eval_loss_rec += compute_ce_loss_with_mask(
                     output, y, y_mask
@@ -117,8 +103,8 @@ def evaluate(
     if batches_cont is not None:
         dist.all_reduce(eval_loss_embcont, op=dist.ReduceOp.SUM)
         eval_loss_embcont /= total_num_samples
-        state.this_eval_loss_embcont = eval_loss_embcont.item()
-        state.this_eval_perplexity_embcont = (2**eval_loss_embcont).item()
+        state.this_eval_loss_cont = eval_loss_embcont.item()
+        state.this_eval_perplexity_cont = (2**eval_loss_embcont).item()
 
     # train mode!
     model.train()

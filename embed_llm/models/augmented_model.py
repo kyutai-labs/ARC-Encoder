@@ -9,7 +9,7 @@ from torch.nn import ModuleList
 
 from embed_llm.data.data_loader import Batch
 from embed_llm.generation.utils import eval_logger_info
-from embed_llm.models.args import PipelineArgs, LoraArgs
+from embed_llm.models.args import PipelineArgs
 from embed_llm.models.utils.utils import group_embed_seqlens, is_torchrun, format_for_chat
 from embed_llm.models.embedding_modules import EmbProjector
 from embed_llm.models.utils.loading import (
@@ -21,7 +21,6 @@ from embed_llm.models.utils.loading import (
 from embed_llm.models.enhanced_transformer import Transformer, load_model
 from embed_llm.models.generate import generate as transformer_generate
 
-from mistral_inference.transformer import Transformer as MistralTransformer
 from embed_llm.data.tokenize import Tokenizer
 from embed_llm import TMP_PATH, MODEL_PATH
 
@@ -38,7 +37,6 @@ class EmbedAugModel(nn.Module):
         super().__init__()
 
         self.llms = nn.ModuleList(llms)
-        self.w_embeds = pipeline_args.w_embeds
         self.embedder = embedder
         self.bridge_module = None
         if pipeline_args.bridge_module.bridge_type is not None:
@@ -72,12 +70,15 @@ class EmbedAugModel(nn.Module):
         batch_type: str = "continuation",
         llm_number: int = 0,
     ) -> torch.Tensor:
+
         if embeddings is not None:
+   
             embeddings, embed_seqlens = self.embedder.forward_embedder(
                 input_ids=embeddings,
                 seqlens=sum(embed_seqlens, []),
                 llm_number=llm_number,
             )
+
             embed_seqlens = group_embed_seqlens(
                 embed_seqlens, [len(li) for li in insert_cat_embedds]
             )
@@ -125,7 +126,7 @@ class EmbedAugModel(nn.Module):
                     for embed_seqlen in embed_seqlens
                 ]
                 embeddings = new_embeddings.clone()
-
+            
             if self.bridge_module is not None:
                 if isinstance(self.bridge_module, ModuleList):
                     embeddings = self.bridge_module[llm_number](embeddings)
@@ -224,7 +225,6 @@ class EmbedAugPipeline(nn.Module):
                     embed_seqlens.pop(i-poped)
                     poped += 1
                     continue
-                
                 prefix_prompt = (
                     batch.instruct_prompt[i].split("||")[0]
                     if batch.instruct_prompt[i] is not None
@@ -245,10 +245,7 @@ class EmbedAugPipeline(nn.Module):
                     batch.insert_embed_list[i]
                     if batch.insert_embed_list is not None
                     else None,
-                    self.llm_tokenizer.tokenizer,
-                    mask=None
-                    if batch.y_mask is None
-                    else batch.y_mask[ind : ind + seqlen],
+                    self.llm_tokenizer[0].tokenizer, # Only one instruct decoder at the time
                     system_message=None,
                     suffix_prompt=suffix_prompt,
                     instruct_prompt=instruct_prompt,
@@ -274,7 +271,6 @@ class EmbedAugPipeline(nn.Module):
                 if any(new_y_mask)
                 else None
             )
-            # print('New seqlens', new_seqlens)
             return (
                 x,
                 y,
@@ -303,28 +299,20 @@ class EmbedAugPipeline(nn.Module):
         if Path(train_config_path).exists():
             with open(train_config_path, "r") as f:
                 train_args = yaml.safe_load(f)
-            lora_llm = LoraArgs(**train_args["lora_llm"])
-            lora_embedder = LoraArgs(**train_args["lora_embedder"])
-            freeze_embedder = train_args.get("freeze_embedder", False) # Needs to load trained embedder from another ckpt than the one from ckpt_path
-            embedder_ckpt_path = None if not freeze_embedder else Path(train_args["from_ckpt"]["embedder_path"])
+            freeze_encoder = train_args.get("freeze_encoder", False) # Needs to load trained embedder from another ckpt than the one from ckpt_path
+            embedder_ckpt_path = None if not freeze_encoder else Path(train_args["from_ckpt"]["embedder_path"])
         else:
-            lora_llm = LoraArgs()
-            lora_embedder = LoraArgs()
-            freeze_embedder = False
+            freeze_encoder = False
             embedder_ckpt_path = None
 
 
         llm_args, pipeline_args = load_args(
             Path(llm_path),
-            lora=lora_llm,
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
             args_type=llm_type,
         )
         
-        if lora_llm.enable:
-            assert Path(ckpt_path + "/llm").exists()
-            
         llm, llm_tokenizer = load_model(
             llm_args=llm_args,
             pipeline_args=pipeline_args,
@@ -338,20 +326,13 @@ class EmbedAugPipeline(nn.Module):
         )
         logger.info("Loading LLM from")
         
-        if lora_llm.enable:
-            logger.info(
-                f"Loading LLM LoRA from {ckpt_path + '/llm/lora.safetensors'} with dtype {param_dtype}"
-            )
-            llm.load_lora(Path(ckpt_path + "/llm/lora.safetensors"))
-            
+
         llm = llm.to(device)
         llm.eval()
 
-        llm_args.lora = lora_embedder
 
         embed_args, pipeline_args = load_args(
             Path(embedder_path),
-            lora=lora_embedder,
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
             args_type=embed_type,
@@ -370,48 +351,7 @@ class EmbedAugPipeline(nn.Module):
             number_of_llm=1,
         )
 
-        if lora_embedder.enable:
-            embed_path = (
-                Path(ckpt_path + "/embedder")
-                if not freeze_embedder
-                else embedder_ckpt_path
-            )
-            assert (embed_path / "lora.safetensors").exists()
-            logger.info(
-                f"Loading embedder LoRA from {embed_path / 'lora.safetensors'} with dtype {param_dtype}"
-            )
-            llm_embedder.load_lora(
-                embed_path / "lora.safetensors",
-            )
-            if (
-                pipeline_args.embedder_params.memory_tokens > 0
-                or pipeline_args.embedder_params.rec_tok
-                or pipeline_args.embedder_params.cont_tok
-            ):
-                embed_path = Path(ckpt_path + "/embedder")
-                supp_tok_state_dict = load_state_dict(embed_path, dtype=param_dtype)
-                assert (
-                    "rec_tok.weight" in supp_tok_state_dict
-                    or "cont_tok.weight" in supp_tok_state_dict
-                    or "mem_embeddings.weight" in supp_tok_state_dict
-                ), f"no supp tok found in state dict {supp_tok_state_dict.keys()}"
-                logger.info(
-                    f"Loading additional tokens for embedder {supp_tok_state_dict.keys()}"
-                )
-                supp_tok_state_dict = {
-                    k: v.to(param_dtype)
-                    for k, v in supp_tok_state_dict.items()
-                    if any(
-                        [
-                            (mod in k)
-                            for mod in ["rec_tok", "cont_tok", "mem_embeddings"]
-                        ]
-                    )
-                }
-                llm_embedder.load_state_dict(
-                    supp_tok_state_dict, strict=False, assign=True
-                )
-        elif (
+        if (
             pipeline_args.embedder_params.trained_layers > 0
             or pipeline_args.embedder_params.memory_tokens > 0
             or pipeline_args.embedder_params.rec_tok
@@ -419,7 +359,7 @@ class EmbedAugPipeline(nn.Module):
         ):
             embed_path = (
                 Path(ckpt_path + "/embedder")
-                if not freeze_embedder
+                if not freeze_encoder
                 else embedder_ckpt_path
             )
             logger.info("Loading embedder trained layers")
@@ -460,7 +400,7 @@ class EmbedAugPipeline(nn.Module):
                 ),
             )
 
-            if freeze_embedder and (
+            if freeze_encoder and (
                 pipeline_args.embedder_params.rec_tok
                 or pipeline_args.embedder_params.cont_tok
                 or pipeline_args.embedder_params.memory_tokens > 0
@@ -525,7 +465,7 @@ class EmbedAugPipeline(nn.Module):
 
         for param in augmented_pipeline.model.parameters():
             param.requires_grad = False
-
+        
         return augmented_pipeline
 
     @torch.inference_mode()
@@ -555,7 +495,6 @@ class EmbedAugPipeline(nn.Module):
             give_n_tokens: If True, the number of tokens generated is returned.
             **kwargs: Additional arguments to pass to the generation function.
         """
-
         if not is_torchrun():
             device_generation = (
                 device if device_generation is None else device_generation
@@ -580,17 +519,15 @@ class EmbedAugPipeline(nn.Module):
                 raise ValueError(
                     "Text conditioning must be a string or a list of strings"
                 )
-
-        if text_to_embed is None:
-            w_embeds = False
-        else:
-            w_embeds = self.pipeline_args.w_embeds
-        if w_embeds:
+                
+        if text_to_embed is not None:
             seqlens = []
             x = []
+            
             for l_text in text_to_embed:  # Here we have a list per sample in the batch
                 sl = []
                 x_l = []
+                
                 for text in l_text:  # The list contains texts that have to be embedded
                     if chunk_to is None:
                         toks = self.embed_tokenizer.tokenizer.encode(
@@ -623,10 +560,10 @@ class EmbedAugPipeline(nn.Module):
             x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
                 device
             )
-
             embeddings, embed_seqlens = self.model.embedder.forward_embedder(
                 input_ids=x, seqlens=sum(sum(seqlens, []), []), llm_number=0
             )
+ 
             if chunk_to is not None:
                 # If chunking, we need to group the embed_seqlens by the original seqlens
                 new_embed_seqlens = []
@@ -675,13 +612,11 @@ class EmbedAugPipeline(nn.Module):
                     for embed_seqlen in embed_seqlens
                 ]
                 embeddings = new_embeddings.clone()
-
             if self.model.bridge_module is not None:
                 if isinstance(self.model.bridge_module, nn.ModuleList):
                     embeddings = self.model.bridge_module[0](embeddings)
                 else:
                     embeddings = self.model.bridge_module(embeddings)
-
         else:
             embeddings = None
             embed_seqlens = None
@@ -791,7 +726,6 @@ def load_pipeline(
     max_bs: int,
     tmp_path: str = TMP_PATH,
     pipeline: EmbedAugPipeline | Transformer | None = None,
-    mistral: bool = False,
     ckpt: int | None = None,
     comp_rate: int | None = None,
     llm_type: str = "mistral",
@@ -799,68 +733,56 @@ def load_pipeline(
     llm_number: int = 0,
     train_config_path: str | None = None
 ) -> EmbedAugPipeline | Transformer:
-    if not mistral:
-        if pipeline is None:
-            # Get last checkpoint
-            assert run_name is not None
-            last_ckpt = (
-                sorted(
-                    [
-                        ckpt_name
-                        for ckpt_name in os.listdir(
-                            tmp_path + run_name + "/checkpoints/"
-                        )
-                        if (
-                            Path(tmp_path + run_name + "/checkpoints/")
-                            / ckpt_name
-                            / "params.json"
-                        ).exists()
-                    ]
-                )[-1]
-                if ckpt is None
-                else f"checkpoint_{ckpt:06d}"
-            )
+    if pipeline is None:
+        # Get last checkpoint
+        assert run_name is not None
+        last_ckpt = (
+            sorted(
+                [
+                    ckpt_name
+                    for ckpt_name in os.listdir(
+                        tmp_path + run_name + "/checkpoints/"
+                    )
+                    if (
+                        Path(tmp_path + run_name + "/checkpoints/")
+                        / ckpt_name
+                        / "params.json"
+                    ).exists()
+                ]
+            )[-1]
+            if ckpt is None
+            else f"checkpoint_{ckpt:06d}"
+        )
 
-            pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
-                llm_path=llm_path,
-                embedder_path=embedder_path,
-                ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
-                device=device,
-                max_batch_size=max_bs,
-                llm_type=llm_type,
-                embed_type=embed_type,
-                llm_number=llm_number,
-                train_config_path=train_config_path,
-            )
+        pipeline: EmbedAugPipeline = EmbedAugPipeline.load_inference_model(
+            llm_path=llm_path,
+            embedder_path=embedder_path,
+            ckpt_path=tmp_path + run_name + "/checkpoints/" + last_ckpt,
+            device=device,
+            max_batch_size=max_bs,
+            llm_type=llm_type,
+            embed_type=embed_type,
+            llm_number=llm_number,
+            train_config_path=train_config_path,
+        )
 
-            ckpt = int(last_ckpt.split("_")[-1])
-            eval_logger_info(logger, f"Evaluating checkpoint {ckpt}")
+        ckpt = int(last_ckpt.split("_")[-1])
+        eval_logger_info(logger, f"Evaluating checkpoint {ckpt}")
 
-        else:
-            pipeline: EmbedAugPipeline = pipeline
-            ckpt = ckpt
-
-        if comp_rate is not None:
-            if comp_rate <= 0:
-                assert len(pipeline.model.embedder.compress_rates) == 1, (
-                    f"Only one compression rate is supported, but got {pipeline.model.embedder.compress_rates}"
-                )
-                pipeline.model.embedder.compress_rates = [comp_rate]
-            else:
-                assert pipeline.model.embedder.n_mem_tokens >= comp_rate, (
-                    f"Positive compression rate is only supported for models with memory tokens, but got {pipeline.model.embedder.n_mem_tokens}"
-                )
-                pipeline.model.embedder.n_mem_tokens = comp_rate
-        return pipeline, ckpt
     else:
-        if pipeline is None:
-            mistral_model = MistralTransformer.from_folder(
-                os.path.join(MODEL_PATH,"mistral_7B/"),
-                device=device,
-                max_batch_size=max_bs,
-                dtype=torch.float32,
-            )
-        else:
-            mistral_model = pipeline
+        pipeline: EmbedAugPipeline = pipeline
+        ckpt = ckpt
 
-        return mistral_model, None
+    if comp_rate is not None:
+        if comp_rate <= 0:
+            assert len(pipeline.model.embedder.compress_rates) == 1, (
+                f"Only one compression rate is supported, but got {pipeline.model.embedder.compress_rates}"
+            )
+            pipeline.model.embedder.compress_rates = [comp_rate]
+        else:
+            assert pipeline.model.embedder.n_mem_tokens >= comp_rate, (
+                f"Positive compression rate is only supported for models with memory tokens, but got {pipeline.model.embedder.n_mem_tokens}"
+            )
+            pipeline.model.embedder.n_mem_tokens = comp_rate
+    return pipeline, ckpt
+

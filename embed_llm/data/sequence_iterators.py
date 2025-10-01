@@ -62,9 +62,9 @@ def sequence_iterator_reconstruction(
     few_shot_instruct: list[str] | None = None,
     few_shot: int = 0,
     interleave: bool = False,
-    loss_last_cont_only: bool = False,
     sep_passages: bool = False,
     chunk_to: int | None = None,
+    max_chunks: int = 5,
     instruct_prompt: list[str] | None = None,
 ) -> SequenceEmbedMaskAndSizes:
     """
@@ -80,7 +80,7 @@ def sequence_iterator_reconstruction(
     tokens, mask = sample.tokens, sample.masks[1:]
     x, y = tokens[:-1], tokens[1:]
     embed_tokens = sample.passages.tokens
-
+    instruction = sample.instruction
     data_type = sample.data_type
 
     while cur_pos < len(x):
@@ -98,10 +98,7 @@ def sequence_iterator_reconstruction(
 
             bos = llm_tokenizer.tokenizer.bos_id in new_embed
             eos = llm_tokenizer.tokenizer.eos_id in new_embed
-            if "llama" in llm_tokenizer.tokenizer.model_name:
-                new_text = llm_tokenizer.tokenizer.decode(new_embed, skip_special_tokens=True)
-            else:
-                new_text = llm_tokenizer.tokenizer.decode(new_embed)
+            new_text = llm_tokenizer.tokenizer.decode(new_embed)
 
             to_embed_buffer.append(
                 {
@@ -123,32 +120,23 @@ def sequence_iterator_reconstruction(
         else:
             # Instruct tuning
             assert adapt_seq_len
-
             # If we can use more embeddings and that one passage reaches the limit \
             # we split it in two embeddings and so on
-
+            seq_len = seq_len * (4*int(interleave) + 1) # Works better with longer sequences for interleaving
             new_embed = []
             for i in range(len(embed_tokens)):
                 new_embed.append(embed_tokens[i])
 
             if not sep_passages:
-                if len(new_embed) > 1:
-                    new_embed_tokens = sum([toks[:seq_len] for toks in new_embed], [])
-                    new_embed_text = " ".join(
-                        [
-                            embed_tokenizer.tokenizer.decode(toks[:seq_len]).strip()
-                            for toks in new_embed
-                        ]
-                    )
-                else:
-                    new_embed_tokens = new_embed[0]
-                    new_embed_text = embed_tokenizer.tokenizer.decode(
-                        new_embed_tokens
-                    ).strip()
-                if embed_tokenizer.model_name == "llama":
-                    for sp_tok in embed_tokenizer.tokenizer.special_tokens.keys():
-                        new_embed_text = new_embed_text.replace(sp_tok, "")
 
+                new_embed_tokens = sum([toks[:seq_len] for toks in new_embed], [])
+                new_embed_text = " ".join(
+                    [
+                        embed_tokenizer.tokenizer.decode(toks[:seq_len]).strip()
+                        for toks in new_embed
+                    ]
+                )
+       
                 if chunk_to is not None:
                     new_embed_tokens = [
                         new_embed_tokens[ind : ind + chunk_to]
@@ -159,20 +147,11 @@ def sequence_iterator_reconstruction(
                             f"Too many passages, truncating to {max_chunks}: from {len(new_embed_tokens)} overall number of tokens {len(new_embed[0])}"
                         )
                         new_embed_tokens = new_embed_tokens[:max_chunks]
-
             else:
                 embed_text = [
                     embed_tokenizer.tokenizer.decode(toks[:seq_len]).strip()
                     for toks in new_embed
                 ]
-                new_embed_text = []
-                if embed_tokenizer.model_name == "llama":
-                    for text in embed_text:
-                        for sp_tok in embed_tokenizer.tokenizer.special_tokens.keys():
-                            text = text.replace(sp_tok, "")
-                        new_embed_text.append(text.replace(sp_tok, ""))
-                else:
-                    new_embed_text = embed_text
                 new_embed_tokens = [toks[:seq_len] for toks in new_embed]
                 if chunk_to is not None:
                     new_embed_tokens = [
@@ -193,16 +172,11 @@ def sequence_iterator_reconstruction(
                     )
 
             if data_type == "instruct":
-                if instruct_prompt is None or instruct is None:
+                if instruct_prompt is None or instruction is None:
                     if few_shot_instruct is None:
                         prefix = "Document: "
                     else:
-                        prefix = "\n\n".join(
-                            few_shot_instruct[
-                                : np.random.randint(0, len(few_shot_instruct) + 1)
-                            ]
-                        )
-
+                        prefix = '\n\n'.join(few_shot_instruct)
                         prefix = (
                             prefix + "\n\nDocument: "
                             if len(prefix) > 0
@@ -210,7 +184,7 @@ def sequence_iterator_reconstruction(
                         )
                     added_prefix = 0
                     splits = re.split(r"\n\nDocument:|\nQuestion:", prefix)
-                    if interleaved and len(splits) > 1:
+                    if interleave and len(splits) > 1:
                         ins_list = []
                         embed_toks = []
                         embed_text = []
@@ -225,6 +199,7 @@ def sequence_iterator_reconstruction(
                             if split == "":
                                 continue
                             if i % 2 == 0:  # First part is the document
+                 
                                 toks = [
                                     embed_tokenizer.tokenizer.encode(
                                         split, bos=False, eos=False
@@ -282,8 +257,7 @@ def sequence_iterator_reconstruction(
                             insert_embed_list.append(ins_list)
 
                         added_prefix = sum(ins_list)
-                        # if any([len(toks) <= 1 for toks in embed_toks]):
-                        #     print("Embed text small", embed_text)
+
                         to_embed_buffer.append(
                             {"text": embed_text, "tokens": embed_toks}
                         )
@@ -356,7 +330,7 @@ def sequence_iterator_reconstruction(
                             new_ex = (
                                 "Document: " + new_embed_text[0] + question + answer
                             )
-
+ 
                         if len(few_shot_instruct) < few_shot:
                             few_shot_instruct.append(new_ex)
                         else:
@@ -364,19 +338,16 @@ def sequence_iterator_reconstruction(
                             assert len(few_shot_instruct) == few_shot, (
                                 f"size of the examples {len(few_shot_instruct)}"
                             )
-                    if loss_last_cont_only:
-                        curr_mask = [False] * added_prefix + curr_mask
-                    else:
-                        curr_mask = [True] * added_prefix + curr_mask
+                    curr_mask = [False] * added_prefix + curr_mask
+
                     size = added_prefix + size
                     seq_len += added_prefix
 
                     x_buffer.extend(x[cur_pos : cur_pos + n_missing])
                     y_buffer.extend([x[cur_pos]] + y[cur_pos : cur_pos + n_missing])
-                    mask_buffer.extend(curr_mask)
                 else:
                     text = llm_tokenizer.tokenizer.decode(
-                        x[cur_pos : cur_pos + n_missing], skip_special_tokens=True
+                        x[cur_pos : cur_pos + n_missing]
                     )
                     text = text.split("\nAnswer:")
                     if len(text) > 1:
@@ -388,18 +359,18 @@ def sequence_iterator_reconstruction(
                         question = ""
                         answer = text[0].strip()
 
-                    if "{question}" in instruct:
-                        instruct = instruct.replace("{question}", question)
-                    instruct = instruct.replace("\n\nAnswer:\n", "\n\nAnswer:")
-                    instruct = instruct.replace(
+                    if "{question}" in instruction:
+                        instruction = instruction.replace("{question}", question)
+                    instruction = instruction.replace("\n\nAnswer:\n", "\n\nAnswer:")
+                    instruction = instruction.replace(
                         "\n\nAnswer:", "\n\nAnswer:\n"
                     )  # To fit to the evaluation template
 
-                    instruct_prompt.append(instruct)
+                    instruct_prompt.append(instruction)
                     answer = llm_tokenizer.tokenizer.encode(answer, bos=False, eos=True)
                     x_buffer.extend(answer[:-1])
                     y_buffer.extend(answer[1:])
-                    mask_buffer.extend([True] * len(answer[:-1]))
+                    curr_mask = [True] * len(answer[:-1]) 
                     size = len(answer[:-1])
                     if not sep_passages:
                         if chunk_to is None:
@@ -431,7 +402,7 @@ def sequence_iterator_reconstruction(
             cur_pos += len(x[cur_pos : cur_pos + n_missing])
         else:
             cur_pos += size
-
+        mask_buffer.extend(curr_mask)
         if not adapt_seq_len:
             n_missing -= size
 
@@ -446,14 +417,13 @@ def sequence_iterator_reconstruction(
 
             try:
                 assert len(mask_buffer) == len(x_buffer) == len(y_buffer), (
-                    "Error in sequence"
-                    + (
+                    "Error in sequence",
                         len(mask_buffer),
                         len(x_buffer),
                         len(y_buffer),
                     )
-                )
-                if instruct is None:
+                
+                if instruction is None:
                     assert len(x_buffer) <= seq_len, (
                         f"Buffer to long {len(x_buffer)} and seq len {seq_len}"
                     )
@@ -576,10 +546,7 @@ def sequence_iterator_continuation(
             bos = llm_tokenizer.tokenizer.bos_id in new_embed
             eos = llm_tokenizer.tokenizer.eos_id in new_embed
             
-            if llm_tokenizer.tokenizer.model_name == "llama":
-                new_text = llm_tokenizer.tokenizer.decode(new_embed, skip_special_tokens=True)
-            else:
-                new_text = llm_tokenizer.tokenizer.decode(new_embed)
+            new_text = llm_tokenizer.tokenizer.decode(new_embed)
                 
             to_embed_buffer.append(
                 {
@@ -640,6 +607,7 @@ def sequence_iterator_continuation(
                         sizes=sizes,
                         data_type=data_type,
                         insert_embed_list=insert_embed_list,
+                        instruct_prompt=instruct_prompt,
                     ),
                     cur_pos,
                 )

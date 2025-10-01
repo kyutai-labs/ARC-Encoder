@@ -7,10 +7,10 @@ llm_types:
 - mistral
 embed_type: llama
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
-exp_name: test_multi_ft
+exp_name: test_trueL3_MLP_fft4_full5shot_exp_seed16
 continuation: 0.0
 num_microbatches: 1
-seed: 0
+seed: 16
 max_steps: 8000
 seq_len: 1024
 log_freq: 10
@@ -51,10 +51,15 @@ from_ckpt:
   bridge_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/multi_decoder_default_L3_MLP/checkpoints/checkpoint_080000/bridge_module/
 
 data:
-  adapt_seq_len: true
   prefix_path: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/
   eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
-  train_data: QA_no_retrieval/adversarial_qa_gt.jsonl:8:5,QA_no_retrieval/freebase_qa_gt.jsonl:27:5,QA_no_retrieval/asqa_gt.jsonl:1:5,QA_no_retrieval/msmarco_gt.jsonl:9.0:5,QA_no_retrieval/sciq_gt.jsonl:3:5,QA_no_retrieval/drop_gt.jsonl:20:5,../synthesized/final_specified_datasets/low_res_short_ts_gemma-3-27b-it.jsonl:3.5:5,../synthesized/final_specified_datasets/low_res_mid_ts_gemma-3-27b-it.jsonl:0.5:2,../synthesized/final_specified_datasets/short_translation.jsonl:6:5,Summarization/DialogSum_train.jsonl:2.5:3,Summarization/SamSum_train.jsonl:2.5:4,Summarization/WikiSum_train.jsonl:5:5,Paraph/ParaSCI_train.jsonl:12:5,Reading_Comp/squad_v2_only_answered.jsonl:20:5,Reading_Comp/hotpot_train_good_format.jsonl:20:4
-  interleave: true
-  instruct: true
+  train_data: QA_no_retrieval/adversarial_qa_gt.jsonl:29967.0:5,QA_no_retrieval/freebase_qa_gt.jsonl:120355.0:5,QA_no_retrieval/asqa_gt.jsonl:4000.0:5,QA_no_retrieval/msmarco_gt.jsonl:40000.0:5,QA_no_retrieval/wikiqa_gt.jsonl:800.0:5,QA_no_retrieval/sciq_gt.jsonl:12000.0:5,QA_no_retrieval/drop_gt.jsonl:80000.0:5,../synthesized/final_specified_datasets/low_res_short_ts_gemma-3-27b-it.jsonl:10000:5,../synthesized/final_specified_datasets/low_res_mid_ts_gemma-3-27b-it.jsonl:5000:2,../synthesized/final_specified_datasets/short_translation.jsonl:20000:5,../synthesized/final_specified_datasets/long_ts_filtered.jsonl:20:0,Summarization/DialogSum_train.jsonl:10000:3,Summarization/SamSum_train.jsonl:10000:4,Summarization/WikiSum_train.jsonl:23000:5,Paraph/ParaSCI_train.jsonl:50000:5
   max_passages: 4
+  interleave: true # Whether to fine-tune by interleaving compressed documents and standard text
+  instruct: true
+
+wandb:
+  project: embed_llm
+  run_name: test_trueL3_MLP_fft4_full5shot_exp_seed16
+  key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
+  offline: false

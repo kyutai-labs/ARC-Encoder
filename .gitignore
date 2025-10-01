@@ -1,3 +1,5 @@
 __pycache__
 embed_llm/*/__pycache__
 embed_llm.egg-info
+setup.cfg
+requirements.txt

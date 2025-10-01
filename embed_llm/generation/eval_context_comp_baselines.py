@@ -561,9 +561,6 @@ def evaluate_trad(
 
         c = list(zip(text, traduction))
 
-        # fixed_random = random.Random()
-        # fixed_random.seed(42)
-        # fixed_random.shuffle(c)
         random.shuffle(c, random=lambda: seed)
         text, traduction = zip(*c)
         embed_prompt = []

@@ -53,12 +53,6 @@ METRIC_EVALUATION = {
 logger = logging.getLogger(__name__)
 
 
-# Profiling memory
-def get_gpu_memory():
-    command = "nvidia-smi"
-    memory_free_info = sp.check_output(command.split()).decode("ascii")
-    return memory_free_info
-
 
 class Pipeline:
     def __init__(self, model, tokenizer):
@@ -225,7 +219,6 @@ def evaluate_long_context(
                     [],
                     inputs["insertion_lists"],
                     pipeline.llm_tokenizer.tokenizer,
-                    mask=None,
                     system_message=None,
                     instruct_prompt=instr_prompt,
                     prefix_prompt=prefix_prompt,

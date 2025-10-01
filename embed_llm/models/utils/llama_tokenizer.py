@@ -160,7 +160,7 @@ class Tokenizer:
             t.append(self.eos_id)
         return t
 
-    def decode(self, t: Sequence[int], skip_special_tokens: bool = False) -> str:
+    def decode(self, t: Sequence[int], skip_special_tokens: bool = True) -> str:
         """
         Decodes a list of token IDs into a string.
 
@@ -296,7 +296,7 @@ class Tokenizer_Llama2:
         return out if isinstance(s, list) else out[0]
 
 
-    def decode(self, t: List[int], skip_special_tokens = False) -> str:
+    def decode(self, t: List[int], skip_special_tokens = True) -> str:
         """
         Decodes a list of token IDs into a string.
 

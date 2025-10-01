@@ -7,7 +7,6 @@ import subprocess as sp
 
 import torch
 from tqdm import tqdm, trange
-import sys
 
 
 from embed_llm.generation.metrics import (  # noqa: E402
@@ -140,9 +139,6 @@ def evaluate_QA(
                     context.append(list((data["passages"][:max_multi_passage])))
         c = list(zip(questions, context, answers))
 
-        # fixed_random = random.Random()
-        # fixed_random.seed(42)
-        # fixed_random.shuffle(c)
         random.shuffle(c, random=lambda: seed)
         questions, context, answers = zip(*c)
 
@@ -190,12 +186,13 @@ def evaluate_QA(
                         prefix_embed=to_embed_str,
                         doc=doc,
                         query=query,
-                        wdoc=True,
+                        wdoc=False, # No text document, only compressed ones
                         cat_multi_passages=cat_multi_passages,
                     )
 
                     batch_list_prompts.append(batch_list_prompt)
                     texts_to_embed.append(text_to_embed)
+
                 generated_sequence, sum_comp_ratio = pipeline.generate(
                     text_to_embed=texts_to_embed,
                     batch_list_prompts=batch_list_prompts,
@@ -557,7 +554,7 @@ def arg_parser():
     parser.add_argument("--run_name",type=str, default=None)
     parser.add_argument("--ckpt", type=int, default=None)
     parser.add_argument("--out_file", type=str, default=None)
-    parser.add_argument("--n_samples", type=int, default=500)
+    parser.add_argument("--n_samples", type=int, default=None)
     parser.add_argument("--max_seq_len", type=int, default=64)
     parser.add_argument("--bs", type=int, default=32)
     parser.add_argument("--multi_passages", type=int, default=1)
@@ -584,7 +581,7 @@ if __name__ == "__main__":
     args = arg_parser()
             
     if args.benchmarks == "all":
-        benchmarks = ["NQ", "TRIVIAQA", "SQUAD", "CNN"]
+        benchmarks = ["NQ", "TRIVIAQA", "SQUAD"]
     else:
         benchmarks = [args.benchmarks]
     icl_tests = [0, 5] if args.n_icl_exs is None else [args.n_icl_exs]

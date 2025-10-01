@@ -1,54 +1,40 @@
-[build-system]
-requires = ["setuptools>=64.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "embed_llm"
-version = "0.0"
-authors = [
-    {name = "Hippolyte Pilchen"},
-    {name = "Edouard Grave"},
-    {name = "Patrick Pérez"},
-]
-description = "Embedding augmented LLM experiments"
+name = "clean-hp"
+version = "0.1.0"
+description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "Apache 2.0"}
-classifiers = [
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-]
 dependencies = [
-    'fire',
-    'simple-parsing',
-    'pyyaml',
-    'safetensors',
-    'tqdm',
-    'mistral-inference',
-    'torch==2.2',
-    'blobfile',
-    'transformers',
-    'einops',
-    'xformers==0.0.24',
-    'sacrebleu',
-    'llmlingua',
-    'rouge-score',
-    'nltk',
-    "argparse",
-    "dataclasses",
-    "pathlib",
-    "setuptools",
-    "vllm",
-    "numpy",
-    "transformers",
+    "argparse>=1.4.0",
+    "blobfile>=3.1.0",
+    "dataclasses>=0.8",
+    "einops>=0.8.1",
+    "fast-pytorch-kmeans>=0.2.2",
+    "fire>=0.7.1",
+    "llmlingua>=0.2.2",
+    "mistral-common",
+    "mistral-inference>=0.0.0",
+    "nltk>=3.9.1",
+    "numpy<2",
+    "pathlib>=1.0.1",
+    "pyyaml>=6.0.2",
+    "rouge-score>=0.1.2",
+    "sacrebleu>=2.5.1",
+    "safetensors>=0.6.2",
+    "setuptools>=80.9.0",
+    "simple-parsing>=0.1.7",
+    "tensorboard>=2.20.0",
+    "torch==2.2",
+    "tqdm>=4.67.1",
+    "transformers>=4.56.1",
+    "wandb>=0.21.3",
+    "xformers==0.0.24",
 ]
-
-dynamic = ["dependencies"]
 
 [tool.setuptools]
-packages = ["embed_llm"]
+include-package-data = true
 
-[tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt"]}
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["embed_llm*"]
+namespaces = false

@@ -7,7 +7,6 @@ import safetensors.torch
 import torch
 from torch.distributed import barrier
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel
-from embed_llm.models.utils.lora import LoRALinear
 from embed_llm.training.distributed import get_rank, get_world_size
 from embed_llm.training.utils import TrainState
 
@@ -31,7 +30,6 @@ class Checkpointer:
         num_ckpt_keep: int | None = None,
         pipeline: object | None = None,
     ):
-        self.llm: nn.Module = model.llms
         self.bridge_module: nn.Module | None = model.bridge_module
         self.embedder: nn.Module | None = model.embedder
         self.pipeline = pipeline
@@ -45,10 +43,8 @@ class Checkpointer:
     def ckpt_dir(self) -> Path:
         return self.run_dir / "checkpoints"
 
-    def dst_dir(self, type="llm") -> Path:
-        if type == "llm":
-            return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / "llm"
-        elif type == "embedder":
+    def dst_dir(self, type="embedder") -> Path:
+        if type == "embedder":
             return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / "embedder"
         elif type == "bridge_module":
             return self.ckpt_dir / f"checkpoint_{self.state.step:06d}" / "bridge_module"
@@ -57,12 +53,10 @@ class Checkpointer:
 
     @staticmethod
     def consolidated_path(
-        ckpt_dir: Path, use_safetensors: bool, save_only_lora: bool = False
+        ckpt_dir: Path, use_safetensors: bool
     ) -> Path:
         suffix = "safetensors" if use_safetensors else "00.pth"
-        prefix = "lora" if save_only_lora else "consolidated"
-
-        return ckpt_dir / f"{prefix}.{suffix}"
+        return ckpt_dir / f"consolidated.{suffix}"
 
     @staticmethod
     def _tmp(ckpt_dir: Path) -> Path:
@@ -97,13 +91,6 @@ class Checkpointer:
     @torch.no_grad()
     def retrieve_save_states(self, save_dtype: torch.dtype) -> dict[str, torch.Tensor]:
         # remove all potential hooks
-        for module in self.llm.modules():
-            if isinstance(module, LoRALinear) and hasattr(module, "_merge_lora_handle"):
-                module._merge_lora_handle.remove()  # type: ignore
-
-        for module in self.embedder.modules():
-            if isinstance(module, LoRALinear) and hasattr(module, "_merge_lora_handle"):
-                module._merge_lora_handle.remove()
 
         offload_to_cpu = get_world_size() > 1
 
@@ -121,9 +108,6 @@ class Checkpointer:
             return is_fsdp and all_params_have_grads and is_leaf_node
 
         # extract all modules with only trainable weights
-        llm_modules = {
-            k: m for k, m in self.llm[0].named_modules() if is_trainable_fsdp(m)
-        }
 
         embedder_modules = {
             k: m for k, m in self.embedder.named_modules() if is_trainable_fsdp(m)
@@ -138,23 +122,6 @@ class Checkpointer:
                 if is_trainable_fsdp(m)
             }
             
-        llm_states = {}
-        for key, module in llm_modules.items():
-            assert isinstance(module, FullyShardedDataParallel), (
-                "`module` should be an instance of `FullyShardedDataParallel`"
-            )
-            parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
-                "_checkpoint_wrapped_module.", ""
-            )
-            with module.summon_full_params(
-                module, writeback=True, offload_to_cpu=offload_to_cpu
-            ):
-                llm_states.update(
-                    {
-                        f"{parent_prefix}.{k}": v.to(dtype=save_dtype)
-                        for k, v in module.state_dict().items()
-                    }
-                )
 
         embedder_states = {}
         special_tokens_states = {}
@@ -204,14 +171,12 @@ class Checkpointer:
                         }
                     )
 
-        llm_states = dict(sorted(llm_states.items()))
         
         if self.bridge_module is not None:
             bridge_modules_states = dict(sorted(bridge_modules_states.items()))
                 
         embedder_states = dict(sorted(embedder_states.items()))
         return (
-            llm_states,
             embedder_states,
             special_tokens_states,
             bridge_modules_states
@@ -221,26 +186,20 @@ class Checkpointer:
     def save_checkpoint(
         self,
         dtype: torch.dtype = torch.float16,
-        save_only_lora_4_embedder: bool = False,
     ):
-        llm_dst = self.dst_dir(type="llm")
-        tmp_llm_dst = self._tmp(llm_dst)
+        embed_dst = self.dst_dir(type="embedder")
+        tmp_embed_dst = self._tmp(embed_dst)
 
-        assert (
-            not self.dst_dir(type="llm").exists()
-            and not self.dst_dir(type="embedder").exists()
+        assert (not self.dst_dir(type="embedder").exists()
             and not self.dst_dir(type="bridge_module").exists()
         ), "dst exists"
 
-        tmp_llm_dst.mkdir(parents=True, exist_ok=True)
+        tmp_embed_dst.mkdir(parents=True, exist_ok=True)
 
-        tmp_trainable_embedder_dst = self._tmp(llm_dst.parent / "embedder")
-        tmp_trainable_embedder_dst.mkdir(parents=True, exist_ok=True)
         if self.bridge_module is not None:
-            tmp_bridge_module_dst = self._tmp(llm_dst.parent / "bridge_module")
+            tmp_bridge_module_dst = self._tmp(tmp_embed_dst.parent / "bridge_module")
             tmp_bridge_module_dst.mkdir(parents=True, exist_ok=True)
         (
-            llm_states,
             embedder_states,
             special_tokens_states,
             bridge_module_states,
@@ -249,35 +208,15 @@ class Checkpointer:
         barrier()
 
         if self.rank == 0:
-            if llm_states:
-                safetensors.torch.save_file(
-                    llm_states,
-                    self.consolidated_path(
-                        tmp_llm_dst,
-                        use_safetensors=True,
-                        save_only_lora=True,
-                    ),  # always use safetensors for checkpointing
-                )
-            if save_only_lora_4_embedder:
-                safetensors.torch.save_file(
-                    embedder_states,
-                    self.consolidated_path(
-                        tmp_trainable_embedder_dst,
-                        use_safetensors=True,
-                        save_only_lora=True,
-                    ),  # always use safetensors for checkpointing
-                )
-            else:
-                special_tokens_states.update(
-                    embedder_states
-                )
+            special_tokens_states.update(
+                embedder_states
+            )
 
             safetensors.torch.save_file(
                 special_tokens_states,
                 self.consolidated_path(
-                    tmp_trainable_embedder_dst,
+                    tmp_embed_dst,
                     use_safetensors=True,
-                    save_only_lora=False,
                 ),  # always use safetensors for checkpointing
             )
                 
@@ -287,19 +226,17 @@ class Checkpointer:
                     self.consolidated_path(
                         tmp_bridge_module_dst,
                         use_safetensors=True,
-                        save_only_lora=False,
                     ),  # always use safetensors for checkpointing
                 )
-            self.write_pipeline_params_info(tmp_llm_dst.parent)
+            self.write_pipeline_params_info(tmp_embed_dst.parent)
 
-            tmp_llm_dst.rename(self.dst_dir(type="llm"))
 
-            tmp_trainable_embedder_dst.rename(self.dst_dir(type="embedder"))
+            tmp_embed_dst.rename(self.dst_dir(type="embedder"))
             if self.bridge_module is not None:
                 tmp_bridge_module_dst.rename(self.dst_dir(type="bridge_module"))
 
             logger.info(
-                f"Done dumping checkpoint in {self.dst_dir(type='llm').parent} for step: {self.state.step}"
+                f"Done dumping checkpoint in {self.dst_dir(type='embedder').parent} for step: {self.state.step}"
             )
 
             # delete last n checkpoints

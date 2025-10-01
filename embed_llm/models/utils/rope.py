@@ -21,7 +21,6 @@ def apply_rotary_emb(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if freqs_cis_k is None:
         freqs_cis_k = freqs_cis.clone()
-        
     if olmo:
         def to_complex(x):
             H, T, D = x.shape

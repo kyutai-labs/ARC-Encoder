@@ -4,4 +4,4 @@ CONTINUATION_INSTRUCT = (
     "Text:\n\n||\nContinue the previous text.||Text continuation:\n..."
 )
 
-TEMPLATES_FOR_QA = "\nQuestion: {question}\nAnswer:"
+TEMPLATES_FOR_QA = ["\nQuestion: {question}\nAnswer: "]

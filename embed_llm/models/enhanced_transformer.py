@@ -28,7 +28,6 @@ from embed_llm.training.distributed import (
 
 from embed_llm.models.embedding_modules import PoolingModule
 from embed_llm.models.utils.loading import load_state_dict
-from embed_llm.models.utils.lora import LoRALoaderMixin, maybe_lora
 from embed_llm.models.utils.cache import (
     BufferCache,
     CacheInputMetadata,
@@ -66,7 +65,7 @@ class SimpleInputMetadata:
         )
 
 
-class Transformer(ModelBase, LoRALoaderMixin):
+class Transformer(ModelBase):
     def __init__(
         self,
         args: ModelArgs,
@@ -133,9 +132,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 n_kv_heads=args.n_kv_heads,
                 head_dim=args.head_dim,
                 norm_eps=args.norm_eps,
-                lora=args.lora
-                if embedder_args is None or i in self.trained_layers
-                else None,
                 non_parametric_norm=args.non_parametric_norm,
             )
 
@@ -149,7 +145,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
             layers.append(block)
 
         self.norm: None | RMSNorm = None
-
         if not self.for_embedding: 
             if args.non_parametric_norm:
                 self.norm = partial(torch.nn.functional.layer_norm, normalized_shape=(args.dim,), eps=args.norm_eps)
@@ -159,8 +154,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         self.output = None
         if not self.for_embedding:
-            MaybeLora = maybe_lora(args.lora)
-            self.output = MaybeLora(
+            self.output = nn.Linear(
                 args.dim,
                 args.vocab_size,
                 bias=False,
@@ -222,10 +216,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
         token_embeds = self.tok_embeddings(input_ids)
-        
         h = token_embeds
         if self.mem_embeddings is not None:
-            # print('should not be here')
             mem_embeddings = self.mem_embeddings[llm_number](
                 torch.arange(
                     self.n_mem_tokens, device=h.device, dtype=input_ids.dtype
@@ -253,22 +245,19 @@ class Transformer(ModelBase, LoRALoaderMixin):
 
         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
 
+
         if not self.causal:
             self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
         else:
             self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
     
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
-
         compress_index = 0
-
+        
         for i in range(self.n_layers):
-            if not isinstance(self_att_mask, BlockDiagonalMask):
-                self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
-
             if i >= self.start_compressing:
+                
                 if self.pooling_args.where == "before":
-
                     pooled_h, new_seqlens = self.pooling_module(
                         x=h,
                         comp_rate=self.compress_rates[compress_index],
@@ -292,6 +281,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                             mask=self_att_mask,
                             freqs_cis_k=freqs_cis,
                         )
+
                     else:
                         if not self.causal:
                             self_att_mask = BlockDiagonalMask.from_seqlens(
@@ -333,6 +323,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 seqlens = new_seqlens
                 compress_index += 1
             else:
+
                 h, _ = self.layers[str(i)](
                     x=h,
                     freqs_cis=freqs_cis,
@@ -353,7 +344,6 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 ind += size
             seqlens = [self.n_mem_tokens] * len(seqlens)
             h = new_h.clone()
-        # print('output shape', h.shape, seqlens)
         return h, seqlens
 
     def forward(
@@ -389,9 +379,8 @@ class Transformer(ModelBase, LoRALoaderMixin):
         self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
 
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
-
         for i in range(self.n_layers):
-            h, _, _ = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
+            h, _ = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
         normalized_h = self.norm(h)
 
         if cat_embeddings is not None:
@@ -463,7 +452,7 @@ class Transformer(ModelBase, LoRALoaderMixin):
                 cache_view = cache.get_view(local_layer_id, cache_metadata)
             else:
                 cache_view = None
-            h, _, _ = layer(x=h, freqs_cis=freqs_cis, cache=cache_view)
+            h, _ = layer(x=h, freqs_cis=freqs_cis, cache=cache_view)
 
         if cache is not None:
             cache.update_seqlens(seqlens.tolist())
@@ -523,7 +512,11 @@ def load_model(
     if not parll or get_rank() == 0:
         state_dict = load_state_dict(folder, dtype=param_dtype, olmo=(llm_type == 'olmo' and not for_embedding))
 
-        if not for_embedding and (llm_args.lora is None or not llm_args.lora.enable):
+        if not for_embedding:
+            if 'rope.freqs' in state_dict:
+                # Remove it from Llama 2 Chat ckpts
+                state_dict.pop('rope.freqs')
+                
             assert all([k in model.state_dict() for k in state_dict.keys()]), (
                 f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
             )
@@ -537,12 +530,13 @@ def load_model(
             Path(folder_w_models + "/mistral_7B")
         ).instruct_tokenizer.tokenizer
         return model, tokenizer
-    elif (llm_type == "llama" and not for_embedding) or (
+    elif ("llama"  in llm_type and not for_embedding) or (
         embed_type == "llama" and for_embedding
     ):
-        if (llm_type == "llama_2" and not for_embedding) or (embed_type == "llama_2" and for_embedding):
+        if (llm_type == "llama_2" and not for_embedding):
             tokenizer = Tokenizer_Llama2(model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama2-7B-Chat/tokenizer.model")
         else:
+            assert not (for_embedding and llm_type == 'llama_2'), "Llama 2 Chat should not be used for encoding"
             tokenizer = LlamaTokenizer(
                 model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B/tokenizer.model")       
             

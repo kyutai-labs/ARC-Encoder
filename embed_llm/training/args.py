@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from simple_parsing.helpers import Serializable
-from embed_llm.models.args import LoraArgs, PipelineArgs
+from embed_llm.models.args import  PipelineArgs
 from embed_llm.data.args import DataArgs
 
 
@@ -91,17 +91,13 @@ class TrainArgs(Serializable):
     # logging
     wandb: WandbArgs = field(default_factory=WandbArgs)
 
-    # LoRA
-    lora_embedder: LoraArgs = field(default_factory=LoraArgs)
-    lora_llm: LoraArgs = field(default_factory=LoraArgs)
-
     # Pretrained embedder to use off the shelf
     pipeline: PipelineArgs = field(default_factory=PipelineArgs)
     mixed_precision: bool = True
     from_ckpt: CkptArgs = field(default_factory=CkptArgs)
-    fair_instruct: bool = False  # If True, the model will be trained with fair-instruct.
-    # If True, the text will be split by two for continuation training. (Continuation can also be performed by preprocessing the data as for instruct)
-    continuation: float = 0.0
+    fair_instruct: bool = False  # If True, the model will be trained with fair-instruct. (each sample is used several, one for every decoder)
+    
+    continuation: float = 0.0 # If True, continue seq_len tokens with another seq_len tokens
     llm_paths: list[str] | None = (
         None  # Path to the directory containing the LLM model or model: "mistral-small"
     )
@@ -115,8 +111,10 @@ class TrainArgs(Serializable):
     embed_type: str = (
         "mistral"  # Type of the embedder to use, either "mistral" or "llama"
     )
-    freeze_embedder: bool = False  # If True, the embedder will not be trained but the special tokens and the MLP projection can still be trained. Useful for training a new MLP for a new decoder using the same encoder as for other decoders.
-
+    
+    freeze_encoder: bool = False  # If True, the embedder will not be trained but the special tokens and the MLP projection can still be trained. 
+    # Useful for training a new MLP for a new decoder using the same encoder as for other decoders.
+    
     def __post_init__(self) -> None:
         assert getattr(self, "world_size", None) is None
         self.world_size = int(os.environ.get("WORLD_SIZE", -1))
@@ -129,8 +127,7 @@ class TrainArgs(Serializable):
 
         assert self.num_ckpt_keep is None or self.num_ckpt_keep >= 1
 
-        if self.embedder_path is not None:
-            Path(self.embedder_path).exists()
+        assert Path(self.embedder_path).exists()
             
         if len(self.llm_paths) > 1:
             assert len(self.llm_paths) == len(self.llm_types), (
@@ -140,8 +137,3 @@ class TrainArgs(Serializable):
                 "If multiple LLMs are used, the number of paths and prob_forward must match."
             )
 
-        if self.lora_llm.enable:
-            assert len(self.llm_paths) == 1, (
-                "LoRA LLM can only be used with a single LLM. "
-                "If you want to use multiple LLMs, training LLMs is not supported."
-            ) 

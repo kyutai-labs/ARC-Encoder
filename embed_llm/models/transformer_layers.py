@@ -8,10 +8,8 @@ from functools import reduce
 from xformers.ops.fmha import memory_efficient_attention  # type: ignore
 from xformers.ops.fmha.attn_bias import BlockDiagonalMask, BlockDiagonalCausalMask
 
-from embed_llm.models.utils.lora import maybe_lora
 from embed_llm.models.args import PoolingArgs
 from embed_llm.models.embedding_modules import PoolingModule
-from embed_llm.training.args import LoraArgs
 
 from embed_llm.models.utils.cache import CacheView
 from embed_llm.models.utils.rope import apply_rotary_emb
@@ -115,7 +113,6 @@ class Attention(nn.Module):
         n_heads: int,
         head_dim: int,
         n_kv_heads: int,
-        lora: LoraArgs | None = None,
     ):
         super().__init__()
 
@@ -125,11 +122,10 @@ class Attention(nn.Module):
 
         self.repeats = self.n_heads // self.n_kv_heads
 
-        MaybeLora = maybe_lora(lora)
-        self.wq = MaybeLora(dim, n_heads * head_dim, bias=False)
-        self.wk = MaybeLora(dim, n_kv_heads * head_dim, bias=False)
-        self.wv = MaybeLora(dim, n_kv_heads * head_dim, bias=False)
-        self.wo = MaybeLora(n_heads * head_dim, dim, bias=False)
+        self.wq = nn.Linear(dim, n_heads * head_dim, bias=False)
+        self.wk = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
+        self.wv = nn.Linear(dim, n_kv_heads * head_dim, bias=False)
+        self.wo = nn.Linear(n_heads * head_dim, dim, bias=False)
 
     def forward(
         self,
@@ -180,7 +176,6 @@ class Attention(nn.Module):
 
         # xformers requires (B=1, S, H, D)
         xq, key, val = xq[None, ...], key[None, ...], val[None, ...]
-
         output = memory_efficient_attention(
             xq, key, val, mask if cache is None else cache.mask
         )
@@ -197,13 +192,12 @@ class Attention(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim: int, hidden_dim: int, lora: LoraArgs | None = None):
+    def __init__(self, dim: int, hidden_dim: int):
         super().__init__()
 
-        MaybeLora = maybe_lora(lora)
-        self.w1 = MaybeLora(dim, hidden_dim, bias=False)
-        self.w2 = MaybeLora(hidden_dim, dim, bias=False)
-        self.w3 = MaybeLora(dim, hidden_dim, bias=False)
+        self.w1 = nn.Linear(dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, dim, bias=False)
+        self.w3 = nn.Linear(dim, hidden_dim, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # type: ignore
@@ -233,10 +227,10 @@ class TransformerBlock(nn.Module):
         n_kv_heads: int,
         head_dim: int,
         norm_eps: float,
-        lora: LoraArgs | None = None,
         non_parametric_norm: bool = False
     ):
         super().__init__()
+        
         self.n_heads = n_heads
         self.dim = dim
         self.attention = Attention(
@@ -244,7 +238,6 @@ class TransformerBlock(nn.Module):
             n_heads=n_heads,
             head_dim=head_dim,
             n_kv_heads=n_kv_heads,
-            lora=lora,
         )
         if not non_parametric_norm:
             self.attention_norm = RMSNorm(dim, eps=norm_eps)
@@ -255,7 +248,7 @@ class TransformerBlock(nn.Module):
             self.ffn_norm = partial(torch.nn.functional.layer_norm, normalized_shape=(dim,), eps=norm_eps, weight = None, bias = None)
             self.olmo = True
 
-        self.feed_forward = FeedForward(dim=dim, hidden_dim=hidden_dim, lora=lora)
+        self.feed_forward = FeedForward(dim=dim, hidden_dim=hidden_dim)
         self.pooling_module = None
 
     def forward(
@@ -282,7 +275,6 @@ class TransformerBlock(nn.Module):
         )
 
         h = x + r
-
         if self.pooling_module is None and where == "between":
             assert comp_rate is not None
             self.pooling_module = PoolingModule(PoolingArgs(pool_type=pool_type))

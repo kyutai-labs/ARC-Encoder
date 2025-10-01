@@ -3,9 +3,6 @@ from dataclasses import dataclass, field
 import torch
 from simple_parsing.helpers import Serializable
 
-from embed_llm.models.utils.lora import LoraArgs
-
-
 @dataclass
 class PoolingArgs(Serializable):
     """Pooling arguments for the transformer model.
@@ -57,7 +54,8 @@ class EmbedderArgs(Serializable):
     cont_tok: bool = False
     compress_rates: list[int] = field(default_factory=list) # Compression rates for embeddings [2, 1] means pooling before the second to last layer 
     trained_layers: int = 0
-    causal_embedder: bool = True
+    causal_embedder: bool = False
+    train_embedding_mtx: bool = True # Whether to train the token embedding matrix
 
     def __post_init__(self) -> None:
         if self.memory_tokens > 0:
@@ -75,6 +73,7 @@ class PipelineArgs(Serializable):
 
 
 
+
 @dataclass
 class ModelArgs(Serializable):
     dim: int
@@ -88,9 +87,6 @@ class ModelArgs(Serializable):
     max_batch_size: int = 1
     # For rotary embeddings. If not set, will be inferred
     rope_theta: float | None = None
-
-    # If this is set, we will load LoRA linear layers instead of linear layers.
-    lora: LoraArgs | None = None
     sliding_window: int | list[int] | None = None
     _sliding_window: int | list[int] | None = None
     model_type: str = "transformer"

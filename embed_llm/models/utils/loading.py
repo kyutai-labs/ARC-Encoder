@@ -10,7 +10,6 @@ from embed_llm.models.utils.mistral_tokenizer import MistralTokenizer
 from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
 from embed_llm.models.args import (
     PipelineArgs,
-    LoraArgs,
     ModelArgs,
     EmbedderArgs,
     PoolingArgs,
@@ -28,7 +27,6 @@ logger = logging.getLogger(__name__)
 
 def load_args(
     folder: Path,
-    lora: LoraArgs,
     max_batch_size: int | None = None,
     pipe_path: str | None = None,
     pipe_args: PipelineArgs | None = None,
@@ -76,7 +74,6 @@ def load_args(
 
     if args_type == "mistral":
         llm_args = ModelArgs(
-            lora=lora,
             dim=args["dim"],
             n_layers=args["n_layers"],
             head_dim=args["head_dim"],
@@ -91,7 +88,7 @@ def load_args(
         if args.get("rope_theta") is not None:
             llm_args.rope_theta = args["rope_theta"]
 
-    elif args_type == "llama":
+    elif args_type == "llama" or args_type == 'llama_2':
         
         # Convert Llama args to ModelArgs
         if args.get("ffn_dim_multiplier", None) is not None:
@@ -103,21 +100,19 @@ def load_args(
         )
 
         llm_args = ModelArgs(
-            lora=lora,
             dim=args["dim"],
             n_layers=args["n_layers"],
             head_dim=args["dim"] // args["n_heads"],
             hidden_dim=hidden_dim,
             n_heads=args["n_heads"],
-            n_kv_heads=args["n_kv_heads"],
+            n_kv_heads=args.get("n_kv_heads", args["n_heads"]),
             norm_eps=args["norm_eps"],
             vocab_size=args["vocab_size"],
-            rope_theta=args["rope_theta"],
+            rope_theta=args.get("rope_theta", 10000),
             max_batch_size=max_batch_size,
         )
     elif args_type=='olmo':
         llm_args = ModelArgs(
-            lora=lora,
             dim=args["dim"],
             n_layers=args["n_layers"],
             head_dim=args["dim"] // args["n_heads"],
@@ -164,21 +159,27 @@ def load_state_dict(path: Path, dtype: torch.dtype, olmo = False) -> dict[str, t
     logger.info(f"Converting model to dtype {dtype} ...")
     
     
-
+    copy_state_dict = model_state_dict.copy()   
+    
     for k, v in model_state_dict.items():
+        if v.dtype == dtype:
+            break
+        model_state_dict[k] = v.to(dtype)
+        
+    for k, v in model_state_dict.items():
+        # Adapt old checkpoints
         if 'rec_tok.weight' in k or 'mem_embeddings.weight' in k or 'cont_tok.weight' in k:
-            model_state_dict[k.replace('.weight','.0.weight')] = v.to(dtype)
-            del model_state_dict[k]
+            copy_state_dict[k.replace('.weight','.0.weight')] = v.to(dtype)
+            del copy_state_dict[k]
         else:
-            model_state_dict[k] = v.to(dtype)
+            copy_state_dict[k] = v.to(dtype)
+            
+    model_state_dict = copy_state_dict
         
     if olmo:    
-
         # Olmo models have a different naming convention for the attention layers
         new_model_state_dict = {}
-        
         for k, v in model_state_dict.items():
-            
             if 'att_proj' in k:
                 wq, wk, wv = v.split((v.shape[0] // 3, v.shape[0] // 3, v.shape[0] // 3), dim=0)
                 new_model_state_dict[k.replace('att_proj', 'attention.wq').replace('model.transformer.blocks.', 'layers.')] = wq
@@ -198,7 +199,7 @@ def load_state_dict(path: Path, dtype: torch.dtype, olmo = False) -> dict[str, t
                 new_model_state_dict[k.replace('model.transformer.ff_out.','output.')] = v
             else:
                 raise ValueError(f"Unexpected key in model state dict: {k}")
-
         del model_state_dict
         return new_model_state_dict
+    
     return model_state_dict
