@@ -1,15 +1,14 @@
 #!/bin/bash
 # SBATCH options
-#SBATCH --partition=kyutai
-#SBATCH --array=0
+#SBATCH --partition=
+#SBATCH --array=
 #SBATCH --nodes=1        # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=16
-#SBATCH --chdir=/home/hippolytepilchen/code/clean_hp
+#SBATCH --chdir=
 #SBATCH --job-name=eval_models
-#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/eval/test_%A_%a.out
-#SBATCH --nodelist=par2dc5-ai-prd-cl02s03dgx25
+#SBATCH --output=out_dire/eval/test_%A_%a.out
 # Set up environment
 
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if already used
@@ -17,7 +16,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID - 100)) # Take care if alread
 
 # Get the configuration file for this job
 RUN_NAMES=(
-ARC4_Encoder_llama_new_full5shot_test
+Your experiment names here
 )
 
 
@@ -42,64 +41,104 @@ echo "Using $N_GPUS GPUs: $CUDA_VISIBLE_DEVICES"
 echo "Starting at: $(date)"
 echo "Run name: $RUN_NAME"
 
-
+# Set a rule depending on the name 
 case $RUN_NAME in
 
-
-*)
+# Default case if multi-decoder ARC-Encoder
+*) 
     srun --gpus=$N_GPU  \
-            uv run python -m embed_llm.generation.eval_context_comp   --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json \
-      --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5
+            uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
+      --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 
 
     srun --gpus=$N_GPU  \
-            uv run python -m embed_llm.generation.eval_context_comp --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json  \
+            uv run python -m embed_llm.generation.eval_context_comp --out_file out_dire/eval/eval_results.json  \
         --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.2-3B   --llm_number 0  
 
-    # srun --gpus=$N_GPU  \
-    #         uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json \
-    #    --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5
-
-    # srun --gpus=$N_GPU  \
-    #         uv run python -m embed_llm.generation.eval_context_comp   --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json  \
-    #    --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 1  
+    srun --gpus=$N_GPU  \
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file out_dire/eval/eval_results.json \
+       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5
 
     srun --gpus=$N_GPU  \
-            uv run python -m embed_llm.generation.eval_context_comp   --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json \
+            uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json  \
+       --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 1  
+
+    srun --gpus=$N_GPU  \
+            uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
      --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks CNN --bs 4
 
 
-    # srun --gpus=$N_GPU  \
-    #         uv run python -m embed_llm.generation.eval_context_comp   --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json \
-    #   --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME   --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5 --benchmarks CNN --bs 4
+    srun --gpus=$N_GPU  \
+            uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
+      --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME   --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5 --benchmarks CNN --bs 4
 
     srun --gpus=$N_GPU  \
-            uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json \
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file out_dire/eval/eval_results.json \
       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
 
-    # srun --gpus=$N_GPU  \
-    #         uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json \
-    #    --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
+    srun --gpus=$N_GPU  \
+            uv run python -m embed_llm.generation.eval_context_comp  --out_file out_dire/eval/eval_results.json \
+       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
     ;;
 
-# *)
+# # Default case if  ARC-Encoder Llama
+# *) 
 #     srun --gpus=$N_GPU  \
-#             uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json  \
-#                    --max_seq_len 64 --run_name $RUN_NAME --embed_name Llama3.2-3B  --multi_passages 1 --n_icl_exs 5 
-
-#     srun --gpus=$N_GPU  \
-#             uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json  \
-#                    --max_seq_len 64 --run_name $RUN_NAME --embed_name Llama3.2-3B  --multi_passages 1 --n_icl_exs 5 --benchmarks CNN
-
+#             uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
+#       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 
 
 #     srun --gpus=$N_GPU  \
-#             uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json  \
-#         --run_name $RUN_NAME --eval_trad  --embed_name Llama3.2-3B --tmp_folder hp_v2/ 
+#             uv run python -m embed_llm.generation.eval_context_comp --out_file out_dire/eval/eval_results.json  \
+#         --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.2-3B   --llm_number 0  
 
 
-#     # srun --gpus=$N_GPU  \
-#     #         uv run python -m embed_llm.generation.eval_context_comp  --out_file /home/hippolytepilchen/code/hp_v2/results/NVEmbed/new_eval.json  \
-#     #     --max_seq_len 64 --run_name $RUN_NAME  --embed_name Llama3.2-3B  --multi_passages 1 --benchmarks DistractorHotpotQA --bs 4 --n_icl_exs 5 --tmp_folder hp_v2/ 
+#     srun --gpus=$N_GPU  \
+#             uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
+#      --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks CNN --bs 4
 
+#     srun --gpus=$N_GPU  \
+#             uv run python -m embed_llm.generation.eval_context_comp  --out_file out_dire/eval/eval_results.json \
+#       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
+
+#     ;;
+
+# # Default case if  ARC-Encoder Mistral
+# *) 
+#     srun --gpus=$N_GPU  \
+#             uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
+#       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME   --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 
+
+#     srun --gpus=$N_GPU  \
+#             uv run python -m embed_llm.generation.eval_context_comp --out_file out_dire/eval/eval_results.json  \
+#         --eval_trad --run_name $RUN_NAME    --embed_name Llama3.2-3B   --llm_number 0  
+
+
+#     srun --gpus=$N_GPU  \
+#             uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
+#      --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME   --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks CNN --bs 4
+
+#     srun --gpus=$N_GPU  \
+#             uv run python -m embed_llm.generation.eval_context_comp  --out_file out_dire/eval/eval_results.json \
+#       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME   --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
+#     ;;
+
+# Default case if  ARC-Encoder OLMo
+# *) 
+#     srun --gpus=$N_GPU  \
+#             uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
+#       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Olmo7B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 
+
+#     srun --gpus=$N_GPU  \
+#             uv run python -m embed_llm.generation.eval_context_comp --out_file out_dire/eval/eval_results.json  \
+#         --eval_trad --run_name $RUN_NAME --llm_name Olmo7B   --embed_name Llama3.2-3B   --llm_number 0  
+
+
+#     srun --gpus=$N_GPU  \
+#             uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
+#      --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME --llm_name Olmo7B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks CNN --bs 4
+
+#     srun --gpus=$N_GPU  \
+#             uv run python -m embed_llm.generation.eval_context_comp  --out_file out_dire/eval/eval_results.json \
+#       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Olmo7B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
 
 #     ;;
 

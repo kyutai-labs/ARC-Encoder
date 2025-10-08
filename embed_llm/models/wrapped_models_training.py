@@ -432,7 +432,7 @@ def load_training_model_from_ckpt(
             param.requires_grad = True
         elif (
             pipeline_args.embedder_params.train_embedding_mtx
-            and "tok_embeddings" in name
+            and "tok_embeddings" in name and not train_args.freeze_encoder
         ):
             param.requires_grad = True
         elif (
@@ -445,6 +445,7 @@ def load_training_model_from_ckpt(
             param.requires_grad = True
         else:
             param.requires_grad = False
+            
     if pipeline_args.bridge_module.bridge_type is not None:
         for name, param in augmented_model.bridge_module.named_parameters():
             param.requires_grad = True
