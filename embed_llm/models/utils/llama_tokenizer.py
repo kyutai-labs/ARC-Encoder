@@ -206,39 +206,9 @@ class Tokenizer:
         yield s[slice_start:]
 
 
-class ChatFormat:
-    def __init__(self, tokenizer: Tokenizer):
-        self.tokenizer = tokenizer
-
-    def encode_header(self, message: Message) -> List[int]:
-        tokens = []
-        tokens.append(self.tokenizer.special_tokens["<|start_header_id|>"])
-        tokens.extend(self.tokenizer.encode(message["role"], bos=False, eos=False))
-        tokens.append(self.tokenizer.special_tokens["<|end_header_id|>"])
-        tokens.extend(self.tokenizer.encode("\n\n", bos=False, eos=False))
-        return tokens
-
-    def encode_message(self, message: Message) -> List[int]:
-        tokens = self.encode_header(message)
-        tokens.extend(
-            self.tokenizer.encode(message["content"].strip(), bos=False, eos=False)
-        )
-        tokens.append(self.tokenizer.special_tokens["<|eot_id|>"])
-        return tokens
-
-    def encode_dialog_prompt(self, dialog: Dialog) -> List[int]:
-        tokens = []
-        tokens.append(self.tokenizer.special_tokens["<|begin_of_text|>"])
-        for message in dialog:
-            tokens.extend(self.encode_message(message))
-        # Add the start of an assistant message for the model to complete.
-        tokens.extend(self.encode_header({"role": "assistant", "content": ""}))
-        return tokens
-
-
-
 class Tokenizer_Llama2:
     """tokenizing and encoding/decoding text using SentencePiece."""
+
     def __init__(self, model_path: str):
         """
         Initializes the Tokenizer with a SentencePiece model.
@@ -279,13 +249,13 @@ class Tokenizer_Llama2:
         Returns:
             List[int]: A list of token IDs.
         """
-        
+
         if isinstance(s, str):
             new_s = [s]
         else:
             new_s = s
         out = []
-        for s_ in new_s:  
+        for s_ in new_s:
             assert type(s_) is str
             t = self.sp_model.encode(s_)
             if bos:
@@ -295,8 +265,7 @@ class Tokenizer_Llama2:
             out.append(t)
         return out if isinstance(s, list) else out[0]
 
-
-    def decode(self, t: List[int], skip_special_tokens = True) -> str:
+    def decode(self, t: List[int], skip_special_tokens=True) -> str:
         """
         Decodes a list of token IDs into a string.
 

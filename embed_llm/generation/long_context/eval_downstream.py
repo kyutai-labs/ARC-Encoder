@@ -212,8 +212,7 @@ class TestItem:
         )
         n_toks_left = (
             input_max_length
-            - len(
-                llm_tokenizer.encode(model_inputs["instruct"], bos = False, eos = False))
+            - len(llm_tokenizer.encode(model_inputs["instruct"], bos=False, eos=False))
             - generation_max_length
         )
         passage_tokens = compressor_tokenizer.encode(
@@ -236,10 +235,12 @@ class TestItem:
         model_inputs["embed_seqlens"] = [
             [len(encoder_input) for encoder_input in encoder_inputs]
         ]
-    
+
         model_inputs["embeddings"] = encoder_inputs
         model_inputs["embeddings"] = sum(model_inputs["embeddings"], [])
-        model_inputs["insertion_lists"] = [0]*len(model_inputs["embeddings"]) #  Insert after BOS token
+        model_inputs["insertion_lists"] = [0] * len(
+            model_inputs["embeddings"]
+        )  # Insert after BOS token
         model_inputs["n_toks_left"] = n_toks_left
 
         return model_inputs

@@ -1,15 +1,14 @@
 #!/bin/bash
 # SBATCH options
 #SBATCH --partition=kyutai
-#SBATCH --array=2
+#SBATCH --array=0
 #SBATCH --nodes=1         # Request single node
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
 #SBATCH --chdir=/home/hippolytepilchen/code/clean_hp
 #SBATCH --job-name=tests_new_database
-#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/tests_%A_%a.out
-#SBATCH --dependency=afterany:1078256_0
+#SBATCH --output=/lustre/scwpod02/client/kyutai-interns/hippop/experiments/finetuning/last_tests_%A_%a.out
 
 # Set up environment
 export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already used
@@ -17,9 +16,7 @@ export MASTER_PORT=$((29500 + $SLURM_ARRAY_TASK_ID )) # Take care if already use
 
 
 CONFIG_FILES=(
-config/test_trueL3_MLP_fft4_full5shot_exp_seed32.yaml 
-config/test_trueL3_MLP_fft4_full5shot_exp_seed16.yaml
-config/test_trueL3_MLP_fft4_full5shot_exp_copy.yaml
+config/test_trueL3_MLP_fft4_full5shot_exp_test_last.yaml
 )
 
 
@@ -89,7 +86,7 @@ case $RUN_NAME in
        --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
     ;;
 
-*_L3_MLP_*)
+*LMO*)
 
 
     srun --gpus=$N_GPU  \

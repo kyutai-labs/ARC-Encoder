@@ -1,0 +1,60 @@
+data:
+  adapt_seq_len: true
+  prefix_path: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/
+  eval_data: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/squad_test.jsonl
+  train_data: QA_no_retrieval/adversarial_qa_gt.jsonl:8:5,QA_no_retrieval/freebase_qa_gt.jsonl:27:5,QA_no_retrieval/asqa_gt.jsonl:1:5,QA_no_retrieval/msmarco_gt.jsonl:9.0:5,QA_no_retrieval/sciq_gt.jsonl:3:5,QA_no_retrieval/drop_gt.jsonl:20:5,../synthesized/final_specified_datasets/low_res_short_ts_gemma-3-27b-it.jsonl:3.5:5,../synthesized/final_specified_datasets/low_res_mid_ts_gemma-3-27b-it.jsonl:0.5:2,../synthesized/final_specified_datasets/short_translation.jsonl:6:5,Summarization/DialogSum_train.jsonl:2.5:3,Summarization/SamSum_train.jsonl:2.5:4,Summarization/WikiSum_train.jsonl:5:5,Paraph/ParaSCI_train.jsonl:12:5
+  interleave: true # Whether to fine-tune by interleaving compressed documents and standard text
+  instruct: true
+  max_passages: 4
+
+run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
+llm_paths: 
+- /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B
+llm_types: 
+- llama
+embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.2-3B
+embed_type: llama
+num_microbatches: 1
+seed: 0
+max_steps: 4000
+seq_len: 2048
+log_freq: 10
+batch_size: 8
+ckpt_freq: 50
+eval_freq: 50
+no_eval: false
+optim:
+  final_lr: 1.0e-08
+  initial_lr: 1.0e-20
+  max_lr: 2.0e-06
+  max_lr_projector: 3.0e-05
+  warm_up_steps: 50
+  weight_decay: 0.05
+pipeline:
+  embedder_params:
+    causal_embedder: false
+    compress_rates:
+    - -4
+    n_truncated_layers: 2
+    pooling_module:
+      pool_type: mean_pooled_queries
+      where: before
+    trained_layers: 27
+    train_embedding_mtx: true
+    rec_tok: true
+    cont_tok: true
+  bridge_module:
+    bridge_type: mlp
+    in_dim: 3072
+    hidden_dim: 2048
+    out_dim: 4096
+from_ckpt:
+  do: true
+  bridge_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/ablations/CP8_L3B_MLP2_L8B_best_80k/checkpoints/checkpoint_080000/bridge_module/
+  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/ablations/CP8_L3B_MLP2_L8B_best_80k/checkpoints/checkpoint_080000/embedder/
+exp_name: ARC4_Encoder_llama_new_full5shot_test
+wandb:
+  key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
+  offline: false
+  project: embed_llm
+  run_name: ARC4_Encoder_llama_new_full5shot_test

@@ -1,14 +1,12 @@
 import warnings
-import pandas as pd
 import logging
 import os
 import random
 import numpy as np
 import torch
-import subprocess as sp
 from embed_llm.models.utils.utils import is_torchrun
 from embed_llm.generation.metrics import get_em, get_rouge_score
-from embed_llm import DATA_PATH
+# from embed_llm import DATA_PATH
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 logger = logging.getLogger(__name__)
@@ -22,8 +20,8 @@ EVAL_DATA_PATH = {
     "FullWikiHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_fullwiki.jsonl",  # Dev set of the FullWiki HotpotQA dataset
     "NarrativeQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test.jsonl",
     "NarrativeQA_split": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/narrativeqa_test_split.jsonl",
-    "DistractorHotpotQA": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl',
-    "CNN": '/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_Sum/cnn_dailymail_test.jsonl'
+    "DistractorHotpotQA": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_ReadComp/hotpot_dev_distractor_v1.jsonl",
+    "CNN": "/lustre/scwpod02/client/kyutai-interns/hippop/processed_data/eval_Sum/cnn_dailymail_test.jsonl",
 }
 
 TRAD_DATA_PATH = {
@@ -35,8 +33,8 @@ TRAD_DATA_PATH = {
 }
 
 # EVAL_DATA_PATH = {
-#     "NQ":  DATA_PATH + "w_retrieved/nq_validation.jsonl",  
-#     "TRIVIAQA":  DATA_PATH + "w_retrieved/triviaqa_validation.jsonl", 
+#     "NQ":  DATA_PATH + "w_retrieved/nq_validation.jsonl",
+#     "TRIVIAQA":  DATA_PATH + "w_retrieved/triviaqa_validation.jsonl",
 #     "SQUAD": DATA_PATH + "raw/squad_validation.jsonl",
 #     "DistractorHotpotQA": DATA_PATH + "raw/hotpotqa_validation.jsonl",
 #     "CNN": DATA_PATH + "raw/cnn_validation.jsonl",
@@ -46,8 +44,8 @@ METRIC_EVALUATION = {
     "NQ": get_em,
     "TRIVIAQA": get_em,
     "SQUAD": get_em,
-    "DistractorHotpotQA": get_em,  
-    "CNN": get_rouge_score,  
+    "DistractorHotpotQA": get_em,
+    "CNN": get_rouge_score,
 }
 
 
@@ -105,7 +103,6 @@ def create_prompt(
         else:
             list_prompt.append(f"\nQuestion: {query}\nAnswer:")
         return list_prompt, list_embed
-
 
 
 def create_prompt_prefix(
@@ -188,7 +185,6 @@ def create_prompt_prefix(
     return prompt_str, to_embed_str
 
 
-
 def get_max_memory():
     """Get the maximum memory available for the current GPU for loading models."""
     free_in_GB = int(torch.cuda.mem_get_info()[0] / 1024**3)
@@ -196,6 +192,7 @@ def get_max_memory():
     n_gpus = torch.cuda.device_count()
     max_memory = {i: max_memory for i in range(n_gpus)}
     return max_memory
+
 
 def set_global_seed(seed=42):
     # Python's random module

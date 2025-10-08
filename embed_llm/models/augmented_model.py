@@ -10,7 +10,11 @@ from torch.nn import ModuleList
 from embed_llm.data.data_loader import Batch
 from embed_llm.generation.utils import eval_logger_info
 from embed_llm.models.args import PipelineArgs
-from embed_llm.models.utils.utils import group_embed_seqlens, is_torchrun, format_for_chat
+from embed_llm.models.utils.utils import (
+    group_embed_seqlens,
+    is_torchrun,
+    format_for_chat,
+)
 from embed_llm.models.embedding_modules import EmbProjector
 from embed_llm.models.utils.loading import (
     load_args,
@@ -22,7 +26,7 @@ from embed_llm.models.enhanced_transformer import Transformer, load_model
 from embed_llm.models.generate import generate as transformer_generate
 
 from embed_llm.data.tokenize import Tokenizer
-from embed_llm import TMP_PATH, MODEL_PATH
+from embed_llm import TMP_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -70,9 +74,7 @@ class EmbedAugModel(nn.Module):
         batch_type: str = "continuation",
         llm_number: int = 0,
     ) -> torch.Tensor:
-
         if embeddings is not None:
-   
             embeddings, embed_seqlens = self.embedder.forward_embedder(
                 input_ids=embeddings,
                 seqlens=sum(embed_seqlens, []),
@@ -82,6 +84,7 @@ class EmbedAugModel(nn.Module):
             embed_seqlens = group_embed_seqlens(
                 embed_seqlens, [len(li) for li in insert_cat_embedds]
             )
+
             if (
                 self.embedder.rec_tok is not None and batch_type == "reconstruction"
             ) or (
@@ -126,7 +129,7 @@ class EmbedAugModel(nn.Module):
                     for embed_seqlen in embed_seqlens
                 ]
                 embeddings = new_embeddings.clone()
-            
+
             if self.bridge_module is not None:
                 if isinstance(self.bridge_module, ModuleList):
                     embeddings = self.bridge_module[llm_number](embeddings)
@@ -218,11 +221,23 @@ class EmbedAugPipeline(nn.Module):
             ind = 0
             poped = 0
             for i, seqlen in enumerate(batch.sizes):
-                if seqlen == 0 or embed_seqlens[i-poped] == []:
-                    if embed_seqlens[i-poped] != []:
-                        print('Removing embeddings')
-                        embeddings = torch.cat([embeddings[:sum(sum(embed_seqlens[:i-poped], []), [])], embeddings[sum(sum(embed_seqlens[:i-poped+1], []), ):]], dim=0).cuda()
-                    embed_seqlens.pop(i-poped)
+                if seqlen == 0 or embed_seqlens[i - poped] == []:
+                    if embed_seqlens[i - poped] != []:
+                        print("Removing embeddings")
+                        embeddings = torch.cat(
+                            [
+                                embeddings[
+                                    : sum(sum(embed_seqlens[: i - poped], []), [])
+                                ],
+                                embeddings[
+                                    sum(
+                                        sum(embed_seqlens[: i - poped + 1], []),
+                                    ) :
+                                ],
+                            ],
+                            dim=0,
+                        ).cuda()
+                    embed_seqlens.pop(i - poped)
                     poped += 1
                     continue
                 prefix_prompt = (
@@ -245,7 +260,9 @@ class EmbedAugPipeline(nn.Module):
                     batch.insert_embed_list[i]
                     if batch.insert_embed_list is not None
                     else None,
-                    self.llm_tokenizer[0].tokenizer, # Only one instruct decoder at the time
+                    self.llm_tokenizer[
+                        0
+                    ].tokenizer,  # Only one instruct decoder at the time
                     system_message=None,
                     suffix_prompt=suffix_prompt,
                     instruct_prompt=instruct_prompt,
@@ -294,17 +311,25 @@ class EmbedAugPipeline(nn.Module):
         param_dtype: torch.dtype = torch.float32,
         llm_number: int = 0,
     ):
-        
-        train_config_path = os.path.join(ckpt_path, "../../args.yaml") if train_config_path is None else train_config_path
+        train_config_path = (
+            os.path.join(ckpt_path, "../../args.yaml")
+            if train_config_path is None
+            else train_config_path
+        )
         if Path(train_config_path).exists():
             with open(train_config_path, "r") as f:
                 train_args = yaml.safe_load(f)
-            freeze_encoder = train_args.get("freeze_encoder", False) # Needs to load trained embedder from another ckpt than the one from ckpt_path
-            embedder_ckpt_path = None if not freeze_encoder else Path(train_args["from_ckpt"]["embedder_path"])
+            freeze_encoder = train_args.get(
+                "freeze_encoder", False
+            )  # Needs to load trained embedder from another ckpt than the one from ckpt_path
+            embedder_ckpt_path = (
+                None
+                if not freeze_encoder
+                else Path(train_args["from_ckpt"]["embedder_path"])
+            )
         else:
             freeze_encoder = False
             embedder_ckpt_path = None
-
 
         llm_args, pipeline_args = load_args(
             Path(llm_path),
@@ -312,7 +337,7 @@ class EmbedAugPipeline(nn.Module):
             pipe_path=ckpt_path,
             args_type=llm_type,
         )
-        
+
         llm, llm_tokenizer = load_model(
             llm_args=llm_args,
             pipeline_args=pipeline_args,
@@ -325,11 +350,9 @@ class EmbedAugPipeline(nn.Module):
             number_of_llm=1,
         )
         logger.info("Loading LLM from")
-        
 
         llm = llm.to(device)
         llm.eval()
-
 
         embed_args, pipeline_args = load_args(
             Path(embedder_path),
@@ -434,20 +457,19 @@ class EmbedAugPipeline(nn.Module):
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llms=[llm]))
         if pipeline_args.bridge_module.bridge_type is not None:
-            
             bridge_ckpt_path = ckpt_path + "/bridge_module"
             logger.info(
                 f"Loading bridge module from {bridge_ckpt_path} with dtype {param_dtype}"
             )
             state_dict = load_state_dict(Path(bridge_ckpt_path), dtype=param_dtype)
-            
+
             if pipeline_args.bridge_module.bridge_type == "multi_module":
                 state_dict = {
                     "0." + ".".join(k.split(".")[1:]): v
                     for k, v in state_dict.items()
                     if str(llm_number) in k.split(".")[0]
                 }
- 
+
             augmented_pipeline.model.bridge_module.load_state_dict(
                 state_dict, strict=False
             )
@@ -465,7 +487,7 @@ class EmbedAugPipeline(nn.Module):
 
         for param in augmented_pipeline.model.parameters():
             param.requires_grad = False
-        
+
         return augmented_pipeline
 
     @torch.inference_mode()
@@ -519,15 +541,15 @@ class EmbedAugPipeline(nn.Module):
                 raise ValueError(
                     "Text conditioning must be a string or a list of strings"
                 )
-                
+
         if text_to_embed is not None:
             seqlens = []
             x = []
-            
+
             for l_text in text_to_embed:  # Here we have a list per sample in the batch
                 sl = []
                 x_l = []
-                
+
                 for text in l_text:  # The list contains texts that have to be embedded
                     if chunk_to is None:
                         toks = self.embed_tokenizer.tokenizer.encode(
@@ -563,7 +585,7 @@ class EmbedAugPipeline(nn.Module):
             embeddings, embed_seqlens = self.model.embedder.forward_embedder(
                 input_ids=x, seqlens=sum(sum(seqlens, []), []), llm_number=0
             )
- 
+
             if chunk_to is not None:
                 # If chunking, we need to group the embed_seqlens by the original seqlens
                 new_embed_seqlens = []
@@ -731,7 +753,7 @@ def load_pipeline(
     llm_type: str = "mistral",
     embed_type: str = "mistral",
     llm_number: int = 0,
-    train_config_path: str | None = None
+    train_config_path: str | None = None,
 ) -> EmbedAugPipeline | Transformer:
     if pipeline is None:
         # Get last checkpoint
@@ -740,9 +762,7 @@ def load_pipeline(
             sorted(
                 [
                     ckpt_name
-                    for ckpt_name in os.listdir(
-                        tmp_path + run_name + "/checkpoints/"
-                    )
+                    for ckpt_name in os.listdir(tmp_path + run_name + "/checkpoints/")
                     if (
                         Path(tmp_path + run_name + "/checkpoints/")
                         / ckpt_name
@@ -785,4 +805,3 @@ def load_pipeline(
             )
             pipeline.model.embedder.n_mem_tokens = comp_rate
     return pipeline, ckpt
-

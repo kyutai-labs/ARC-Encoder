@@ -36,9 +36,9 @@ def insert_embeds(
         embeds: Embeddings to be prepended
         embed_seqlens: For each input sequence, a list of lengths of embeddings that will be inserted
         seqlens: list of text token lengths for each input sequence
-        insert_cat_embedds: list of where to insert the embeddings 
+        insert_cat_embedds: list of where to insert the embeddings
     """
-    
+
     num_supp_toks = embeds.shape[0]
     if isinstance(embed_seqlens, list):
         if isinstance(embed_seqlens[0], list):
@@ -71,9 +71,7 @@ def insert_embeds(
         # Used during training only
 
         size_embed = sum(embed_seqlens[i])
-        for sub_embed_size, insert_idx in zip(
-            embed_seqlens[i], insert_cat_embedds[i]
-        ):
+        for sub_embed_size, insert_idx in zip(embed_seqlens[i], insert_cat_embedds[i]):
             new_h_states[ind_h : insert_idx + ind_h] = h[
                 ind_toks : insert_idx + ind_toks
             ]
@@ -91,9 +89,7 @@ def insert_embeds(
         if ind_toks < sum(seqlens[: i + 1]):
             left_toks = sum(seqlens[: i + 1]) - ind_toks
             # Insert the remaining tokens
-            new_h_states[ind_h : ind_h + left_toks] = h[
-                ind_toks : ind_toks + left_toks
-            ]
+            new_h_states[ind_h : ind_h + left_toks] = h[ind_toks : ind_toks + left_toks]
             pos_to_keep.extend([True] * left_toks)
             # Hide all the texts that are after compressed embeddings
             ind_toks += left_toks
@@ -183,12 +179,7 @@ class Attention(nn.Module):
 
         assert isinstance(output, torch.Tensor)
 
-
-
-        return (
-            self.wo(output),
-            seqlens
-        )  
+        return (self.wo(output), seqlens)
 
 
 class FeedForward(nn.Module):
@@ -227,10 +218,10 @@ class TransformerBlock(nn.Module):
         n_kv_heads: int,
         head_dim: int,
         norm_eps: float,
-        non_parametric_norm: bool = False
+        non_parametric_norm: bool = False,
     ):
         super().__init__()
-        
+
         self.n_heads = n_heads
         self.dim = dim
         self.attention = Attention(
@@ -244,8 +235,20 @@ class TransformerBlock(nn.Module):
             self.ffn_norm = RMSNorm(dim, eps=norm_eps)
             self.olmo = False
         else:
-            self.attention_norm = partial(torch.nn.functional.layer_norm, normalized_shape=(dim,), eps=norm_eps, weight = None, bias = None)
-            self.ffn_norm = partial(torch.nn.functional.layer_norm, normalized_shape=(dim,), eps=norm_eps, weight = None, bias = None)
+            self.attention_norm = partial(
+                torch.nn.functional.layer_norm,
+                normalized_shape=(dim,),
+                eps=norm_eps,
+                weight=None,
+                bias=None,
+            )
+            self.ffn_norm = partial(
+                torch.nn.functional.layer_norm,
+                normalized_shape=(dim,),
+                eps=norm_eps,
+                weight=None,
+                bias=None,
+            )
             self.olmo = True
 
         self.feed_forward = FeedForward(dim=dim, hidden_dim=hidden_dim)
@@ -264,14 +267,14 @@ class TransformerBlock(nn.Module):
         where: str = "before",
     ) -> torch.Tensor:
         # If comp_rate not None and freqs_cis_k is None, pooling between modules
-        r,  seqlens = self.attention.forward(
+        r, seqlens = self.attention.forward(
             x=self.attention_norm(x),
             freqs_cis=freqs_cis,
             cache=cache,
             mask=mask,
             other_kv=None if other_kv is None else self.attention_norm(other_kv),
             freqs_cis_k=freqs_cis_k,
-            olmo=self.olmo,  
+            olmo=self.olmo,
         )
 
         h = x + r

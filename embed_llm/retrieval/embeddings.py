@@ -50,7 +50,6 @@ def encode_text(
     if isinstance(text, str):
         text = [text]
 
-
     if model_name == "Contriever":
         tokenizer = (
             AutoTokenizer.from_pretrained("facebook/contriever")
@@ -68,7 +67,6 @@ def encode_text(
             return embedding
 
     elif model_name == "NVEmbed":
-
         if query_embedding:
             task_name_to_instruct = {
                 "example": "Given a question, retrieve passages that answer the question",
@@ -88,7 +86,7 @@ def encode_text(
                     model, prompts=text, instruction=instruction, pool=True
                 )
                 n_tokens = sum(initial_seqlens)
-                
+
         if device == "cpu":
             return (
                 (embedding.cpu().numpy(), seqlens)
@@ -112,7 +110,6 @@ def generate_embeddings(
     partition: int = 0,
     checkpoint: int = 1000,
 ):
-
     with open(dataset_path, "r") as f:
         dataset = [json.loads(line) for line in f]
 

@@ -19,6 +19,7 @@ dependencies = [
     "pathlib>=1.0.1",
     "pyyaml>=6.0.2",
     "rouge-score>=0.1.2",
+    "ruff>=0.13.2",
     "sacrebleu>=2.5.1",
     "safetensors>=0.6.2",
     "setuptools>=80.9.0",

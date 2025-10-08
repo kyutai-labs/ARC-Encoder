@@ -2,17 +2,16 @@ import argparse
 import json
 import logging
 import os
-import subprocess as sp
 import random
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import LlamaConfig, LlamaForCausalLM, LlamaTokenizerFast
 import numpy as np
-from embed_llm.generation.cepe_long_context.eval_downstream import (
+from embed_llm.generation.long_context.eval_downstream import (
     TestItemDataset,
 )
-from embed_llm.generation.cepe_long_context.modeling_llama_flash import (
+from embed_llm.generation.long_context.modeling_llama_flash import (
     LlamaForCausalContextLM,
 )
 from embed_llm.models.augmented_model import load_pipeline
@@ -36,9 +35,9 @@ from embed_llm import TMP_PATH, MODEL_PATH, DATA_PATH  # noqa: E402
 
 logger = logging.getLogger(__name__)
 EVAL_DATA_PATH = {
-    "NQA":  DATA_PATH + "long_context/narrativeqa_validation.jsonl",
-    "Qspr":  DATA_PATH + "long_context/qasper_validation.jsonl",
-    "GvRp":  DATA_PATH + "long_context/govreport_validation.jsonl",
+    "NQA": DATA_PATH + "long_context/narrativeqa_validation.jsonl",
+    "Qspr": DATA_PATH + "long_context/qasper_validation.jsonl",
+    "GvRp": DATA_PATH + "long_context/govreport_validation.jsonl",
     "QMSum": DATA_PATH + "long_context/qmsum_validation.jsonl",
 }
 
@@ -51,7 +50,6 @@ METRIC_EVALUATION = {
 }
 
 logger = logging.getLogger(__name__)
-
 
 
 class Pipeline:
@@ -147,9 +145,9 @@ def evaluate_long_context(
             test_item = inputs.pop("test_item")
 
             if eval_model == "ours":
-                  # print('Embed seqlens before pooling',inputs["embed_seqlens"])
+                # print('Embed seqlens before pooling',inputs["embed_seqlens"])
                 embeddings, embed_seqlens = pipeline.model.embedder.forward_embedder(
-                    input_ids=torch.tensor(inputs["embeddings"]).to(device),
+                    input_ids=torch.tensor(inputs["embeddings"]).to('cuda'),
                     seqlens=sum(inputs["embed_seqlens"], []),
                 )
                 embed_seqlens = [embed_seqlens]
@@ -238,13 +236,11 @@ def evaluate_long_context(
                     cat_embeddings=embeddings,
                 )
 
-
                 produced_text = [
                     pipeline.llm_tokenizer.tokenizer.decode(generated_tokens[i])
                     for i in range(len(generated_tokens))
                 ]
                 prediction = [text.strip() for text in produced_text][0]
-
 
             else:
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -289,7 +285,7 @@ def evaluate_long_context(
         )
 
         value_acc, _ = get_substring_match_score(
-            generated_sequences, answers[:len(generated_sequences)]
+            generated_sequences, answers[: len(generated_sequences)]
         )
 
         value_f1 = np.mean(
@@ -388,8 +384,7 @@ def arg_parser():
         type=int,
         default=None,
     )
-    
-    
+
     # CEPED "hyen/CEPED-LLaMA-2-Chat-7B"
     # Baseline "meta-llama/Llama-2-7b-chat-hf", "meta-llama/Llama-3.1-8B"
     # Together Instruct "togethercomputer/Llama-2-7B-32K-Instruct"

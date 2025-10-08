@@ -3,7 +3,7 @@ from functools import partial
 from pathlib import Path
 import os
 
-import numpy as np
+
 import torch
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
@@ -40,7 +40,7 @@ from embed_llm.models.transformer_layers import (
     insert_embeds,
     positions_from_sizes,
 )
-from embed_llm import TMP_PATH, MODEL_PATH  
+from embed_llm import MODEL_PATH
 
 Tokenizer = MistralTokenizer | LlamaTokenizer
 
@@ -98,13 +98,26 @@ class Transformer(ModelBase):
             self.mem_embeddings = (
                 None
                 if self.n_mem_tokens == 0
-                else nn.ModuleList([torch.nn.Embedding(self.n_mem_tokens, args.dim) for _ in range(number_of_llm)])
+                else nn.ModuleList(
+                    [
+                        torch.nn.Embedding(self.n_mem_tokens, args.dim)
+                        for _ in range(number_of_llm)
+                    ]
+                )
             )
             self.rec_tok = (
-                nn.ModuleList([torch.nn.Embedding(1, args.dim) for _ in range(number_of_llm)]) if embedder_args.rec_tok else None
+                nn.ModuleList(
+                    [torch.nn.Embedding(1, args.dim) for _ in range(number_of_llm)]
+                )
+                if embedder_args.rec_tok
+                else None
             )
             self.cont_tok = (
-                 nn.ModuleList([torch.nn.Embedding(1, args.dim) for _ in range(number_of_llm)])  if embedder_args.cont_tok else None
+                nn.ModuleList(
+                    [torch.nn.Embedding(1, args.dim) for _ in range(number_of_llm)]
+                )
+                if embedder_args.cont_tok
+                else None
             )
 
         else:
@@ -145,9 +158,13 @@ class Transformer(ModelBase):
             layers.append(block)
 
         self.norm: None | RMSNorm = None
-        if not self.for_embedding: 
+        if not self.for_embedding:
             if args.non_parametric_norm:
-                self.norm = partial(torch.nn.functional.layer_norm, normalized_shape=(args.dim,), eps=args.norm_eps)
+                self.norm = partial(
+                    torch.nn.functional.layer_norm,
+                    normalized_shape=(args.dim,),
+                    eps=args.norm_eps,
+                )
             else:
                 self.norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.layers = nn.ModuleDict({str(i): layers[i] for i in range(self.n_layers)})
@@ -245,18 +262,17 @@ class Transformer(ModelBase):
 
         positions = positions_from_sizes(seqlens, self.freqs_cis.device)
 
-
         if not self.causal:
             self_att_mask = BlockDiagonalMask.from_seqlens(seqlens)
         else:
             self_att_mask = BlockDiagonalCausalMask.from_seqlens(seqlens)
-    
+
         freqs_cis = self.freqs_cis[positions].to(device=h.device)
         compress_index = 0
-        
+
         for i in range(self.n_layers):
+
             if i >= self.start_compressing:
-                
                 if self.pooling_args.where == "before":
                     pooled_h, new_seqlens = self.pooling_module(
                         x=h,
@@ -299,7 +315,7 @@ class Transformer(ModelBase):
                             mask=self_att_mask,
                         )
                 else:
-                    # Between SA and MLP ("between") 
+                    # Between SA and MLP ("between")
                     h, new_seqlens = self.layers[str(i)](
                         x=h,
                         freqs_cis=freqs_cis,
@@ -323,7 +339,6 @@ class Transformer(ModelBase):
                 seqlens = new_seqlens
                 compress_index += 1
             else:
-
                 h, _ = self.layers[str(i)](
                     x=h,
                     freqs_cis=freqs_cis,
@@ -359,7 +374,7 @@ class Transformer(ModelBase):
         token_embeds = self.tok_embeddings(input_ids)
 
         if cat_embeddings is not None:
-            h, seqlens, pos_to_keep= insert_embeds(
+            h, seqlens, pos_to_keep = insert_embeds(
                 token_embeds,
                 cat_embeddings,
                 embed_seqlens=embed_seqlens,
@@ -415,7 +430,7 @@ class Transformer(ModelBase):
                 "Insert cat embeddings must be provided"
             )
 
-            h, seqlens, pos_to_keep= insert_embeds(
+            h, seqlens, pos_to_keep = insert_embeds(
                 token_embeds,
                 cat_embeddings,
                 embed_seqlens=embed_seqlens,
@@ -510,13 +525,15 @@ def load_model(
         )
 
     if not parll or get_rank() == 0:
-        state_dict = load_state_dict(folder, dtype=param_dtype, olmo=(llm_type == 'olmo' and not for_embedding))
+        state_dict = load_state_dict(
+            folder, dtype=param_dtype, olmo=(llm_type == "olmo" and not for_embedding)
+        )
 
         if not for_embedding:
-            if 'rope.freqs' in state_dict:
+            if "rope.freqs" in state_dict:
                 # Remove it from Llama 2 Chat ckpts
-                state_dict.pop('rope.freqs')
-                
+                state_dict.pop("rope.freqs")
+
             assert all([k in model.state_dict() for k in state_dict.keys()]), (
                 f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
             )
@@ -530,18 +547,25 @@ def load_model(
             Path(folder_w_models + "/mistral_7B")
         ).instruct_tokenizer.tokenizer
         return model, tokenizer
-    elif ("llama"  in llm_type and not for_embedding) or (
+    elif ("llama" in llm_type and not for_embedding) or (
         embed_type == "llama" and for_embedding
     ):
-        if (llm_type == "llama_2" and not for_embedding):
-            tokenizer = Tokenizer_Llama2(model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama2-7B-Chat/tokenizer.model")
+        if llm_type == "llama_2" and not for_embedding:
+            tokenizer = Tokenizer_Llama2(
+                model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama2-7B-Chat/tokenizer.model"
+            )
         else:
-            assert not (for_embedding and llm_type == 'llama_2'), "Llama 2 Chat should not be used for encoding"
+            assert not (for_embedding and llm_type == "llama_2"), (
+                "Llama 2 Chat should not be used for encoding"
+            )
             tokenizer = LlamaTokenizer(
-                model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B/tokenizer.model")       
-            
-    elif llm_type == 'olmo' and not for_embedding:
-        tokenizer = OlmoTokenizer.from_file(os.path.join(MODEL_PATH,'Olmo7B/tokenizer.json'))
+                model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B/tokenizer.model"
+            )
+
+    elif llm_type == "olmo" and not for_embedding:
+        tokenizer = OlmoTokenizer.from_file(
+            os.path.join(MODEL_PATH, "Olmo7B/tokenizer.json")
+        )
     else:
         raise ValueError(f"Unknown llm_type: {llm_type} or embed_type: {embed_type}")
     return model, tokenizer

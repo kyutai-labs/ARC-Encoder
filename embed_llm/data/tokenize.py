@@ -4,12 +4,14 @@ from dataclasses import dataclass
 from embed_llm.models.utils.mistral_tokenizer import MistralTokenizer
 from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
 from embed_llm.models.utils.olmo_tokenizer import Tokenizer as OlmoTokenizer
-from embed_llm.data.utils import TEMPLATES_FOR_QA, CONTINUATION_INSTRUCT, RECONSTRUCTION_INSTRUCT
+from embed_llm.data.utils import (
+    TEMPLATES_FOR_QA,
+)
+
 logger = logging.getLogger("tokenize")
 
 Sequence = list[int]
 Mask = list[bool]
-
 
 
 @dataclass()
@@ -43,7 +45,14 @@ def encode(
     instruct: bool = False,
     instruct_decoder: bool = False,
 ) -> TokenSample | None:
-    return get_sample(data, llm_tokenizer, embed_tokenizer, max_passages, instruct, instruct_decoder=instruct_decoder)
+    return get_sample(
+        data,
+        llm_tokenizer,
+        embed_tokenizer,
+        max_passages,
+        instruct,
+        instruct_decoder=instruct_decoder,
+    )
 
 
 def get_sample(
@@ -54,9 +63,8 @@ def get_sample(
     instruct: bool = False,
     instruct_decoder: bool = False,
 ) -> str:
-
     if instruct:
-        question = data["question"]
+        question = data.get("question", "")
 
         assert isinstance(data["answer"], str) or isinstance(data["answer"], list)
         if isinstance(data["answer"], list):
@@ -79,21 +87,21 @@ def get_sample(
                 embed_passage = [data[pass_key]]
         else:
             raise ValueError("No passage or passages key found in data")
-        
+
         if "instruction" in data.keys():
             instruction = data["instruction"]
         else:
             instruction = None
 
         assert isinstance(question, str), question
-        
+
         if question == "":
             q_tokens = []
             a_tokens = llm_tokenizer.tokenizer.encode(
                 answer, bos=False, eos=True if not instruct_decoder else False
             )
         else:
-            question = random.choice(TEMPLATES_FOR_QA).format(question=question) 
+            question = random.choice(TEMPLATES_FOR_QA).format(question=question)
             q_tokens = llm_tokenizer.tokenizer.encode(question, bos=False, eos=False)
             a_tokens = llm_tokenizer.tokenizer.encode(
                 answer, bos=False, eos=True if not instruct_decoder else False
@@ -109,7 +117,13 @@ def get_sample(
             embed_passage,
         )
 
-        return TokenSample(q_tokens + a_tokens, masks, passages, data_type="instruct", instruction = instruction)
+        return TokenSample(
+            q_tokens + a_tokens,
+            masks,
+            passages,
+            data_type="instruct",
+            instruction=instruction,
+        )
 
     else:
         sample = data["text"]
@@ -122,7 +136,6 @@ def get_sample(
             bos=True if not instruct_decoder else False,
             eos=True if not instruct_decoder else False,
         )
-
 
         masks = [True] * len(tokens)
 

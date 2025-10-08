@@ -10,13 +10,13 @@ from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm, trange
 from embed_llm.generation.utils import (
-    ensure_reproducibility, 
+    ensure_reproducibility,
     eval_logger_info,
     create_prompt_prefix,
     create_prompt,
     EVAL_DATA_PATH,
     METRIC_EVALUATION,
-    TRAD_DATA_PATH
+    TRAD_DATA_PATH,
 )
 from embed_llm.monitoring.utils import set_logger  # noqa: E402
 from embed_llm.generation.metrics import (  # noqa: E402
@@ -30,11 +30,7 @@ from embed_llm.generation.metrics import (  # noqa: E402
 )
 
 
-
-
 logger = logging.getLogger(__name__)
-
-
 
 
 class Pipeline:
@@ -144,7 +140,6 @@ def create_ts_dataset(
                 + f"\nQuestion: Translate the previous document into {benchmark}.\nAnswer: "
             )
         else:
-
             overall_list_prompts.append(
                 text_prompt_prefix
                 + [
@@ -210,7 +205,6 @@ def evaluate_QA(
     seed: float = 0.42,
     compressed_doc_in_icl: bool = False,
     comp_rate: float | None = None,
-    use_llmlingua2: bool = False,  # If True, use llmlingua2 for prompt compression
     cat_multi_passages: bool = False,  # If True, use together multi-passage retrieval
     max_doc_len: int | None = None,  # Maximum length of documents
     accelerator: Accelerator | None = None,  # For distributed training
@@ -224,7 +218,7 @@ def evaluate_QA(
         llm_lingua = None
     else:
         llm_lingua = PromptCompressor(
-            model_name=prompt_compressor_name, use_llmlingua2=use_llmlingua2
+            model_name=prompt_compressor_name, use_llmlingua2=True
         )
 
     total_benchmarks = len(benchmarks)
@@ -267,7 +261,6 @@ def evaluate_QA(
 
         c = list(zip(questions, context, answers))
 
-
         random.shuffle(c, random=lambda: seed)
         questions, context, answers = zip(*c)
 
@@ -300,12 +293,14 @@ def evaluate_QA(
             return {"inputs": inputs, "labels": [sample["answers"] for sample in batch]}
 
         n_samples = (
-            len(new_questions) if n_samples is None  else min(n_samples, len(new_questions))
+            len(new_questions)
+            if n_samples is None
+            else min(n_samples, len(new_questions))
         )
-        if benchmark == 'CNN':
+        if benchmark == "CNN":
             n_samples = min(n_samples, 1000)
             max_seq_len = 256
-            
+
         dataset, compress_ratio = create_QA_dataset(
             n_samples=n_samples,
             new_questions=new_questions,
@@ -313,8 +308,10 @@ def evaluate_QA(
             prompt_str=prompt_str,
             to_embed_str=to_embed_str,
             new_answers=new_answers,
-            query_w_context=True if llm_lingua is None  and not no_context else False, # If we want to test the decoder without context
-            w_embeds= True if llm_lingua is not None else False,
+            query_w_context=True
+            if llm_lingua is None and not no_context
+            else False,  # If we want to test the decoder without context
+            w_embeds=True if llm_lingua is not None else False,
             cat_multi_passages=cat_multi_passages,
             llm_lingua=llm_lingua,
             comp_rate=comp_rate,
@@ -403,7 +400,6 @@ def evaluate_QA(
                     "approx_Metric": value_approx,
                     "Prop context containing the answer": n_answer_in_context,
                     "xRAG metric": value_xrag,
-                    "n_samples": n_samples,
                     "compress_ratio": compress_ratio,
                     "compressed_icl": compressed_doc_in_icl,
                     "llm_name": "mistral" if llm_name is None else llm_name,
@@ -411,7 +407,6 @@ def evaluate_QA(
                     "prompt_compressor_name": prompt_compressor_name,
                     "max_doc_len": max_doc_len,
                     "multi_passages": max_multi_passage,
-                    "llmlingua2": use_llmlingua2,
                     "temp": 0.0,
                 }
                 value_f1 = (
@@ -428,7 +423,6 @@ def evaluate_QA(
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
                     "Metric": value_f1,
-                    "n_samples": n_samples,
                     "compress_ratio": compress_ratio,
                     "compressed_icl": compressed_doc_in_icl,
                     "llm_name": "mistral" if llm_name is None else llm_name,
@@ -436,7 +430,6 @@ def evaluate_QA(
                     "prompt_compressor_name": prompt_compressor_name,
                     "multi_passages": max_multi_passage,
                     "max_doc_len": max_doc_len,
-                    "llmlingua2": use_llmlingua2,
                     "temp": 0.0,
                 }
                 print(
@@ -453,12 +446,10 @@ def evaluate_QA(
                 if "ROUGE" not in metrics[benchmark].keys():
                     metrics[benchmark]["ROUGE"] = {}
 
-
                 metrics[benchmark]["ROUGE"] = {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
                     "Metric": value_rouge,
-                    "n_samples": n_samples,
                     "compress_ratio": compress_ratio,
                     "compressed_icl": compressed_doc_in_icl,
                     "llm_name": "mistral" if llm_name is None else llm_name,
@@ -484,7 +475,7 @@ def evaluate_QA(
             run_name = prompt_compressor_name.split("/")[-1] + llm_name.split("/")[-1]
         else:
             run_name = "baseline_" + llm_name.split("/")[-1]
-        
+
         with open(
             output_file,
             "r",
@@ -501,7 +492,7 @@ def evaluate_QA(
             for metric in metrics[benchmark].keys():
                 if metric not in overall_results[run_name][benchmark].keys():
                     overall_results[run_name][benchmark][metric] = []
-      
+
                 overall_results[run_name][benchmark][metric].append(
                     metrics[benchmark][metric]
                 )
@@ -518,7 +509,6 @@ def evaluate_trad(
     prompt_compressor_name: str | None,
     llm_name: str,  # mistralai/Mistral-7B-v0.3 "meta-llama/Meta-Llama-3-8B"
     max_seq_len: int = 128,
-    use_llmlingua2: bool = False,  # If True, use llmlingua2 for prompt compression
     benchmarks: list[str] = ["Danish", "French", "Spanish", "German"],
     max_bs: int = 4,
     output_file: str = None,
@@ -535,7 +525,7 @@ def evaluate_trad(
         llm_lingua = None
     else:
         llm_lingua = PromptCompressor(
-            model_name=prompt_compressor_name, use_llmlingua2=use_llmlingua2
+            model_name=prompt_compressor_name, use_llmlingua2=True
         )
     total_benchmarks = len(benchmarks)
 
@@ -557,7 +547,6 @@ def evaluate_trad(
             for line in f:
                 data = json.loads(line)
                 traduction.append(data["text"].strip())
-
 
         c = list(zip(text, traduction))
 
@@ -603,7 +592,7 @@ def evaluate_trad(
             )
             return {"inputs": inputs, "labels": [sample["answers"] for sample in batch]}
 
-        n_samples = len(text) if n_samples is None  else min(n_samples, len(text))
+        n_samples = len(text) if n_samples is None else min(n_samples, len(text))
 
         dataset, compress_ratio = create_ts_dataset(
             n_samples=n_samples,
@@ -659,7 +648,6 @@ def evaluate_trad(
                 "compressed_icl": compressed_doc_in_icl,
                 "llm_name": llm_name,
                 "prompt_compressor_name": prompt_compressor_name,
-                "llmlingua2": use_llmlingua2,
                 "temp": 0.0,
             }
 
@@ -668,15 +656,11 @@ def evaluate_trad(
             run_name = (
                 prompt_compressor_name.split("/")[-1]
                 + llm_name.split("/")[-1]
-                + "flores")
-            
-        else:
-            run_name = (
-                "baseline_"
-                + llm_name.split("/")[-1]
-                +  "flores")
-            
+                + "flores"
+            )
 
+        else:
+            run_name = "baseline_" + llm_name.split("/")[-1] + "flores"
 
         with open(
             output_file,
@@ -691,9 +675,7 @@ def evaluate_trad(
                 if metric not in overall_results[run_name].keys():
                     overall_results[run_name][metric] = []
 
-                overall_results[run_name][metric].append(
-                    metrics[benchmark][metric]
-                )
+                overall_results[run_name][metric].append(metrics[benchmark][metric])
         with open(
             output_file,
             "w",
@@ -735,14 +717,10 @@ def arg_parser():
         default=None,
     )
     parser.add_argument(
-        "--use_llmlingua2",
-        action="store_true",
-        help="If True, use llmlingua2 for prompt compression",
-    )
-    parser.add_argument(
         "--max_doc_len",
         type=int,
         default=None,
+        help="Maximum length of documents (in tokens)",
     )
 
     return parser.parse_args()
@@ -785,7 +763,7 @@ if __name__ == "__main__":
     if args.eval_trad:
         eval_logger_info(
             logger,
-            f"EVALUATING Translation with Flores dataset",
+            "EVALUATING Translation with Flores dataset",
         )
         pipeline = evaluate_trad(
             max_bs=args.bs,
@@ -800,7 +778,6 @@ if __name__ == "__main__":
             compressed_doc_in_icl=args.compressed_doc_in_icl,
             prompt_compressor_name=args.compressor_name,
             llm_name=args.llm_name,
-            use_llmlingua2=args.use_llmlingua2,
             accelerator=accelerator,
             max_seq_len=max_seq_len,
         )
@@ -825,7 +802,6 @@ if __name__ == "__main__":
             cat_multi_passages=args.cat_multi_passages,
             prompt_compressor_name=args.compressor_name,
             llm_name=args.llm_name,
-            use_llmlingua2=args.use_llmlingua2,
             max_doc_len=args.max_doc_len,
             accelerator=accelerator,
             no_context=args.no_context,
@@ -851,7 +827,6 @@ if __name__ == "__main__":
                 cat_multi_passages=args.cat_multi_passages,
                 prompt_compressor_name=args.compressor_name,
                 llm_name=args.llm_name,
-                use_llmlingua2=args.use_llmlingua2,
                 max_doc_len=args.max_doc_len,
                 accelerator=accelerator,
                 no_context=args.no_context,

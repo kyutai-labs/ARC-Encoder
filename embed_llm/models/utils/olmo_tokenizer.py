@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import List, Optional, Union
-
 from tokenizers import Tokenizer as BaseTokenizer
 
 
@@ -26,7 +23,7 @@ class Tokenizer:
         self,
         base_tokenizer: BaseTokenizer,
         eos_token_id: int,
-        pad_token_id: Optional[int] = None,
+        pad_token_id: int | None = None,
     ):
         self.base_tokenizer = base_tokenizer
         self.eos_id = eos_token_id
@@ -56,7 +53,7 @@ class Tokenizer:
         base_tokenizer = BaseTokenizer.from_pretrained(identifier)
         eos_id = kwargs.pop("eos_id", base_tokenizer.get_vocab_size() - 1)
         return cls(base_tokenizer, eos_id, **kwargs)
-    
+
     @classmethod
     def from_file(cls, filename: Path | str, **kwargs) -> Tokenizer:
         """
@@ -71,7 +68,9 @@ class Tokenizer:
         eos_id = kwargs.pop("eos_id", base_tokenizer.get_vocab_size() - 1)
         return cls(base_tokenizer, eos_id, **kwargs)
 
-    def add_special_tokens(self, input_ids: List[int], eos: bool = False, bos: bool = False) -> List[int]:
+    def add_special_tokens(
+        self, input_ids: list[int], eos: bool = False, bos: bool = False
+    ) -> list[int]:
         """
         Add special tokens in-place (if not already present) to the given token IDs.
         """
@@ -84,18 +83,16 @@ class Tokenizer:
     def num_special_tokens_to_add(self, is_pair: bool = False) -> int:
         return 2 if is_pair else 1
 
-
-    def encode(self, input: str, eos = False, bos = False) -> List[int]:
+    def encode(self, input: str, eos=False, bos=False) -> list[int]:
         """
         Encode a string into token IDs.
         """
         return self.encode_batch([input], eos=eos, bos=bos)[0]
 
-    def encode_batch(self, inputs: List[str], eos = False, bos = False) -> List[List[int]]:
+    def encode_batch(self, inputs: list[str], eos=False, bos=False) -> list[list[int]]:
         """
         Encode a batch of strings into token IDs.
         """
- 
 
         batch_encoding = self.base_tokenizer.encode_batch(inputs)
 
@@ -107,8 +104,10 @@ class Tokenizer:
 
         return all_input_ids
 
-    def decode(self, token_ids: List[int], skip_special_tokens: bool = True) -> str:
+    def decode(self, token_ids: list[int], skip_special_tokens: bool = True) -> str:
         """
         Decode a list of token IDs to a string.
         """
-        return self.base_tokenizer.decode(token_ids, skip_special_tokens=skip_special_tokens)
+        return self.base_tokenizer.decode(
+            token_ids, skip_special_tokens=skip_special_tokens
+        )

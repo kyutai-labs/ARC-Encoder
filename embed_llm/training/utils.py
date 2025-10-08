@@ -87,4 +87,3 @@ def logged_closing(thing: Closable, name: str):
 
 def now_as_str() -> str:
     return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-

@@ -5,7 +5,10 @@ from embed_llm.models.enhanced_transformer import Transformer
 
 @torch.inference_mode()
 def generate(
-    prompt_tokens: list[list[list[int]]] | list[list[int]], # For each prompt, split it whenever embeddings should be interleaved
+    prompt_tokens: list[list[list[int]]]
+    | list[
+        list[int]
+    ],  # For each prompt, split it whenever embeddings should be interleaved
     model: Transformer,
     *,
     max_tokens: int,

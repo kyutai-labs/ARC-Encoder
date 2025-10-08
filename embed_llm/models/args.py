@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import torch
 from simple_parsing.helpers import Serializable
 
+
 @dataclass
 class PoolingArgs(Serializable):
     """Pooling arguments for the transformer model.
@@ -23,15 +24,16 @@ class PoolingArgs(Serializable):
                 - "mse": merge similar tokens based on mean squared error
                 - "manhattan": merge similar tokens based on Manhattan distance
                 - "chebyshev": merge similar tokens based on Chebyshev distance,
-            - + "_pooled_queries": if "pooled_queries" is in the pool_type, 
-                                   it means that the pooling is applied to the queries which 
+            - + "_pooled_queries": if "pooled_queries" is in the pool_type,
+                                   it means that the pooling is applied to the queries which
                                    will attend to non pooled kv.
-        
+
         where: Where to apply the pooling. Options include:
             - "before": Before the self-attention layer.
             - "between": Between the self-attention and MLP layers.
     """
-    pool_type: str = "mean_pooled_queries" # Precise pooled_queries if before and pooled queries attend to non pooled kv
+
+    pool_type: str = "mean_pooled_queries"  # Precise pooled_queries if before and pooled queries attend to non pooled kv
     where: str = "before"  # "before", "between"
 
 
@@ -43,8 +45,6 @@ class BridgeArgs(Serializable):
     hidden_dim: int | None = None
 
 
-
-
 @dataclass
 class EmbedderArgs(Serializable):
     n_truncated_layers: int = 16
@@ -52,10 +52,12 @@ class EmbedderArgs(Serializable):
     memory_tokens: int = 0
     rec_tok: bool = False
     cont_tok: bool = False
-    compress_rates: list[int] = field(default_factory=list) # Compression rates for embeddings [2, 1] means pooling before the second to last layer 
+    compress_rates: list[int] = field(
+        default_factory=list
+    )  # Compression rates for embeddings [2, 1] means pooling before the second to last layer
     trained_layers: int = 0
     causal_embedder: bool = False
-    train_embedding_mtx: bool = True # Whether to train the token embedding matrix
+    train_embedding_mtx: bool = True  # Whether to train the token embedding matrix
 
     def __post_init__(self) -> None:
         if self.memory_tokens > 0:
@@ -64,14 +66,11 @@ class EmbedderArgs(Serializable):
             assert self.compress_rates == [], self.compress_rates
 
 
-
 @dataclass
 class PipelineArgs(Serializable):
     param_dtype: torch.dtype = torch.float32
     embedder_params: EmbedderArgs = field(default_factory=EmbedderArgs)
     bridge_module: BridgeArgs = field(default_factory=BridgeArgs)
-
-
 
 
 @dataclass

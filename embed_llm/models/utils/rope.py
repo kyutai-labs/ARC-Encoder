@@ -21,13 +21,15 @@ def apply_rotary_emb(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if freqs_cis_k is None:
         freqs_cis_k = freqs_cis.clone()
-    if olmo:
+    if olmo:  # OLMo uses a different convention for RoPE
+
         def to_complex(x):
             H, T, D = x.shape
             # Reshape into (B,H,T,D/2,2) as in OLMo
-            x = x.float().reshape(H, T, 2, D // 2)  # <-- different from LLaMA
-            x = x.transpose(-1, -2)                    # swap order of halves
+            x = x.float().reshape(H, T, 2, D // 2)
+            x = x.transpose(-1, -2)  # swap order of halves
             return torch.view_as_complex(x.contiguous())
+
         xq_ = to_complex(xq)
         xk_ = to_complex(xk)
     else:
@@ -36,11 +38,10 @@ def apply_rotary_emb(
     freqs_cis = freqs_cis[:, None, :]
     freqs_cis_k = freqs_cis_k[:, None, :]
 
-
     xq_out = torch.view_as_real(xq_ * freqs_cis)
     xk_out = torch.view_as_real(xk_ * freqs_cis_k)
-    
+
     if olmo:
-        xq_out = xq_out.transpose(-2,-1)
-        xk_out = xk_out.transpose(-2,-1)
+        xq_out = xq_out.transpose(-2, -1)
+        xk_out = xk_out.transpose(-2, -1)
     return xq_out.type_as(xq).flatten(-2), xk_out.type_as(xk).flatten(-2)

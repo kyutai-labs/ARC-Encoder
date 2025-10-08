@@ -24,7 +24,7 @@ def evaluate(
     state: TrainState,
     batches_cont: list[Batch] | None = None,
 ):
-    # Create fake samples if all rank does not have the same number of samples 
+    # Create fake samples if all rank does not have the same number of samples
     num_samples = torch.tensor([len(batches_rec)], device="cuda", dtype=torch.long)
     all_num_samples = [torch.zeros_like(num_samples) for _ in range(get_world_size())]
 
@@ -50,9 +50,15 @@ def evaluate(
 
             for batch in batches_cont:
                 with torch.no_grad():
-                    x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
-                        prepare_batch_fn(batch)
-                    )
+                    (
+                        x,
+                        y,
+                        y_mask,
+                        seqlens,
+                        embeddings,
+                        embed_seqlens,
+                        insert_cat_embedds,
+                    ) = prepare_batch_fn(batch)
 
                     output = model.forward(
                         x=x,
@@ -62,10 +68,8 @@ def evaluate(
                         insert_cat_embedds=insert_cat_embedds,
                         batch_type="continuation",
                     )
-  
-                    eval_loss_embcont += compute_ce_loss_with_mask(
-                        output, y, y_mask
-                    )
+
+                    eval_loss_embcont += compute_ce_loss_with_mask(output, y, y_mask)
 
         eval_loss_rec = torch.tensor(0.0).cuda()
         main_logger_info(f"Start eval for {len(batches_rec)} reconstruction batches")
@@ -85,9 +89,7 @@ def evaluate(
             )
 
             if not batch.is_pad_only:
-                eval_loss_rec += compute_ce_loss_with_mask(
-                    output, y, y_mask
-                )
+                eval_loss_rec += compute_ce_loss_with_mask(output, y, y_mask)
                 assert batch.is_pad_only or y.abs().sum() != 0, (
                     "Pad sample is used to compute loss."
                 )

@@ -11,14 +11,20 @@ from embed_llm.data.tokenize import Tokenizer
 class Batch:
     x: np.ndarray
     y: np.ndarray
-    to_embed: list[dict[list[str], list[list[int]]]] # A batch is a list of dicts within each dict: tokens and text, tokens are a list of lists 
-    sizes: list[int]
-    batch_size: int
-    instruct_prompt: list[str] | None = None
+    to_embed: list[
+        dict[list[str], list[list[int]]]
+    ]  # A batch is a list of dicts where each value is a list of passages to embed: 'tokens' and 'text' keys, tokens are a list of lists
+    sizes: list[int]  # Sizes of each sequence in x
+    batch_size: int  # Number of sequences in the batch
+    instruct_prompt: list[str] | None = (
+        None  # List of prompts used if feeding an instruct decoder with chat format
+    )
     y_mask: np.ndarray | None = None
     is_pad_only: bool = False
     data_type: str = "reconstruction"
-    insert_embed_list: list[list[int]] | None = None # List of lists, each list contains the indices where to insert embeddings tokens in the text stream (x and y)
+    insert_embed_list: list[list[int]] | None = (
+        None  # List of lists, each list contains the indices where to insert embeddings tokens in the text stream (x)
+    )
 
     def __post_init__(self):
         assert self.x.ndim == 1
@@ -36,7 +42,7 @@ class Batch:
         assert len(self.to_embed) == len(self.sizes), (
             f"{len(self.to_embed)}, {len(self.sizes)}"
         )
-        
+
         if self.instruct_prompt is not None:
             assert len(self.instruct_prompt) == len(self.sizes), (
                 f"{len(self.instruct_prompt)}, {len(self.sizes)}"
@@ -108,7 +114,7 @@ class Batchlist:
             if self.insert_embed_list is None:
                 self.insert_embed_list = []
             self.insert_embed_list.append(insert_embed_list)
-            
+
         if instruct_prompt is not None:
             if self.instruct_prompt is None:
                 self.instruct_prompt = []
@@ -136,17 +142,17 @@ class Batchlist:
         x_np: np.ndarray = self.flatten_to_numpy(self.x, dtype=np.int64)
         y_np: np.ndarray = self.flatten_to_numpy(self.y, dtype=np.int64)
         sizes = sum(self.sizes, [])  # noqa
-        
+
         if self.insert_embed_list is not None:
             insert_embed_list = sum(self.insert_embed_list, [])  # noqa
         else:
             insert_embed_list = None
-            
+
         if self.instruct_prompt is not None:
             instruct_prompt = sum(self.instruct_prompt, [])
         else:
             instruct_prompt = None
-            
+
         to_embed = sum(self.to_embed, [])  # noqa
 
         y_mask_flatten = self.flatten_to_numpy(self.y_mask, dtype=bool)

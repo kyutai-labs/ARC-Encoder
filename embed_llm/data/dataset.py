@@ -29,7 +29,7 @@ def load_file(path: Path, world_size: int, rank: int) -> list[str]:
     lines = []
     with path.open() as f:
         for idx, line in enumerate(f):
-            if not idx % world_size == rank:
+            if not idx % world_size == rank:  # For multi-gpu data loading
                 continue
             lines.append(line)
     return lines
@@ -138,7 +138,6 @@ def sequence_iterator(
     continuation: float = 0.0,
     few_shot: int = 0,
     interleave: bool = False,
-    sep_passages: bool = False,  # If True, passages will be separated by a special token in the input sequence.
     chunk_to: int | None = None,
     instruct_decoder: bool = False,  # If True, the decoder will be used for instruction data.
     max_chunks: int = 5,
@@ -153,8 +152,8 @@ def sequence_iterator(
     mask_buffer: Mask = []
     sizes: list[int] = []
     n_missing_cont = (
-        seq_len * 2 + int(interleave) * seq_len 
-    )
+        seq_len * 2 + int(interleave) * seq_len
+    )  # 2*seq_len for compressed tokens and continuation, + the ones for text before compressed tokens
 
     instruct_prompt: list[str] = []
     instruct_prompt_cont: list[str] = []
@@ -169,7 +168,7 @@ def sequence_iterator(
     few_shot_instruct = []
     cur_pos = 0
     n_missing = seq_len
-    
+
     for sample in ds_it:
         # Ensure that all batches have the same type to avoid gradient gathering errors
 
@@ -183,26 +182,23 @@ def sequence_iterator(
 
         if do_continuation:
             while True:
-                res = (
-                    sequence_iterator_continuation(
-                        sample=sample,
-                        x_buffer=x_buffer_cont,
-                        y_buffer=y_buffer_cont,
-                        mask_buffer=mask_buffer_cont,
-                        to_embed_buffer=to_embed_buffer_cont,
-                        insert_embed_list=insert_embed_cont_list,
-                        sizes=sizes_cont,
-                        seq_len=seq_len,
-                        llm_tokenizer=llm_tokenizer,
-                        embed_tokenizer=embed_tokenizer,
-                        n_missing=n_missing_cont,
-                        data_type="continuation",
-                        cur_pos=cur_pos,
-                        interleave=interleave,
-                        instruct_prompt=instruct_prompt_cont if instruct_decoder else None,
-                    )
-                    )
-  
+                res = sequence_iterator_continuation(
+                    sample=sample,
+                    x_buffer=x_buffer_cont,
+                    y_buffer=y_buffer_cont,
+                    mask_buffer=mask_buffer_cont,
+                    to_embed_buffer=to_embed_buffer_cont,
+                    insert_embed_list=insert_embed_cont_list,
+                    sizes=sizes_cont,
+                    seq_len=seq_len,
+                    llm_tokenizer=llm_tokenizer,
+                    embed_tokenizer=embed_tokenizer,
+                    n_missing=n_missing_cont,
+                    data_type="continuation",
+                    cur_pos=cur_pos,
+                    interleave=interleave,
+                    instruct_prompt=instruct_prompt_cont if instruct_decoder else None,
+                )
 
                 if len(res) == 2 and isinstance(res[0], SequenceEmbedMaskAndSizes):
                     yield res[0]
@@ -250,7 +246,6 @@ def sequence_iterator(
                     few_shot_instruct=few_shot_instruct if few_shot > 0 else None,
                     few_shot=few_shot,
                     interleave=interleave,
-                    sep_passages=sep_passages,
                     chunk_to=chunk_to,
                     instruct_prompt=instruct_prompt if instruct_decoder else None,
                     max_chunks=max_chunks,
@@ -352,7 +347,6 @@ def build_dataset(
             continuation=continuation,
             few_shot=fs,
             interleave=args.interleave,
-            sep_passages=args.sep_passages,
             chunk_to=args.chunk_to,
             instruct_decoder=args.instruct_decoder,
             max_chunks=args.max_chunks,
@@ -441,7 +435,9 @@ def lazy_load_and_yield(
 
             data = json.loads(line)
 
-            if "rand" in data.keys() and float(data["rand"]) >= 0.8:
+            if (
+                "rand" in data.keys() and float(data["rand"]) >= 0.8
+            ):  # Filtering of the web crawl
                 continue
 
             yield encode(
@@ -453,6 +449,7 @@ def lazy_load_and_yield(
                 instruct_decoder=instruct_decoder,
             )
 
+
 def interleave_iterators(iterators: list[Iterator], probabilities, rng):
     while True:
         it_id = rng.choice(range(len(iterators)), p=probabilities)
@@ -461,14 +458,14 @@ def interleave_iterators(iterators: list[Iterator], probabilities, rng):
         except (OSError, StopIteration) as e:
             # If the iterator is exhausted, we remove it from the list
             # and continue with the next one.
-            main_logger_info(
-                f"Iterator {it_id} exhausted. Removing it from the list."
-            )
+            main_logger_info(f"Iterator {it_id} exhausted. Removing it from the list.")
             del iterators[it_id]
             if not isinstance(probabilities, list):
                 probabilities = list(probabilities)
-            del probabilities[it_id]
-            probabilities = [prob / np.sum(probabilities) for prob in probabilities]  # re-normalize probabilities
+            del probabilities[it_id]  # Remove fully seen datasets from sampling
+            probabilities = [
+                prob / np.sum(probabilities) for prob in probabilities
+            ]  # re-normalize probabilities
             if len(iterators) == 0:
                 raise e
             continue

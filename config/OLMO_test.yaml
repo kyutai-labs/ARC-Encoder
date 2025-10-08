@@ -5,7 +5,7 @@ llm_types:
 - olmo
 embed_type: llama
 run_dir: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/
-exp_name: multi_decoder_default_L3_MLP_fftdirect_longer_v2_test
+exp_name: OLMO_test
 continuation: 0.0
 num_microbatches: 1
 seed: 0
@@ -46,7 +46,7 @@ pipeline:
     out_dim: 4096
 from_ckpt:
   do: true
-  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/multi_decoder_default_trueL3_MLP_fft4/checkpoints/checkpoint_008000/embedder/
+  embedder_path: /lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/test_trueL3_MLP_fft4_full5shot_exp_copy/checkpoints/checkpoint_008000/embedder/
 data:
   adapt_seq_len: true
   prefix_path: /lustre/scwpod02/client/kyutai-interns/hippop/processed_data/instruct_data/
@@ -58,6 +58,6 @@ data:
 
 wandb:
   project: embed_llm
-  run_name: multi_decoder_default_L3_MLP_fftdirect_longer_v2_test
+  run_name: OLMO_test
   key: 79d15dbc90cdc10b0d5e5ad252ae8ddbef9fd706
   offline: false

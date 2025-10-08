@@ -3,13 +3,12 @@ import json
 import logging
 import os
 import random
-import subprocess as sp
 
 import torch
 from tqdm import tqdm, trange
 
 
-from embed_llm.generation.metrics import (  # noqa: E402
+from embed_llm.generation.metrics import (
     get_approx_em,
     get_bleu_score,
     get_rouge_score,
@@ -19,23 +18,21 @@ from embed_llm.generation.metrics import (  # noqa: E402
     metric_max_over_ground_truths,
 )
 from embed_llm.generation.utils import (
-    ensure_reproducibility, 
+    ensure_reproducibility,
     eval_logger_info,
     create_prompt_prefix,
     create_prompt,
     EVAL_DATA_PATH,
     METRIC_EVALUATION,
-    TRAD_DATA_PATH
+    TRAD_DATA_PATH,
 )
-from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline  # noqa: E402
-from embed_llm.models.utils.utils import is_torchrun  # noqa: E402
-from embed_llm.monitoring.utils import set_logger  # noqa: E402
-from embed_llm import TMP_PATH, MODEL_PATH  # noqa: E402
+from embed_llm.models.augmented_model import EmbedAugPipeline, load_pipeline
+from embed_llm.models.utils.utils import is_torchrun
+from embed_llm.monitoring.utils import set_logger
+from embed_llm import TMP_PATH, MODEL_PATH
 
 
 logger = logging.getLogger(__name__)
-
-
 
 
 def evaluate_QA(
@@ -52,13 +49,14 @@ def evaluate_QA(
     tmp_path: str = None,
     icl_examples: int = 0,
     pipeline: EmbedAugPipeline | None = None,
-    max_multi_passage: int = 1,
+    max_multi_passage: int = 1,  # If >1, use multiple passages from retrieval
     seed: float = 0.42,
     comp_rate: int | None = None,
     llm_number: int = 0,
-    cat_multi_passages: bool = False,  # If True, use together multi-passage retrieval
+    cat_multi_passages: bool = False,  # If True, concatenate passages from retrieval
     max_doc_len: int | None = None,  # Maximum length of documents
-    chunk_to: int | None = None,  # If not None, chunk the dataset to this size
+    chunk_to: int
+    | None = None,  # If not None, chunk documents to this size before embedding
 ):
     """Load the pipeline and evaluate it on the QA benchmarks"""
     if llm_path is not None:
@@ -85,20 +83,22 @@ def evaluate_QA(
         pipeline=pipeline,
         ckpt=ckpt,
         comp_rate=comp_rate,
-        llm_type= "llama" if llm_path is not None and "llama" in llm_path.lower() else ("olmo" if llm_path is not None 
-                                                              and "olmo" in llm_path.lower() else "mistral"),
+        llm_type="llama"
+        if llm_path is not None and "llama" in llm_path.lower()
+        else (
+            "olmo" if llm_path is not None and "olmo" in llm_path.lower() else "mistral"
+        ),
         embed_type="llama"
         if embed_path is not None and "llama" in embed_path.lower()
         else "mistral",
         llm_number=llm_number,
     )
 
-    results = {benchmark: {} for benchmark in benchmarks}
-
     # Creating dataset
     metrics = {}
 
     total_benchmarks = len(benchmarks)
+    max_sample = n_samples is None
     for benchmark in tqdm(
         benchmarks, desc="Evaluating benchmarks", total=total_benchmarks
     ):
@@ -132,7 +132,9 @@ def evaluate_QA(
 
                 if max_multi_passage <= 1:
                     if max_doc_len is not None:
-                        context.append([data["passages"][0].strip()[: max_doc_len * 3]]) # Approximate the number of tokens
+                        context.append(
+                            [data["passages"][0].strip()[: max_doc_len * 3]]
+                        )  # Approximate the number of tokens
                     else:
                         context.append([data["passages"][0].strip()])
                 else:
@@ -166,10 +168,11 @@ def evaluate_QA(
             compress_ratio = 0
             generated_sequences = []
             n_samples = (
-                len(new_questions) if n_samples is None else min(len(new_questions), n_samples)
+                len(new_questions)
+                if (n_samples is None or max_sample)
+                else min(len(new_questions), n_samples)
             )
-
-            if benchmark == 'CNN':
+            if benchmark == "CNN":
                 n_samples = min(n_samples, 1000)
                 max_seq_len = 256
 
@@ -186,7 +189,7 @@ def evaluate_QA(
                         prefix_embed=to_embed_str,
                         doc=doc,
                         query=query,
-                        wdoc=False, # No text document, only compressed ones
+                        wdoc=False,  # No text document, only compressed ones
                         cat_multi_passages=cat_multi_passages,
                     )
 
@@ -205,7 +208,6 @@ def evaluate_QA(
                     chunk_to=chunk_to,  # If not None, chunk the dataset to this size
                 )
                 compress_ratio += sum_comp_ratio  # N tokens to be compressed / final number of tokens after compression
-
                 generated_sequences.extend(generated_sequence)
 
             if METRIC_EVALUATION[benchmark] == get_em:
@@ -247,21 +249,21 @@ def evaluate_QA(
                     generated_sequences, new_answers[:n_samples]
                 )
 
-                metrics[benchmark]["EM"]= {
+                metrics[benchmark]["EM"] = {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
                     "Metric": value_em,
                     "approx_Metric": value_approx,
                     "Prop context containing the answer": n_answer_in_context,
                     "xRAG metric": value_xrag,
-                    "n_samples": max_multi_passage,
+                    "n_passages": max_multi_passage,
                     "compress_ratio": compress_ratio / n_samples,
                     "llm_name": "mistral" if llm_name is None else llm_name,
                     "together_mp": cat_multi_passages,
                     "max_doc_len": max_doc_len,
                     "chunk_to": chunk_to if chunk_to is not None else 0,
                     "ckpt": ckpt if ckpt is not None else "None",
-                    'temp': temp,
+                    "temp": temp,
                 }
                 value_f1 = (
                     sum(
@@ -277,21 +279,21 @@ def evaluate_QA(
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
                     "Metric": value_f1,
-                    "n_samples": max_multi_passage,
+                    "n_passages": max_multi_passage,
                     "compress_ratio": compress_ratio / n_samples,
                     "llm_name": "mistral" if llm_name is None else llm_name,
                     "together_mp": cat_multi_passages,
                     "max_doc_len": max_doc_len,
                     "chunk_to": chunk_to if chunk_to is not None else 0,
                     "ckpt": ckpt if ckpt is not None else "None",
-                    'temp': temp,
+                    "temp": temp,
                 }
 
                 eval_logger_info(
                     logger,
                     f"COMP RATE: {compress_ratio / n_samples} => Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
                 )
-          
+
                 eval_logger_info(
                     logger,
                     f"Temperature: {temp}, bench: {benchmark},  EM {value_em}, Approx EM {value_approx}, F1 {value_f1}",
@@ -308,24 +310,24 @@ def evaluate_QA(
                     metrics[benchmark]["ROUGE"] = {}
                 metrics[benchmark]["ROUGE"] = {}
 
-                metrics[benchmark]["ROUGE"]= {
+                metrics[benchmark]["ROUGE"] = {
                     "n_samples": n_samples,
                     "icl_examples": icl_examples,
                     "Metric": value_rouge,
-                    "n_samples": max_multi_passage,
+                    "n_passages": max_multi_passage,
                     "compress_ratio": compress_ratio,
                     "llm_name": "mistral" if llm_name is None else llm_name,
                     "together_mp": cat_multi_passages,
                     "max_doc_len": max_doc_len,
                     "chunk_to": chunk_to if chunk_to is not None else 0,
                     "ckpt": ckpt if ckpt is not None else "None",
-                    'temp': temp,
+                    "temp": temp,
                 }
                 eval_logger_info(
                     logger,
                     f"COMP RATE: {compress_ratio / n_samples} => Context |  query | gen sequence | answer: {list(zip(new_context, new_questions, generated_sequences, new_answers))[-1]}",
                 )
-          
+
                 eval_logger_info(
                     logger,
                     f"Temperature: {temp}, bench: {benchmark},  EM {value_rouge}",
@@ -336,7 +338,6 @@ def evaluate_QA(
                 )
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
-
         with open(
             output_file,
             "r",
@@ -355,7 +356,9 @@ def evaluate_QA(
                 if metric not in overall_results[run_name][benchmark].keys():
                     overall_results[run_name][benchmark][metric] = []
 
-                overall_results[run_name][benchmark][metric].append(metrics[benchmark][metric])
+                overall_results[run_name][benchmark][metric].append(
+                    metrics[benchmark][metric]
+                )
 
         with open(
             output_file,
@@ -382,7 +385,7 @@ def evaluate_trad(
     seed: float = 0.42,
     comp_rate: int | None = None,
     llm_number: int = 0,
-    chunk_to: int | None = None,  # If not None, chunk the dataset to this size
+    chunk_to: int | None = None,
 ):
     # Loading model
     llm_name = llm_path.split("/")[-1]
@@ -405,16 +408,18 @@ def evaluate_trad(
         pipeline=pipeline,
         ckpt=ckpt,
         comp_rate=comp_rate,
-        llm_type="llama" if llm_path is not None and "llama" in llm_path.lower() else ("olmo" if llm_path is not None 
-                                                              and "olmo" in llm_path.lower() else "mistral"),
+        llm_type="llama"
+        if llm_path is not None and "llama" in llm_path.lower()
+        else (
+            "olmo" if llm_path is not None and "olmo" in llm_path.lower() else "mistral"
+        ),
         embed_type="llama" if "llama" in embed_path.lower() else "mistral",
         llm_number=llm_number,
     )
-    results = {benchmark: {} for benchmark in benchmarks}
 
     # Creating dataset
     metrics = {}
-
+    max_samples = n_samples is None
     for benchmark in tqdm(
         benchmarks, desc="Evaluating benchmarks", total=len(benchmarks)
     ):
@@ -441,7 +446,6 @@ def evaluate_trad(
         text, traduction = zip(*c)
         embed_prompt = []
 
-
         text_prompt_prefix = ["Document: "]
         for doc, answ, _ in zip(text, traduction, range(4)):
             embed_prompt.append(doc.strip())
@@ -465,8 +469,12 @@ def evaluate_trad(
         for temp in temps:
             compress_ratio = 0
             generated_sequences = []
-            n_samples = len(text) if n_samples is None else min(len(text), n_samples)
-            
+            n_samples = (
+                len(text)
+                if (n_samples is None or max_samples)
+                else min(len(text), n_samples)
+            )
+
             for i in trange(0, n_samples, max_bs):
                 texts_to_embed = []
                 batch_list_prompts = []
@@ -517,11 +525,10 @@ def evaluate_trad(
                 "llm_name": llm_name,
                 "chunk_to": chunk_to if chunk_to is not None else 0,
                 "ckpt": ckpt if ckpt is not None else "None",
-                'temp': temp,
+                "temp": temp,
             }
 
     if not is_torchrun() or torch.distributed.get_rank() == 0:
-
         with open(
             output_file,
             "r",
@@ -531,14 +538,11 @@ def evaluate_trad(
         if run_name not in overall_results.keys():
             overall_results[run_name] = {}
 
-
         for benchmark in metrics.keys():
             for metric in metrics[benchmark].keys():
                 if metric not in overall_results[run_name].keys():
                     overall_results[run_name][metric] = []
-                overall_results[run_name][metric].append(
-                    metrics[benchmark][metric]
-                )
+                overall_results[run_name][metric].append(metrics[benchmark][metric])
 
         with open(
             output_file,
@@ -551,24 +555,36 @@ def evaluate_trad(
 
 def arg_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run_name",type=str, default=None)
+    parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument("--ckpt", type=int, default=None)
     parser.add_argument("--out_file", type=str, default=None)
     parser.add_argument("--n_samples", type=int, default=None)
     parser.add_argument("--max_seq_len", type=int, default=64)
     parser.add_argument("--bs", type=int, default=32)
     parser.add_argument("--multi_passages", type=int, default=1)
-    parser.add_argument("--cat_multi_passages",action="store_true")
+    parser.add_argument("--cat_multi_passages", action="store_true")
     parser.add_argument("--benchmarks", type=str, default="all")
     parser.add_argument("--seed", type=float, default=0.42)
     parser.add_argument("--n_icl_exs", type=int, default=None)
-    parser.add_argument("--comp_rate", type=int, default=None)  # can enable to fix number of memory tokens if > 0
+    parser.add_argument(
+        "--comp_rate", type=int, default=None
+    )  # can enable to fix number of memory tokens if > 0
     parser.add_argument("--eval_trad", action="store_true")
     parser.add_argument("--llm_name", type=str, default="mistral_7B")
     parser.add_argument("--embed_name", type=str, default="mistral_7B")
-    parser.add_argument("--max_doc_len", type=int,default=None)
-    parser.add_argument("--llm_number",type=int,default=0,help="Number of LLMs to use, starting from 0",)
-    parser.add_argument("--chunk_to", type=int, default=None, help="If not None, chunk each sample into samples of size chunk_to and compress them in parallel") 
+    parser.add_argument("--max_doc_len", type=int, default=None)
+    parser.add_argument(
+        "--llm_number",
+        type=int,
+        default=0,
+        help="Number of LLMs to use, starting from 0",
+    )
+    parser.add_argument(
+        "--chunk_to",
+        type=int,
+        default=None,
+        help="If not None, chunk each sample into samples of size chunk_to and compress them in parallel",
+    )
 
     return parser.parse_args()
 
@@ -577,9 +593,9 @@ if __name__ == "__main__":
     set_logger(logging.INFO)
 
     temp_tests = [0]
-        
+
     args = arg_parser()
-            
+
     if args.benchmarks == "all":
         benchmarks = ["NQ", "TRIVIAQA", "SQUAD"]
     else:

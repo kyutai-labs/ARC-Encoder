@@ -4,6 +4,7 @@ import re
 from embed_llm.data.tokenize import Mask, TokenSample, Tokenizer
 from embed_llm.data.utils import RECONSTRUCTION_INSTRUCT, CONTINUATION_INSTRUCT
 
+
 @dataclasses.dataclass()
 class SequenceEmbedMaskAndSizes:
     """
@@ -18,7 +19,7 @@ class SequenceEmbedMaskAndSizes:
     data_type: str
     insert_embed_list: list[list[int]] | None = None
     instruct_prompt: list[str] | None = None
-    
+
     def __post_init__(self):
         assert sum(self.sizes) == len(self.x) == len(self.y) == len(self.mask), (
             sum(self.sizes),
@@ -44,7 +45,6 @@ class SequenceEmbedMaskAndSizes:
             )
 
 
-
 def sequence_iterator_reconstruction(
     x_buffer: list[int],
     y_buffer: list[int],
@@ -62,7 +62,6 @@ def sequence_iterator_reconstruction(
     few_shot_instruct: list[str] | None = None,
     few_shot: int = 0,
     interleave: bool = False,
-    sep_passages: bool = False,
     chunk_to: int | None = None,
     max_chunks: int = 5,
     instruct_prompt: list[str] | None = None,
@@ -92,7 +91,6 @@ def sequence_iterator_reconstruction(
             # we have a sequence with a mask filled with False
             continue
 
-        # If instruct data type do not split the passage into smaller embeddings
         if data_type == "reconstruction":
             new_embed = tokens[cur_pos : cur_pos + n_missing]
 
@@ -109,8 +107,6 @@ def sequence_iterator_reconstruction(
                 }
             )
 
-
- 
             # Each sample consists in: Embeddings + text (no text before the embeddings)
             insert_embed_list.append([0])
             x_buffer.extend(x[cur_pos : cur_pos + n_missing])
@@ -120,15 +116,19 @@ def sequence_iterator_reconstruction(
         else:
             # Instruct tuning
             assert adapt_seq_len
-            # If we can use more embeddings and that one passage reaches the limit \
-            # we split it in two embeddings and so on
-            seq_len = seq_len * (4*int(interleave) + 1) # Works better with longer sequences for interleaving
+
+            seq_len = (
+                seq_len * (4 * int(interleave) + 1)
+            )  # Works better with longer sequences for interleaved fine-tuning (up to 5 few-shot examples of size seq_len)
             new_embed = []
-            for i in range(len(embed_tokens)):
+
+            for i in range(len(embed_tokens)):  # Select passages to embed
                 new_embed.append(embed_tokens[i])
 
-            if not sep_passages:
-
+            # All passages concatenated
+            if (
+                len(new_embed) > 1 or instruct_prompt is None
+            ):  # If not instruct decoder always work with this
                 new_embed_tokens = sum([toks[:seq_len] for toks in new_embed], [])
                 new_embed_text = " ".join(
                     [
@@ -136,47 +136,28 @@ def sequence_iterator_reconstruction(
                         for toks in new_embed
                     ]
                 )
-       
-                if chunk_to is not None:
-                    new_embed_tokens = [
-                        new_embed_tokens[ind : ind + chunk_to]
-                        for ind in range(0, len(new_embed_tokens), chunk_to)
-                    ]
-                    if len(new_embed_tokens) > max_chunks:
-                        print(
-                            f"Too many passages, truncating to {max_chunks}: from {len(new_embed_tokens)} overall number of tokens {len(new_embed[0])}"
-                        )
-                        new_embed_tokens = new_embed_tokens[:max_chunks]
             else:
-                embed_text = [
-                    embed_tokenizer.tokenizer.decode(toks[:seq_len]).strip()
-                    for toks in new_embed
+                new_embed_tokens = new_embed[0]
+                new_embed_text = embed_tokenizer.tokenizer.decode(
+                    new_embed_tokens
+                ).strip()
+            if chunk_to is not None:
+                new_embed_tokens = [
+                    new_embed_tokens[ind : ind + chunk_to]
+                    for ind in range(0, len(new_embed_tokens), chunk_to)
                 ]
-                new_embed_tokens = [toks[:seq_len] for toks in new_embed]
-                if chunk_to is not None:
-                    new_embed_tokens = [
-                        toks[ind : ind + chunk_to]
-                        for toks in new_embed_tokens
-                        for ind in range(0, len(toks), chunk_to)
-                    ]
-                    if len(new_embed_tokens) > max_chunks:
-                        new_embed_tokens = new_embed_tokens[:max_chunks]
-                        print(
-                            f"Too many passages, truncating to {max_chunks}: {len(new_embed_tokens)}"
-                        )
-
-                    assert isinstance(new_embed_tokens[0], list) and isinstance(
-                        new_embed_tokens[-1], list
-                    ), (
-                        f"Tokens should be lists, got {new_embed_tokens[0]} and {new_embed_tokens[-1]}"
+                if len(new_embed_tokens) > max_chunks:
+                    print(
+                        f"Too many passages, truncating to {max_chunks}: from {len(new_embed_tokens)} overall number of tokens {len(new_embed[0])}"
                     )
-
+                    new_embed_tokens = new_embed_tokens[:max_chunks]
             if data_type == "instruct":
                 if instruct_prompt is None or instruction is None:
+                    # Create few-shot examples from same dataset
                     if few_shot_instruct is None:
                         prefix = "Document: "
                     else:
-                        prefix = '\n\n'.join(few_shot_instruct)
+                        prefix = "\n\n".join(few_shot_instruct)
                         prefix = (
                             prefix + "\n\nDocument: "
                             if len(prefix) > 0
@@ -199,7 +180,6 @@ def sequence_iterator_reconstruction(
                             if split == "":
                                 continue
                             if i % 2 == 0:  # First part is the document
-                 
                                 toks = [
                                     embed_tokenizer.tokenizer.encode(
                                         split, bos=False, eos=False
@@ -239,22 +219,12 @@ def sequence_iterator_reconstruction(
                                 x_buffer.extend(doc_tokens)
                                 y_buffer.extend(doc_tokens)
 
-                        if not sep_passages:
-                            if chunk_to is not None:
-                                for _ in range(len(new_embed_tokens) - 1):
-                                    ins_list.append(0)
-                            insert_embed_list.append(ins_list)
-                            embed_toks.append(new_embed_tokens)
-                            embed_text.append(new_embed_text)
-                        else:
-                            for emb_text, emb_toks in zip(
-                                new_embed_text, new_embed_tokens
-                            ):
-                                embed_toks.append(emb_toks)
-                                embed_text.append(emb_text)
+                        if chunk_to is not None:
+                            for _ in range(len(new_embed_tokens) - 1):
                                 ins_list.append(0)
-                            ins_list = ins_list[:-1]
-                            insert_embed_list.append(ins_list)
+                        insert_embed_list.append(ins_list)
+                        embed_toks.append(new_embed_tokens)
+                        embed_text.append(new_embed_text)
 
                         added_prefix = sum(ins_list)
 
@@ -269,40 +239,24 @@ def sequence_iterator_reconstruction(
                         y_buffer.extend(doc_tokens[1:])
 
                         added_prefix = len(doc_tokens)
-                        if not sep_passages:
-                            if chunk_to is None:
-                                insert_embed_list.append([len(doc_tokens)])
-                                to_embed_buffer.append(
-                                    {
-                                        "text": [new_embed_text],
-                                        "tokens": [new_embed_tokens],
-                                    }
-                                )
-                            else:
-                                insert_list = [len(doc_tokens)] + [0] * (
-                                    len(new_embed_tokens) - 1
-                                )
-                                insert_embed_list.append(insert_list)
-                                to_embed_buffer.append(
-                                    {
-                                        "text": [new_embed_text],
-                                        "tokens": new_embed_tokens,
-                                    }
-                                )
-                        else:
-                            ins_list = [len(doc_tokens)]
-                            embed_text = []
-                            embed_toks = []
-                            for emb_text, emb_toks in zip(
-                                new_embed_text, new_embed_tokens
-                            ):
-                                embed_toks.append(emb_toks)
-                                embed_text.append(emb_text)
-                                ins_list.append(0)
-                            ins_list = ins_list[:-1]
-                            insert_embed_list.append(ins_list)
+                        if chunk_to is None:
+                            insert_embed_list.append([len(doc_tokens)])
                             to_embed_buffer.append(
-                                {"text": embed_text, "tokens": embed_toks}
+                                {
+                                    "text": [new_embed_text],
+                                    "tokens": [new_embed_tokens],
+                                }
+                            )
+                        else:
+                            insert_list = [len(doc_tokens)] + [0] * (
+                                len(new_embed_tokens) - 1
+                            )
+                            insert_embed_list.append(insert_list)
+                            to_embed_buffer.append(
+                                {
+                                    "text": [new_embed_text],
+                                    "tokens": new_embed_tokens,
+                                }
                             )
 
                     if few_shot_instruct is not None:
@@ -324,13 +278,9 @@ def sequence_iterator_reconstruction(
                                 if curr_mask[i]
                             ]
                         )
-                        if not sep_passages:
-                            new_ex = "Document: " + new_embed_text + question + answer
-                        else:
-                            new_ex = (
-                                "Document: " + new_embed_text[0] + question + answer
-                            )
- 
+
+                        new_ex = "Document: " + new_embed_text + question + answer
+
                         if len(few_shot_instruct) < few_shot:
                             few_shot_instruct.append(new_ex)
                         else:
@@ -346,6 +296,7 @@ def sequence_iterator_reconstruction(
                     x_buffer.extend(x[cur_pos : cur_pos + n_missing])
                     y_buffer.extend([x[cur_pos]] + y[cur_pos : cur_pos + n_missing])
                 else:
+                    # No few-shot examples if using an instruct decoder
                     text = llm_tokenizer.tokenizer.decode(
                         x[cur_pos : cur_pos + n_missing]
                     )
@@ -370,32 +321,18 @@ def sequence_iterator_reconstruction(
                     answer = llm_tokenizer.tokenizer.encode(answer, bos=False, eos=True)
                     x_buffer.extend(answer[:-1])
                     y_buffer.extend(answer[1:])
-                    curr_mask = [True] * len(answer[:-1]) 
+                    curr_mask = [True] * len(answer[:-1])
                     size = len(answer[:-1])
-                    if not sep_passages:
-                        if chunk_to is None:
-                            insert_embed_list.append([0])
-                            to_embed_buffer.append(
-                                {"text": [new_embed_text], "tokens": [new_embed_tokens]}
-                            )
-                        else:
-                            insert_list = [0] * len(new_embed_tokens)
-                            insert_embed_list.append(insert_list)
-                            to_embed_buffer.append(
-                                {"text": [new_embed_text], "tokens": new_embed_tokens}
-                            )
-                    else:
-                        ins_list = [0]
-                        embed_text = []
-                        embed_toks = []
-                        for emb_text, emb_toks in zip(new_embed_text, new_embed_tokens):
-                            embed_toks.append(emb_toks)
-                            embed_text.append(emb_text)
-                            ins_list.append(0)
-                        ins_list = ins_list[:-1]
-                        insert_embed_list.append(ins_list)
+                    if chunk_to is None:
+                        insert_embed_list.append([0])
                         to_embed_buffer.append(
-                            {"text": embed_text, "tokens": embed_toks}
+                            {"text": [new_embed_text], "tokens": [new_embed_tokens]}
+                        )
+                    else:
+                        insert_list = [0] * len(new_embed_tokens)
+                        insert_embed_list.append(insert_list)
+                        to_embed_buffer.append(
+                            {"text": [new_embed_text], "tokens": new_embed_tokens}
                         )
 
         if data_type == "instruct" and instruct_prompt is not None:
@@ -418,11 +355,11 @@ def sequence_iterator_reconstruction(
             try:
                 assert len(mask_buffer) == len(x_buffer) == len(y_buffer), (
                     "Error in sequence",
-                        len(mask_buffer),
-                        len(x_buffer),
-                        len(y_buffer),
-                    )
-                
+                    len(mask_buffer),
+                    len(x_buffer),
+                    len(y_buffer),
+                )
+
                 if instruction is None:
                     assert len(x_buffer) <= seq_len, (
                         f"Buffer to long {len(x_buffer)} and seq len {seq_len}"
@@ -467,7 +404,6 @@ def sequence_iterator_reconstruction(
     )
 
 
-
 def sequence_iterator_continuation(
     x_buffer: list[int],
     y_buffer: list[int],
@@ -492,7 +428,7 @@ def sequence_iterator_continuation(
     while cur_pos < len(x):
         overall_size = len(x[cur_pos : cur_pos + n_missing])
         curr_mask = mask[cur_pos : cur_pos + n_missing]
-        
+
         # we have a sequence with a mask filled with False
         if not any(curr_mask):
             cur_pos += overall_size
@@ -522,9 +458,8 @@ def sequence_iterator_continuation(
             else:
                 break
 
-        # Text before embedded sequence
+        # If interleave, add non compressed text before the compressed sequence to continue
         upper_bound_non_embed_prefix = max(0, overall_size - 2 * seq_len)
-
 
         x_buffer.extend(x[cur_pos : cur_pos + upper_bound_non_embed_prefix])
         y_buffer.extend(y[cur_pos : cur_pos + upper_bound_non_embed_prefix])
@@ -540,14 +475,12 @@ def sequence_iterator_continuation(
         )
         new_embed = x[cur_pos : cur_pos + left_tokens // 2]
 
-        if (
-            llm_tokenizer.model_name  != embed_tokenizer.model_name 
-        ):
+        if llm_tokenizer.model_name != embed_tokenizer.model_name:
             bos = llm_tokenizer.tokenizer.bos_id in new_embed
             eos = llm_tokenizer.tokenizer.eos_id in new_embed
-            
+
             new_text = llm_tokenizer.tokenizer.decode(new_embed)
-                
+
             to_embed_buffer.append(
                 {
                     "text": [new_text],
@@ -566,7 +499,7 @@ def sequence_iterator_continuation(
 
         cur_pos += len(x[cur_pos : cur_pos + left_tokens // 2])
 
-        to_continue_tokens = left_tokens // 2 
+        to_continue_tokens = left_tokens // 2
         x_buffer.extend(x[cur_pos : cur_pos + to_continue_tokens])
         y_buffer.extend(y[cur_pos : cur_pos + to_continue_tokens])
 
@@ -585,10 +518,10 @@ def sequence_iterator_continuation(
 
         n_missing -= overall_size
         size = 0
-        
+
         if instruct_prompt is not None:
             instruct_prompt.append(CONTINUATION_INSTRUCT)
-            
+
         if n_missing == 0:
             assert len(mask_buffer) == len(x_buffer) == len(y_buffer)
             assert len(x_buffer) <= seq_len * (1 + int(interleave)), (
@@ -620,7 +553,7 @@ def sequence_iterator_continuation(
                     [],
                     seq_len * 2 + int(interleave) * seq_len,
                     [],
-                    []
+                    [],
                 )
     return (
         x_buffer,
@@ -632,4 +565,3 @@ def sequence_iterator_continuation(
         sizes,
         instruct_prompt,
     )
-

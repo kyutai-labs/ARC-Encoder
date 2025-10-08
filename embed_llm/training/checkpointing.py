@@ -52,9 +52,7 @@ class Checkpointer:
             raise ValueError(f"Unknown type: {type}")
 
     @staticmethod
-    def consolidated_path(
-        ckpt_dir: Path, use_safetensors: bool
-    ) -> Path:
+    def consolidated_path(ckpt_dir: Path, use_safetensors: bool) -> Path:
         suffix = "safetensors" if use_safetensors else "00.pth"
         return ckpt_dir / f"consolidated.{suffix}"
 
@@ -112,7 +110,7 @@ class Checkpointer:
         embedder_modules = {
             k: m for k, m in self.embedder.named_modules() if is_trainable_fsdp(m)
         }
-        
+
         if self.bridge_module is None:
             bridge_modules = {}
         else:
@@ -121,12 +119,11 @@ class Checkpointer:
                 for k, m in self.bridge_module.named_modules()
                 if is_trainable_fsdp(m)
             }
-            
 
         embedder_states = {}
         special_tokens_states = {}
         for key, module in embedder_modules.items():
-            if "rec_tok" in key or "cont_tok" in key or 'mem_embeddings' in key:
+            if "rec_tok" in key or "cont_tok" in key or "mem_embeddings" in key:
                 parent_prefix = key.replace("_fsdp_wrapped_module.", "").replace(
                     "_checkpoint_wrapped_module.", ""
                 )
@@ -171,16 +168,11 @@ class Checkpointer:
                         }
                     )
 
-        
         if self.bridge_module is not None:
             bridge_modules_states = dict(sorted(bridge_modules_states.items()))
-                
+
         embedder_states = dict(sorted(embedder_states.items()))
-        return (
-            embedder_states,
-            special_tokens_states,
-            bridge_modules_states
-        )
+        return (embedder_states, special_tokens_states, bridge_modules_states)
 
     @torch.no_grad()
     def save_checkpoint(
@@ -190,7 +182,8 @@ class Checkpointer:
         embed_dst = self.dst_dir(type="embedder")
         tmp_embed_dst = self._tmp(embed_dst)
 
-        assert (not self.dst_dir(type="embedder").exists()
+        assert (
+            not self.dst_dir(type="embedder").exists()
             and not self.dst_dir(type="bridge_module").exists()
         ), "dst exists"
 
@@ -208,9 +201,7 @@ class Checkpointer:
         barrier()
 
         if self.rank == 0:
-            special_tokens_states.update(
-                embedder_states
-            )
+            special_tokens_states.update(embedder_states)
 
             safetensors.torch.save_file(
                 special_tokens_states,
@@ -219,7 +210,7 @@ class Checkpointer:
                     use_safetensors=True,
                 ),  # always use safetensors for checkpointing
             )
-                
+
             if self.bridge_module is not None:
                 safetensors.torch.save_file(
                     bridge_module_states,
@@ -229,7 +220,6 @@ class Checkpointer:
                     ),  # always use safetensors for checkpointing
                 )
             self.write_pipeline_params_info(tmp_embed_dst.parent)
-
 
             tmp_embed_dst.rename(self.dst_dir(type="embedder"))
             if self.bridge_module is not None:

@@ -75,7 +75,7 @@ class EmbProjector(nn.Module):
             self.norm = None
         elif self.proj_type == "rms":
             self.norm = RMSNorm(in_dim)
-            
+
     def forward(self, x):
         if self.proj_type == "mlp":
             x = self.layer1(x)
@@ -133,8 +133,10 @@ class PoolingModule(nn.Module):
                     *[torch.ones(t) / t for t in pool_size]
                 ).to(device=x.device, dtype=x.dtype)
             else:
-                raise NotImplementedError(f"Pooling type {self.pool_type} not implemented")
-                
+                raise NotImplementedError(
+                    f"Pooling type {self.pool_type} not implemented"
+                )
+
         elif "metric_" in self.pool_type:
             x, new_seqlens = smart_merge(
                 hidden_states=x,
@@ -151,9 +153,7 @@ class PoolingModule(nn.Module):
             new_seqlens = seqlens
             pool_mask = None
 
-
         queries = x if pool_mask is None else pool_mask @ x
-
 
         # Renormalize the pooled queries if fusion
         if comp_rate != -1 and "fusion" in self.pool_type:
@@ -171,5 +171,5 @@ class PoolingModule(nn.Module):
                 max_norms, device=x.device, dtype=x.dtype
             ).unsqueeze(1)
             queries = queries * max_norms / pooled_queries_norm
-            
+
         return queries, new_seqlens

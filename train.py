@@ -6,15 +6,12 @@ import pprint
 import random
 
 # Debugging
-import subprocess as sp
 import warnings
 from contextlib import ExitStack
 from pathlib import Path
 
 import fire
-import numpy as np
 import torch.cuda
-from torchviz import make_dot
 import torch.distributed as dist
 from torch.optim import AdamW, lr_scheduler
 
@@ -52,6 +49,7 @@ from embed_llm.training.utils import (
     logged_closing,
     set_random_seed,
 )
+
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 GB = 1024**3
@@ -64,7 +62,7 @@ def main_logger_info(message: str) -> None:
     if get_rank() == 0:
         logger.info(message)
 
-    
+
 def train(train_config: str):
     args: TrainArgs = TrainArgs.load(train_config, drop_extra_fields=True)
 
@@ -80,7 +78,6 @@ def _train(
     args: TrainArgs,
     exit_stack: ExitStack,
 ):
-    # 1. Initial setup and checks
     set_random_seed(args.seed)
 
     # Init NCCL
@@ -95,7 +92,6 @@ def _train(
         )
     main_logger_info("Process group initialized on  %d gpus" % get_world_size())
 
-    # 2. Init run dir
     main_logger_info(f"Run dir: {args.run_dir}")
     run_dir = (
         Path(args.run_dir) / args.exp_name if args.exp_name else Path(args.run_dir)
@@ -117,7 +113,6 @@ def _train(
         args.pipeline.param_dtype = "float32" if args.mixed_precision else "bfloat16"
         args.save(args_path)
 
-    # 3. Get loggers
     metrics_logger: MetricsLogger = MetricsLogger(
         run_dir,
         tag="train",
@@ -136,7 +131,6 @@ def _train(
     )
     exit_stack.enter_context(logged_closing(eval_logger, "eval_logger"))
 
-    # 5. Potentially download model
     if Path(args.embedder_path).is_dir():
         embed_folder = Path(args.embedder_path)
     else:
@@ -149,7 +143,6 @@ def _train(
     param_dtype = torch.float32 if args.mixed_precision else torch.bfloat16
     args.pipeline.param_dtype = param_dtype
 
-        
     if args.from_ckpt.do:
         pipeline, model = load_training_model_from_ckpt(
             train_args=args,
@@ -179,7 +172,8 @@ def _train(
         f"PipelineArgs: {pprint.pformat(dataclasses.asdict(pipeline.pipeline_args))}"
     )
 
-    """ Load  Dataloader"""
+    """ Load  dataloaders """
+
     train_data_loader = build_data_loader(
         llm_tokenizer=pipeline.llm_tokenizer[0],
         embed_tokenizer=pipeline.embed_tokenizer,
@@ -203,8 +197,8 @@ def _train(
                 4 if args.batch_size <= 16 else args.batch_size // 4
             ),  # To avoid OOM
             seed=None,
-            rank=get_rank(),  # DDP rank
-            world_size=get_world_size(),  # DDP world_size
+            rank=get_rank(),
+            world_size=get_world_size(),
             is_eval=True,
             continuation=False,
         )
@@ -229,8 +223,8 @@ def _train(
                     4 if args.batch_size <= 16 else args.batch_size // get_world_size()
                 ),  # To avoid OOM
                 seed=None,
-                rank=get_rank(),  # DDP rank
-                world_size=get_world_size(),  # DDP world_size
+                rank=get_rank(),
+                world_size=get_world_size(),
                 is_eval=True,
                 continuation=True,
             )
@@ -247,7 +241,8 @@ def _train(
         else:
             eval_batches_4cont = None
 
-    # 9. Load optimizer
+    """ Optimizer, scheduler, state, checkpointer """
+
     optimizer = AdamW(
         [
             {"params": model.llms.parameters(), "lr": args.optim.max_lr},
@@ -310,14 +305,12 @@ def _train(
             else pipeline.pipeline_args.embedder_params.compress_rates[-1]
         )
     llm_number = 0
-    
-
+    """ Training loop """
     while state.step < args.max_steps:
         state.start_step()
 
         # Check if we are at the last step
         is_last_step = state.step == args.max_steps
-
 
         optimizer.zero_grad()
         loss = torch.tensor([0.0], device="cuda")
@@ -326,23 +319,32 @@ def _train(
 
         # Number of steps to accumulate gradients before doing an optimizer step.
         for i in range(args.num_microbatches):
-            
-            if args.fair_instruct and state.step%2 == 0:
-                # Use the same batch for both LLMs
+            if args.fair_instruct and state.step % 2 == 0:
                 batch = next(train_data_loader)
+                # Avoid OOM due to too many embeddings for the same batch
+                while len(batch.sizes) > 100:
+                    batch = next(train_data_loader)
+                    print("Too many embeddings to do, skipping batch")
             elif not args.fair_instruct or state.step == 1:
                 batch = next(train_data_loader)
-
-
-            """ Training loop for basic reconstruction"""
+                # Avoid OOM due to too many embeddings for the same batch
+                while len(batch.sizes) > 100:
+                    batch = next(train_data_loader)
+                    print("Too many embeddings to do, skipping batch")
 
             x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
                 pipeline.prepare_forward(batch, args.data.instruct_decoder)
             )
+
+            """ Sample a decoder LLM if multiple are provided and do token remapping if needed """
             if len(args.llm_paths) > 1:
-                llm_number = random.choices(
-                    range(len(args.llm_paths)), weights=args.prob_forward, k=1
-                ) if not args.fair_instruct else [state.step%2]
+                llm_number = (
+                    random.choices(
+                        range(len(args.llm_paths)), weights=args.prob_forward, k=1
+                    )
+                    if not args.fair_instruct
+                    else [state.step % 2]
+                )
                 llm_number = torch.tensor(llm_number).to("cuda")
                 torch.distributed.broadcast(llm_number, src=0)
             else:
@@ -369,17 +371,26 @@ def _train(
                     sl = 0
 
                     for k, insert_idx in enumerate(insert_cat_embedds[j]):
-                        bos = pipeline.llm_tokenizer[0].tokenizer.bos_id in  this_seq_toks[ind : ind + insert_idx]
-                        eos = pipeline.llm_tokenizer[0].tokenizer.eos_id in  this_seq_toks[ind : ind + insert_idx]
+                        bos = (
+                            pipeline.llm_tokenizer[0].tokenizer.bos_id
+                            in this_seq_toks[ind : ind + insert_idx]
+                        )
+                        eos = (
+                            pipeline.llm_tokenizer[0].tokenizer.eos_id
+                            in this_seq_toks[ind : ind + insert_idx]
+                        )
                         text = pipeline.llm_tokenizer[0].tokenizer.decode(
                             this_seq_toks[ind : ind + insert_idx]
                         )
                         ind += insert_idx
-         
-                        if  pipeline.llm_tokenizer[0].model_name != pipeline.llm_tokenizer[llm_number].model_name:
+
+                        if (
+                            pipeline.llm_tokenizer[0].model_name
+                            != pipeline.llm_tokenizer[llm_number].model_name
+                        ):
                             splitted_text = text.split("Answer:")
                             if batch.data_type == "instruct" and len(splitted_text) > 1:
-                                q_text = "\n"  + splitted_text[0].strip() + "\nAnswer:"
+                                q_text = "\n" + splitted_text[0].strip() + "\nAnswer:"
                                 a_text = splitted_text[1].strip()
                                 q_toks = pipeline.llm_tokenizer[
                                     llm_number
@@ -403,20 +414,33 @@ def _train(
                             this_seq_new_mask.extend(mask)
 
                     if ind < size:
-                        bos = pipeline.llm_tokenizer[0].tokenizer.bos_id in this_seq_toks[ind:]
-                        eos = pipeline.llm_tokenizer[0].tokenizer.eos_id in this_seq_toks[ind:]
+                        bos = (
+                            pipeline.llm_tokenizer[0].tokenizer.bos_id
+                            in this_seq_toks[ind:]
+                        )
+                        eos = (
+                            pipeline.llm_tokenizer[0].tokenizer.eos_id
+                            in this_seq_toks[ind:]
+                        )
                         text = pipeline.llm_tokenizer[0].tokenizer.decode(
                             this_seq_toks[ind:]
                         )
-                            
+
                         if (
-                            pipeline.llm_tokenizer[0].model_name!= pipeline.llm_tokenizer[llm_number].model_name
+                            pipeline.llm_tokenizer[0].model_name
+                            != pipeline.llm_tokenizer[llm_number].model_name
                         ):
-                            bos = pipeline.llm_tokenizer[0].tokenizer.bos_id in this_seq_toks[ind:]
-                            eos = pipeline.llm_tokenizer[0].tokenizer.eos_id in this_seq_toks[ind:]
+                            bos = (
+                                pipeline.llm_tokenizer[0].tokenizer.bos_id
+                                in this_seq_toks[ind:]
+                            )
+                            eos = (
+                                pipeline.llm_tokenizer[0].tokenizer.eos_id
+                                in this_seq_toks[ind:]
+                            )
                             splitted_text = text.split("Answer:")
                             if batch.data_type == "instruct" and len(splitted_text) > 1:
-                                q_text = "\n"  + splitted_text[0].strip() + "\nAnswer:"
+                                q_text = "\n" + splitted_text[0].strip() + "\nAnswer:"
                                 a_text = splitted_text[1].strip()
                                 q_toks = pipeline.llm_tokenizer[
                                     llm_number
@@ -450,50 +474,7 @@ def _train(
                 x = torch.tensor(new_x).cuda(non_blocking=True)
                 y = torch.tensor(new_y).cuda(non_blocking=True)
                 y_mask = torch.tensor(new_mask).cuda(non_blocking=True)
-            
-            # if get_rank() == 1:
-            #         # print('Embed seqlens', embed_seqlens)
-            #         # # to_gen = [int(tok) for tok in batch.x[: batch.sizes[0]]]
-            #         # # print("To generate", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
-            #         # print("Batch data type", batch.data_type)
-            #         for block in range(1,len(batch.sizes)-1):
-            #             ind_toks = sum(seqlens[:block])
-            #             # print("Insert cat embedds", insert_cat_embedds)
-            #             # print('First token value',x[ind_toks])
-            #             for j, insert_idx in enumerate(insert_cat_embedds[block]):
-            #                 print(
-            #                     "TEXT",
-            #                     pipeline.llm_tokenizer[llm_number].tokenizer.decode(
-            #                         x[ind_toks : ind_toks + insert_idx].tolist(), **({'skip_special_tokens':False} if llm_number == 0 else {})
-            #                     ),"CONTEXT", batch.to_embed[block]["text"][j])
-            #                 ind_toks += insert_idx
-     
-            #             print(
-            #                 "TEXT",pipeline.llm_tokenizer[llm_number].tokenizer.decode(
-            #                     x[ind_toks : sum(seqlens[:block+1])].tolist(), **({'skip_special_tokens':False} if llm_number == 0 else {})
-            #                 ),
-            #             )
-            # #         # print('With Mask',None if y_mask is None else y_mask[sum(seqlens[:block]) : sum(seqlens[:block + 1])])
-            #     # print_w_mask(input_ids=x[sum(seqlens[:2]) : sum(seqlens[:3])].tolist(),
-            #     #                 tokenizer=pipeline.llm_tokenizer[llm_number].tokenizer,
-            #     #                 mask=None if y_mask is None else y_mask[sum(seqlens[:2]) : sum(seqlens[:3])])
-            #     # # target = [int(tok) for tok in batch.y]
-            #     # embed = [int(toks) for tokens in batch.to_embed[0]["tokens"] for toks in tokens]
-            #     # # continuation = [
-            #     # #     int(tok)
-            #     # #     for tok in batch.x[insert_cat_embedds[0][0]:batch.sizes[0]]
-            #     # # ]
-            #     # print("Beginning", pipeline.llm_tokenizer.tokenizer.decode(to_gen))
-            #     # print('Embed', pipeline.embed_tokenizer.tokenizer.decode(embed))
-            #     # # print('embedding tokens', batch.to_embed[13]["tokens"])
-            #     # # print('embed', batch.to_embed[13]["text"])
-            #     # # print('Continuation', pipeline.llm_tokenizer.tokenizer.decode(continuation))
-            #     # # print('X len', len(batch.x))
-            #     # # print("Sizes", batch.sizes)
-            #     # # print("Embed seqlens", embed_seqlens)
-            #     # print('Insert cat embedds', insert_cat_embedds)
 
-                
             output = model.forward(
                 x=x,
                 embeddings=embeddings,
@@ -507,13 +488,13 @@ def _train(
             mb_loss = compute_ce_loss_with_mask(
                 logits=output, target=y, target_mask=y_mask
             )
-            # if get_rank()==1:
-            #     print('MB LOSS', repr(mb_loss.item()))
+
             train_ppl += 2 ** (mb_loss.item())
 
+            """ Compute bpc """
             batch_bpc = 0
             ind = 0
-            
+
             for size in batch.sizes:
                 if len(y[ind : ind + size]) > 0 and (
                     y_mask is None or torch.sum(y_mask[ind : ind + size]) > 0
@@ -531,9 +512,7 @@ def _train(
                                 pipeline.llm_tokenizer[llm_number].tokenizer.decode(
                                     [
                                         int(tok)
-                                        for ind_y, tok in enumerate(
-                                            y[ind : ind + size]
-                                        )
+                                        for ind_y, tok in enumerate(y[ind : ind + size])
                                         if y_mask is None or y_mask[ind + ind_y]
                                     ]
                                 )
@@ -557,21 +536,6 @@ def _train(
                 assert args.num_microbatches > 1  # should not happen
                 torch.cuda.synchronize()
 
-        # if model.embedder.rec_tok is not None and batch.data_type != "reconstruction":
-        #     for name, param in model.embedder.rec_tok.named_parameters():
-        #         param.grad = torch.zeros_like(param).to(
-        #             dtype=param.dtype,
-        #             device=param.device,
-        #         )
-
-        # if model.embedder.cont_tok is not None and (batch.data_type != "continuation" and batch.data_type != "instruct"):
-        #     for name, param in model.embedder.cont_tok.named_parameters():
-        #         param.grad = torch.zeros_like(param).to(
-        #             dtype=param.dtype,
-        #             device=param.device,
-        #         )
-        
-
         if args.num_microbatches > 1:
             loss /= args.num_microbatches
             train_ppl /= args.num_microbatches
@@ -586,9 +550,9 @@ def _train(
                 if torch.any(torch.isnan(p.grad)).item():
                     if get_rank() == 0:
                         print(f"Grad contains NaN for this param {name}")
-                            
+
                 grad_norm += torch.norm(p.grad).item() ** 2
-                    
+
         if torch.any(torch.isnan(grad_norm)).item():
             if dist.is_initialized():
                 try:
@@ -600,10 +564,8 @@ def _train(
                 f"Grad contains NaN before clipping or Inf values at step {state.step}"
             )
 
-
         # clip grad norm
         model.clip_grad_norm_(max_norm=args.max_norm)
-
 
         # optimizer step
         optimizer.step()
@@ -613,22 +575,25 @@ def _train(
 
         # Host sync
         loss_item = loss.item()
+        overall_tokens = int(avg_aggregate(n_batch_tokens) * get_world_size())
         avg_loss = avg_aggregate(loss_item)
         train_ppl = avg_aggregate(train_ppl)
-        bpc_item = bpc.item() if args.num_microbatches <= 1 else bpc / (args.num_microbatches)
+        bpc_item = (
+            bpc.item() if args.num_microbatches <= 1 else bpc / (args.num_microbatches)
+        )
         bpc_avg = avg_aggregate(bpc_item)
-
 
         if not args.no_eval and (
             (args.eval_freq > 0 and state.step % args.eval_freq == 0)
             or is_last_step
             or state.step == 1
         ):
-
             evaluate(
                 model=model,
-                prepare_batch_fn=partial(pipeline.prepare_forward,
-                                         instruct_decoder=args.data.instruct_decoder),
+                prepare_batch_fn=partial(
+                    pipeline.prepare_forward,
+                    instruct_decoder=args.data.instruct_decoder,
+                ),
                 batches_rec=eval_batches,
                 state=state,
                 batches_cont=eval_batches_4cont,
@@ -648,7 +613,7 @@ def _train(
             eval_logger.log(eval_logs, step=state.step)
 
         # Timing
-        state.end_step(n_batch_tokens)
+        state.end_step(overall_tokens)
 
         if state.step % args.log_freq == 0 or state.step == 1 or is_last_step:
             train_logs = get_train_logs(

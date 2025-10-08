@@ -1,5 +1,4 @@
 import torch
-import math
 from fast_pytorch_kmeans import KMeans
 
 METRIC_DICT = {
@@ -33,17 +32,16 @@ def get_merging_cluster(
         assert x.shape[0] > n_compressed_toks, (
             f"Shape of x {x.shape} must be greater than n_compressed_toks {n_compressed_toks}"
         )
-        
+
         try:
             cluster_ids_x = kmeans.fit_predict(x)
         except RuntimeError as e:
-            print('ERROR: KMeans failed to fit, using default cluster ids', e)
+            print("ERROR: KMeans failed to fit, using default cluster ids", e)
             cluster_ids_x = []
             for i in range(n_compressed_toks):
                 cluster_ids_x.extend([i] * (x.shape[0] // n_compressed_toks))
             cluster_ids_x.extend([i] * (x.shape[0] % n_compressed_toks))
             return torch.Tensor(cluster_ids_x).to(device=x.device, dtype=torch.int64)
-
 
     return cluster_ids_x
 
@@ -73,12 +71,12 @@ def smart_merge(
         f"Shape of hidden_states {hidden_states.shape} must be 3D tensor"
         f" with shape (seqs_len, n_heads or 1, hidden_dim)"
     )
-    
+
     if pruning:
         assert metric != "kmeans", (
             f"Pruning is not supported with kmeans metric, got {metric}"
         )
-        
+
     n_heads = hidden_states.shape[1]
     ind_h = 0
     new_seqlens = []
@@ -153,7 +151,6 @@ def smart_merge(
                     else:
                         merged_x = torch.mean(x, dim=0, keepdim=True)
 
-    
                     x = merged_x.clone()
 
                 elif pruning and "norm" in metric:

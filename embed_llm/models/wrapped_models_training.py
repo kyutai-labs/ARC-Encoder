@@ -12,7 +12,6 @@ from embed_llm.models.utils.loading import (
     load_state_dict,
 )
 from embed_llm.data.tokenize import Tokenizer
-from embed_llm.data.tokenize import Tokenizer
 from embed_llm.models.utils.utils import (
     get_fsdp_policy,
     log_train_params,
@@ -38,22 +37,19 @@ def load_training_model(
     checkpoint: bool = False,
     max_batch_size: int = 32,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
-    
-    
     llms = []
     llm_tokenizers = []
     for i, llm_path in enumerate(llm_paths):
         llm_folder = Path(llm_path)
         if not llm_folder.exists():
             raise FileNotFoundError(f"LLM folder {llm_folder} does not exist")
-   
+
         llm_args, pipeline_args = load_args(
             llm_folder,
             max_batch_size=max_batch_size,
             pipe_args=train_args.pipeline,
             args_type=train_args.llm_types[i],
         )
-
 
         llm, llm_tokenizer = load_model(
             llm_args=llm_args,
@@ -65,10 +61,12 @@ def load_training_model(
             llm_type=train_args.llm_types[i],
             embed_type=train_args.embed_type,
         )
-        
+
         llms.append(llm)
-        llm_tokenizers.append(Tokenizer(tokenizer=llm_tokenizer, model_name=train_args.llm_types[i]))
-        
+        llm_tokenizers.append(
+            Tokenizer(tokenizer=llm_tokenizer, model_name=train_args.llm_types[i])
+        )
+
     main_logger_info("Loading embedder model ...")
     embed_args, _ = load_args(
         embed_folder,
@@ -76,7 +74,7 @@ def load_training_model(
         pipe_args=train_args.pipeline,
         args_type=train_args.embed_type,
     )
-    
+
     # Load pretrained params on rank 0
     llm_embedder, embed_tokenizer = load_model(
         llm_args=embed_args,
@@ -86,7 +84,7 @@ def load_training_model(
         param_dtype=param_dtype,
         for_embedding=True,
         embed_type=train_args.embed_type,
-        number_of_llm = len(llms),
+        number_of_llm=len(llms),
     )
 
     # Create the pipeline
@@ -101,16 +99,15 @@ def load_training_model(
         augmented_model = augmented_pipeline.get_model(llms=llms)
 
     if get_rank() == 0:
-
-            
         if pipeline_args.embedder_params.memory_tokens > 0:
             main_logger_info("Initializing memory tokens for embedder ...")
             for i in range(len(llms)):
-
                 augmented_model.embedder.mem_embeddings[i]._parameters["weight"] = (
                     torch.nn.Parameter(
                         torch.empty_like(
-                             augmented_model.embedder.mem_embeddings[i]._parameters["weight"],
+                            augmented_model.embedder.mem_embeddings[i]._parameters[
+                                "weight"
+                            ],
                             device="cpu",
                             dtype=param_dtype,
                         )
@@ -162,15 +159,14 @@ def load_training_model(
     ignored_states = []
     for j in range(len(llms)):
         if pipeline_args.embedder_params.rec_tok:
-                augmented_model.embedder.rec_tok[j].weight = torch.nn.Parameter(
-                    torch.ones_like(
-                        augmented_model.embedder.rec_tok[j].weight,
-                        device="cuda",
-                        dtype=param_dtype,
-                    )
+            augmented_model.embedder.rec_tok[j].weight = torch.nn.Parameter(
+                torch.ones_like(
+                    augmented_model.embedder.rec_tok[j].weight,
+                    device="cuda",
+                    dtype=param_dtype,
                 )
-                ignored_states.append(augmented_model.embedder.rec_tok[j].weight)
-
+            )
+            ignored_states.append(augmented_model.embedder.rec_tok[j].weight)
 
         if pipeline_args.embedder_params.cont_tok:
             augmented_model.embedder.cont_tok[j].weight = torch.nn.Parameter(
@@ -185,20 +181,20 @@ def load_training_model(
     torch.distributed.barrier()
     for param in augmented_model.llms.parameters():
         param.requires_grad = False
-        
+
     for name, param in augmented_model.embedder.named_parameters():
-        if (
-            any(
-                [
-                    f"layers.{layer}" in name
-                    for layer in augmented_model.embedder.trained_layers
-                ]
-            )
+        if any(
+            [
+                f"layers.{layer}" in name
+                for layer in augmented_model.embedder.trained_layers
+            ]
         ):
             param.requires_grad = True
-        elif pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name:
+        elif (
+            pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name
+        ):
             param.requires_grad = True
-            
+
         elif (
             pipeline_args.embedder_params.train_embedding_mtx
             and "tok_embeddings" in name
@@ -210,15 +206,14 @@ def load_training_model(
             param.requires_grad = True
         else:
             param.requires_grad = False
-    
+
     if pipeline_args.bridge_module.bridge_type is not None:
         for name, param in augmented_model.bridge_module.named_parameters():
-                param.requires_grad = True
+            param.requires_grad = True
 
     log_train_params(augmented_model)
 
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
-
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
@@ -234,7 +229,7 @@ def load_training_model(
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
         ignored_states=ignored_states,
     )
-    
+
     main_logger_info("Model sharded!")
     return (
         augmented_pipeline,
@@ -254,21 +249,19 @@ def load_training_model_from_ckpt(
     checkpoint: bool = False,
     max_batch_size: int = 32,
 ) -> tuple[EmbedAugPipeline, FullyShardedDataParallel]:
-
     llms = []
     llm_tokenizers = []
     for i, llm_path in enumerate(llm_paths):
         llm_folder = Path(llm_path)
         if not llm_folder.exists():
             raise FileNotFoundError(f"LLM folder {llm_folder} does not exist")
-   
+
         llm_args, pipeline_args = load_args(
             llm_folder,
             max_batch_size=max_batch_size,
             pipe_args=train_args.pipeline,
             args_type=train_args.llm_types[i],
         )
-
 
         llm, llm_tokenizer = load_model(
             llm_args=llm_args,
@@ -280,10 +273,12 @@ def load_training_model_from_ckpt(
             llm_type=train_args.llm_types[i],
             embed_type=train_args.embed_type,
         )
-        
+
         llms.append(llm)
-        llm_tokenizers.append(Tokenizer(tokenizer=llm_tokenizer, model_name=train_args.llm_types[i]))
-        
+        llm_tokenizers.append(
+            Tokenizer(tokenizer=llm_tokenizer, model_name=train_args.llm_types[i])
+        )
+
     main_logger_info("Loading embedder model ...")
     embed_args, _ = load_args(
         embed_folder,
@@ -300,7 +295,7 @@ def load_training_model_from_ckpt(
         param_dtype=param_dtype,
         for_embedding=True,
         embed_type=train_args.embed_type,
-        number_of_llm = len(llms),
+        number_of_llm=len(llms),
     )
 
     # Create the pipeline
@@ -311,20 +306,16 @@ def load_training_model_from_ckpt(
         embedding_model=llm_embedder,
     )
 
-
     with torch.device("meta"):
         augmented_model = augmented_pipeline.get_model(llms=llms)
 
     if get_rank() == 0:
-
         if embedder_path is not None:
             main_logger_info("Loading trained layers for embedder ...")
             state_dict = load_state_dict(Path(embedder_path), dtype=param_dtype)
             augmented_model.embedder.load_state_dict(
                 state_dict, assign=True, strict=False
             )
-            
-
 
         if pipeline_args.bridge_module.bridge_type is not None:
             if bridge_folder is None:
@@ -382,28 +373,32 @@ def load_training_model_from_ckpt(
         )
         state_dict = load_state_dict(supp_toks_path, dtype=param_dtype)
         filtered_state_dict = {
-            k: v for k, v in state_dict.items() if k in augmented_model.embedder.state_dict().keys() and "rec_tok" in k
+            k: v
+            for k, v in state_dict.items()
+            if k in augmented_model.embedder.state_dict().keys() and "rec_tok" in k
         }
 
-        
         augmented_model.embedder.rec_tok.load_state_dict(
-            {
-                k.split("rec_tok.")[-1]: v.cuda()
-                for k, v in filtered_state_dict.items()
-            },
+            {k.split("rec_tok.")[-1]: v.cuda() for k, v in filtered_state_dict.items()},
             strict=True,
             assign=True,
         )
-        ignored_states.extend([augmented_model.embedder.rec_tok[llm_number].weight for llm_number in range(len(llms))])
+        ignored_states.extend(
+            [
+                augmented_model.embedder.rec_tok[llm_number].weight
+                for llm_number in range(len(llms))
+            ]
+        )
 
     if pipeline_args.embedder_params.cont_tok:
-
         supp_toks_path = (
             Path(embedder_path) if supp_toks_path is None else Path(supp_toks_path)
         )
         state_dict = load_state_dict(supp_toks_path, dtype=param_dtype)
         filtered_state_dict = {
-            k: v for k, v in state_dict.items() if k in augmented_model.embedder.state_dict().keys() and "cont_tok" in k
+            k: v
+            for k, v in state_dict.items()
+            if k in augmented_model.embedder.state_dict().keys() and "cont_tok" in k
         }
         augmented_model.embedder.cont_tok.load_state_dict(
             {
@@ -413,12 +408,16 @@ def load_training_model_from_ckpt(
             strict=True,
             assign=True,
         )
-        ignored_states.extend([augmented_model.embedder.cont_tok[llm_number].weight for llm_number in range(len(llms))])
+        ignored_states.extend(
+            [
+                augmented_model.embedder.cont_tok[llm_number].weight
+                for llm_number in range(len(llms))
+            ]
+        )
 
     torch.distributed.barrier()
     for param in augmented_model.llms.parameters():
         param.requires_grad = False
-
 
     for name, param in augmented_model.embedder.named_parameters():
         if (
@@ -436,7 +435,9 @@ def load_training_model_from_ckpt(
             and "tok_embeddings" in name
         ):
             param.requires_grad = True
-        elif pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name:
+        elif (
+            pipeline_args.embedder_params.memory_tokens > 0 and "mem_embeddings" in name
+        ):
             param.requires_grad = True
         elif pipeline_args.embedder_params.rec_tok and "rec_tok" in name:
             param.requires_grad = True
@@ -446,12 +447,11 @@ def load_training_model_from_ckpt(
             param.requires_grad = False
     if pipeline_args.bridge_module.bridge_type is not None:
         for name, param in augmented_model.bridge_module.named_parameters():
-                param.requires_grad = True
-            
+            param.requires_grad = True
+
     log_train_params(augmented_model)
-            
+
     auto_wrap_policy = get_fsdp_policy(is_lora=True)
-    
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
@@ -467,8 +467,6 @@ def load_training_model_from_ckpt(
         param_init_fn=param_init_fn,  # Condition on the fact that sync_module_states is True otherwise None
         ignored_states=ignored_states,
     )
-
-
 
     main_logger_info("Model sharded!")
 
