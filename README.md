@@ -10,23 +10,23 @@ You can pretrain and fine-tune your own **ARC-Encoder**, or directly use our rel
 ---
 
 ## 🗂️ Table of Contents
-- [📥 Installation](#-installation)
-- [📚 Preparing Datasets](#-preparing-datasets)
-- [🏋️ Training](#-training)
-- [🔮 Evaluation](#-evaluation)
-- [📁 Folder Structure](#-folder-structure)
-- [🙏 Acknowledgments](#-acknowledgments)
+- [Installation](#-installation)
+- [ Preparing Datasets](#-preparing-datasets)
+- [Training](#-training)
+- [Evaluation](#-evaluation)
+- [Folder Structure](#-folder-structure)
+- [Acknowledgments](#-acknowledgments)
 
 ---
 
 
-## 📥 Installation
+## Installation
 
 ### 1️⃣ Clone this repository
 ```sh
 git clone ...
 ```
-***Once cloned set import paths at `embed_llm/__init__.py`.***
+***Once cloned set import paths at `embed_llm/__init__.py`.*** Then, export these as environment variables since they are useful in the config files. 
 
 ### 2️⃣ Install all required dependencies:
 We recommend using [`uv`](https://docs.astral.sh/uv/) to manage the environment.
@@ -75,7 +75,7 @@ echo '{"dim": 4096, "n_heads": 32, "n_layers": 32, "norm_eps": 1e-05, "vocab_siz
 ```
 
 
-## 📚 Prepare datasets
+## Prepare datasets
 
 For fine-tuning, load our Hugging Face dataset:
 👉 [ARC Finetuning Dataset](https://huggingface.co/datasets/HippolyteP/ARC_finetuning). 
@@ -86,7 +86,19 @@ Then,  run the following scripts to prepare evaluation datasets:
 - `retrieval/embeddings.py` — GPU recommended, creates embeddings for Wikipedia text chunks.
 - `retrieval/passage_retrieval.py`— CPU fine, retrieves passages for Natural Questions and TriviaQA, as described in the paper.
 
-## 🏋️ Start training 
+
+## Load pre-train ARC-Encoders
+Pretrained ARC-Encoders will soon be released and available on HuggingFace, stay tuned. 
+
+| Models                | Specificities                                       | 
+| :-------------------- | :-------------------------------------------------- | 
+| [ARC<sub>8</sub>-Encoder<sup>L</sup>](link)| Trained on 6.5B tokens on Llama3.1-8B base specifically with a pooling factor (PF) of 8                                 |  
+| [ARC<sub>8</sub>-Encoder<sup>M</sup>](link)| Trained on 6.5B tokens on Mistral-7B base specifically with a PF of 8                    |  
+| [ARC<sub>8</sub>-Encoder<sup>multi</sup>](link)|    Trained by sampling among these two decoders using 6.5B tokens for each one of them with a PF of 8                       |  
+
+
+
+## Start training 
 
 To pretrain or fine-tune your ARC-Encoder, review configuration examples in `config/`,
 create your own YAML file, and launch training with:
@@ -96,7 +108,7 @@ uv run torchrun --nproc-per-node <number of gpus> -m train config/<your .yaml co
 ```
 
 
-## 🔮 Evaluation
+## Evaluation
 Evaluate your models on QA benchmarks in two ways:
 Use arguments from `embed_llm/generation/eval_context_comp.py`
 Or run the complete evaluation as in the paper using `scripts/eval.sh`
@@ -113,7 +125,7 @@ uv run python -m embed_llm.generation.eval_context_comp \
 
 ```
 
-## 📁 Folder Structure
+## Folder Structure
 | Folder                 | Description                                                                                                                                                                                                                                                            |
 | :--------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `embed_llm/data`       | Scripts for loading, tokenizing, and formatting datasets (continuation, reconstruction, fine-tuning).                                                                                                                                                                  |
@@ -123,7 +135,7 @@ uv run python -m embed_llm.generation.eval_context_comp \
 | `embed_llm/retrieval`  | Scripts for embedding/retrieval using [NVEmbedv2](https://arxiv.org/abs/2405.17428).                                                                                                                                                                                   |
 | `embed_llm/training`   | Utilities for distributed multi-GPU training.                                                                                                                                                                                                                          |
 | `scripts`              | SLURM job launch scripts (evaluation/training) and dataset synthesis scripts under `synt_data/`.                                                                                                                                                                       |
-##  🙏 Acknowledgments
+##   Acknowledgments
 This project uses code from:
 - [mistral-finetune](https://github.com/mistralai/mistral-finetune)  (Apache License 2.0)
 - [FID](https://github.com/facebookresearch/FiD) (Attribution-NonCommercial 4.0 International)
