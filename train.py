@@ -540,8 +540,7 @@ def _train(
             loss /= args.num_microbatches
             train_ppl /= args.num_microbatches
             for p in model.parameters():
-                if p.requires_grad:
-                    assert p.grad is not None
+                if p.requires_grad and p.grad is not None:
                     p.grad.div_(args.num_microbatches)
 
         grad_norm = torch.tensor([0.0], device="cuda")
@@ -552,7 +551,7 @@ def _train(
                         print(f"Grad contains NaN for this param {name}")
 
                 grad_norm += torch.norm(p.grad).item() ** 2
-
+                
         if torch.any(torch.isnan(grad_norm)).item():
             if dist.is_initialized():
                 try:

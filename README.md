@@ -100,11 +100,11 @@ Pretrained ARC-Encoders will soon be released and available on HuggingFace, stay
 
 ## Start training 
 
-To pretrain or fine-tune your ARC-Encoder, review configuration examples in `config/`,
+To pretrain or fine-tune your ARC-Encoder, review configuration examples in `configs/`,
 create your own YAML file, and launch training with:
 
 ```
-uv run torchrun --nproc-per-node <number of gpus> -m train config/<your .yaml config file>
+uv run torchrun --nproc-per-node <number of gpus> -m train configs/<your .yaml config file>
 ```
 
 
