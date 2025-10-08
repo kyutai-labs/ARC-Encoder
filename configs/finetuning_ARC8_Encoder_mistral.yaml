@@ -1,0 +1,69 @@
+# Dataset and Model paths
+data:
+  adapt_seq_len: true
+  prefix_path: ${MODEL_PATH}
+  eval_data: '' # Add eval data path if needed
+  train_data: adversarialqa.jsonl:8:5,freebaseqa.jsonl:27:5,asqa.jsonl:1:5,msmarco.jsonl:9.0:5,sciq.jsonl:3:5,drop.jsonl:20:5,low_res_short_translation.jsonl:3.5:5,low_res_mid_translation.jsonl:0.5:2,short_translation.jsonl:6:5,dialogsum.jsonl:2.5:3,samsum.jsonl:2.5:4,wikisum.jsonl:5:5,parasci.jsonl:12:5
+  interleave: true 
+  instruct: true
+  max_passages: 4
+
+run_dir: ${TMP_PATH}
+llm_paths: 
+- ${MODEL_PATH}/mistral_7B
+llm_types: 
+- mistral
+embedder_path: ${MODEL_PATH}/Llama3.2-3B
+embed_type: llama
+
+# Training Hyperparameters
+num_microbatches: 1
+seed: 0
+max_steps: 4000
+seq_len: 2048
+log_freq: 10
+batch_size: 8
+ckpt_freq: 50
+eval_freq: 50
+no_eval: false
+optim:
+  final_lr: 1.0e-08
+  initial_lr: 1.0e-20
+  max_lr: 2.0e-06
+  max_lr_projector: 3.0e-05
+  warm_up_steps: 50
+  weight_decay: 0.05
+
+# Checkpoint to start from
+from_ckpt:
+  do: true
+  bridge_path: ${TMP_PATH}/ARC8_Encoder_mistral_pretrained/checkpoints/checkpoint_100000/bridge_module/
+  embedder_path: ${TMP_PATH}/ARC8_Encoder_mistral_pretrained/checkpoints/checkpoint_100000/embedder/
+
+# ARC-Encoder Specific Parameters
+pipeline:
+  embedder_params:
+    causal_embedder: false
+    compress_rates:
+    - -8
+    n_truncated_layers: 2
+    pooling_module:
+      pool_type: mean_pooled_queries
+      where: before
+    trained_layers: 27
+    train_embedding_mtx: true
+    rec_tok: true
+    cont_tok: true
+  bridge_module:
+    bridge_type: mlp
+    in_dim: 3072
+    hidden_dim: 2048
+    out_dim: 4096
+
+exp_name: finetuning_ARC8_Encoder_mistral
+
+# wandb:
+#   key: <to set>
+#   offline: false
+#   project: <to set>
+#   run_name: finetuning_ARC8_Encoder_mistral

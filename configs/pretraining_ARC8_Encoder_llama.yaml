@@ -1,0 +1,61 @@
+# Dataset and Model paths
+data:
+  prefix_path: ${MODEL_PATH}
+  eval_data: '' # Add eval data path if needed
+  train_data: # Add your pretraining data here, a filtered crawl
+  max_passages: 1
+
+run_dir: ${TMP_PATH}
+llm_paths: 
+- ${MODEL_PATH}/Llama3.1-8B
+llm_types: 
+- llama
+embedder_path: ${MODEL_PATH}/Llama3.2-3B
+embed_type: llama
+
+# Training Hyperparameters
+num_microbatches: 1
+seed: 0
+max_steps: 100000
+seq_len: 256
+log_freq: 50
+batch_size: 16
+ckpt_freq: 10000
+eval_freq: 100
+no_eval: false
+continuation: 0.8
+optim:
+  final_lr: 1.0e-10
+  initial_lr: 1.0e-20
+  max_lr: 1.0e-05
+  max_lr_projector: 5.0e-05
+  warm_up_steps: 1000
+  weight_decay: 0.1
+
+# ARC-Encoder Specific Parameters
+pipeline:
+  embedder_params:
+    causal_embedder: false
+    compress_rates:
+    - -8
+    n_truncated_layers: 2
+    pooling_module:
+      pool_type: mean_pooled_queries
+      where: before
+    trained_layers: 27
+    train_embedding_mtx: true
+    rec_tok: true
+    cont_tok: true
+  bridge_module:
+    bridge_type: mlp
+    in_dim: 3072
+    hidden_dim: 2048
+    out_dim: 4096
+
+exp_name: pretraining_ARC8_Encoder_llama
+
+# wandb:
+#   key: <to set>
+#   offline: false
+#   project: <to set>
+#   run_name: pretraining_ARC8_Encoder_llama
