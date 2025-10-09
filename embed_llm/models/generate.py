@@ -68,7 +68,7 @@ def generate(
         embed_seqlens=embed_seqlens,
         cache=cache,
         comp_repr=comp_repr,
-        insert_cat_embedds=None if len(insertion_lists) == 0 else insertion_lists,
+        insert_comp_repr=None if len(insertion_lists) == 0 else insertion_lists,
     )
 
     # Stop concatenating after first chunk

@@ -332,7 +332,7 @@ def _train(
                     batch = next(train_data_loader)
                     print("Too many embeddings to do, skipping batch")
 
-            x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
+            x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_comp_repr = (
                 pipeline.prepare_forward(batch, args.data.instruct_decoder)
             )
 
@@ -355,7 +355,7 @@ def _train(
                 new_y = []
                 new_mask = []
                 new_seqlens = []
-                new_insert_cat_embedds = []
+                new_insert_comp_repr = []
 
                 for j, size in enumerate(seqlens):
                     this_seq_toks = x[
@@ -370,7 +370,7 @@ def _train(
                     ind = 0
                     sl = 0
 
-                    for k, insert_idx in enumerate(insert_cat_embedds[j]):
+                    for k, insert_idx in enumerate(insert_comp_repr[j]):
                         bos = (
                             pipeline.llm_tokenizer[0].tokenizer.bos_id
                             in this_seq_toks[ind : ind + insert_idx]
@@ -467,9 +467,9 @@ def _train(
                     new_mask.extend(this_seq_new_mask[1:])
                     if len(this_seq_new_insert_ids) == 0:
                         this_seq_new_insert_ids = [0]
-                    new_insert_cat_embedds.append(this_seq_new_insert_ids)
+                    new_insert_comp_repr.append(this_seq_new_insert_ids)
 
-                insert_cat_embedds = new_insert_cat_embedds
+                insert_comp_repr = new_insert_comp_repr
                 seqlens = new_seqlens
                 x = torch.tensor(new_x).cuda(non_blocking=True)
                 y = torch.tensor(new_y).cuda(non_blocking=True)
@@ -480,7 +480,7 @@ def _train(
                 embeddings=embeddings,
                 seqlens=seqlens,
                 embed_seqlens=embed_seqlens,
-                insert_cat_embedds=insert_cat_embedds,
+                insert_comp_repr=insert_comp_repr,
                 batch_type=batch.data_type,
                 llm_number=llm_number,
             )

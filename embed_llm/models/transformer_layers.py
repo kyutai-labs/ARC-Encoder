@@ -278,6 +278,8 @@ class TransformerBlock(nn.Module):
         )
 
         h = x + r
+        
+        # If pooling between Self-Attention and FFN else it is a standard Transformer Block module
         if self.pooling_module is None and where == "between":
             assert comp_rate is not None
             self.pooling_module = PoolingModule(PoolingArgs(pool_type=pool_type))
