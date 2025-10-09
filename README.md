@@ -88,7 +88,7 @@ Then,  run the following scripts to prepare evaluation datasets:
 
 
 ## Load pre-train ARC-Encoders
-Pretrained ARC-Encoders will soon be released and available on HuggingFace, stay tuned. 
+Pretrained ARC-Encoders will soon be released and available on HuggingFace, stay tuned. Store each model folder in the <TMP_PATH>.
 
 | Models                | Specificities                                       | 
 | :-------------------- | :-------------------------------------------------- | 

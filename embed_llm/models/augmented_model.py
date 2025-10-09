@@ -24,7 +24,6 @@ from embed_llm.models.utils.loading import (
 
 from embed_llm.models.enhanced_transformer import Transformer, load_model
 from embed_llm.models.generate import generate as transformer_generate
-
 from embed_llm.data.tokenize import Tokenizer
 from embed_llm import TMP_PATH
 
@@ -306,11 +305,15 @@ class EmbedAugPipeline(nn.Module):
         device: str,
         train_config_path: str | None = None,
         llm_type: str = "mistral",
-        embed_type: str = "mistral",
+        embed_type: str = "llama",
         max_batch_size: int = 4,
         param_dtype: torch.dtype = torch.float32,
         llm_number: int = 0,
     ):
+        
+        # When we need to load trained encoder from another ckpt than the one from ckpt_path
+        # Especially when training only MLP module and special toks on a new decoder 
+        # (OLMo 7B experiment in the paper)
         train_config_path = (
             os.path.join(ckpt_path, "../../args.yaml")
             if train_config_path is None
@@ -321,7 +324,7 @@ class EmbedAugPipeline(nn.Module):
                 train_args = yaml.safe_load(f)
             freeze_encoder = train_args.get(
                 "freeze_encoder", False
-            )  # Needs to load trained embedder from another ckpt than the one from ckpt_path
+            )  
             embedder_ckpt_path = (
                 None
                 if not freeze_encoder
@@ -751,13 +754,14 @@ def load_pipeline(
     ckpt: int | None = None,
     comp_rate: int | None = None,
     llm_type: str = "mistral",
-    embed_type: str = "mistral",
+    embed_type: str = "llama",
     llm_number: int = 0,
     train_config_path: str | None = None,
 ) -> EmbedAugPipeline | Transformer:
     if pipeline is None:
         # Get last checkpoint
         assert run_name is not None
+        
         last_ckpt = (
             sorted(
                 [

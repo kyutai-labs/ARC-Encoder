@@ -37,8 +37,8 @@ optim:
 # Checkpoint to start from
 from_ckpt:
   do: true
-  bridge_path: ${TMP_PATH}/ARC8_Encoder_mistral_pretrained/checkpoints/checkpoint_100000/bridge_module/
-  embedder_path: ${TMP_PATH}/ARC8_Encoder_mistral_pretrained/checkpoints/checkpoint_100000/embedder/
+  bridge_path: ${TMP_PATH}/ARC8_Encoder_mistral_pretrained/bridge_module/
+  embedder_path: ${TMP_PATH}/ARC8_Encoder_mistral_pretrained/embedder/
 
 # ARC-Encoder Specific Parameters
 pipeline:
