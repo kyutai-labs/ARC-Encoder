@@ -57,7 +57,7 @@ def evaluate(
                         seqlens,
                         embeddings,
                         embed_seqlens,
-                        insert_cat_embedds,
+                        insert_comp_repr,
                     ) = prepare_batch_fn(batch)
 
                     output = model.forward(
@@ -65,7 +65,7 @@ def evaluate(
                         embeddings=embeddings,
                         seqlens=seqlens,
                         embed_seqlens=embed_seqlens,
-                        insert_cat_embedds=insert_cat_embedds,
+                        insert_comp_repr=insert_comp_repr,
                         batch_type="continuation",
                     )
 
@@ -75,7 +75,7 @@ def evaluate(
         main_logger_info(f"Start eval for {len(batches_rec)} reconstruction batches")
 
         for batch in batches_rec:
-            x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds = (
+            x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_comp_repr = (
                 prepare_batch_fn(batch)
             )
 
@@ -84,7 +84,7 @@ def evaluate(
                 embeddings=embeddings,
                 seqlens=seqlens,
                 embed_seqlens=embed_seqlens,
-                insert_cat_embedds=insert_cat_embedds,
+                insert_comp_repr=insert_comp_repr,
                 batch_type="reconstruction",
             )
 

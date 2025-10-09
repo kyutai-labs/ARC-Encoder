@@ -69,7 +69,7 @@ class EmbedAugModel(nn.Module):
         seqlens: list[int],
         embeddings: torch.Tensor | None = None,
         embed_seqlens: list[list[int]] | None = None,
-        insert_compr_repr: list[list[int]] | None = None,
+        insert_comp_repr: list[list[int]] | None = None,
         batch_type: str = "continuation",
         llm_number: int = 0,
     ) -> torch.Tensor:
@@ -81,7 +81,7 @@ class EmbedAugModel(nn.Module):
             )
 
             embed_seqlens = group_embed_seqlens(
-                embed_seqlens, [len(li) for li in insert_compr_repr]
+                embed_seqlens, [len(li) for li in insert_comp_repr]
             )
 
             if (
@@ -140,7 +140,7 @@ class EmbedAugModel(nn.Module):
             seqlens=seqlens,
             embed_seqlens=embed_seqlens,
             comp_repr=comp_repr,
-            insert_compr_repr=insert_compr_repr,
+            insert_comp_repr=insert_comp_repr,
         )
 
 
