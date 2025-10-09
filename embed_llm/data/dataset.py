@@ -387,25 +387,10 @@ def get_dataset_iterator(
 ) -> Iterator[TokenSample]:
     jsonl_files = source.jsonl_files
 
-    if not is_finite:
-        # train mode
-        while True:
-            for jsonl_file in jsonl_files:
-                # will read data on-the-fly and yield
-                main_logger_info(f"Lazily loading {jsonl_file} ...")
-                yield from lazy_load_and_yield(
-                    jsonl_file,
-                    rank=rank,
-                    world_size=world_size,
-                    llm_tokenizer=llm_tokenizer,
-                    embed_tokenizer=embed_tokenizer,
-                    max_passages=max_passages,
-                    instruct_decoder=instruct_decoder,
-                    instruct=instruct,
-                )
-    else:
-        # eval mode
+    while True:
         for jsonl_file in jsonl_files:
+            # will read data on-the-fly and yield
+            main_logger_info(f"Lazily loading {jsonl_file} ...")
             yield from lazy_load_and_yield(
                 jsonl_file,
                 rank=rank,
@@ -413,9 +398,11 @@ def get_dataset_iterator(
                 llm_tokenizer=llm_tokenizer,
                 embed_tokenizer=embed_tokenizer,
                 max_passages=max_passages,
-                instruct=instruct,
                 instruct_decoder=instruct_decoder,
+                instruct=instruct,
             )
+        if is_finite:
+            break
 
 
 def lazy_load_and_yield(
