@@ -18,7 +18,7 @@ def generate(
     ] = [],  # Index in the hidden states of where to insert the embeddings (based on each sequence length)
     eos_id: int | None = None,
     embed_seqlens: list[list[int]] | None = None,
-    cat_embeddings: torch.Tensor | None = None,
+    comp_repr: torch.Tensor | None = None,
 ) -> tuple[list[list[int]], list[list[float]]]:
     if len(prompt_tokens[0]) > 0 and not isinstance(prompt_tokens[0][0], list):
         prompt_tokens = [prompt_tokens]
@@ -28,7 +28,7 @@ def generate(
 
     seqlens = [len(sum(prompt_part, [])) for prompt_part in prompt_tokens]
 
-    concat = cat_embeddings is not None
+    concat = comp_repr is not None
 
     if concat:
         assert len(insertion_lists) > 0
@@ -67,14 +67,14 @@ def generate(
         seqlens=[len(sum(prompt_part, [])) for prompt_part in prompt_tokens],
         embed_seqlens=embed_seqlens,
         cache=cache,
-        cat_embeddings=cat_embeddings,
+        comp_repr=comp_repr,
         insert_cat_embedds=None if len(insertion_lists) == 0 else insertion_lists,
     )
 
     # Stop concatenating after first chunk
     if concat:
         # Both in KV cache
-        cat_embeddings = None
+        comp_repr = None
         insertion_lists = []
 
     last_token_prelogits = prelogits.index_select(
@@ -114,7 +114,7 @@ def generate(
             seqlens=[1] * B,
             embed_seqlens=embed_seqlens,  # Used if cross-attention only
             cache=cache,
-            cat_embeddings=None,
+            comp_repr=None,
         )
 
         assert last_token_prelogits.shape == (

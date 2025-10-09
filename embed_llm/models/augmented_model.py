@@ -69,19 +69,19 @@ class EmbedAugModel(nn.Module):
         seqlens: list[int],
         embeddings: torch.Tensor | None = None,
         embed_seqlens: list[list[int]] | None = None,
-        insert_cat_embedds: list[list[int]] | None = None,
+        insert_compr_repr: list[list[int]] | None = None,
         batch_type: str = "continuation",
         llm_number: int = 0,
     ) -> torch.Tensor:
         if embeddings is not None:
-            embeddings, embed_seqlens = self.embedder.forward_embedder(
+            comp_repr, embed_seqlens = self.embedder.forward_embedder(
                 input_ids=embeddings,
                 seqlens=sum(embed_seqlens, []),
                 llm_number=llm_number,
             )
 
             embed_seqlens = group_embed_seqlens(
-                embed_seqlens, [len(li) for li in insert_cat_embedds]
+                embed_seqlens, [len(li) for li in insert_compr_repr]
             )
 
             if (
@@ -92,34 +92,34 @@ class EmbedAugModel(nn.Module):
             ):
                 special_tok = (
                     self.embedder.rec_tok[llm_number](
-                        torch.tensor([0]).to(embeddings.device)
+                        torch.tensor([0]).to(comp_repr.device)
                     )
                     if self.embedder.rec_tok is not None
                     and batch_type == "reconstruction"
                     else self.embedder.cont_tok[llm_number](
-                        torch.tensor([0]).to(embeddings.device)
+                        torch.tensor([0]).to(comp_repr.device)
                     )
                 )
-                new_embeddings = torch.zeros(
+                new_comp_repr = torch.zeros(
                     (
                         len(sum(embed_seqlens, [])) + sum(sum(embed_seqlens, [])),
-                        embeddings.shape[1],
+                        comp_repr.shape[1],
                     ),
-                    device=embeddings.device,
-                    dtype=embeddings.dtype,
+                    device=comp_repr.device,
+                    dtype=comp_repr.dtype,
                 )
 
                 ind = 0
                 ind_new = 0
                 for embed_seqlen in embed_seqlens:
                     for size in embed_seqlen:
-                        new_embeddings[ind_new : ind_new + size] = embeddings[
+                        new_comp_repr[ind_new : ind_new + size] = comp_repr[
                             ind : ind + size
                         ]
                         ind_new += size
                         ind += size
 
-                        new_embeddings[ind_new : ind_new + 1] = special_tok.clone()
+                        new_comp_repr[ind_new : ind_new + 1] = special_tok.clone()
 
                         ind_new += 1
 
@@ -127,20 +127,20 @@ class EmbedAugModel(nn.Module):
                     [size + 1 for size in embed_seqlen]
                     for embed_seqlen in embed_seqlens
                 ]
-                embeddings = new_embeddings.clone()
+                comp_repr = new_comp_repr.clone()
 
             if self.bridge_module is not None:
                 if isinstance(self.bridge_module, ModuleList):
-                    embeddings = self.bridge_module[llm_number](embeddings)
+                    comp_repr = self.bridge_module[llm_number](comp_repr)
                 else:
-                    embeddings = self.bridge_module(embeddings)
+                    comp_repr = self.bridge_module(comp_repr)
 
         return self.llms[llm_number].forward(
             input_ids=x,
             seqlens=seqlens,
             embed_seqlens=embed_seqlens,
-            cat_embeddings=embeddings,
-            insert_cat_embedds=insert_cat_embedds,
+            comp_repr=comp_repr,
+            insert_compr_repr=insert_compr_repr,
         )
 
 
@@ -201,7 +201,7 @@ class EmbedAugPipeline(nn.Module):
         if not instruct_decoder:
             seqlens = batch.sizes
 
-            insert_cat_embedds = batch.insert_embed_list
+            insert_comp_repr = batch.insert_embed_list
 
             x = torch.from_numpy(batch.x).cuda(non_blocking=True)
             y = torch.from_numpy(batch.y).cuda(non_blocking=True)
@@ -210,13 +210,13 @@ class EmbedAugPipeline(nn.Module):
                 if batch.y_mask is not None
                 else None
             )
-            return x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_cat_embedds
+            return x, y, y_mask, seqlens, embeddings, embed_seqlens, insert_comp_repr
         else:
             new_seqlens = []
             new_x = []
             new_y = []
             new_y_mask = []
-            new_insert_cat_embedds = []
+            new_insert_comp_repr = []
             ind = 0
             poped = 0
             for i, seqlen in enumerate(batch.sizes):
@@ -273,7 +273,7 @@ class EmbedAugPipeline(nn.Module):
                 new_x.extend(x_toks)
                 new_y.extend(y_toks)
                 new_y_mask.extend(new_mask)
-                new_insert_cat_embedds.append(new_insert_list)
+                new_insert_comp_repr.append(new_insert_list)
             x = torch.from_numpy(np.array(new_x, dtype=np.int64)).cuda(
                 non_blocking=True
             )
@@ -294,7 +294,7 @@ class EmbedAugPipeline(nn.Module):
                 new_seqlens,
                 embeddings,
                 embed_seqlens,
-                new_insert_cat_embedds,
+                new_insert_comp_repr,
             )
 
     @staticmethod
@@ -585,7 +585,7 @@ class EmbedAugPipeline(nn.Module):
             x = torch.from_numpy(np.array([el for sublist in x for el in sublist])).to(
                 device
             )
-            embeddings, embed_seqlens = self.model.embedder.forward_embedder(
+            comp_repr, embed_seqlens = self.model.embedder.forward_embedder(
                 input_ids=x, seqlens=sum(sum(seqlens, []), []), llm_number=0
             )
 
@@ -608,27 +608,27 @@ class EmbedAugPipeline(nn.Module):
             n_context_tokens_after = [seql[-1] for seql in embed_seqlens]
             if self.model.embedder.cont_tok is not None:
                 sp_cont_tok = self.model.embedder.cont_tok[0](
-                    torch.tensor([0]).to(embeddings.device)
+                    torch.tensor([0]).to(comp_repr.device)
                 )
-                new_embeddings = torch.zeros(
+                new_comp_repr = torch.zeros(
                     (
                         len(sum(embed_seqlens, [])) + sum(sum(embed_seqlens, [])),
-                        embeddings.shape[1],
+                        comp_repr.shape[1],
                     ),
-                    device=embeddings.device,
-                    dtype=embeddings.dtype,
+                    device=comp_repr.device,
+                    dtype=comp_repr.dtype,
                 )
                 ind = 0
                 ind_new = 0
                 for embed_seqlen in embed_seqlens:
                     for size in embed_seqlen:
-                        new_embeddings[ind_new : ind_new + size] = embeddings[
+                        new_comp_repr[ind_new : ind_new + size] = comp_repr[
                             ind : ind + size
                         ]
                         ind_new += size
                         ind += size
 
-                        new_embeddings[ind_new : ind_new + 1] = sp_cont_tok.clone()
+                        new_comp_repr[ind_new : ind_new + 1] = sp_cont_tok.clone()
 
                         ind_new += 1
 
@@ -636,22 +636,22 @@ class EmbedAugPipeline(nn.Module):
                     [size + 1 for size in embed_seqlen]
                     for embed_seqlen in embed_seqlens
                 ]
-                embeddings = new_embeddings.clone()
+                comp_repr = new_comp_repr.clone()
             if self.model.bridge_module is not None:
                 if isinstance(self.model.bridge_module, nn.ModuleList):
-                    embeddings = self.model.bridge_module[0](embeddings)
+                    comp_repr = self.model.bridge_module[0](comp_repr)
                 else:
-                    embeddings = self.model.bridge_module(embeddings)
+                    comp_repr = self.model.bridge_module(comp_repr)
         else:
-            embeddings = None
+            comp_repr = None
             embed_seqlens = None
             n_context_tokens_before = [1] * len(batch_list_prompts)
             n_context_tokens_after = [1] * len(batch_list_prompts)
 
-        embeddings = (
-            embeddings
-            if device_generation is None or embeddings is None
-            else embeddings.to(device_generation)
+        comp_repr = (
+            comp_repr
+            if device_generation is None or comp_repr is None
+            else comp_repr.to(device_generation)
         )
 
         encoded_prompt = []
@@ -661,7 +661,7 @@ class EmbedAugPipeline(nn.Module):
             insertion_list = []
 
             # Tokenize each part of the prompt separately to be able to insert the embeddings in between
-            if embeddings is not None:
+            if comp_repr is not None:
                 for index, prompt in enumerate(l_prompts):
                     # Remove last insertion list
                     # if embed_seqlens is not None and len(embed_seqlens) > 0:
@@ -711,7 +711,7 @@ class EmbedAugPipeline(nn.Module):
             temperature=temperature,
             eos_id=eos_id,
             embed_seqlens=embed_seqlens,
-            cat_embeddings=embeddings,
+            comp_repr=comp_repr,
             **kwargs,
         )
 
@@ -725,7 +725,7 @@ class EmbedAugPipeline(nn.Module):
             final_texts = produced_text
 
         if kwargs.get("return_embeddings", False):
-            return final_texts, embeddings
+            return final_texts, comp_repr
 
         if not give_n_tokens:
             return final_texts

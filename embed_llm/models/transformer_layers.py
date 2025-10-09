@@ -28,7 +28,7 @@ def insert_embeds(
     embeds: torch.Tensor,
     embed_seqlens: list[list[int]],
     seqlens: list[int] | None = None,
-    insert_cat_embedds: list[list[int]] | None = None,
+    insert_comp_repr: list[list[int]] | None = None,
 ) -> tuple[torch.Tensor, list[int], list[int]]:
     """
     Args:
@@ -36,7 +36,7 @@ def insert_embeds(
         embeds: Embeddings to be prepended
         embed_seqlens: For each input sequence, a list of lengths of embeddings that will be inserted
         seqlens: list of text token lengths for each input sequence
-        insert_cat_embedds: list of where to insert the embeddings
+        insert_comp_repr: list of where to insert the embeddings
     """
 
     num_supp_toks = embeds.shape[0]
@@ -48,9 +48,9 @@ def insert_embeds(
         else:
             assert sum(embed_seqlens) == embeds.shape[0]
 
-    if insert_cat_embedds is None:
+    if insert_comp_repr is None:
         # Should not happen anymore
-        insert_cat_embedds = [[0] for _ in embed_seqlens]
+        insert_comp_repr = [[0] for _ in embed_seqlens]
 
     new_h_states = torch.zeros(
         (num_supp_toks + len(h), h.shape[-1]),
@@ -71,7 +71,7 @@ def insert_embeds(
         # Used during training only
 
         size_embed = sum(embed_seqlens[i])
-        for sub_embed_size, insert_idx in zip(embed_seqlens[i], insert_cat_embedds[i]):
+        for sub_embed_size, insert_idx in zip(embed_seqlens[i], insert_comp_repr[i]):
             new_h_states[ind_h : insert_idx + ind_h] = h[
                 ind_toks : insert_idx + ind_toks
             ]

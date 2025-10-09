@@ -65,6 +65,74 @@ class SimpleInputMetadata:
         )
 
 
+def load_model(
+    llm_args: ModelArgs,
+    pipeline_args: PipelineArgs,
+    folder: Path,
+    checkpoint: bool,
+    param_dtype: torch.dtype,
+    for_embedding: bool = False,
+    parll: bool = True,
+    llm_type: str = "mistral",
+    embed_type: str = "mistral",
+    number_of_llm: int = 1,
+    folder_w_models: str = MODEL_PATH,
+) -> tuple[torch.nn.Module, int]:
+    with torch.device("meta"):
+        model = Transformer(
+            args=llm_args,
+            checkpoint=checkpoint,
+            embedder_args=pipeline_args.embedder_params if for_embedding else None,
+            number_of_llm=number_of_llm,
+        )
+
+    if not parll or get_rank() == 0:
+        state_dict = load_state_dict(
+            folder, dtype=param_dtype, olmo=(llm_type == "olmo" and not for_embedding)
+        )
+
+        if not for_embedding:
+            if "rope.freqs" in state_dict:
+                # Remove it from Llama 2 Chat ckpts
+                state_dict.pop("rope.freqs")
+
+            assert all([k in model.state_dict() for k in state_dict.keys()]), (
+                f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
+            )
+
+        model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
+
+    if (llm_type == "mistral" and not for_embedding) or (
+        embed_type == "mistral" and for_embedding
+    ):
+        tokenizer = load_mistral_tokenizer(
+            Path(folder_w_models + "/mistral_7B")
+        ).instruct_tokenizer.tokenizer
+        return model, tokenizer
+    elif ("llama" in llm_type and not for_embedding) or (
+        embed_type == "llama" and for_embedding
+    ):
+        if llm_type == "llama_2" and not for_embedding:
+            tokenizer = Tokenizer_Llama2(
+                model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama2-7B-Chat/tokenizer.model"
+            )
+        else:
+            assert not (for_embedding and llm_type == "llama_2"), (
+                "Llama 2 Chat should not be used for encoding"
+            )
+            tokenizer = LlamaTokenizer(
+                model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B/tokenizer.model"
+            )
+
+    elif llm_type == "olmo" and not for_embedding:
+        tokenizer = OlmoTokenizer.from_file(
+            os.path.join(MODEL_PATH, "Olmo7B/tokenizer.json")
+        )
+    else:
+        raise ValueError(f"Unknown llm_type: {llm_type} or embed_type: {embed_type}")
+    return model, tokenizer
+
+
 class Transformer(ModelBase):
     def __init__(
         self,
@@ -225,6 +293,7 @@ class Transformer(ModelBase):
 
         return self._precomputed_freqs_cis
 
+    # Forward for the encoder, used at training and inference time
     def forward_embedder(
         self,
         input_ids: torch.Tensor,
@@ -271,7 +340,7 @@ class Transformer(ModelBase):
         compress_index = 0
 
         for i in range(self.n_layers):
-
+            # Different cases depending on how to pool 
             if i >= self.start_compressing:
                 if self.pooling_args.where == "before":
                     pooled_h, new_seqlens = self.pooling_module(
@@ -282,6 +351,7 @@ class Transformer(ModelBase):
                     positions = positions_from_sizes(new_seqlens, self.freqs_cis.device)
                     new_freqs_cis = self.freqs_cis[positions].to(device=h.device)
                     if "pooled_queries" in self.pooling_args.pool_type:
+                        # Pooled queries attend to original keys/values
                         if not self.causal:
                             self_att_mask = BlockDiagonalMask.from_seqlens(
                                 q_seqlen=new_seqlens, kv_seqlen=seqlens
@@ -308,14 +378,14 @@ class Transformer(ModelBase):
                                 q_seqlen=new_seqlens, kv_seqlen=new_seqlens
                             )
 
-                        # Pooled queries attend only to the pooled tokens
+                        # Pooled queries attend to pooled keys/values
                         h, _ = self.layers[str(i)](
                             x=pooled_h,
                             freqs_cis=new_freqs_cis,
                             mask=self_att_mask,
                         )
                 else:
-                    # Between SA and MLP ("between")
+                    # Pooling between Self-Attention and Feed Forward
                     h, new_seqlens = self.layers[str(i)](
                         x=h,
                         freqs_cis=freqs_cis,
@@ -327,6 +397,7 @@ class Transformer(ModelBase):
                     positions = positions_from_sizes(new_seqlens, self.freqs_cis.device)
                     new_freqs_cis = self.freqs_cis[positions].to(device=h.device)
 
+                # Update with the new pooled sequence lengths
                 if not self.causal:
                     self_att_mask = BlockDiagonalMask.from_seqlens(
                         q_seqlen=new_seqlens, kv_seqlen=new_seqlens
@@ -344,7 +415,8 @@ class Transformer(ModelBase):
                     freqs_cis=freqs_cis,
                     mask=self_att_mask,
                 )
-
+                
+        # Extract memory tokens if any
         if self.n_mem_tokens > 0:
             new_h = torch.zeros(
                 (self.n_mem_tokens * len(seqlens), h.shape[1]),
@@ -361,25 +433,27 @@ class Transformer(ModelBase):
             h = new_h.clone()
         return h, seqlens
 
+    # Forward for the decoder, used at training time only
     def forward(
         self,
         input_ids: torch.Tensor,
         seqlens: list[int],
         embed_seqlens: list[list[int]] | None = None,
-        cat_embeddings: torch.Tensor | None = None,
-        insert_cat_embedds: list[list[int]] | None = None,
+        comp_repr: torch.Tensor | None = None,
+        insert_comp_repr: list[list[int]] | None = None,
     ) -> torch.Tensor:
         assert sum(seqlens) == input_ids.shape[0], (sum(seqlens), input_ids.shape[0])
 
         token_embeds = self.tok_embeddings(input_ids)
 
-        if cat_embeddings is not None:
+        # Insert compressed representations if any in the text stream
+        if comp_repr is not None:
             h, seqlens, pos_to_keep = insert_embeds(
                 token_embeds,
-                cat_embeddings,
+                comp_repr,
                 embed_seqlens=embed_seqlens,
                 seqlens=seqlens,
-                insert_cat_embedds=insert_cat_embedds,
+                insert_comp_repr=insert_comp_repr,
             )
 
             self.pos_to_keep = torch.tensor(
@@ -398,7 +472,8 @@ class Transformer(ModelBase):
             h, _ = self.layers[str(i)](x=h, freqs_cis=freqs_cis, mask=self_att_mask)
         normalized_h = self.norm(h)
 
-        if cat_embeddings is not None:
+        # Remove the positions corresponding to the inserted compressed representations
+        if comp_repr is not None:
             normalized_h = normalized_h[self.pos_to_keep]
 
         self.pos_to_keep = None
@@ -412,8 +487,8 @@ class Transformer(ModelBase):
         seqlens: list[int],
         embed_seqlens: list[list[int]] | None,
         cache: BufferCache | None,
-        cat_embeddings: torch.Tensor | None = None,
-        insert_cat_embedds: list[list[int]] | None = None,
+        comp_repr: torch.Tensor | None = None,
+        insert_comp_repr: list[list[int]] | None = None,
     ) -> torch.Tensor:
         """Local forward pass.
 
@@ -425,17 +500,18 @@ class Transformer(ModelBase):
         assert self.tok_embeddings is not None
         token_embeds = self.tok_embeddings(input_ids)
 
-        if cat_embeddings is not None:
-            assert insert_cat_embedds is not None, (
+        # Insert compressed representations if any in the text stream
+        if comp_repr is not None:
+            assert insert_comp_repr is not None, (
                 "Insert cat embeddings must be provided"
             )
 
             h, seqlens, pos_to_keep = insert_embeds(
                 token_embeds,
-                cat_embeddings,
+                comp_repr,
                 embed_seqlens=embed_seqlens,
                 seqlens=seqlens,
-                insert_cat_embedds=insert_cat_embedds,
+                insert_comp_repr=insert_comp_repr,
             )
             self.pos_to_keep = torch.tensor(
                 pos_to_keep, device=self.device, dtype=torch.bool
@@ -473,8 +549,11 @@ class Transformer(ModelBase):
             cache.update_seqlens(seqlens.tolist())
         # Last rank has a final normalization step.
         normalized_h = self.norm(h)
-        if cat_embeddings is not None:
+        
+        # Remove the positions corresponding to the inserted compressed representations
+        if comp_repr is not None:
             normalized_h = normalized_h[self.pos_to_keep]
+            
         assert self.norm is not None
         self.pos_to_keep = None
         return normalized_h  # type: ignore
@@ -485,16 +564,16 @@ class Transformer(ModelBase):
         seqlens: list[int],
         embed_seqlens: list[list[int]],
         cache: BufferCache | None,
-        cat_embeddings: torch.Tensor | None = None,
-        insert_cat_embedds: list[list[int]] | None = None,
+        comp_repr: torch.Tensor | None = None,
+        insert_comp_repr: list[list[int]] | None = None,
     ) -> torch.Tensor:
         h = self.generate_partial(
             input_ids,
             seqlens,
             cache=cache,
             embed_seqlens=embed_seqlens,
-            cat_embeddings=cat_embeddings,
-            insert_cat_embedds=insert_cat_embedds,
+            comp_repr=comp_repr,
+            insert_comp_repr=insert_comp_repr,
         )
 
         assert self.output is not None
@@ -503,69 +582,3 @@ class Transformer(ModelBase):
         return outs.float()
 
 
-def load_model(
-    llm_args: ModelArgs,
-    pipeline_args: PipelineArgs,
-    folder: Path,
-    checkpoint: bool,
-    param_dtype: torch.dtype,
-    for_embedding: bool = False,
-    parll: bool = True,
-    llm_type: str = "mistral",
-    embed_type: str = "mistral",
-    number_of_llm: int = 1,
-    folder_w_models: str = MODEL_PATH,
-) -> tuple[torch.nn.Module, int]:
-    with torch.device("meta"):
-        model = Transformer(
-            args=llm_args,
-            checkpoint=checkpoint,
-            embedder_args=pipeline_args.embedder_params if for_embedding else None,
-            number_of_llm=number_of_llm,
-        )
-
-    if not parll or get_rank() == 0:
-        state_dict = load_state_dict(
-            folder, dtype=param_dtype, olmo=(llm_type == "olmo" and not for_embedding)
-        )
-
-        if not for_embedding:
-            if "rope.freqs" in state_dict:
-                # Remove it from Llama 2 Chat ckpts
-                state_dict.pop("rope.freqs")
-
-            assert all([k in model.state_dict() for k in state_dict.keys()]), (
-                f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
-            )
-
-        model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
-
-    if (llm_type == "mistral" and not for_embedding) or (
-        embed_type == "mistral" and for_embedding
-    ):
-        tokenizer = load_mistral_tokenizer(
-            Path(folder_w_models + "/mistral_7B")
-        ).instruct_tokenizer.tokenizer
-        return model, tokenizer
-    elif ("llama" in llm_type and not for_embedding) or (
-        embed_type == "llama" and for_embedding
-    ):
-        if llm_type == "llama_2" and not for_embedding:
-            tokenizer = Tokenizer_Llama2(
-                model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama2-7B-Chat/tokenizer.model"
-            )
-        else:
-            assert not (for_embedding and llm_type == "llama_2"), (
-                "Llama 2 Chat should not be used for encoding"
-            )
-            tokenizer = LlamaTokenizer(
-                model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B/tokenizer.model"
-            )
-
-    elif llm_type == "olmo" and not for_embedding:
-        tokenizer = OlmoTokenizer.from_file(
-            os.path.join(MODEL_PATH, "Olmo7B/tokenizer.json")
-        )
-    else:
-        raise ValueError(f"Unknown llm_type: {llm_type} or embed_type: {embed_type}")
-    return model, tokenizer
