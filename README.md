@@ -51,7 +51,7 @@ pip install -e .
 ### 3️⃣ Load backbone models
 
 Create a directory <MODEL_PATH> where you’ll store the backbone models for your ARC-Encoder and decoder.
-For LLaMA models, register on the [LLaMa downloads](https://www.llama.com/llama-downloads/)  page to obtain URLs.
+For LLaMA models, register on the [LLaMa downloads](https://www.llama.com/llama-downloads/)  page to obtain URLs. Make sure that the .json files inside models folder which precise the configurations for the architectures are named `params.json`.
 
 ```
 # For Mistral 7B

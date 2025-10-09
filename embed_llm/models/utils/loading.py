@@ -35,6 +35,7 @@ def load_args(
     assert (folder / "params.json").exists(), f"params.json not found in {folder}"
 
     if pipe_path is not None:
+        # This file gathers the config for the whole pipeline
         with open(pipe_path + "/params.json", "r") as f:
             args = json.loads(f.read())
 
@@ -69,6 +70,7 @@ def load_args(
     else:
         pipeline_args = pipe_args
 
+    # This file gathers the config for the backbone model only (encoder or decoder, coming from LLaMA, OLMo or Mistral)
     with open(folder / "params.json", "r") as f:
         args = json.loads(f.read())
 
