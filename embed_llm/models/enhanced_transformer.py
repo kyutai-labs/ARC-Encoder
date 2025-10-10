@@ -580,5 +580,3 @@ class Transformer(ModelBase):
         outs = self.output(h)
 
         return outs.float()
-
-

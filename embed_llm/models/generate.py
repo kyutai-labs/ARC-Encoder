@@ -28,9 +28,9 @@ def generate(
 
     seqlens = [len(sum(prompt_part, [])) for prompt_part in prompt_tokens]
 
-    concat = comp_repr is not None
+    insert_from_encoder = comp_repr is not None
 
-    if concat:
+    if insert_from_encoder:
         assert len(insertion_lists) > 0
         assert all(
             [
@@ -42,7 +42,7 @@ def generate(
     # Cache
     cache_window = (
         max(seqlens) + max_tokens
-        if not concat
+        if not insert_from_encoder
         else max(seqlens) + max_tokens + max([sum(seql) for seql in embed_seqlens])
     )
 
@@ -71,8 +71,8 @@ def generate(
         insert_comp_repr=None if len(insertion_lists) == 0 else insertion_lists,
     )
 
-    # Stop concatenating after first chunk
-    if concat:
+    # Stop inserting after first chunk since only in the prefilling phase
+    if insert_from_encoder:
         # Both in KV cache
         comp_repr = None
         insertion_lists = []
