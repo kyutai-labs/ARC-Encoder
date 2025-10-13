@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-task=8
 #SBATCH --cpus-per-task=16
-#SBATCH --chdir=
+#SBATCH --chdir= # TO SET
 #SBATCH --job-name=eval_models
 #SBATCH --output=out_dire/training/test_%A_%a.out
 
@@ -56,35 +56,35 @@ case $RUN_NAME in
 *) 
     srun --gpus=$N_GPU  \
             uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
-      --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 
+      --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B   Llama3.2-3B  --llm_number 0  --n_icl_exs 5 
 
     srun --gpus=$N_GPU  \
             uv run python -m embed_llm.generation.eval_context_comp --out_file out_dire/eval/eval_results.json  \
-        --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B   --embed_name Llama3.2-3B   --llm_number 0  
+        --eval_trad --run_name $RUN_NAME --llm_name Llama3.1-8B    Llama3.2-3B   --llm_number 0  
 
     srun --gpus=$N_GPU  \
             uv run python -m embed_llm.generation.eval_context_comp  --out_file out_dire/eval/eval_results.json \
-       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5
+       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME   Llama3.2-3B  --llm_number 1  --n_icl_exs 5
 
     srun --gpus=$N_GPU  \
             uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json  \
-       --eval_trad --run_name $RUN_NAME --embed_name Llama3.2-3B  --llm_number 1  
+       --eval_trad --run_name $RUN_NAME  Llama3.2-3B  --llm_number 1  
 
     srun --gpus=$N_GPU  \
             uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
-     --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks CNN --bs 4
+     --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B   Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks CNN --bs 4
 
 
     srun --gpus=$N_GPU  \
             uv run python -m embed_llm.generation.eval_context_comp   --out_file out_dire/eval/eval_results.json \
-      --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME   --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5 --benchmarks CNN --bs 4
+      --max_seq_len 256 --multi_passages 1   --run_name $RUN_NAME    Llama3.2-3B  --llm_number 1  --n_icl_exs 5 --benchmarks CNN --bs 4
 
     srun --gpus=$N_GPU  \
             uv run python -m embed_llm.generation.eval_context_comp  --out_file out_dire/eval/eval_results.json \
-      --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B  --embed_name Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
+      --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME --llm_name Llama3.1-8B   Llama3.2-3B  --llm_number 0  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
 
     srun --gpus=$N_GPU  \
             uv run python -m embed_llm.generation.eval_context_comp  --out_file out_dire/eval/eval_results.json \
-       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME  --embed_name Llama3.2-3B  --llm_number 1  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
+       --max_seq_len 64 --multi_passages 1   --run_name $RUN_NAME   Llama3.2-3B  --llm_number 1  --n_icl_exs 5 --benchmarks DistractorHotpotQA --bs 1
     ;;
 esac

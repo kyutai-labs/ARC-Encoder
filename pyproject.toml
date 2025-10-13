@@ -22,6 +22,7 @@ dependencies = [
     "ruff>=0.13.2",
     "sacrebleu>=2.5.1",
     "safetensors>=0.6.2",
+    "sentencepiece>=0.2.1",
     "setuptools>=80.9.0",
     "simple-parsing>=0.1.7",
     "tensorboard>=2.20.0",

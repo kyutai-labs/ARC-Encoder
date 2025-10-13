@@ -410,7 +410,6 @@ if __name__ == "__main__":
             comp_rate=args.comp_rate,
             bridge_ckpt=None,
             llm_type="llama_2",
-            embed_type="llama",
         )
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

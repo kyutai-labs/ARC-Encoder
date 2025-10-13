@@ -111,11 +111,7 @@ class TrainArgs(Serializable):
         default_factory=lambda: [0.5, 0.5]
     )  # Probability of forwarding the LLM and embedder, respectively. The sum must be 1.0.
 
-    embed_type: str = (
-        "mistral"  # Type of the embedder to use, either "mistral" or "llama"
-    )
-
-    freeze_encoder: bool = False  # If True, the embedder will not be trained but the special tokens and the MLP projection can still be trained.
+    freeze_embedder: bool = False  # If True, the embedder will not be trained but the special tokens and the MLP projection can still be trained.
     # Useful for training a new MLP for a new decoder using the same encoder as for other decoders.
 
     def __post_init__(self) -> None:
