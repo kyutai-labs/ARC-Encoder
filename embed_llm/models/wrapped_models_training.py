@@ -212,7 +212,7 @@ def load_training_model(
 
     log_train_params(augmented_model)
 
-    auto_wrap_policy = get_fsdp_policy(is_lora=True)
+    auto_wrap_policy = get_fsdp_policy()
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
@@ -453,7 +453,7 @@ def load_training_model_from_ckpt(
 
     log_train_params(augmented_model)
 
-    auto_wrap_policy = get_fsdp_policy(is_lora=True)
+    auto_wrap_policy = get_fsdp_policy()
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 

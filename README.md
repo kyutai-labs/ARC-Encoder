@@ -1,10 +1,11 @@
 #  Adaptable text Representations Compressor (ARC)
 
-[![Paper](https://img.shields.io/badge/arXiv-Paper-red?logo=arxiv&logoColor=white)](https://arxiv.org/abs/<your-paper-id>)
-[![Dataset](https://img.shields.io/badge/Dataset-HuggingFace-orange?logo=huggingface&logoColor=white)](https://huggingface.co/datasets/HippolyteP/ARC_finetuning)
-[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![Paper](https://img.shields.io/badge/arXiv-Paper-red?logo=arxiv&logoColor=white)](https://arxiv.org/abs/<your-blabla-id>)
+[![Dataset](https://img.shields.io/badge/Dataset-HuggingFace-orange?logo=huggingface&logoColor=white)](https://huggingface.co/datasets/kyutai/ARC_finetuning)
+[![License](https://img.shields.io/badge/license-CC--BY--4.0-blue.svg)](https://creativecommons.org/licenses/by/4.0/)
 
-This repository contains the code to reproduce most of the experiments from the paper [**BLABLA**](bla).  
+
+This repository contains the code to reproduce most of the experiments from the paper [**BLABLA**](blabla).  
 You can pretrain and fine-tune your own **ARC-Encoder**, or directly use our released checkpoints to fine-tune on specific datasets.  
 
 ---
@@ -24,7 +25,7 @@ You can pretrain and fine-tune your own **ARC-Encoder**, or directly use our rel
 
 ### 1️⃣ Clone this repository
 ```sh
-git clone ...
+git clone git@github.com:kyutai-labs/ARC-Encoder.git
 ```
 ***Once cloned set import paths at `embed_llm/__init__.py`.*** Then, export these as environment variables since they are useful in the config files. 
 
@@ -55,15 +56,16 @@ Pretrained ARC-Encoders will soon be released and available on HuggingFace, stay
 
 | Models                | Specificities                                       | 
 | :-------------------- | :-------------------------------------------------- | 
-| [ARC<sub>8</sub>-Encoder<sup>L</sup>](link)| Trained on 6.5B tokens on Llama3.1-8B base specifically with a pooling factor (PF) of 8                                 |  
-| [ARC<sub>8</sub>-Encoder<sup>M</sup>](link)| Trained on 6.5B tokens on Mistral-7B base specifically with a PF of 8                    |  
-| [ARC<sub>8</sub>-Encoder<sup>multi</sup>](link)|    Trained by sampling among these two decoders using 6.5B tokens for each one of them with a PF of 8                       |  
+| [ARC<sub>8</sub>-Encoder<sup>L</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Llama)| Trained on 6.5B tokens on Llama3.1-8B base specifically with a pooling factor (PF) of 8                                 |  
+| [ARC<sub>8</sub>-Encoder<sup>M</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Mistral)| Trained on 6.5B tokens on Mistral-7B base specifically with a PF of 8                    |  
+| [ARC<sub>8</sub>-Encoder<sup>multi</sup>](https://huggingface.co/kyutai/ARC8_Encoder_multi)|    Trained by sampling among these two decoders using 6.5B tokens for each one of them with a PF of 8                       |  
 
-Please use the following code to load them and format the folders accurately in your <TMP_PATH>:
+Fist, please use the following code to load them and format the folders accurately in your <TMP_PATH>, you just need to perform it once per model:
 ```
 from embed_llm.models.augmented_model import load_and_save_released_models
+
 # ARC8_Encoder_multi, ARC8_Encoder_Llama or ARC8_Encoder_Mistral
-load_and_save_released_models(ARC8_Encoder_Llama)
+load_and_save_released_models(ARC8_Encoder_Llama, hf_token=<HF_TOKEN>)
 ```
 ***Remark:*** This code snipet load from HF the model and then create the appropriate folder at <TMP_PATH> containing the checkpoint and additional necessary files to perform finetuning or evaluation with this codebase. To reduce the occupied memory space you can then delete the model from you HF cache. 
 
@@ -103,7 +105,7 @@ echo '{"dim": 4096, "n_heads": 32, "n_layers": 32, "norm_eps": 1e-05, "vocab_siz
 ## Prepare datasets
 
 For fine-tuning, load our Hugging Face dataset:
-👉 [ARC Finetuning Dataset](https://huggingface.co/datasets/HippolyteP/ARC_finetuning). 
+👉 [ARC Finetuning Dataset](https://huggingface.co/datasets/kyutai/ARC_finetuning). 
 
 Use the `load_datasets.ipynb` notebook to load the evaluation datasets. 
 
@@ -170,7 +172,6 @@ uv run python -m embed_llm.generation.eval_context_comp \
 
 ```
 
-                                                                                                                                                                 |
 ##   Acknowledgments
 This project uses code from:
 - [mistral-finetune](https://github.com/mistralai/mistral-finetune)  (Apache License 2.0)

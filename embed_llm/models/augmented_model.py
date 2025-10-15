@@ -345,7 +345,9 @@ class EmbedAugPipeline(nn.Module):
         if Path(train_config_path).exists():
             with open(train_config_path, "r") as f:
                 train_args = yaml.safe_load(f)
-            freeze_embedder = train_args.get("freeze_embedder", False) or train_args.get("freeze_encoder", False) 
+            freeze_embedder = train_args.get(
+                "freeze_embedder", False
+            ) or train_args.get("freeze_encoder", False)
             embedder_ckpt_path = (
                 None
                 if not freeze_embedder
@@ -834,6 +836,7 @@ def load_pipeline(
 # Enable to load from HF and create the appropriate folders and files
 def load_and_save_released_models(
     arc_encoder_name: str,
+    hf_token: str | None = None,
 ) -> tuple[torch.nn.Module, int]:
     # Directory where this script is located
     SCRIPT_DIR = Path(__file__).resolve().parent
@@ -858,28 +861,14 @@ def load_and_save_released_models(
         embedder_args=EmbedderArgs(**released_config["embedder_args"]),
     )
 
-    # # TO REMOVE
-    # path_to_push = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/multi_decoder_release_large_pt/checkpoints/checkpoint_090000/"
-    # # path_to_push = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/mistral_decoder_release_large_pt/checkpoints/checkpoint_050000/"
-    # # path_to_push = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/llama_decoder_release_large_pt/checkpoints/checkpoint_040000/"
-    # arc_encoder.embedder.load_state_dict(
-    #     safetensors.torch.load_file(path_to_push + "embedder/consolidated.safetensors"),
-    #     strict=True,
-    # )
-    # arc_encoder.bridge_module.load_state_dict(
-    #     safetensors.torch.load_file(
-    #         path_to_push + "bridge_module/consolidated.safetensors"
-    #     ),
-    #     strict=True,
-    # )
-    # # push to the hub
-    # arc_encoder.push_to_hub("HippolyteP/ARC8_Encoder_multi")
-
     pipeline_args = PipelineArgs(
         embedder_params=EmbedderArgs(**released_config["embedder_args"]),
         bridge_module=BridgeArgs(**released_config["bridge_args"]),
     )
-    hf_arc_encoder = arc_encoder.from_pretrained("HippolyteP/" + arc_encoder_name)
+    hf_arc_encoder = arc_encoder.from_pretrained(
+        "kyutai/" + arc_encoder_name,
+        token=hf_token,
+    )
 
     hf_state_dict = hf_arc_encoder.state_dict()
 
