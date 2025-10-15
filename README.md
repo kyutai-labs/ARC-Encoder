@@ -1,11 +1,12 @@
 #  Adaptable text Representations Compressor (ARC-Encoder)
 
-[![Paper](https://img.shields.io/badge/arXiv-Paper-red?logo=arxiv&logoColor=white)](https://arxiv.org/abs/<your-blabla-id>)
+<!-- [![Paper](https://img.shields.io/badge/arXiv-Paper-red?logo=arxiv&logoColor=white)](https://arxiv.org/abs/<your-blabla-id>) -->
 [![Dataset](https://img.shields.io/badge/Dataset-HuggingFace-orange?logo=huggingface&logoColor=white)](https://huggingface.co/datasets/kyutai/ARC_finetuning)
 [![License](https://img.shields.io/badge/license-CC--BY--4.0-blue.svg)](https://creativecommons.org/licenses/by/4.0/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 
-This repository contains the code to reproduce most of the experiments from the paper [**BLABLA**](blabla).  
+This repository contains the code to reproduce most of the experiments from the paper *ARC-Encoder: learning compressed text representations for large language models*.  
 You can pretrain and fine-tune your own **ARC-Encoder**, or directly use our released checkpoints to fine-tune on specific datasets.  
 
 ---
@@ -184,6 +185,9 @@ Therefore, our main code for training consisting in `embed_llm` directory and th
 If you use ARC-Encoders for any of your projects please cite:
 
 ```bibtex
-
-BLA BLA
+@techreport{pilchen2025arc_encoder,
+  title={ARC-Encoder: learning compressed text representations for large language models},
+  author={Pilchen, Hippolyte and Grave, Edouard and P{\'e}rez, Patrick},
+  year={2025}
+}
 ```
