@@ -57,9 +57,9 @@ Pretrained ARC-Encoders will soon be released and available on HuggingFace, stay
 
 | Models                | Specificities                                       | 
 | :-------------------- | :-------------------------------------------------- | 
-| [ARC<sub>8</sub>-Encoder<sup>L</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Llama)| Trained on 6.5B tokens on Llama3.1-8B base specifically with a pooling factor (PF) of 8                                 |  
-| [ARC<sub>8</sub>-Encoder<sup>M</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Mistral)| Trained on 6.5B tokens on Mistral-7B base specifically with a PF of 8                    |  
-| [ARC<sub>8</sub>-Encoder<sup>multi</sup>](https://huggingface.co/kyutai/ARC8_Encoder_multi)|    Trained by sampling among these two decoders using 6.5B tokens for each one of them with a PF of 8                       |  
+| [ARC<sub>8</sub>-Encoder<sup>L</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Llama)| Trained on 2.6B tokens on Llama3.1-8B base specifically with a pooling factor (PF) of 8.                                 |  
+| [ARC<sub>8</sub>-Encoder<sup>M</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Mistral)| Trained on 2.6B tokens on Mistral-7B base specifically with a PF of 8.                    |  
+| [ARC<sub>8</sub>-Encoder<sup>multi</sup>](https://huggingface.co/kyutai/ARC8_Encoder_multi)|    Trained by sampling among these two decoders trained on 2.6B tokens with a PF of 8.                       |  
 
 Fist, please use the following code to load them and format the folders accurately in your `<TMP_PATH>`, you just need to perform it once per model:
 ```python
