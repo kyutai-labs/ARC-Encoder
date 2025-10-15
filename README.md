@@ -1,4 +1,4 @@
-#  Adaptable text Representations Compressor (ARC)
+#  Adaptable text Representations Compressor (ARC-Encoder)
 
 [![Paper](https://img.shields.io/badge/arXiv-Paper-red?logo=arxiv&logoColor=white)](https://arxiv.org/abs/<your-blabla-id>)
 [![Dataset](https://img.shields.io/badge/Dataset-HuggingFace-orange?logo=huggingface&logoColor=white)](https://huggingface.co/datasets/kyutai/ARC_finetuning)
