@@ -1,7 +1,7 @@
 # Dataset and Model paths
 data:
-  prefix_path: ${MODEL_PATH}
-  eval_data: '' # Add eval data path if needed
+  prefix_path: ${DATA_PATH}
+  eval_data: # Add eval data path if needed
   train_data: # Add your pretraining data here, a filtered crawl
   max_passages: 1
 

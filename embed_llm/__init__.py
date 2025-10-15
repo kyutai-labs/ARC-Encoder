@@ -1,7 +1,7 @@
 # Paths towards ARC-Encoders either yours or released ones
-TMP_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/tmp/hp_v2/"
+TMP_PATH = ""
 
 # Path towards base models and backbones
-MODEL_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/models/"
+MODEL_PATH = ""
 
-DATA_PATH = "/lustre/scwpod02/client/kyutai-interns/hippop/datasets/"
+DATA_PATH = ""

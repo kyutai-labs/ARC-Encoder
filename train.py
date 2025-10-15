@@ -1,6 +1,7 @@
 import dataclasses
 import logging
 import os
+import yaml
 import sys
 import pprint
 import random
@@ -28,6 +29,7 @@ from embed_llm.monitoring.metrics_logger import (
     train_log_msg,
 )
 from functools import partial
+from embed_llm import DATA_PATH, MODEL_PATH, TMP_PATH
 from embed_llm.monitoring.utils import set_logger
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.checkpointing import Checkpointer
@@ -50,6 +52,7 @@ from embed_llm.training.utils import (
     set_random_seed,
 )
 
+
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 GB = 1024**3
@@ -64,8 +67,16 @@ def main_logger_info(message: str) -> None:
 
 
 def train(train_config: str):
-    args: TrainArgs = TrainArgs.load(train_config, drop_extra_fields=True)
-
+    
+    with open(train_config, "r") as f:
+        train_text = f.read()
+        
+    for var, value in {"DATA_PATH": DATA_PATH, "MODEL_PATH": MODEL_PATH, "TMP_PATH": TMP_PATH}.items():
+        train_text = train_text.replace(f"${{{var}}}", value)
+        
+    train_config = yaml.safe_load(train_text)
+    args: TrainArgs = TrainArgs.from_dict(train_config, drop_extra_fields=True)
+    print('args', args)
     set_logger(logging.INFO)
 
     with ExitStack() as exit_stack:
@@ -131,6 +142,7 @@ def _train(
     )
     exit_stack.enter_context(logged_closing(eval_logger, "eval_logger"))
 
+    print('Embedder path:', args.embedder_path)
     if Path(args.embedder_path).is_dir():
         embed_folder = Path(args.embedder_path)
     else:

@@ -1,6 +1,6 @@
 # Dataset and Model paths
 data:
-  prefix_path: ${MODEL_PATH}
+  prefix_path: ${DATA_PATH}
   eval_data: '' # Add eval data path if needed
   train_data: adversarialqa.jsonl:8:5,freebaseqa.jsonl:27:5,asqa.jsonl:1:5,msmarco.jsonl:9.0:5,sciq.jsonl:3:5,drop.jsonl:20:5,low_res_short_translation.jsonl:3.5:5,low_res_mid_translation.jsonl:0.5:2,short_translation.jsonl:6:5,dialogsum.jsonl:2.5:3,samsum.jsonl:2.5:4,wikisum.jsonl:5:5,parasci.jsonl:12:5
   interleave: true 
@@ -23,7 +23,7 @@ log_freq: 10
 batch_size: 8
 ckpt_freq: 50
 eval_freq: 50
-no_eval: false
+no_eval: true # Set to false if you have eval data
 optim:
   final_lr: 1.0e-08
   initial_lr: 1.0e-20
