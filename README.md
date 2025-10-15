@@ -60,20 +60,20 @@ Pretrained ARC-Encoders will soon be released and available on HuggingFace, stay
 | [ARC<sub>8</sub>-Encoder<sup>M</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Mistral)| Trained on 6.5B tokens on Mistral-7B base specifically with a PF of 8                    |  
 | [ARC<sub>8</sub>-Encoder<sup>multi</sup>](https://huggingface.co/kyutai/ARC8_Encoder_multi)|    Trained by sampling among these two decoders using 6.5B tokens for each one of them with a PF of 8                       |  
 
-Fist, please use the following code to load them and format the folders accurately in your <TMP_PATH>, you just need to perform it once per model:
-```
+Fist, please use the following code to load them and format the folders accurately in your `<TMP_PATH>`, you just need to perform it once per model:
+```python
 from embed_llm.models.augmented_model import load_and_save_released_models
 
 # ARC8_Encoder_multi, ARC8_Encoder_Llama or ARC8_Encoder_Mistral
 load_and_save_released_models(ARC8_Encoder_Llama, hf_token=<HF_TOKEN>)
 ```
-***Remark:*** This code snipet load from HF the model and then create the appropriate folder at <TMP_PATH> containing the checkpoint and additional necessary files to perform finetuning or evaluation with this codebase. To reduce the occupied memory space you can then delete the model from you HF cache. 
+***Remark:*** This code snipet load from HF the model and then create the appropriate folder at `<TMP_PATH>` containing the checkpoint and additional necessary files to perform finetuning or evaluation with this codebase. To reduce the occupied memory space you can then delete the model from you HF cache. 
 
 ### Backbones
-Create a directory <MODEL_PATH> where you’ll store the backbone models for your ARC-Encoder and decoder. To reproduce basic experiments starting from our released pretrained ARC-Encoders it requires the first three models. 
+Create a directory `<MODEL_PATH>` where you’ll store the backbone models for your ARC-Encoder and decoder. To reproduce basic experiments starting from our released pretrained ARC-Encoders it requires the first three models. 
 For LLaMA models, register on the [LLaMa downloads](https://www.llama.com/llama-downloads/)  page to obtain URLs. Make sure that the .json files inside models folder which precise the configurations for the architectures are named `params.json`. If you are using pretrained ARC-Encoders you can skip the loading of Llama3.2-3B weights but you still require the `params.json`  and `tokenizer.model` files. 
 
-```
+```sh
 # For Llama3.2 3B, 
 wget   url -P <MODEL_PATH>/Llama3.2-3B
 
@@ -87,7 +87,7 @@ wget   url -P <MODEL_PATH>/Llama3.1-8B
 ```
 
 For additional experiments: 
-```
+```sh
 # For Llama2 7B Chat
 
 wget   https://huggingface.co/meta-llama/Llama-2-7b-chat/resolve/main/consolidated.00.pth? -P <MODEL_PATH>/Llama2-7B-Chat
@@ -151,7 +151,7 @@ Then,  run the following scripts to prepare evaluation datasets:
 To pretrain or fine-tune your ARC-Encoder, review configuration examples in `configs/`,
 create your own YAML file, and launch training with:
 
-```
+```python
 uv run torchrun --nproc-per-node <number of gpus> -m train configs/<your .yaml config file>
 ```
 
@@ -161,7 +161,8 @@ Evaluate your models on QA benchmarks in two ways:
 Use arguments from `embed_llm/generation/eval_context_comp.py`
 Or run the complete evaluation as in the paper using `scripts/eval.sh`
 Example command:
-```
+```python
+
 uv run python -m embed_llm.generation.eval_context_comp \
   --out_file eval.json \
   --max_seq_len 64 \
@@ -172,7 +173,17 @@ uv run python -m embed_llm.generation.eval_context_comp \
 
 ```
 
-##   Acknowledgments
-This project uses code from:
+##   Acknowledgments, license and Citation
+This project uses codes from:
 - [mistral-finetune](https://github.com/mistralai/mistral-finetune)  (Apache License 2.0)
 - [FID](https://github.com/facebookresearch/FiD) (Attribution-NonCommercial 4.0 International)
+
+Therefore, our main code for training consisting in `embed_llm` directory and the training script `train.py` is licensed under the Apache License 2.0. The directory meant to retrieve passages from Wikipedia for the eval dataset `retrieval` is licensed under Attribution-NonCommercial 4.0 International. 
+
+
+If you use ARC-Encoders for any of your projects please cite:
+
+```bibtex
+
+BLA BLA
+```
