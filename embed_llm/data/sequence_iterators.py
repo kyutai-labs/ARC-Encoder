@@ -121,7 +121,6 @@ def sequence_iterator_reconstruction(
                 seq_len * (4 * int(interleave) + 1)
             )  # Works better with longer sequences for interleaved fine-tuning (up to 5 few-shot examples of size seq_len)
             new_embed = []
-
             for i in range(len(embed_tokens)):  # Select passages to embed
                 new_embed.append(embed_tokens[i])
 

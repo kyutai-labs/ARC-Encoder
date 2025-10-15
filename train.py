@@ -474,6 +474,7 @@ def _train(
                 x = torch.tensor(new_x).cuda(non_blocking=True)
                 y = torch.tensor(new_y).cuda(non_blocking=True)
                 y_mask = torch.tensor(new_mask).cuda(non_blocking=True)
+                
 
             output = model.forward(
                 x=x,
