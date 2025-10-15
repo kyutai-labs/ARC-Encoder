@@ -1,10 +1,11 @@
 #  Adaptable text Representations Compressor (ARC)
 
-[![Paper](https://img.shields.io/badge/arXiv-Paper-red?logo=arxiv&logoColor=white)](https://arxiv.org/abs/<your-paper-id>)
-[![Dataset](https://img.shields.io/badge/Dataset-HuggingFace-orange?logo=huggingface&logoColor=white)](https://huggingface.co/datasets/HippolyteP/ARC_finetuning)
-[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![Paper](https://img.shields.io/badge/arXiv-Paper-red?logo=arxiv&logoColor=white)](https://arxiv.org/abs/<your-blabla-id>)
+[![Dataset](https://img.shields.io/badge/Dataset-HuggingFace-orange?logo=huggingface&logoColor=white)](https://huggingface.co/datasets/kyutai/ARC_finetuning)
+[![License](https://img.shields.io/badge/license-CC--BY--4.0-blue.svg)](https://creativecommons.org/licenses/by/4.0/)
 
-This repository contains the code to reproduce most of the experiments from the paper [**BLABLA**](bla).  
+
+This repository contains the code to reproduce most of the experiments from the paper [**BLABLA**](blabla).  
 You can pretrain and fine-tune your own **ARC-Encoder**, or directly use our released checkpoints to fine-tune on specific datasets.  
 
 ---
@@ -24,7 +25,7 @@ You can pretrain and fine-tune your own **ARC-Encoder**, or directly use our rel
 
 ### 1️⃣ Clone this repository
 ```sh
-git clone ...
+git clone git@github.com:kyutai-labs/ARC-Encoder.git
 ```
 ***Once cloned set import paths at `embed_llm/__init__.py`.*** Then, export these as environment variables since they are useful in the config files. 
 
@@ -55,39 +56,43 @@ Pretrained ARC-Encoders will soon be released and available on HuggingFace, stay
 
 | Models                | Specificities                                       | 
 | :-------------------- | :-------------------------------------------------- | 
-| [ARC<sub>8</sub>-Encoder<sup>L</sup>](link)| Trained on 6.5B tokens on Llama3.1-8B base specifically with a pooling factor (PF) of 8                                 |  
-| [ARC<sub>8</sub>-Encoder<sup>M</sup>](link)| Trained on 6.5B tokens on Mistral-7B base specifically with a PF of 8                    |  
-| [ARC<sub>8</sub>-Encoder<sup>multi</sup>](link)|    Trained by sampling among these two decoders using 6.5B tokens for each one of them with a PF of 8                       |  
+| [ARC<sub>8</sub>-Encoder<sup>L</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Llama)| Trained on 6.5B tokens on Llama3.1-8B base specifically with a pooling factor (PF) of 8                                 |  
+| [ARC<sub>8</sub>-Encoder<sup>M</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Mistral)| Trained on 6.5B tokens on Mistral-7B base specifically with a PF of 8                    |  
+| [ARC<sub>8</sub>-Encoder<sup>multi</sup>](https://huggingface.co/kyutai/ARC8_Encoder_multi)|    Trained by sampling among these two decoders using 6.5B tokens for each one of them with a PF of 8                       |  
 
-Please use the following code to load them and format the folders accurately <TMP_PATH>:
+Fist, please use the following code to load them and format the folders accurately in your <TMP_PATH>, you just need to perform it once per model:
 ```
+from embed_llm.models.augmented_model import load_and_save_released_models
 
+# ARC8_Encoder_multi, ARC8_Encoder_Llama or ARC8_Encoder_Mistral
+load_and_save_released_models(ARC8_Encoder_Llama, hf_token=<HF_TOKEN>)
 ```
+***Remark:*** This code snipet load from HF the model and then create the appropriate folder at <TMP_PATH> containing the checkpoint and additional necessary files to perform finetuning or evaluation with this codebase. To reduce the occupied memory space you can then delete the model from you HF cache. 
 
 ### Backbones
 Create a directory <MODEL_PATH> where you’ll store the backbone models for your ARC-Encoder and decoder. To reproduce basic experiments starting from our released pretrained ARC-Encoders it requires the first three models. 
-For LLaMA models, register on the [LLaMa downloads](https://www.llama.com/llama-downloads/)  page to obtain URLs. Make sure that the .json files inside models folder which precise the configurations for the architectures are named `params.json`.
+For LLaMA models, register on the [LLaMa downloads](https://www.llama.com/llama-downloads/)  page to obtain URLs. Make sure that the .json files inside models folder which precise the configurations for the architectures are named `params.json`. If you are using pretrained ARC-Encoders you can skip the loading of Llama3.2-3B weights but you still require the `params.json`  and `tokenizer.model` files. 
 
 ```
-# For Llama3.2 3B
+# For Llama3.2 3B, 
 wget   url -P <MODEL_PATH>/Llama3.2-3B
 
 # Depending on the decoder you want to test on
 
 # For Mistral 7B
-wget   https://models.mistralcdn.com/mistral-7b-v0-1/mistral-7B-v0.1.tar -P <MODEL_PATH>/mistral_7B
+wget   https://models.mistralcdn.com/mistral-7b-v0-3/mistral-7B-v0.3.tar -P <MODEL_PATH>/mistral_7B
 
 # For Llama3.1 8B
 wget   url -P <MODEL_PATH>/Llama3.1-8B
+```
 
-# Additional experiments
-
+For additional experiments: 
+```
 # For Llama2 7B Chat
 
 wget   https://huggingface.co/meta-llama/Llama-2-7b-chat/resolve/main/consolidated.00.pth? -P <MODEL_PATH>/Llama2-7B-Chat
 wget https://huggingface.co/meta-llama/Llama-2-7b-chat/resolve/main/tokenizer.model? -P <MODEL_PATH>/
 
-Llama2-7B-Chat
 echo '{"dim": 4096, "multiple_of": 256, "n_heads": 32, "n_layers": 32, "norm_eps": 1e-05, "vocab_size": 32000}' > <MODEL_PATH>/Llama2-7B-Chat/params.json
 
 # For Olmo7B
@@ -100,7 +105,7 @@ echo '{"dim": 4096, "n_heads": 32, "n_layers": 32, "norm_eps": 1e-05, "vocab_siz
 ## Prepare datasets
 
 For fine-tuning, load our Hugging Face dataset:
-👉 [ARC Finetuning Dataset](https://huggingface.co/datasets/HippolyteP/ARC_finetuning). 
+👉 [ARC Finetuning Dataset](https://huggingface.co/datasets/kyutai/ARC_finetuning). 
 
 Use the `load_datasets.ipynb` notebook to load the evaluation datasets. 
 
@@ -162,13 +167,11 @@ uv run python -m embed_llm.generation.eval_context_comp \
   --max_seq_len 64 \
   --run_name <your_experiment_name> \
   --llm_name Llama3.1-8B \
-  --embed_name Llama3.2-3B \
-  --llm_number 0 \
+  --llm_number 0 \ # If ARC-Encoder for multi-decoder to target if you want the first one trained on (for the HF models Llama3.1-8B) or the second one
   --n_icl_exs 5
 
 ```
 
-                                                                                                                                                                 |
 ##   Acknowledgments
 This project uses code from:
 - [mistral-finetune](https://github.com/mistralai/mistral-finetune)  (Apache License 2.0)

@@ -45,6 +45,7 @@ class SequenceEmbedMaskAndSizes:
             )
 
 
+# For reconstruction and fine-tuning
 def sequence_iterator_reconstruction(
     x_buffer: list[int],
     y_buffer: list[int],
@@ -403,6 +404,7 @@ def sequence_iterator_reconstruction(
     )
 
 
+# For continuation
 def sequence_iterator_continuation(
     x_buffer: list[int],
     y_buffer: list[int],

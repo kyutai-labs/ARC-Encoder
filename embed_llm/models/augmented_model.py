@@ -1,66 +1,90 @@
 import logging
 import os
+import json
 from pathlib import Path
+
 import numpy as np
 import torch
 import torch.nn as nn
 import yaml
+import safetensors
+from huggingface_hub import PyTorchModelHubMixin
 from torch.nn import ModuleList
 
+from embed_llm import TMP_PATH
 from embed_llm.data.data_loader import Batch
+from embed_llm.data.tokenize import Tokenizer
 from embed_llm.generation.utils import eval_logger_info
-from embed_llm.models.args import PipelineArgs
-from embed_llm.models.utils.utils import (
-    group_embed_seqlens,
-    is_torchrun,
-    format_for_chat,
+from embed_llm.models.args import (
+    PipelineArgs,
+    BridgeArgs,
+    EmbedderArgs,
+    ModelArgs,
+    PoolingArgs,
 )
 from embed_llm.models.embedding_modules import EmbProjector
+from embed_llm.models.enhanced_transformer import Transformer
+from embed_llm.models.generate import generate as transformer_generate
 from embed_llm.models.utils.loading import (
     load_args,
+    load_model,
     load_state_dict,
 )
-
-
-from embed_llm.models.enhanced_transformer import Transformer, load_model
-from embed_llm.models.generate import generate as transformer_generate
-from embed_llm.data.tokenize import Tokenizer
-from embed_llm import TMP_PATH
+from embed_llm.models.utils.utils import (
+    format_for_chat,
+    group_embed_seqlens,
+    is_torchrun,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class EmbedAugModel(nn.Module):
+class EmbedAugModel(nn.Module, PyTorchModelHubMixin):
     def __init__(
         self,
-        pipeline_args: PipelineArgs,
+        bridge_args: BridgeArgs,
         llms: list[Transformer],
         embedder: Transformer | None = None,
+        empty_init: int = 0,
+        model_args: ModelArgs | None = None,
+        embedder_args: EmbedderArgs | None = None,
     ):
         super().__init__()
 
         self.llms = nn.ModuleList(llms)
-        self.embedder = embedder
+
+        if embedder is not None:
+            self.embedder = embedder
+        else:
+            assert empty_init > 0, "Only used for first downloading"
+            if isinstance(embedder_args.pooling_module, dict):
+                embedder_args.pooling_module = PoolingArgs(
+                    **embedder_args.pooling_module
+                )
+            self.embedder = Transformer(
+                args=model_args, embedder_args=embedder_args, number_of_llm=empty_init
+            )
+
         self.bridge_module = None
-        if pipeline_args.bridge_module.bridge_type is not None:
-            if pipeline_args.bridge_module.bridge_type == "multi_module":
+        if bridge_args.bridge_type is not None:
+            if bridge_args.bridge_type == "multi_module":
                 self.bridge_module = nn.ModuleList(
                     [
                         EmbProjector(
-                            in_dim=pipeline_args.bridge_module.in_dim,
-                            out_dim=pipeline_args.bridge_module.out_dim,
-                            hidden_dim=pipeline_args.bridge_module.hidden_dim,
+                            in_dim=bridge_args.in_dim,
+                            out_dim=bridge_args.out_dim,
+                            hidden_dim=bridge_args.hidden_dim,
                             type="mlp",
                         )
-                        for _ in range(len(llms))
+                        for _ in range(max(len(llms), empty_init))
                     ]
                 )
             else:
                 self.bridge_module = EmbProjector(
-                    in_dim=pipeline_args.bridge_module.in_dim,
-                    out_dim=pipeline_args.bridge_module.out_dim,
-                    hidden_dim=pipeline_args.bridge_module.hidden_dim,
-                    type=pipeline_args.bridge_module.bridge_type,
+                    in_dim=bridge_args.in_dim,
+                    out_dim=bridge_args.out_dim,
+                    hidden_dim=bridge_args.hidden_dim,
+                    type=bridge_args.bridge_type,
                 )
 
     def forward(
@@ -161,11 +185,12 @@ class EmbedAugPipeline(nn.Module):
         self.model = None
 
     def get_model(self, llms) -> nn.Module:
-        return EmbedAugModel(
-            pipeline_args=self.pipeline_args,
+        model = EmbedAugModel(
+            bridge_args=self.pipeline_args.bridge_module,
             llms=llms,
             embedder=self.embedding_model,
         )
+        return model
 
     def store_model(self, model: nn.Module):
         self.model = model
@@ -305,14 +330,12 @@ class EmbedAugPipeline(nn.Module):
         device: str,
         train_config_path: str | None = None,
         llm_type: str = "mistral",
-        embed_type: str = "llama",
         max_batch_size: int = 4,
         param_dtype: torch.dtype = torch.float32,
         llm_number: int = 0,
     ):
-        
         # When we need to load trained encoder from another ckpt than the one from ckpt_path
-        # Especially when training only MLP module and special toks on a new decoder 
+        # Especially when training only MLP module and special toks on a new decoder
         # (OLMo 7B experiment in the paper)
         train_config_path = (
             os.path.join(ckpt_path, "../../args.yaml")
@@ -322,16 +345,16 @@ class EmbedAugPipeline(nn.Module):
         if Path(train_config_path).exists():
             with open(train_config_path, "r") as f:
                 train_args = yaml.safe_load(f)
-            freeze_encoder = train_args.get(
-                "freeze_encoder", False
-            )  
+            freeze_embedder = train_args.get(
+                "freeze_embedder", False
+            ) or train_args.get("freeze_encoder", False)
             embedder_ckpt_path = (
                 None
-                if not freeze_encoder
+                if not freeze_embedder
                 else Path(train_args["from_ckpt"]["embedder_path"])
             )
         else:
-            freeze_encoder = False
+            freeze_embedder = False
             embedder_ckpt_path = None
 
         llm_args, pipeline_args = load_args(
@@ -349,7 +372,6 @@ class EmbedAugPipeline(nn.Module):
             param_dtype=param_dtype,
             parll=is_torchrun(),
             llm_type=llm_type,
-            embed_type=embed_type,
             number_of_llm=1,
         )
         logger.info("Loading LLM from")
@@ -361,7 +383,7 @@ class EmbedAugPipeline(nn.Module):
             Path(embedder_path),
             max_batch_size=max_batch_size,
             pipe_path=ckpt_path,
-            args_type=embed_type,
+            args_type="llama",
         )
 
         llm_embedder, embed_tokenizer = load_model(
@@ -373,8 +395,9 @@ class EmbedAugPipeline(nn.Module):
             for_embedding=True,
             parll=is_torchrun(),
             llm_type=llm_type,
-            embed_type=embed_type,
             number_of_llm=1,
+            skip_model_loading=True,  # Do not load the backbone weights except if you want to use a partially trained embedder
+            # in that case, the trained layers will be loaded below on top of the backbone
         )
 
         if (
@@ -385,7 +408,7 @@ class EmbedAugPipeline(nn.Module):
         ):
             embed_path = (
                 Path(ckpt_path + "/embedder")
-                if not freeze_encoder
+                if not freeze_embedder
                 else embedder_ckpt_path
             )
             logger.info("Loading embedder trained layers")
@@ -426,7 +449,7 @@ class EmbedAugPipeline(nn.Module):
                 ),
             )
 
-            if freeze_encoder and (
+            if freeze_embedder and (
                 pipeline_args.embedder_params.rec_tok
                 or pipeline_args.embedder_params.cont_tok
                 or pipeline_args.embedder_params.memory_tokens > 0
@@ -455,7 +478,7 @@ class EmbedAugPipeline(nn.Module):
             pipeline_args=pipeline_args,
             embedding_model=llm_embedder,
             llm_tokenizer=[Tokenizer(tokenizer=llm_tokenizer, model_name=llm_type)],
-            embed_tokenizer=Tokenizer(tokenizer=embed_tokenizer, model_name=embed_type),
+            embed_tokenizer=Tokenizer(tokenizer=embed_tokenizer, model_name="llama"),
         )
 
         augmented_pipeline.store_model(augmented_pipeline.get_model(llms=[llm]))
@@ -743,6 +766,7 @@ class EmbedAugPipeline(nn.Module):
             )
 
 
+# Enable to load at inference time the full pipeline from paths of the backbones and the run name of the checkpoint to use for ARC-Encoder
 def load_pipeline(
     run_name: str | None,
     llm_path: str,
@@ -754,14 +778,13 @@ def load_pipeline(
     ckpt: int | None = None,
     comp_rate: int | None = None,
     llm_type: str = "mistral",
-    embed_type: str = "llama",
     llm_number: int = 0,
     train_config_path: str | None = None,
 ) -> EmbedAugPipeline | Transformer:
     if pipeline is None:
         # Get last checkpoint
         assert run_name is not None
-        
+
         last_ckpt = (
             sorted(
                 [
@@ -785,7 +808,6 @@ def load_pipeline(
             device=device,
             max_batch_size=max_bs,
             llm_type=llm_type,
-            embed_type=embed_type,
             llm_number=llm_number,
             train_config_path=train_config_path,
         )
@@ -809,3 +831,74 @@ def load_pipeline(
             )
             pipeline.model.embedder.n_mem_tokens = comp_rate
     return pipeline, ckpt
+
+
+# Enable to load from HF and create the appropriate folders and files
+def load_and_save_released_models(
+    arc_encoder_name: str,
+    hf_token: str | None = None,
+) -> tuple[torch.nn.Module, int]:
+    # Directory where this script is located
+    SCRIPT_DIR = Path(__file__).resolve().parent
+    with open(
+        os.path.join(
+            str(SCRIPT_DIR / "../../configs/released_pt_configs/"),
+            arc_encoder_name + ".yaml",
+        ),
+        "r",
+    ) as f:
+        released_config = yaml.safe_load(f)
+
+    released_config["embedder_args"]["pooling_module"] = PoolingArgs(
+        **released_config["embedder_args"]["pooling_module"]
+    )
+
+    arc_encoder = EmbedAugModel(
+        bridge_args=BridgeArgs(**released_config["bridge_args"]),
+        llms=[],
+        empty_init=2 if "multi" in arc_encoder_name else 1,
+        model_args=ModelArgs(**released_config["model_args"]),
+        embedder_args=EmbedderArgs(**released_config["embedder_args"]),
+    )
+
+    pipeline_args = PipelineArgs(
+        embedder_params=EmbedderArgs(**released_config["embedder_args"]),
+        bridge_module=BridgeArgs(**released_config["bridge_args"]),
+    )
+    hf_arc_encoder = arc_encoder.from_pretrained(
+        "kyutai/" + arc_encoder_name,
+        token=hf_token,
+    )
+
+    hf_state_dict = hf_arc_encoder.state_dict()
+
+    new_path = TMP_PATH + arc_encoder_name + "/checkpoints/checkpoint_100000/"
+
+    # Create appropriate folders and files
+    os.makedirs(new_path, exist_ok=False)
+    os.makedirs(new_path + "embedder/", exist_ok=True)
+    os.makedirs(new_path + "bridge_module/", exist_ok=True)
+
+    with open(new_path + "params.json", "w") as f:
+        pipeline_args = pipeline_args.to_dict()
+        pipeline_args["param_dtype"] = str(pipeline_args["param_dtype"]).split(".")[-1]
+        f.write(json.dumps(pipeline_args, indent=4))
+
+    safetensors.torch.save_file(
+        {
+            k.split("embedder.")[-1]: v
+            for k, v in hf_state_dict.items()
+            if "embedder" in k
+        },
+        new_path + "embedder/consolidated.safetensors",
+    )
+    safetensors.torch.save_file(
+        {
+            k.split("bridge_module.")[-1]: v
+            for k, v in hf_state_dict.items()
+            if "bridge_module" in k
+        },
+        new_path + "bridge_module/consolidated.safetensors",
+    )
+
+    print("Saved and formatted released model at", new_path)

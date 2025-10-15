@@ -1,8 +1,5 @@
 from dataclasses import dataclass
 from functools import partial
-from pathlib import Path
-import os
-
 
 import torch
 import torch.distributed.algorithms._checkpoint.checkpoint_wrapper as torch_ckpt
@@ -11,36 +8,23 @@ from torch import nn
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalMask, BlockDiagonalMask
 
 from embed_llm.models.args import (
-    PipelineArgs,
     EmbedderArgs,
     ModelArgs,
 )
-from embed_llm.models.utils.mistral_tokenizer import (
-    load_tokenizer as load_mistral_tokenizer,
-)
-from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
-from embed_llm.models.utils.llama_tokenizer import Tokenizer_Llama2
-from embed_llm.models.utils.olmo_tokenizer import Tokenizer as OlmoTokenizer
-from embed_llm.training.distributed import (
-    get_rank,
-)
-
-
 from embed_llm.models.embedding_modules import PoolingModule
-from embed_llm.models.utils.loading import load_state_dict
-from embed_llm.models.utils.cache import (
-    BufferCache,
-    CacheInputMetadata,
-)
-from embed_llm.models.utils.model import ModelBase
-from embed_llm.models.utils.rope import precompute_freqs_cis
 from embed_llm.models.transformer_layers import (
     RMSNorm,
     TransformerBlock,
     insert_embeds,
     positions_from_sizes,
 )
-from embed_llm import MODEL_PATH
+from embed_llm.models.utils.cache import (
+    BufferCache,
+    CacheInputMetadata,
+)
+from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
+from embed_llm.models.utils.model import ModelBase
+from embed_llm.models.utils.rope import precompute_freqs_cis
 
 Tokenizer = MistralTokenizer | LlamaTokenizer
 
@@ -63,74 +47,6 @@ class SimpleInputMetadata:
             prefill=prefill,
             seqlens=seqlens,
         )
-
-
-def load_model(
-    llm_args: ModelArgs,
-    pipeline_args: PipelineArgs,
-    folder: Path,
-    checkpoint: bool,
-    param_dtype: torch.dtype,
-    for_embedding: bool = False,
-    parll: bool = True,
-    llm_type: str = "mistral",
-    embed_type: str = "mistral",
-    number_of_llm: int = 1,
-    folder_w_models: str = MODEL_PATH,
-) -> tuple[torch.nn.Module, int]:
-    with torch.device("meta"):
-        model = Transformer(
-            args=llm_args,
-            checkpoint=checkpoint,
-            embedder_args=pipeline_args.embedder_params if for_embedding else None,
-            number_of_llm=number_of_llm,
-        )
-
-    if not parll or get_rank() == 0:
-        state_dict = load_state_dict(
-            folder, dtype=param_dtype, olmo=(llm_type == "olmo" and not for_embedding)
-        )
-
-        if not for_embedding:
-            if "rope.freqs" in state_dict:
-                # Remove it from Llama 2 Chat ckpts
-                state_dict.pop("rope.freqs")
-
-            assert all([k in model.state_dict() for k in state_dict.keys()]), (
-                f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
-            )
-
-        model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
-
-    if (llm_type == "mistral" and not for_embedding) or (
-        embed_type == "mistral" and for_embedding
-    ):
-        tokenizer = load_mistral_tokenizer(
-            Path(folder_w_models + "/mistral_7B")
-        ).instruct_tokenizer.tokenizer
-        return model, tokenizer
-    elif ("llama" in llm_type and not for_embedding) or (
-        embed_type == "llama" and for_embedding
-    ):
-        if llm_type == "llama_2" and not for_embedding:
-            tokenizer = Tokenizer_Llama2(
-                model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama2-7B-Chat/tokenizer.model"
-            )
-        else:
-            assert not (for_embedding and llm_type == "llama_2"), (
-                "Llama 2 Chat should not be used for encoding"
-            )
-            tokenizer = LlamaTokenizer(
-                model_path="/lustre/scwpod02/client/kyutai-interns/hippop/models/Llama3.1-8B/tokenizer.model"
-            )
-
-    elif llm_type == "olmo" and not for_embedding:
-        tokenizer = OlmoTokenizer.from_file(
-            os.path.join(MODEL_PATH, "Olmo7B/tokenizer.json")
-        )
-    else:
-        raise ValueError(f"Unknown llm_type: {llm_type} or embed_type: {embed_type}")
-    return model, tokenizer
 
 
 class Transformer(ModelBase):

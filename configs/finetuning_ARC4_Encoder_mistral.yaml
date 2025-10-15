@@ -1,6 +1,5 @@
 # Dataset and Model paths
 data:
-  adapt_seq_len: true
   prefix_path: ${MODEL_PATH}
   eval_data: '' # Add eval data path if needed
   train_data: adversarialqa.jsonl:8:5,freebaseqa.jsonl:27:5,asqa.jsonl:1:5,msmarco.jsonl:9.0:5,sciq.jsonl:3:5,drop.jsonl:20:5,low_res_short_translation.jsonl:3.5:5,low_res_mid_translation.jsonl:0.5:2,short_translation.jsonl:6:5,dialogsum.jsonl:2.5:3,samsum.jsonl:2.5:4,wikisum.jsonl:5:5,parasci.jsonl:12:5
@@ -13,12 +12,11 @@ llm_paths:
 - ${MODEL_PATH}/mistral_7B
 llm_types: 
 - mistral
-embedder_path: ${MODEL_PATH}/Llama3.2-3B
-embed_type: llama
+embedder_path: ${MODEL_PATH}/Llama3.2-3B # For the tokenizer
 
 # Training Hyperparameters
 num_microbatches: 1
-seed: 0
+seed: 32
 max_steps: 4000
 seq_len: 2048
 log_freq: 10

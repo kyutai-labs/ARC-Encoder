@@ -154,14 +154,7 @@ def is_torchrun() -> bool:
     return all(var in os.environ for var in required_vars)
 
 
-def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
-    """
-    This function instantiates the FSDP wrap policy.
-    - Each Transformers block becomes its own FSDP group so that only a single Transformer block is sharded at a time
-    - If LoRA is enabled, we additionally create separate FSDP sub-groups for every trainable and non-trainable parameter group
-      since this is a requirement for mixed requires_grad=True/False training. See: https://pytorch.org/docs/stable/fsdp.html
-    """
-
+def get_fsdp_policy() -> Callable[[torch.nn.Module], bool]:
     # Each transformer block becomes a FSDP group, each being sharded separately
     transformer_block_wrap_policy = functools.partial(
         torch_wrap.transformer_auto_wrap_policy,
@@ -171,10 +164,7 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
             ]
         ),
     )
-
-    if not is_lora:
-        return transformer_block_wrap_policy
-
+    
     def lambda_policy_fn(module):
         if (
             len(list(module.named_children())) == 0
@@ -191,14 +181,14 @@ def get_fsdp_policy(is_lora: bool) -> Callable[[torch.nn.Module], bool]:
         else:
             return False
 
-    # For LoRA training, trainable and non-trainable parameters need to be put into
+    # Trainable and non-trainable parameters need to be put into
     # different FSDP groups
-    fsdp_lora_policy = functools.partial(
+    fsdp_policy = functools.partial(
         torch_wrap.lambda_auto_wrap_policy, lambda_fn=lambda_policy_fn
     )
 
     policies = [
-        fsdp_lora_policy,
+        fsdp_policy,
         transformer_block_wrap_policy,
     ]
 

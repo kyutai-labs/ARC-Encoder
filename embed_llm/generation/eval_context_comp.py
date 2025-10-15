@@ -39,7 +39,6 @@ def evaluate_QA(
     run_name: str,
     benchmarks: list[str],
     llm_path: str | None = None,
-    embed_path: str | None = None,
     ckpt: int | None = None,
     max_seq_len: int = 256,
     temps: list[float] = [0, 0.5, 0.7, 1],
@@ -77,7 +76,7 @@ def evaluate_QA(
         run_name=run_name,
         tmp_path=tmp_path,
         llm_path=llm_path,
-        embedder_path=embed_path,
+        embedder_path=MODEL_PATH + "/Llama3.2-3B",
         device=device,
         max_bs=max_bs,
         pipeline=pipeline,
@@ -88,9 +87,6 @@ def evaluate_QA(
         else (
             "olmo" if llm_path is not None and "olmo" in llm_path.lower() else "mistral"
         ),
-        embed_type="llama"
-        if embed_path is not None and "llama" in embed_path.lower()
-        else "mistral",
         llm_number=llm_number,
     )
 
@@ -372,7 +368,6 @@ def evaluate_QA(
 def evaluate_trad(
     run_name: str,
     llm_path: str | None = None,
-    embed_path: str | None = None,
     ckpt: int | None = None,
     max_seq_len: int = 128,
     temps: list[float] = [0, 0.5, 0.7, 1],
@@ -401,7 +396,7 @@ def evaluate_trad(
     pipeline, ckpt = load_pipeline(
         run_name=run_name,
         tmp_path=tmp_path,
-        embedder_path=embed_path,
+        embedder_path=MODEL_PATH + "/Llama3.2-3B",
         llm_path=llm_path,
         device=device,
         max_bs=max_bs,
@@ -413,7 +408,6 @@ def evaluate_trad(
         else (
             "olmo" if llm_path is not None and "olmo" in llm_path.lower() else "mistral"
         ),
-        embed_type="llama" if "llama" in embed_path.lower() else "mistral",
         llm_number=llm_number,
     )
 
@@ -571,7 +565,6 @@ def arg_parser():
     )  # can enable to fix number of memory tokens if > 0
     parser.add_argument("--eval_trad", action="store_true")
     parser.add_argument("--llm_name", type=str, default="mistral_7B")
-    parser.add_argument("--embed_name", type=str, default="mistral_7B")
     parser.add_argument("--max_doc_len", type=int, default=None)
     parser.add_argument(
         "--llm_number",
@@ -612,7 +605,6 @@ if __name__ == "__main__":
     max_seq_len = args.max_seq_len
     n_samples = args.n_samples
     llm_path = MODEL_PATH + args.llm_name
-    embed_path = MODEL_PATH + args.embed_name
 
     if args.run_name is not None:
         print("Evuating run:", args.run_name)
@@ -624,7 +616,6 @@ if __name__ == "__main__":
             max_seq_len=max_seq_len,
             temps=temp_tests,
             llm_path=llm_path,
-            embed_path=embed_path,
             max_bs=args.bs,
             output_file=output_file,
             n_samples=n_samples,
@@ -646,7 +637,6 @@ if __name__ == "__main__":
             ckpt=args.ckpt,
             temps=temp_tests,
             llm_path=llm_path,
-            embed_path=embed_path,
             max_bs=args.bs,
             output_file=output_file,
             n_samples=n_samples,
@@ -668,7 +658,6 @@ if __name__ == "__main__":
                 benchmarks,
                 temps=temp_tests,
                 llm_path=llm_path,
-                embed_path=embed_path,
                 max_bs=args.bs,
                 output_file=output_file,
                 n_samples=n_samples,

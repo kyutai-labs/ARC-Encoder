@@ -90,8 +90,6 @@ class ModelArgs(Serializable):
     _sliding_window: int | list[int] | None = None
     model_type: str = "transformer"
     non_parametric_norm: bool = False
-
-    # vision_encoder: VisionEncoderArgs] | None = None
     """ If adding new args take care giving it to load args """
 
     def __post_init__(self) -> None:

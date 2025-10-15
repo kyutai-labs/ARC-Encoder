@@ -1,0 +1,38 @@
+embedder_args:
+  causal_embedder: false
+  compress_rates:
+  - -8
+  n_truncated_layers: 2
+  pooling_module:
+    pool_type: mean_pooled_queries
+    where: before
+  trained_layers: 27
+  train_embedding_mtx: true
+  rec_tok: true
+  cont_tok: true
+
+bridge_args:
+  bridge_type: mlp
+  in_dim: 3072
+  hidden_dim: 2048
+  out_dim: 4096
+
+
+model_args:
+    dim: 3072
+    n_layers: 28
+    head_dim: 128
+    hidden_dim: 8192
+    n_heads: 24
+    n_kv_heads: 8
+    norm_eps: 1e-05
+    vocab_size: 128256
+    rope_theta: 500000.0
+    max_batch_size: 1
+
+
+
+
+
+
+

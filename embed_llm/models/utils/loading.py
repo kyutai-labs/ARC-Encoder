@@ -1,23 +1,31 @@
 import json
 import logging
-
+import os
 from pathlib import Path
 
 import safetensors
-import safetensors.torch
 import torch
-from embed_llm.models.utils.mistral_tokenizer import MistralTokenizer
-from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
+
+from embed_llm import MODEL_PATH
 from embed_llm.models.args import (
-    PipelineArgs,
-    ModelArgs,
-    EmbedderArgs,
-    PoolingArgs,
     BridgeArgs,
+    EmbedderArgs,
+    ModelArgs,
+    PipelineArgs,
+    PoolingArgs,
 )
-
-
+from embed_llm.models.enhanced_transformer import Transformer
+from embed_llm.models.utils.llama_tokenizer import Tokenizer as LlamaTokenizer
+from embed_llm.models.utils.llama_tokenizer import Tokenizer_Llama2
+from embed_llm.models.utils.mistral_tokenizer import MistralTokenizer
+from embed_llm.models.utils.mistral_tokenizer import (
+    load_tokenizer as load_mistral_tokenizer,
+)
+from embed_llm.models.utils.olmo_tokenizer import Tokenizer as OlmoTokenizer
 from embed_llm.training.checkpointing import Checkpointer
+from embed_llm.training.distributed import (
+    get_rank,
+)
 
 Tokenizer = MistralTokenizer | LlamaTokenizer
 
@@ -134,6 +142,78 @@ def load_args(
         pipeline_args.param_dtype = getattr(torch, pipeline_args.param_dtype)
 
     return llm_args, pipeline_args
+
+
+# Enable to load a Transformer model and its associated tokenizer, either for decoder or encoder.
+def load_model(
+    llm_args: ModelArgs,
+    pipeline_args: PipelineArgs,
+    folder: Path | None,
+    checkpoint: bool,
+    param_dtype: torch.dtype,
+    for_embedding: bool = False,
+    parll: bool = True,
+    llm_type: str = "mistral",
+    number_of_llm: int = 1,
+    folder_w_models: str = MODEL_PATH,
+    skip_model_loading: bool = False,  # No need of backbone encoder (Llama3.2-3B), to load only the architecture, 
+    # the weights will be loaded from already trained ckpts such as the ARC-Encoder released on HF
+) -> tuple[torch.nn.Module, int]:
+    with torch.device("meta"):
+        model = Transformer(
+            args=llm_args,
+            checkpoint=checkpoint,
+            embedder_args=pipeline_args.embedder_params if for_embedding else None,
+            number_of_llm=number_of_llm,
+        )
+
+    if (not parll or get_rank() == 0) and not skip_model_loading:
+        state_dict = load_state_dict(
+            folder, dtype=param_dtype, olmo=(llm_type == "olmo" and not for_embedding)
+        )
+
+        if not for_embedding:
+            if "rope.freqs" in state_dict:
+                # Remove it from Llama 2 Chat ckpts
+                state_dict.pop("rope.freqs")
+
+            assert all([k in model.state_dict() for k in state_dict.keys()]), (
+                f"Model state dict keys do not match model keys. Missing keys: {set(state_dict.keys()) - set(model.state_dict().keys())}"
+            )
+
+        model.load_state_dict(state_dict, assign=True, strict=False)  # type: ignore
+
+    if llm_type == "mistral" and not for_embedding:
+        tokenizer = load_mistral_tokenizer(
+            Path(folder_w_models + "mistral_7B")
+        ).instruct_tokenizer.tokenizer
+        return model, tokenizer
+    elif "llama" in llm_type or for_embedding:
+        if llm_type == "llama_2" and not for_embedding:
+            tokenizer = Tokenizer_Llama2(
+                model_path=folder_w_models + "Llama2-7B-Chat/tokenizer.model"
+            )
+        else:
+            assert not (for_embedding and llm_type == "llama_2"), (
+                "Llama 2 Chat should not be used for encoding"
+            )
+            tok_path = (
+                folder_w_models + "Llama3.1-8B/tokenizer.model"
+                if Path(folder_w_models + "Llama3.1-8B/tokenizer.model").exists()
+                else folder_w_models + "Llama3.2-3B/tokenizer.model"
+            )
+            assert Path(tok_path).exists(), (
+                f"Llama tokenizer not found in {tok_path}, but necessary for ARC-Encoder"
+            )
+            tokenizer = LlamaTokenizer(model_path=tok_path)
+
+    elif llm_type == "olmo" and not for_embedding:
+        tokenizer = OlmoTokenizer.from_file(
+            os.path.join(MODEL_PATH, "Olmo7B/tokenizer.json")
+        )
+    else:
+        raise ValueError(f"Unknown llm_type: {llm_type}")
+    return model, tokenizer
 
 
 @torch.no_grad()

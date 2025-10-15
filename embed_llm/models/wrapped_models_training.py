@@ -17,6 +17,7 @@ from embed_llm.models.utils.utils import (
     log_train_params,
     main_logger_info,
 )
+from embed_llm.models.utils.loading import load_model
 from embed_llm.training.args import TrainArgs
 from embed_llm.training.distributed import (
     get_rank,
@@ -26,9 +27,9 @@ from embed_llm.training.mixed_precision import (
     bfSixteen,
     bfSixteen_mixed,
 )
-from embed_llm.models.enhanced_transformer import load_model
 
 
+# Used for training from scratch
 def load_training_model(
     train_args: TrainArgs,
     llm_paths: list[str],
@@ -59,7 +60,6 @@ def load_training_model(
             param_dtype=param_dtype,
             for_embedding=False,
             llm_type=train_args.llm_types[i],
-            embed_type=train_args.embed_type,
         )
 
         llms.append(llm)
@@ -72,7 +72,7 @@ def load_training_model(
         embed_folder,
         max_batch_size=max_batch_size,
         pipe_args=train_args.pipeline,
-        args_type=train_args.embed_type,
+        args_type="llama",
     )
 
     # Load pretrained params on rank 0
@@ -83,7 +83,6 @@ def load_training_model(
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=True,
-        embed_type=train_args.embed_type,
         number_of_llm=len(llms),
     )
 
@@ -91,7 +90,7 @@ def load_training_model(
     augmented_pipeline = EmbedAugPipeline(
         pipeline_args=pipeline_args,
         llm_tokenizer=llm_tokenizers,
-        embed_tokenizer=Tokenizer(embed_tokenizer, model_name=train_args.embed_type),
+        embed_tokenizer=Tokenizer(embed_tokenizer, model_name="llama"),
         embedding_model=llm_embedder,
     )
 
@@ -213,7 +212,7 @@ def load_training_model(
 
     log_train_params(augmented_model)
 
-    auto_wrap_policy = get_fsdp_policy(is_lora=True)
+    auto_wrap_policy = get_fsdp_policy()
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
@@ -237,6 +236,7 @@ def load_training_model(
     )
 
 
+# Used for training from a checkpoint
 def load_training_model_from_ckpt(
     train_args: TrainArgs,
     llm_paths: Path | None,
@@ -271,7 +271,6 @@ def load_training_model_from_ckpt(
             param_dtype=param_dtype,
             for_embedding=False,
             llm_type=train_args.llm_types[i],
-            embed_type=train_args.embed_type,
         )
 
         llms.append(llm)
@@ -284,7 +283,7 @@ def load_training_model_from_ckpt(
         embed_folder,
         max_batch_size=max_batch_size,
         pipe_args=train_args.pipeline,
-        args_type=train_args.embed_type,
+        args_type="llama",
     )
     # Load pretrained params on rank 0
     llm_embedder, embed_tokenizer = load_model(
@@ -294,15 +293,16 @@ def load_training_model_from_ckpt(
         checkpoint=checkpoint,
         param_dtype=param_dtype,
         for_embedding=True,
-        embed_type=train_args.embed_type,
         number_of_llm=len(llms),
+        skip_model_loading=True,  # Do not load the backbone weights except if you want to use a partially trained embedder
+        # in that case, the trained layers will be loaded below on top of the backbone. 
     )
 
     # Create the pipeline
     augmented_pipeline = EmbedAugPipeline(
         pipeline_args=pipeline_args,
         llm_tokenizer=llm_tokenizers,
-        embed_tokenizer=Tokenizer(embed_tokenizer, model_name=train_args.embed_type),
+        embed_tokenizer=Tokenizer(embed_tokenizer, model_name='llama'),
         embedding_model=llm_embedder,
     )
 
@@ -427,12 +427,13 @@ def load_training_model_from_ckpt(
                     for layer in augmented_model.embedder.trained_layers
                 ]
             )
-            and not train_args.freeze_encoder
+            and not train_args.freeze_embedder
         ):
             param.requires_grad = True
         elif (
             pipeline_args.embedder_params.train_embedding_mtx
-            and "tok_embeddings" in name and not train_args.freeze_encoder
+            and "tok_embeddings" in name
+            and not train_args.freeze_embedder
         ):
             param.requires_grad = True
         elif (
@@ -445,14 +446,14 @@ def load_training_model_from_ckpt(
             param.requires_grad = True
         else:
             param.requires_grad = False
-            
+
     if pipeline_args.bridge_module.bridge_type is not None:
         for name, param in augmented_model.bridge_module.named_parameters():
             param.requires_grad = True
 
     log_train_params(augmented_model)
 
-    auto_wrap_policy = get_fsdp_policy(is_lora=True)
+    auto_wrap_policy = get_fsdp_policy()
 
     main_logger_info(f"Sharding model over {get_world_size()} GPUs ...")
 
