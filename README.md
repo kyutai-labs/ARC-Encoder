@@ -45,36 +45,42 @@ which can be created using [Conda](https://www.anaconda.com/docs/getting-started
 Then, run:
 
 ```sh
-cd moshi-finetune
+cd ARC-Encoder
 pip install -e .
 ```
 
 ## Load models
 
 ### Pre-train ARC-Encoders
-Pretrained ARC-Encoders will soon be released and available on HuggingFace, stay tuned.
+Pretrained ARC-Encoders are available on HuggingFace !!
 
 | Models                | Specificities                                       | 
 | :-------------------- | :-------------------------------------------------- | 
-| [ARC<sub>8</sub>-Encoder<sup>L</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Llama)| Trained on 2.6B tokens on Llama3.1-8B base specifically with a pooling factor (PF) of 8.                                 |  
-| [ARC<sub>8</sub>-Encoder<sup>M</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Mistral)| Trained on 2.6B tokens on Mistral-7B base specifically with a PF of 8.                    |  
+| [ARC<sub>8</sub>-Encoder<sup>L</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Llama)| Trained on 2.6B tokens on Llama 3.1 8B base specifically with a pooling factor (PF) of 8.                                 |  
+| [ARC<sub>8</sub>-Encoder<sup>M</sup>](https://huggingface.co/kyutai/ARC8_Encoder_Mistral)| Trained on 2.6B tokens on Mistral 7B base specifically with a PF of 8.                    |  
 | [ARC<sub>8</sub>-Encoder<sup>multi</sup>](https://huggingface.co/kyutai/ARC8_Encoder_multi)|    Trained by sampling among these two decoders trained on 2.6B tokens with a PF of 8.                       |  
 
-Fist, please use the following code to load them and format the folders accurately in your `<TMP_PATH>`, you just need to perform it once per model:
+First, please use the following code to load them and format the folders accurately in your `<TMP_PATH>`, you just need to perform it once per model:
 ```python
 from embed_llm.models.augmented_model import load_and_save_released_models
 
 # ARC8_Encoder_multi, ARC8_Encoder_Llama or ARC8_Encoder_Mistral
 load_and_save_released_models(ARC8_Encoder_Llama, hf_token=<HF_TOKEN>)
 ```
-***Remark:*** This code snipet load from HF the model and then create the appropriate folder at `<TMP_PATH>` containing the checkpoint and additional necessary files to perform finetuning or evaluation with this codebase. To reduce the occupied memory space you can then delete the model from you HF cache. 
+***Remark:*** This code snipet load from HF the model and then create at `<TMP_PATH>` the appropriate folder containing the checkpoint and additional necessary files to perform finetuning or evaluation with this codebase. To reduce the occupied memory space you can then delete the model from you HF cache. 
 
 ### Backbones
-Create a directory `<MODEL_PATH>` where you’ll store the backbone models for your ARC-Encoder and decoder. To reproduce basic experiments starting from our released pretrained ARC-Encoders it requires the first three models. 
-For LLaMA models, register on the [LLaMa downloads](https://www.llama.com/llama-downloads/)  page to obtain URLs. Make sure that the .json files inside models folder which precise the configurations for the architectures are named `params.json`. If you are using pretrained ARC-Encoders you can skip the loading of Llama3.2-3B weights but you still require the `params.json`  and `tokenizer.model` files. 
+Create a directory `<MODEL_PATH>` to store the backbone models used by your ARC-Encoders and decoders.  
+To reproduce the basic experiments with our released pretrained ARC-Encoders, you will need one of the following decoders: **Mistral 7B** or **Llama 3.1 8B**.  
+
+For LLaMA models, register on the [LLaMA downloads](https://www.llama.com/llama-downloads/) page to obtain the download URLs.  
+Ensure that the configuration file inside each model directory is named `params.json`, as it specifies the architectural parameters.  
+
+If you are using pretrained ARC-Encoders, you may skip loading the Llama 3.2 3B weights, but the `params.json` and `tokenizer.model` files are still required.
+
 
 ```sh
-# For Llama3.2 3B, 
+# For Llama 3.2 3B, 
 wget   url -P <MODEL_PATH>/Llama3.2-3B
 
 # Depending on the decoder you want to test on
@@ -82,13 +88,13 @@ wget   url -P <MODEL_PATH>/Llama3.2-3B
 # For Mistral 7B
 wget   https://models.mistralcdn.com/mistral-7b-v0-3/mistral-7B-v0.3.tar -P <MODEL_PATH>/mistral_7B
 
-# For Llama3.1 8B
+# For Llama 3.1 8B
 wget   url -P <MODEL_PATH>/Llama3.1-8B
 ```
 
 For additional experiments: 
 ```sh
-# For Llama2 7B Chat
+# For Llama 2 7B Chat
 
 wget   https://huggingface.co/meta-llama/Llama-2-7b-chat/resolve/main/consolidated.00.pth? -P <MODEL_PATH>/Llama2-7B-Chat
 wget https://huggingface.co/meta-llama/Llama-2-7b-chat/resolve/main/tokenizer.model? -P <MODEL_PATH>/
@@ -119,15 +125,15 @@ Then,  run the following scripts to prepare evaluation datasets still using `uv 
 | Folder                 | Description                                                                                                                                                                                                                                                            |
 | :--------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `embed_llm/data`       | Scripts for loading, tokenizing, and formatting datasets (continuation, reconstruction, fine-tuning).                                                                                                                                                                  |
-| `embed_llm/generation` | Evaluation scripts for downstream tasks for our ARC-Encoders or other baselines, including [LLMLingua2](https://arxiv.org/abs/2403.12968) and base models with or without retrieved contexts. Also includes long-context evaluations with [CEPED](https://arxiv.org/abs/2402.16617) and [LLaMA-2-7B-32k](https://huggingface.co/togethercomputer/LLaMA-2-7B-32K) in the `long_context/` folder. |
-| `embed_llm/models`     | Modules defining ARC-Encoders and their paired decoder-only LLMs. Includes `wrapped_models_training.py` for **FSDP** training. `augmented_model.py` houses the pipeline wrapper which enables to load LLMs and the encoder, to perform a training forward as well as to generate text by formating data and encoding the text to compress. `enhanced_transformer.py` consists in the backbone architecture for either the decoder (with `forward` and `generate` functions) or the encoder (with `forward_embedder` function), both are initialized from the same module. `generate.py` implements the prefilling and decoding stage with KV-cache of our pipeline. Please note that compressed text representations extractred from the encoder are alternatively called **embeddings** or **comp_repr**.                                                                                                                                         |
+| `embed_llm/generation` | Evaluation scripts on downstream tasks for our ARC-Encoders and other baselines, including [LLMLingua2](https://arxiv.org/abs/2403.12968) and base models with or without retrieved contexts. Also includes long-context evaluations with [CEPED](https://arxiv.org/abs/2402.16617) and [LLaMA-2-7B-32k](https://huggingface.co/togethercomputer/LLaMA-2-7B-32K) in the `long_context/` folder. |
+| `embed_llm/models`     | Modules defining ARC-Encoders and their paired decoder-only LLMs. Includes `wrapped_models_training.py` for **FSDP** training. `augmented_model.py` houses the pipeline wrapper which enables to load LLMs and the encoder, to perform a training forward as well as to generate text by formating data and encoding the text to compress. `enhanced_transformer.py` consists in the backbone architecture for either the decoder (with `forward` and `generate` functions) or the encoder (with `forward_embedder` function), both are initialized from the same module. `generate.py` implements the prefilling and decoding stage with KV-cache of our pipeline. Please note that compressed text representations extracted from the encoder are alternatively called **embeddings** or **comp_repr**.                                                                                                                                         |
 | `embed_llm/monitoring` | Tools for tracking metrics, progress, and logging during training.                                                                                                                                                                                                  |
-| `embed_llm/retrieval`  | Scripts for embedding/retrieval using [NVEmbedv2](https://arxiv.org/abs/2405.17428).                                                                                                                                                                                   |
 | `embed_llm/training`   | Utilities for distributed multi-GPU training.                                                                                                                                                                                                                          |
-| `scripts`              | SLURM job launch scripts (evaluation/training) and dataset synthesis scripts under `synt_data/`.      
+| `retrieval/`  | Scripts for embedding/retrieval using [NVEmbedv2](https://arxiv.org/abs/2405.17428).                                                                                                                                                                                   |
+| `scripts/`              | SLURM job launch scripts (evaluation/training) and dataset synthesis scripts under `synt_data/`.      
 
 
-**Remarks:** for each backbone model it is important that there is a `params.json` file to set the different configurations to then create the encoder and the decoder. Each trained ARC-Encoder checkpoint is structured as described below to enable dynamically fine-tune each part of ARC-Encoder starting from different checkpoints. Evaluation scripts just need the experiment name and evaluate the checkpoint with the maximum number. 
+**Remarks:** for each backbone model, a `params.json` file is required to define the configurations used to instantiate both the encoder and the decoder. Each trained ARC-Encoder checkpoint follows the structure described below, allowing flexible fine-tuning of individual components from different checkpoints. The evaluation scripts only require the experiment name and will automatically load and evaluate the latest checkpoint.
 
 ```
 <Experiment Name>/
