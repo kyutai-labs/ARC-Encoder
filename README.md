@@ -177,12 +177,16 @@ uv run python -m embed_llm.generation.eval_context_comp \
 
 ```
 
-##   Acknowledgments, license and Citation
+
+## License
+
+Our code is released under the Apache License 2.0, except for the `retrieval/` directory — which contains scripts for retrieving passages from Wikipedia for the evaluation dataset — and is licensed under the Attribution-NonCommercial 4.0 International license.
+
+
+##   Acknowledgments and Citation
 This project makes use of code snippets from:
 - [mistral-finetune](https://github.com/mistralai/mistral-finetune)  (Apache License 2.0)
 - [FID](https://github.com/facebookresearch/FiD) (Attribution-NonCommercial 4.0 International)
-
-Therefore, our main code for training consisting in `embed_llm` directory and the training script `train.py` is licensed under the Apache License 2.0. The directory meant to retrieve passages from Wikipedia for the eval dataset `retrieval` is licensed under Attribution-NonCommercial 4.0 International. 
 
 
 If you use ARC-Encoders for any of your projects please cite:
