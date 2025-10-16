@@ -7,7 +7,6 @@ from tqdm.auto import tqdm
 import json
 import numpy as np
 import argparse
-from embed_llm import DATA_PATH
 
 
 def mean_pooling(model_output, attention_mask):
@@ -245,15 +244,22 @@ if __name__ == "__main__":
     output_path = args.save_output_path
     data_path = args.data_name_to_load
     bs = args.batch_size
+    DATA_PATH = '' # To SET
+    
     output_path = DATA_PATH + "raw/Atlas_passages_embeddings"
     data_path = DATA_PATH + "raw/Atlas_passages_validation.jsonl"
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    generate_embeddings(
-        "NVEmbed",
-        output_path,
-        bs,
-        data_path,
-        n_gpu=args.num_gpus,
-        partition=args.partition,
-    )
+    
+    try: 
+        generate_embeddings(
+            "NVEmbed",
+            output_path,
+            bs,
+            data_path,
+            n_gpu=args.num_gpus,
+            partition=args.partition,
+        )
+    except FileNotFoundError as e:
+        print(f"File not found: {e}. Please ensure you have set the DATA_PATH in the embeddings file.")
+        
     print("Embeddings generated for NVEmbed")

@@ -24,7 +24,6 @@ from transformers.modeling_attn_mask_utils import (
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.modeling_utils import PreTrainedModel
 from transformers.models.auto import AutoTokenizer
-from transformers.models.mistral.modeling_mistral import MISTRAL_INPUTS_DOCSTRING
 from transformers.utils import (
     add_start_docstrings_to_model_forward,
     logging,
@@ -54,7 +53,6 @@ class BidirectionalMistralModel(MistralModel):
             layer.self_attn.is_causal = False
         self._attn_implementation = "eager"
 
-    @add_start_docstrings_to_model_forward(MISTRAL_INPUTS_DOCSTRING)
     def forward(
         self,
         input_ids: torch.LongTensor = None,

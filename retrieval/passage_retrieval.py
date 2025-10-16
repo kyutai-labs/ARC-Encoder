@@ -18,7 +18,6 @@ import torch.nn.functional as F
 from embeddings import encode_text, get_pretrained_embedder
 from index import Indexer
 from tqdm import tqdm
-from embed_llm import DATA_PATH
 
 
 class DeltaTimeFormatter(logging.Formatter):
@@ -290,6 +289,8 @@ if __name__ == "__main__":
     parser = arg_parser()
     args = parser.parse_args()
 
+    DATA_PATH = '' # To SET
+    
     datapath = [
         DATA_PATH + "raw/nq_validation.jsonl",
         DATA_PATH + "raw/triviaqa_validation.jsonl",
@@ -308,17 +309,21 @@ if __name__ == "__main__":
         args.data_name_to_load if args.data_name_to_load is not None else datapath
     )
 
-    retrieved_passage_4QA(
-        path_QA=datapath,
-        output_path=output_path,
-        n_retrieved_doc=args.n_retrieved_doc,
-        embed_dim=4096,
-        n_subquantizers=args.n_subquantizers,
-        n_bits=args.n_bits,
-        indexing_batch_size=args.idx_bs,  # Should use a large enough batch to train the IndexPQ
-        pathname_embeddings=DATA_PATH + r"raw/Atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
-        save_or_load_index=True,
-        model_name="NVEmbed",
-        split="all_indexed_PQ",
-        batch_size=args.batch_size,
-    )
+    try:
+        retrieved_passage_4QA(
+            path_QA=datapath,
+            output_path=output_path,
+            n_retrieved_doc=args.n_retrieved_doc,
+            embed_dim=4096,
+            n_subquantizers=args.n_subquantizers,
+            n_bits=args.n_bits,
+            indexing_batch_size=args.idx_bs,  # Should use a large enough batch to train the IndexPQ
+            pathname_embeddings=DATA_PATH + r"raw/Atlas_passages_embeddings/NVEmbed/*_embeddings_*.pkl",
+            save_or_load_index=True,
+            model_name="NVEmbed",
+            split="all_indexed_PQ",
+            batch_size=args.batch_size,
+        )
+    except FileNotFoundError as e:
+        print(f"File not found: {e}. Please ensure you have set the DATA_PATH in the embeddings file.")
+        

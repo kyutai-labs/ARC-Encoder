@@ -104,16 +104,14 @@ echo '{"dim": 4096, "n_heads": 32, "n_layers": 32, "norm_eps": 1e-05, "vocab_siz
 
 ## Prepare datasets
 
+Use the `load_datasets.ipynb` notebook to load the fine-tuning and evaluation datasets. 
+
 For fine-tuning, load our Hugging Face dataset:
 👉 [ARC Finetuning Dataset](https://huggingface.co/datasets/kyutai/ARC_finetuning). 
 
-Use the `load_datasets.ipynb` notebook to load the evaluation datasets. 
-
-Then,  run the following scripts to prepare evaluation datasets:
+Then,  run the following scripts to prepare evaluation datasets still using `uv run python` (make sure to first set `DATA_PATH`):
 - `retrieval/embeddings.py` — GPU recommended, creates embeddings for Wikipedia text chunks.
 - `retrieval/passage_retrieval.py`— CPU fine, retrieves passages for Natural Questions and TriviaQA, as described in the paper.
-
-
 
 
 ## Folder Structure
