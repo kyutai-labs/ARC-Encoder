@@ -8,6 +8,7 @@ dependencies = [
     "argparse>=1.4.0",
     "blobfile>=3.1.0",
     "dataclasses>=0.8",
+    "datasets>=4.2.0",
     "einops>=0.8.1",
     "fast-pytorch-kmeans>=0.2.2",
     "fire>=0.7.1",
