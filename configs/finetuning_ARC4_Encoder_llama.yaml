@@ -16,7 +16,7 @@ embedder_path: ${MODEL_PATH}/Llama3.2-3B # For the tokenizer
 
 # Training Hyperparameters
 num_microbatches: 1
-seed: 32
+seed: 0
 max_steps: 4000
 seq_len: 2048
 log_freq: 10

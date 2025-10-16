@@ -21,7 +21,7 @@ fair_instruct: true
 
 continuation: 0.0
 num_microbatches: 1
-seed: 32
+seed: 0
 
 max_steps: 8000
 seq_len: 1024
