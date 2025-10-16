@@ -42,12 +42,12 @@ logger = logging.getLogger(__name__)
 class EmbedAugModel(nn.Module, PyTorchModelHubMixin):
     def __init__(
         self,
-        bridge_args: BridgeArgs,
+        bridge_args: BridgeArgs | dict,
         llms: list[Transformer],
         embedder: Transformer | None = None,
         empty_init: int = 0,
-        model_args: ModelArgs | None = None,
-        embedder_args: EmbedderArgs | None = None,
+        model_args: dict | None = None,
+        embedder_args: dict | None = None,
     ):
         super().__init__()
 
@@ -56,11 +56,11 @@ class EmbedAugModel(nn.Module, PyTorchModelHubMixin):
         if embedder is not None:
             self.embedder = embedder
         else:
+            
             assert empty_init > 0, "Only used for first downloading"
-            if isinstance(embedder_args.pooling_module, dict):
-                embedder_args.pooling_module = PoolingArgs(
-                    **embedder_args.pooling_module
-                )
+            embedder_args = EmbedderArgs.from_dict(embedder_args)
+            model_args = ModelArgs.from_dict(model_args)
+            bridge_args = BridgeArgs.from_dict(bridge_args)
             self.embedder = Transformer(
                 args=model_args, embedder_args=embedder_args, number_of_llm=empty_init
             )
@@ -849,18 +849,16 @@ def load_and_save_released_models(
     ) as f:
         released_config = yaml.safe_load(f)
 
-    released_config["embedder_args"]["pooling_module"] = PoolingArgs(
-        **released_config["embedder_args"]["pooling_module"]
-    )
+
 
     arc_encoder = EmbedAugModel(
-        bridge_args=BridgeArgs(**released_config["bridge_args"]),
+        bridge_args= released_config["bridge_args"],
         llms=[],
         empty_init=2 if "multi" in arc_encoder_name else 1,
-        model_args=ModelArgs(**released_config["model_args"]),
-        embedder_args=EmbedderArgs(**released_config["embedder_args"]),
+        model_args= released_config["model_args"],
+        embedder_args= released_config["embedder_args"],
     )
-
+    
     pipeline_args = PipelineArgs(
         embedder_params=EmbedderArgs(**released_config["embedder_args"]),
         bridge_module=BridgeArgs(**released_config["bridge_args"]),
@@ -872,7 +870,7 @@ def load_and_save_released_models(
 
     hf_state_dict = hf_arc_encoder.state_dict()
 
-    new_path = TMP_PATH + arc_encoder_name + "/checkpoints/checkpoint_100000/"
+    new_path = TMP_PATH + arc_encoder_name + "/checkpoints/checkpoint_080000/"
 
     # Create appropriate folders and files
     os.makedirs(new_path, exist_ok=False)

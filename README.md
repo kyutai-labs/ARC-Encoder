@@ -28,8 +28,7 @@ You can pretrain and fine-tune your own **ARC-Encoder**, or directly use our rel
 ```sh
 git clone git@github.com:kyutai-labs/ARC-Encoder.git
 ```
-***Once cloned set import paths at `embed_llm/__init__.py`.*** Then, export these as environment variables since they are useful in the config files. 
-
+***Once the repository is cloned, configure the directory paths in `embed_llm/__init__.py`***. Ensure that each path ends with a `/` to indicate a directory.
 ### 2️⃣ Install all required dependencies:
 We recommend using [`uv`](https://docs.astral.sh/uv/) to manage the environment.
 It's about 10x faster than `pip` and has a bunch of other benefits too.
@@ -169,13 +168,13 @@ uv run python -m embed_llm.generation.eval_context_comp \
   --max_seq_len 64 \
   --run_name <your_experiment_name> \
   --llm_name Llama3.1-8B \
-  --llm_number 0 \ # If ARC-Encoder for multi-decoder to target if you want the first one trained on (for the HF models Llama3.1-8B) or the second one
+  --llm_number 0 \ # If ARC-Encoder_multi, to target if you want the first one trained on (for HF models Llama3.1-8B) or the second one
   --n_icl_exs 5
 
 ```
 
 ##   Acknowledgments, license and Citation
-This project uses codes from:
+This project makes use of code snippets from:
 - [mistral-finetune](https://github.com/mistralai/mistral-finetune)  (Apache License 2.0)
 - [FID](https://github.com/facebookresearch/FiD) (Attribution-NonCommercial 4.0 International)
 
