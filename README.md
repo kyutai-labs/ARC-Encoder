@@ -180,7 +180,7 @@ uv run python -m embed_llm.generation.eval_context_comp \
 
 ## License
 
-Our code is released under the Apache License 2.0, except for the `retrieval/` directory — which contains scripts for retrieving passages from Wikipedia for the evaluation dataset — and is licensed under the Attribution-NonCommercial 4.0 International license.
+Our code is released under the Apache License 2.0, except for the `retrieval/` directory, entirely independent from the other parts, which is licensed under the Attribution-NonCommercial 4.0 International license.
 
 
 ##   Acknowledgments and Citation
