@@ -261,7 +261,8 @@ def evaluate_QA(
 
         c = list(zip(questions, context, answers))
 
-        random.shuffle(c, random=lambda: seed)
+        rng = random.Random(seed)
+        rng.shuffle(c)
         questions, context, answers = zip(*c)
 
         eval_logger_info(logger, f"Evaluation dataset loaded for {benchmark}")
@@ -550,7 +551,8 @@ def evaluate_trad(
 
         c = list(zip(text, traduction))
 
-        random.shuffle(c, random=lambda: seed)
+        rng = random.Random(seed)
+        rng.shuffle(c)
         text, traduction = zip(*c)
         embed_prompt = []
 

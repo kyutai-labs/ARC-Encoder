@@ -91,7 +91,8 @@ def evaluate_long_context(
                 dataset.append(json.loads(line))
 
         if n_samples is not None and not max_samples:
-            random.shuffle(dataset, random=lambda: seed)
+            rng = random.Random(seed)
+            rng.shuffle(dataset)
             dataset = dataset[:n_samples]
         if max_samples:
             n_samples = len(dataset)
