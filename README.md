@@ -192,13 +192,14 @@ This project makes use of code snippets from:
 If you use ARC-Encoders for any of your projects please cite:
 
 ```bibtex
-@misc{pilchen2025arcencoderlearningcompressedtext,
-      title={ARC-Encoder: learning compressed text representations for large language models}, 
-      author={Hippolyte Pilchen and Edouard Grave and Patrick Pérez},
-      year={2025},
-      eprint={2510.20535},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2510.20535}, 
+@article{
+ pilchen2026arcencoder,
+ title={{ARC}-Encoder: learning compressed text representations for large language models},
+ author={Hippolyte Pilchen and Edouard Grave and Patrick Perez},
+ journal={Transactions on Machine Learning Research},
+ issn={2835-8856},
+ year={2026},
+ url={https://openreview.net/forum?id=lU1P9dsqfn},
+ note={Featured Certification}
 }
 ```
