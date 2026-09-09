@@ -41,3 +41,6 @@ include-package-data = true
 where = ["."]
 include = ["embed_llm*"]
 namespaces = false
+
+[tool.uv]
+exclude-newer = "7 days"
